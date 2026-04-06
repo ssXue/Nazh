@@ -1,0 +1,10 @@
+/\.DS_Store
+**/.DS_Store
+.codex/
+/target
+Cargo.lock
+/web/node_modules
+/web/dist
+/src-tauri/target
+examples/flowgram.ai-main/
+examples/flowgram.ai-main.zip

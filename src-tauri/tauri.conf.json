@@ -1,0 +1,33 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Nazh",
+  "version": "0.1.0",
+  "identifier": "com.nazh.desktop",
+  "build": {
+    "beforeDevCommand": "npm --prefix ./web run dev",
+    "beforeBuildCommand": "npm --prefix ./web run build",
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../web/dist"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Nazh",
+        "width": 1560,
+        "height": 960,
+        "decorations": false,
+        "transparent": true,
+        "resizable": true
+      }
+    ]
+  },
+  "bundle": {
+    "active": false,
+    "icon": [
+      "icons/icon.icns",
+      "icons/icon.png"
+    ]
+  }
+}

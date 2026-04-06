@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"Default capability for the Nazh desktop shell","local":true,"windows":["main"],"permissions":["core:default","core:event:default","core:window:default","core:window:allow-close","core:window:allow-minimize","core:window:allow-toggle-maximize"]}}
