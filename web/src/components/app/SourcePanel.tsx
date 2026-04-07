@@ -3,7 +3,10 @@ import type { SourcePanelProps } from './types';
 export function SourcePanel({ astText, graphError, onAstTextChange }: SourcePanelProps) {
   return (
     <>
-      <div className="panel__header panel__header--desktop">
+      <div
+        className="panel__header panel__header--desktop window-safe-header"
+        data-window-drag-region
+      >
         <div>
           <h2>流程源配置</h2>
         </div>

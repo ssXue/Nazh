@@ -22,6 +22,8 @@ export function installDesktopShellGuards(): () => void {
     return () => {};
   }
 
+  const appWindow = getCurrentWindow();
+
   document.documentElement.classList.add('is-tauri-runtime');
   document.body.classList.add('is-tauri-runtime');
 
@@ -36,11 +38,29 @@ export function installDesktopShellGuards(): () => void {
       event.preventDefault();
     }
   };
+  const handleWindowDragMouseDown = (event: MouseEvent) => {
+    const target = event.target;
+    if (!(target instanceof Element)) {
+      return;
+    }
+
+    if (!target.closest('[data-window-drag-region]') || event.buttons !== 1) {
+      return;
+    }
+
+    if (event.detail === 2) {
+      void appWindow.toggleMaximize();
+      return;
+    }
+
+    void appWindow.startDragging();
+  };
 
   document.addEventListener('contextmenu', preventContextMenu);
   document.addEventListener('gesturestart', preventGestureZoom, { passive: false });
   document.addEventListener('gesturechange', preventGestureZoom, { passive: false });
   document.addEventListener('gestureend', preventGestureZoom, { passive: false });
+  document.addEventListener('mousedown', handleWindowDragMouseDown);
   window.addEventListener('wheel', preventWheelZoom, { passive: false });
 
   return () => {
@@ -48,6 +68,7 @@ export function installDesktopShellGuards(): () => void {
     document.removeEventListener('gesturestart', preventGestureZoom);
     document.removeEventListener('gesturechange', preventGestureZoom);
     document.removeEventListener('gestureend', preventGestureZoom);
+    document.removeEventListener('mousedown', handleWindowDragMouseDown);
     window.removeEventListener('wheel', preventWheelZoom);
     document.documentElement.classList.remove('is-tauri-runtime');
     document.body.classList.remove('is-tauri-runtime');

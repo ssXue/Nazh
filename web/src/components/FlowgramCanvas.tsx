@@ -42,6 +42,8 @@ interface FlowgramCanvasProps {
   reloadVersion: number;
   runtimeState: WorkflowRuntimeState;
   workflowStatus: WorkflowWindowStatus;
+  accentHex: string;
+  nodeRhaiColor: string;
   onGraphChange: (nextAstText: string) => void;
 }
 
@@ -49,6 +51,8 @@ interface FlowgramNodeMaterialProps {
   node: FlowNodeEntity;
   activated?: boolean;
   runtimeStatus?: RuntimeNodeStatus;
+  accentHex: string;
+  nodeRhaiColor: string;
 }
 
 type RuntimeNodeStatus = 'idle' | 'running' | 'completed' | 'failed' | 'output';
@@ -295,10 +299,10 @@ function FlowgramNodeCard(props: FlowgramNodeMaterialProps) {
       node={props.node}
       className={`flowgram-card flowgram-card--${nodeType} flowgram-card--${runtimeStatus} ${props.activated ? 'is-activated' : ''}`}
       portClassName="flowgram-card__port"
-      portBackgroundColor="#08111d"
-      portPrimaryColor={nodeType === 'native' ? '#ff8f3a' : '#67b4ff'}
-      portSecondaryColor="rgba(236, 244, 255, 0.4)"
-      portErrorColor="#ff6d73"
+      portBackgroundColor="var(--panel-strong)"
+      portPrimaryColor={nodeType === 'native' ? props.accentHex : props.nodeRhaiColor}
+      portSecondaryColor="var(--surface-elevated)"
+      portErrorColor="var(--danger)"
     >
       <div data-flow-editor-selectable="false" className="flowgram-card__body" draggable={false}>
         <div className="flowgram-card__topline">
@@ -536,6 +540,8 @@ export function FlowgramCanvas({
   reloadVersion,
   runtimeState,
   workflowStatus,
+  accentHex,
+  nodeRhaiColor,
   onGraphChange,
 }: FlowgramCanvasProps) {
   const [lastChange, setLastChange] = useState<string | null>(null);
@@ -683,9 +689,11 @@ export function FlowgramCanvas({
       <FlowgramNodeCard
         {...props}
         runtimeStatus={resolveNodeRuntimeStatus(props.node.id)}
+        accentHex={accentHex}
+        nodeRhaiColor={nodeRhaiColor}
       />
     ),
-    [resolveNodeRuntimeStatus],
+    [accentHex, nodeRhaiColor, resolveNodeRuntimeStatus],
   );
   const materials = useMemo(
     () => ({
@@ -977,6 +985,7 @@ export function FlowgramCanvas({
         nodes: [],
         edges: [],
       },
+    accentColor: accentHex,
     primaryConnectionId,
     materials,
     isFlowingLine,

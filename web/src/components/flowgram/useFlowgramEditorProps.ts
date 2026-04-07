@@ -28,6 +28,7 @@ const FLOWGRAM_MINIMAP_CANVAS_HEIGHT = 76;
 
 interface UseFlowgramEditorPropsParams {
   initialData: NonNullable<FreeLayoutProps['initialData']>;
+  accentColor: string;
   primaryConnectionId: string | null;
   materials: NonNullable<FreeLayoutProps['materials']>;
   isFlowingLine: NonNullable<FreeLayoutProps['isFlowingLine']>;
@@ -40,6 +41,7 @@ interface UseFlowgramEditorPropsParams {
 
 export function useFlowgramEditorProps({
   initialData,
+  accentColor,
   primaryConnectionId,
   materials,
   isFlowingLine,
@@ -118,8 +120,8 @@ export function useFlowgramEditorProps({
           },
         }),
         createFreeSnapPlugin({
-          edgeColor: '#38c7d7',
-          alignColor: '#38c7d7',
+          edgeColor: accentColor,
+          alignColor: accentColor,
           edgeLineWidth: 1,
           alignLineWidth: 1,
           alignCrossWidth: 8,
@@ -144,6 +146,7 @@ export function useFlowgramEditorProps({
     }),
     [
       initialData,
+      accentColor,
       isErrorLine,
       isFlowingLine,
       materials,

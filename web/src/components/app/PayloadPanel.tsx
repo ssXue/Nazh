@@ -3,7 +3,10 @@ import type { PayloadPanelProps } from './types';
 export function PayloadPanel({ payloadText, deployInfo, onPayloadTextChange }: PayloadPanelProps) {
   return (
     <>
-      <div className="panel__header panel__header--desktop">
+      <div
+        className="panel__header panel__header--desktop window-safe-header"
+        data-window-drag-region
+      >
         <div>
           <h2>测试载荷</h2>
         </div>

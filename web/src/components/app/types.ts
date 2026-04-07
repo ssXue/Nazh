@@ -4,32 +4,27 @@ import type {
   WorkflowRuntimeState,
   WorkflowResult,
 } from '../../types';
+import type { AccentPreset, AccentPresetOption } from '../../lib/theme';
 
 export type ThemeMode = 'light' | 'dark';
+export type UiDensity = 'comfortable' | 'compact';
+export type MotionMode = 'full' | 'reduced';
+export type StartupPage = 'dashboard' | 'boards';
 export type SidebarSection =
-  | 'canvas'
-  | 'overview'
+  | 'dashboard'
+  | 'boards'
   | 'source'
   | 'connections'
   | 'payload'
   | 'settings'
   | 'about';
-export type SidebarGroup = 'main' | 'settings';
+export type SidebarGroup = 'top' | 'main' | 'settings';
 
 export interface SidebarSectionConfig {
   key: SidebarSection;
   group: SidebarGroup;
   label: string;
   badge: string;
-}
-
-export interface StudioTitleBarProps {
-  isTauriRuntime: boolean;
-  runtimeModeLabel: string;
-  workflowStatusLabel: string;
-  workflowStatusPillClass: string;
-  themeMode: ThemeMode;
-  onToggleTheme: () => void;
 }
 
 export interface SidebarNavProps {
@@ -39,19 +34,12 @@ export interface SidebarNavProps {
   userName: string;
   userRole: string;
   onUserSwitch: () => void;
-}
-
-export interface OverviewPanelProps {
-  graphNodeCount: number;
-  graphEdgeCount: number;
-  graphConnectionCount: number;
-  activeNodeCount: number;
   workflowStatusLabel: string;
   workflowStatusPillClass: string;
-  statusMessage: string;
-  runtimeSnapshot: string;
-  runtimeUpdatedLabel: string;
-  deployInfo: DeployResponse | null;
+  themeMode: ThemeMode;
+  onToggleTheme: () => void;
+  activeBoardName: string | null;
+  onBackToBoards: () => void;
 }
 
 export interface SourcePanelProps {
@@ -98,6 +86,18 @@ export interface SettingsPanelProps {
   workflowStatusLabel: string;
   statusMessage: string;
   themeMode: ThemeMode;
+  onThemeModeChange: (mode: ThemeMode) => void;
+  accentPreset: AccentPreset;
+  accentOptions: AccentPresetOption[];
+  customAccentHex: string;
+  onAccentPresetChange: (preset: AccentPreset) => void;
+  onCustomAccentChange: (hex: string) => void;
+  densityMode: UiDensity;
+  onDensityModeChange: (mode: UiDensity) => void;
+  motionMode: MotionMode;
+  onMotionModeChange: (mode: MotionMode) => void;
+  startupPage: StartupPage;
+  onStartupPageChange: (page: StartupPage) => void;
 }
 
 export interface AboutPanelProps {

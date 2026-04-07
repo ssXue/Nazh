@@ -10,7 +10,10 @@ export function AboutPanel({
 }: AboutPanelProps) {
   return (
     <>
-      <div className="panel__header panel__header--desktop">
+      <div
+        className="panel__header panel__header--desktop window-safe-header"
+        data-window-drag-region
+      >
         <div>
           <h2>帮助与关于</h2>
         </div>

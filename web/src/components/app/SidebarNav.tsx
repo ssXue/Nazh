@@ -1,24 +1,27 @@
 import {
   AboutIcon,
-  CanvasIcon,
+  BackIcon,
+  BoardsIcon,
   ConnectionsIcon,
-  OverviewIcon,
+  DashboardIcon,
+  MoonIcon,
   PayloadIcon,
   SettingsIcon,
   SourceIcon,
+  SunIcon,
   SwitchUserIcon,
 } from './AppIcons';
-import type { SidebarNavProps } from './types';
+import type { SidebarNavProps, SidebarSection } from './types';
 
-const SECTION_ICONS = {
-  canvas: CanvasIcon,
-  overview: OverviewIcon,
+const SECTION_ICONS: Record<SidebarSection, typeof DashboardIcon> = {
+  dashboard: DashboardIcon,
+  boards: BoardsIcon,
   source: SourceIcon,
   connections: ConnectionsIcon,
   payload: PayloadIcon,
   settings: SettingsIcon,
   about: AboutIcon,
-} as const;
+};
 
 function getUserInitials(userName: string): string {
   const normalized = userName.trim();
@@ -36,32 +39,47 @@ export function SidebarNav({
   userName,
   userRole,
   onUserSwitch,
+  workflowStatusLabel,
+  workflowStatusPillClass,
+  themeMode,
+  onToggleTheme,
+  activeBoardName,
+  onBackToBoards,
 }: SidebarNavProps) {
+  const isDarkMode = themeMode === 'dark';
   const groupedSections = [
     {
+      key: 'top',
+      label: '',
+      sections: sections.filter((section) => section.group === 'top'),
+    },
+    {
       key: 'main',
-      label: '主菜单',
+      label: 'Main Menu',
       sections: sections.filter((section) => section.group === 'main'),
     },
     {
       key: 'settings',
-      label: '设置',
+      label: 'Settings',
       sections: sections.filter((section) => section.group === 'settings'),
     },
   ];
 
   return (
     <div className="studio-navrail">
-      <div className="studio-navrail__header">
-        <strong>导航</strong>
-      </div>
+      <div className="studio-nav-safe-region" data-window-drag-region aria-hidden="true" />
 
       <div className="studio-nav-groups">
         {groupedSections.map((group) => (
-          <section key={group.key} className="studio-nav-group">
-            <div className="studio-nav-group__title">{group.label}</div>
+          <section
+            key={group.key}
+            className={
+              group.key === 'top' ? 'studio-nav-group studio-nav-group--top' : 'studio-nav-group'
+            }
+          >
+            {group.label ? <div className="studio-nav-group__title">{group.label}</div> : null}
 
-            <nav className="studio-nav" aria-label={`${group.label} 导航`}>
+            <nav className="studio-nav" aria-label={group.label || '导航'}>
               {group.sections.map((section) => {
                 const Icon = SECTION_ICONS[section.key];
 
@@ -69,7 +87,11 @@ export function SidebarNav({
                   <button
                     key={section.key}
                     type="button"
-                    className={activeSection === section.key ? 'studio-nav__button is-active' : 'studio-nav__button'}
+                    className={
+                      activeSection === section.key
+                        ? 'studio-nav__button is-active'
+                        : 'studio-nav__button'
+                    }
                     aria-current={activeSection === section.key ? 'page' : undefined}
                     onClick={() => onSectionChange(section.key)}
                   >
@@ -84,11 +106,42 @@ export function SidebarNav({
                 );
               })}
             </nav>
+
+            {group.key === 'top' && activeBoardName ? (
+              <section className="studio-nav-project" aria-label="当前工程">
+                <button
+                  type="button"
+                  className="studio-nav-project__back"
+                  onClick={onBackToBoards}
+                  aria-label="返回所有看板"
+                  title="返回所有看板"
+                >
+                  <BackIcon />
+                </button>
+                <div className="studio-nav-project__copy">
+                  <strong>{activeBoardName}</strong>
+                  <span>当前工程</span>
+                </div>
+              </section>
+            ) : null}
           </section>
         ))}
       </div>
 
       <div className="studio-nav__footer">
+        <div className="studio-nav-status">
+          <button
+            type="button"
+            className="studio-nav-theme-toggle"
+            aria-label={isDarkMode ? '切换到亮色主题' : '切换到暗色主题'}
+            title="切换主题"
+            onClick={onToggleTheme}
+          >
+            {isDarkMode ? <SunIcon /> : <MoonIcon />}
+          </button>
+          <span className={`runtime-pill ${workflowStatusPillClass}`}>{workflowStatusLabel}</span>
+        </div>
+
         <section className="studio-nav-user" aria-label="当前用户">
           <div className="studio-nav-user__avatar" aria-hidden="true">
             {getUserInitials(userName)}
@@ -97,6 +150,7 @@ export function SidebarNav({
             <strong>{userName}</strong>
             <span>{userRole}</span>
           </div>
+
           <button
             type="button"
             className="studio-nav-user__action"

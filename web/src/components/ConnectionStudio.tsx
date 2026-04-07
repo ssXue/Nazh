@@ -371,8 +371,11 @@ export function ConnectionStudio({
 
   if (!graph) {
     return (
-      <section className="panel__section panel__section--stacked">
-        <div className="panel__header panel__header--dense">
+      <section className="connection-studio">
+        <div
+          className="panel__header panel__header--dense window-safe-header"
+          data-window-drag-region
+        >
           <div>
             <h2>连接资源编辑</h2>
           </div>
@@ -383,11 +386,17 @@ export function ConnectionStudio({
   }
 
   return (
-    <section className="panel__section panel__section--stacked">
-      <div className="panel__header panel__header--dense">
+    <section className="connection-studio">
+      <div
+        className="panel__header panel__header--dense window-safe-header"
+        data-window-drag-region
+      >
         <div>
           <h2>连接资源编辑</h2>
         </div>
+        <span className="panel__badge">
+          {connections.length > 0 ? `${connections.length} 项` : '未配置'}
+        </span>
       </div>
 
       <div className="connection-toolbar">
@@ -395,10 +404,11 @@ export function ConnectionStudio({
           <button
             key={template.key}
             type="button"
-            className="ghost connection-toolbar__button"
+            className="connection-toolbar__button"
             onClick={() => handleAddConnection(template)}
           >
             <strong>{template.label}</strong>
+            <span>{template.description}</span>
           </button>
         ))}
       </div>
@@ -419,13 +429,19 @@ export function ConnectionStudio({
             return (
               <article key={`${connection.id || 'connection'}-${index}`} className="connection-card">
                 <div className="connection-card__header">
-                  <div>
+                  <div className="connection-card__identity">
                     <strong>{connection.id || `connection_${index + 1}`}</strong>
                     <p>
                       {usageNodes.length > 0
                         ? `当前被 ${usageNodes.length} 个节点引用`
                         : '当前没有节点绑定这个连接'}
                     </p>
+                    <div className="connection-card__meta">
+                      <span className="connection-card__tag">{connection.type || 'custom'}</span>
+                      <span className="connection-card__tag">
+                        {usageNodes.length > 0 ? `${usageNodes.length} 节点` : '未绑定'}
+                      </span>
+                    </div>
                   </div>
 
                   <div className="connection-card__actions">

@@ -1,18 +1,32 @@
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 
 import { AboutPanel } from './components/app/AboutPanel';
-import { OverviewPanel } from './components/app/OverviewPanel';
+import { BOARD_LIBRARY, BoardsPanel, type BoardItem } from './components/app/BoardsPanel';
+import { DashboardPanel } from './components/app/DashboardPanel';
 import { PayloadPanel } from './components/app/PayloadPanel';
 import { RuntimeDock } from './components/app/RuntimeDock';
 import { SettingsPanel } from './components/app/SettingsPanel';
 import { SidebarNav } from './components/app/SidebarNav';
 import { SourcePanel } from './components/app/SourcePanel';
 import { StudioControlBar } from './components/app/StudioControlBar';
-import { StudioTitleBar } from './components/app/StudioTitleBar';
-import type { SidebarSection, SidebarSectionConfig, ThemeMode } from './components/app/types';
+import type {
+  MotionMode,
+  SidebarSection,
+  SidebarSectionConfig,
+  StartupPage,
+  ThemeMode,
+  UiDensity,
+} from './components/app/types';
 import { ConnectionStudio } from './components/ConnectionStudio';
 import { FlowgramCanvas } from './components/FlowgramCanvas';
 import { parseWorkflowGraph } from './lib/graph';
+import {
+  ACCENT_PRESET_OPTIONS,
+  buildAccentThemeVariables,
+  getAccentHex,
+  normalizeCustomAccentHex,
+  type AccentPreset,
+} from './lib/theme';
 import {
   deployWorkflow,
   dispatchPayload,
@@ -26,6 +40,7 @@ import {
 import type {
   ConnectionRecord,
   DeployResponse,
+  JsonValue,
   WorkflowEvent,
   WorkflowRuntimeState,
   WorkflowResult,
@@ -38,6 +53,11 @@ interface ParsedWorkflowEvent {
   nodeId: string;
   traceId: string;
   error?: string;
+}
+
+interface ProjectDraft {
+  astText: string;
+  payloadText: string;
 }
 
 const EMPTY_RUNTIME_STATE: WorkflowRuntimeState = {
@@ -53,7 +73,13 @@ const EMPTY_RUNTIME_STATE: WorkflowRuntimeState = {
 };
 
 const THEME_STORAGE_KEY = 'nazh.theme';
+const ACCENT_PRESET_STORAGE_KEY = 'nazh.accent-preset';
+const CUSTOM_ACCENT_STORAGE_KEY = 'nazh.custom-accent';
+const UI_DENSITY_STORAGE_KEY = 'nazh.ui-density';
+const MOTION_MODE_STORAGE_KEY = 'nazh.motion-mode';
+const STARTUP_PAGE_STORAGE_KEY = 'nazh.startup-page';
 const CURRENT_USER_NAME = 'ssxue';
+const DEFAULT_BOARD_ID = BOARD_LIBRARY[0]?.id ?? 'default';
 
 function getInitialThemeMode(): ThemeMode {
   if (typeof window === 'undefined') {
@@ -72,43 +98,156 @@ function getInitialThemeMode(): ThemeMode {
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 }
 
+function getInitialAccentPreset(): AccentPreset {
+  if (typeof window === 'undefined') {
+    return ACCENT_PRESET_OPTIONS[0].key;
+  }
+
+  try {
+    const storedPreset = window.localStorage.getItem(ACCENT_PRESET_STORAGE_KEY);
+    if (
+      storedPreset === 'custom' ||
+      ACCENT_PRESET_OPTIONS.some((option) => option.key === storedPreset)
+    ) {
+      return storedPreset as AccentPreset;
+    }
+  } catch {
+    // Ignore storage access failures and fall back to defaults.
+  }
+
+  return ACCENT_PRESET_OPTIONS[0].key;
+}
+
+function getInitialCustomAccentHex(): string {
+  if (typeof window === 'undefined') {
+    return normalizeCustomAccentHex(ACCENT_PRESET_OPTIONS[0].hex);
+  }
+
+  try {
+    const storedHex = window.localStorage.getItem(CUSTOM_ACCENT_STORAGE_KEY);
+    if (storedHex) {
+      return normalizeCustomAccentHex(storedHex);
+    }
+  } catch {
+    // Ignore storage access failures and fall back to defaults.
+  }
+
+  return normalizeCustomAccentHex(ACCENT_PRESET_OPTIONS[0].hex);
+}
+
+function getInitialUiDensity(): UiDensity {
+  if (typeof window === 'undefined') {
+    return 'comfortable';
+  }
+
+  try {
+    const storedDensity = window.localStorage.getItem(UI_DENSITY_STORAGE_KEY);
+    if (storedDensity === 'comfortable' || storedDensity === 'compact') {
+      return storedDensity;
+    }
+  } catch {
+    // Ignore storage access failures and fall back to defaults.
+  }
+
+  return 'comfortable';
+}
+
+function getInitialMotionMode(): MotionMode {
+  if (typeof window === 'undefined') {
+    return 'full';
+  }
+
+  try {
+    const storedMotionMode = window.localStorage.getItem(MOTION_MODE_STORAGE_KEY);
+    if (storedMotionMode === 'full' || storedMotionMode === 'reduced') {
+      return storedMotionMode;
+    }
+  } catch {
+    // Ignore storage access failures and fall back to system preference.
+  }
+
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'reduced' : 'full';
+}
+
+function getInitialStartupPage(): StartupPage {
+  if (typeof window === 'undefined') {
+    return 'dashboard';
+  }
+
+  try {
+    const storedPage = window.localStorage.getItem(STARTUP_PAGE_STORAGE_KEY);
+    if (storedPage === 'dashboard' || storedPage === 'boards') {
+      return storedPage;
+    }
+  } catch {
+    // Ignore storage access failures and fall back to defaults.
+  }
+
+  return 'dashboard';
+}
+
+function buildProjectAst(boardName: string): string {
+  const base = JSON.parse(SAMPLE_AST) as {
+    name?: string;
+    nodes?: Record<string, { config?: Record<string, JsonValue> }>;
+  };
+
+  base.name = boardName;
+
+  if (base.nodes?.ingress?.config) {
+    base.nodes.ingress.config.message = `${boardName} 已接收边缘输入`;
+  }
+
+  return JSON.stringify(base, null, 2);
+}
+
+function buildInitialProjectDrafts(): Record<string, ProjectDraft> {
+  return BOARD_LIBRARY.reduce<Record<string, ProjectDraft>>((drafts, board) => {
+    drafts[board.id] = {
+      astText: buildProjectAst(board.name),
+      payloadText: SAMPLE_PAYLOAD,
+    };
+    return drafts;
+  }, {});
+}
+
 function buildSidebarSections(
   workflowStatusLabel: string,
   graphError: string | null,
-  graphNodeCount: number,
   graphConnectionCount: number,
   deployInfo: DeployResponse | null,
+  activeBoardName: string | null,
 ): SidebarSectionConfig[] {
   return [
     {
-      key: 'overview',
-      group: 'main',
-      label: '管理总览',
+      key: 'dashboard',
+      group: 'top',
+      label: 'Dashboard',
       badge: workflowStatusLabel,
     },
     {
-      key: 'canvas',
-      group: 'main',
-      label: '画布编辑',
-      badge: `${graphNodeCount} 节点`,
+      key: 'boards',
+      group: 'top',
+      label: '所有看板',
+      badge: activeBoardName ?? `${BOARD_LIBRARY.length} 个工程`,
     },
     {
       key: 'source',
       group: 'main',
       label: '流程源配置',
-      badge: graphError ? '有错误' : '单一事实源',
+      badge: activeBoardName ? (graphError ? '有错误' : '当前工程') : '未进入工程',
     },
     {
       key: 'connections',
       group: 'main',
       label: '连接资源',
-      badge: `${graphConnectionCount} 个`,
+      badge: activeBoardName ? `${graphConnectionCount} 个` : '未进入工程',
     },
     {
       key: 'payload',
       group: 'main',
       label: '测试载荷',
-      badge: deployInfo ? '可发送' : '待部署',
+      badge: activeBoardName ? (deployInfo ? '可发送' : '待部署') : '未进入工程',
     },
     {
       key: 'settings',
@@ -227,6 +366,7 @@ function reduceRuntimeState(
 
 function deriveWorkflowStatus(
   tauriRuntime: boolean,
+  hasActiveBoard: boolean,
   deployInfo: DeployResponse | null,
   runtimeState: WorkflowRuntimeState,
 ): WorkflowWindowStatus {
@@ -234,7 +374,7 @@ function deriveWorkflowStatus(
     return 'preview';
   }
 
-  if (!deployInfo) {
+  if (!hasActiveBoard || !deployInfo) {
     return 'idle';
   }
 
@@ -293,13 +433,20 @@ function getWorkflowStatusPillClass(status: WorkflowWindowStatus): string {
 }
 
 function App() {
-  const [astText, setAstText] = useState(SAMPLE_AST);
-  const [payloadText, setPayloadText] = useState(SAMPLE_PAYLOAD);
-  const [sidebarSection, setSidebarSection] = useState<SidebarSection>('overview');
+  const [startupPage, setStartupPage] = useState<StartupPage>(getInitialStartupPage);
+  const [projectDrafts, setProjectDrafts] = useState<Record<string, ProjectDraft>>(
+    buildInitialProjectDrafts,
+  );
+  const [activeBoard, setActiveBoard] = useState<BoardItem | null>(null);
+  const [sidebarSection, setSidebarSection] = useState<SidebarSection>(getInitialStartupPage);
   const [themeMode, setThemeMode] = useState<ThemeMode>(getInitialThemeMode);
+  const [accentPreset, setAccentPreset] = useState<AccentPreset>(getInitialAccentPreset);
+  const [customAccentHex, setCustomAccentHex] = useState<string>(getInitialCustomAccentHex);
+  const [densityMode, setDensityMode] = useState<UiDensity>(getInitialUiDensity);
+  const [motionMode, setMotionMode] = useState<MotionMode>(getInitialMotionMode);
   const [statusMessage, setStatusMessage] = useState(
     hasTauriRuntime()
-      ? '等待部署工作流。'
+      ? '等待进入工程。'
       : '当前运行在纯 Web 预览模式，调用 Tauri 命令会被跳过。',
   );
   const [deployInfo, setDeployInfo] = useState<DeployResponse | null>(null);
@@ -308,9 +455,25 @@ function App() {
   const [connections, setConnections] = useState<ConnectionRecord[]>([]);
   const [flowgramReloadVersion, setFlowgramReloadVersion] = useState(0);
   const [runtimeState, setRuntimeState] = useState<WorkflowRuntimeState>(EMPTY_RUNTIME_STATE);
+  const [boardWorkspaceKey, setBoardWorkspaceKey] = useState(0);
 
+  const currentBoardId = activeBoard?.id ?? DEFAULT_BOARD_ID;
+  const currentProject = projectDrafts[currentBoardId] ?? {
+    astText: SAMPLE_AST,
+    payloadText: SAMPLE_PAYLOAD,
+  };
+  const astText = currentProject.astText;
+  const payloadText = currentProject.payloadText;
   const deferredAstText = useDeferredValue(astText);
   const graphState = useMemo(() => parseWorkflowGraph(deferredAstText), [deferredAstText]);
+  const accentHex = useMemo(
+    () => getAccentHex(accentPreset, customAccentHex),
+    [accentPreset, customAccentHex],
+  );
+  const accentThemeVariables = useMemo(
+    () => buildAccentThemeVariables(accentHex, themeMode),
+    [accentHex, themeMode],
+  );
 
   useEffect(() => {
     document.documentElement.dataset.theme = themeMode;
@@ -321,6 +484,47 @@ function App() {
       // Ignore storage failures in restricted runtimes.
     }
   }, [themeMode]);
+
+  useEffect(() => {
+    Object.entries(accentThemeVariables).forEach(([key, value]) => {
+      document.documentElement.style.setProperty(key, value);
+    });
+
+    try {
+      window.localStorage.setItem(ACCENT_PRESET_STORAGE_KEY, accentPreset);
+      window.localStorage.setItem(CUSTOM_ACCENT_STORAGE_KEY, customAccentHex);
+    } catch {
+      // Ignore storage failures in restricted runtimes.
+    }
+  }, [accentPreset, accentThemeVariables, customAccentHex]);
+
+  useEffect(() => {
+    document.documentElement.dataset.uiDensity = densityMode;
+
+    try {
+      window.localStorage.setItem(UI_DENSITY_STORAGE_KEY, densityMode);
+    } catch {
+      // Ignore storage failures in restricted runtimes.
+    }
+  }, [densityMode]);
+
+  useEffect(() => {
+    document.documentElement.dataset.motionMode = motionMode;
+
+    try {
+      window.localStorage.setItem(MOTION_MODE_STORAGE_KEY, motionMode);
+    } catch {
+      // Ignore storage failures in restricted runtimes.
+    }
+  }, [motionMode]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(STARTUP_PAGE_STORAGE_KEY, startupPage);
+    } catch {
+      // Ignore storage failures in restricted runtimes.
+    }
+  }, [startupPage]);
 
   useEffect(() => {
     if (!hasTauriRuntime()) {
@@ -402,17 +606,42 @@ function App() {
     };
   }, []);
 
+  function resetWorkspaceRuntime(nextMessage: string) {
+    setDeployInfo(null);
+    setResults([]);
+    setEventFeed([]);
+    setRuntimeState(EMPTY_RUNTIME_STATE);
+    setStatusMessage(nextMessage);
+  }
+
+  function updateProjectDraft(boardId: string, nextDraft: Partial<ProjectDraft>) {
+    setProjectDrafts((current) => ({
+      ...current,
+      [boardId]: {
+        ...(current[boardId] ?? {
+          astText: buildProjectAst(activeBoard?.name ?? '默认工作流'),
+          payloadText: SAMPLE_PAYLOAD,
+        }),
+        ...nextDraft,
+      },
+    }));
+  }
+
   function handleAstTextChange(nextText: string) {
-    setAstText(nextText);
+    if (!activeBoard) {
+      return;
+    }
+
+    updateProjectDraft(activeBoard.id, { astText: nextText });
     setFlowgramReloadVersion((current) => current + 1);
   }
 
   function applyStructuredGraphChange(nextAstText: string, nextStatusMessage: string) {
-    if (nextAstText === astText) {
+    if (!activeBoard || nextAstText === astText) {
       return;
     }
 
-    setAstText(nextAstText);
+    updateProjectDraft(activeBoard.id, { astText: nextAstText });
     setStatusMessage(nextStatusMessage);
   }
 
@@ -424,11 +653,39 @@ function App() {
     applyStructuredGraphChange(nextAstText, nextStatusMessage);
   }
 
+  function handlePayloadTextChange(nextText: string) {
+    if (!activeBoard) {
+      return;
+    }
+
+    updateProjectDraft(activeBoard.id, { payloadText: nextText });
+  }
+
   function handleToggleTheme() {
     setThemeMode((current) => (current === 'dark' ? 'light' : 'dark'));
   }
 
+  function handleOpenBoard(board: BoardItem) {
+    setActiveBoard(board);
+    setSidebarSection('boards');
+    setBoardWorkspaceKey((current) => current + 1);
+    setFlowgramReloadVersion((current) => current + 1);
+    resetWorkspaceRuntime(`已进入工程 ${board.name}。`);
+  }
+
+  function handleBackToBoards() {
+    setSidebarSection('boards');
+    setActiveBoard(null);
+    setBoardWorkspaceKey((current) => current + 1);
+    resetWorkspaceRuntime('已返回所有看板。');
+  }
+
   async function handleDeploy() {
+    if (!activeBoard) {
+      setStatusMessage('请先从所有看板进入工程。');
+      return;
+    }
+
     if (graphState.error) {
       setStatusMessage(`AST 无法部署: ${graphState.error}`);
       return;
@@ -453,6 +710,11 @@ function App() {
   }
 
   async function handleDispatchPayload() {
+    if (!activeBoard) {
+      setStatusMessage('请先从所有看板进入工程。');
+      return;
+    }
+
     let payload: unknown;
 
     try {
@@ -509,7 +771,12 @@ function App() {
   const isTauriRuntime = hasTauriRuntime();
   const currentUserRole = isTauriRuntime ? '桌面操作员' : '预览访客';
   const runtimeModeLabel = isTauriRuntime ? '桌面会话' : '浏览器预览';
-  const workflowStatus = deriveWorkflowStatus(isTauriRuntime, deployInfo, runtimeState);
+  const workflowStatus = deriveWorkflowStatus(
+    isTauriRuntime,
+    Boolean(activeBoard),
+    deployInfo,
+    runtimeState,
+  );
   const workflowStatusLabel = getWorkflowStatusLabel(workflowStatus);
   const workflowStatusPillClass = getWorkflowStatusPillClass(workflowStatus);
   const runtimeSnapshot =
@@ -519,79 +786,133 @@ function App() {
   const runtimeUpdatedLabel = runtimeState.lastUpdatedAt
     ? new Date(runtimeState.lastUpdatedAt).toLocaleTimeString()
     : '尚无事件';
-  const hasRuntimeDock = Boolean(deployInfo);
-  const canDispatchPayload = !isTauriRuntime || Boolean(deployInfo);
+  const hasRuntimeDock = Boolean(activeBoard && deployInfo);
+  const canDispatchPayload = Boolean(activeBoard) && (!isTauriRuntime || Boolean(deployInfo));
   const connectionPreview = connections.slice(0, 4);
   const sidebarSections = buildSidebarSections(
     workflowStatusLabel,
     graphState.error,
-    graphNodeCount,
     graphConnectionCount,
     deployInfo,
+    activeBoard?.name ?? null,
   );
+
+  function renderProjectGate(title: string) {
+    return (
+      <section className="studio-content studio-content--panel">
+        <div className="panel studio-content__panel studio-content__panel--scroll studio-gate">
+          <div className="studio-gate__copy">
+            <h2>{title}</h2>
+            <p>先从所有看板进入工程。</p>
+          </div>
+          <button type="button" onClick={() => setSidebarSection('boards')}>
+            前往所有看板
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  function renderBoardWorkspace() {
+    if (!activeBoard) {
+      return (
+        <section className="studio-content studio-content--panel">
+          <div className="panel studio-content__panel studio-content__panel--scroll">
+            <BoardsPanel onOpenBoard={handleOpenBoard} />
+          </div>
+        </section>
+      );
+    }
+
+    return (
+      <section className="studio-content studio-content--board">
+        <div key={`${activeBoard.id}-${boardWorkspaceKey}`} className="studio-board-workspace">
+          <div
+            className="studio-board-workspace__header window-safe-header"
+            data-window-drag-region
+          >
+            <div>
+              <h2>{activeBoard.name}</h2>
+              <span>{activeBoard.updatedAt}</span>
+            </div>
+            <span className="panel__badge">{graphNodeCount} 节点</span>
+          </div>
+
+          <FlowgramCanvas
+            graph={graphState.graph}
+            reloadVersion={flowgramReloadVersion}
+            runtimeState={runtimeState}
+            workflowStatus={workflowStatus}
+            accentHex={accentHex}
+            nodeRhaiColor={accentThemeVariables['--node-rhai']}
+            onGraphChange={handleGraphChange}
+          />
+
+          <StudioControlBar
+            workflowStatusLabel={workflowStatusLabel}
+            workflowStatusPillClass={workflowStatusPillClass}
+            isTauriRuntime={isTauriRuntime}
+            runtimeModeLabel={runtimeModeLabel}
+            runtimeSnapshot={runtimeSnapshot}
+            runtimeUpdatedLabel={runtimeUpdatedLabel}
+            statusMessage={statusMessage}
+            graphNodeCount={graphNodeCount}
+            graphEdgeCount={graphEdgeCount}
+            graphConnectionCount={graphConnectionCount}
+            activeNodeCount={runtimeState.activeNodeIds.length}
+            canDispatchPayload={canDispatchPayload}
+            onDeploy={handleDeploy}
+            onDispatchPayload={handleDispatchPayload}
+            onRefreshConnections={refreshConnections}
+          />
+
+          {hasRuntimeDock ? (
+            <RuntimeDock
+              deployInfo={deployInfo}
+              runtimeState={runtimeState}
+              eventFeed={eventFeed}
+              results={results}
+              connectionPreview={connectionPreview}
+            />
+          ) : null}
+        </div>
+      </section>
+    );
+  }
 
   function renderStudioContent() {
     switch (sidebarSection) {
-      case 'canvas':
-        return (
-          <section className="studio-content studio-content--canvas">
-            <FlowgramCanvas
-              graph={graphState.graph}
-              reloadVersion={flowgramReloadVersion}
-              runtimeState={runtimeState}
-              workflowStatus={workflowStatus}
-              onGraphChange={handleGraphChange}
-            />
-
-            <StudioControlBar
-              workflowStatusLabel={workflowStatusLabel}
-              workflowStatusPillClass={workflowStatusPillClass}
-              isTauriRuntime={isTauriRuntime}
-              runtimeModeLabel={runtimeModeLabel}
-              runtimeSnapshot={runtimeSnapshot}
-              runtimeUpdatedLabel={runtimeUpdatedLabel}
-              statusMessage={statusMessage}
-              graphNodeCount={graphNodeCount}
-              graphEdgeCount={graphEdgeCount}
-              graphConnectionCount={graphConnectionCount}
-              activeNodeCount={runtimeState.activeNodeIds.length}
-              canDispatchPayload={canDispatchPayload}
-              onDeploy={handleDeploy}
-              onDispatchPayload={handleDispatchPayload}
-              onRefreshConnections={refreshConnections}
-            />
-
-            {hasRuntimeDock ? (
-              <RuntimeDock
-                deployInfo={deployInfo}
-                runtimeState={runtimeState}
-                eventFeed={eventFeed}
-                results={results}
-                connectionPreview={connectionPreview}
-              />
-            ) : null}
-          </section>
-        );
-      case 'overview':
+      case 'dashboard':
         return (
           <section className="studio-content studio-content--panel">
             <div className="panel studio-content__panel studio-content__panel--scroll">
-              <OverviewPanel
+              <DashboardPanel
+                userId={CURRENT_USER_NAME}
+                activeBoardName={activeBoard?.name ?? null}
+                boardCount={BOARD_LIBRARY.length}
                 graphNodeCount={graphNodeCount}
                 graphEdgeCount={graphEdgeCount}
                 graphConnectionCount={graphConnectionCount}
                 activeNodeCount={runtimeState.activeNodeIds.length}
-                workflowStatusLabel={workflowStatusLabel}
-                workflowStatusPillClass={workflowStatusPillClass}
+                completedNodeCount={runtimeState.completedNodeIds.length}
+                failedNodeCount={runtimeState.failedNodeIds.length}
+                outputNodeCount={runtimeState.outputNodeIds.length}
+                eventCount={eventFeed.length}
+                resultCount={results.length}
                 statusMessage={statusMessage}
-                runtimeSnapshot={runtimeSnapshot}
-                runtimeUpdatedLabel={runtimeUpdatedLabel}
                 deployInfo={deployInfo}
+                onNavigateToBoards={handleBackToBoards}
               />
             </div>
           </section>
         );
+      case 'boards':
+        return renderBoardWorkspace();
       case 'source':
+        if (!activeBoard) {
+          return renderProjectGate('流程源配置');
+        }
+
         return (
           <section className="studio-content studio-content--panel">
             <div className="panel studio-content__panel studio-content__panel--editor">
@@ -604,6 +925,10 @@ function App() {
           </section>
         );
       case 'connections':
+        if (!activeBoard) {
+          return renderProjectGate('连接资源');
+        }
+
         return (
           <section className="studio-content studio-content--panel">
             <div className="panel studio-content__panel studio-content__panel--scroll panel--connection-card">
@@ -617,13 +942,17 @@ function App() {
           </section>
         );
       case 'payload':
+        if (!activeBoard) {
+          return renderProjectGate('测试载荷');
+        }
+
         return (
           <section className="studio-content studio-content--panel">
             <div className="panel studio-content__panel studio-content__panel--editor">
               <PayloadPanel
                 payloadText={payloadText}
                 deployInfo={deployInfo}
-                onPayloadTextChange={setPayloadText}
+                onPayloadTextChange={handlePayloadTextChange}
               />
             </div>
           </section>
@@ -638,6 +967,21 @@ function App() {
                 workflowStatusLabel={workflowStatusLabel}
                 statusMessage={statusMessage}
                 themeMode={themeMode}
+                onThemeModeChange={setThemeMode}
+                accentPreset={accentPreset}
+                accentOptions={ACCENT_PRESET_OPTIONS}
+                customAccentHex={customAccentHex}
+                onAccentPresetChange={setAccentPreset}
+                onCustomAccentChange={(hex) => {
+                  setAccentPreset('custom');
+                  setCustomAccentHex(normalizeCustomAccentHex(hex));
+                }}
+                densityMode={densityMode}
+                onDensityModeChange={setDensityMode}
+                motionMode={motionMode}
+                onMotionModeChange={setMotionMode}
+                startupPage={startupPage}
+                onStartupPageChange={setStartupPage}
               />
             </div>
           </section>
@@ -661,15 +1005,6 @@ function App() {
 
   return (
     <main className="app-shell app-shell--studio">
-      <StudioTitleBar
-        isTauriRuntime={isTauriRuntime}
-        runtimeModeLabel={runtimeModeLabel}
-        workflowStatusLabel={workflowStatusLabel}
-        workflowStatusPillClass={workflowStatusPillClass}
-        themeMode={themeMode}
-        onToggleTheme={handleToggleTheme}
-      />
-
       <section className="studio-frame">
         <aside className="studio-nav-sidebar">
           <SidebarNav
@@ -679,6 +1014,12 @@ function App() {
             userName={CURRENT_USER_NAME}
             userRole={currentUserRole}
             onUserSwitch={() => setSidebarSection('settings')}
+            workflowStatusLabel={workflowStatusLabel}
+            workflowStatusPillClass={workflowStatusPillClass}
+            themeMode={themeMode}
+            onToggleTheme={handleToggleTheme}
+            activeBoardName={activeBoard?.name ?? null}
+            onBackToBoards={handleBackToBoards}
           />
         </aside>
 

@@ -28,13 +28,32 @@ export function CanvasIcon(props: IconProps) {
   );
 }
 
-export function OverviewIcon(props: IconProps) {
+export function DashboardIcon(props: IconProps) {
   return (
     <BaseIcon {...props}>
-      <path d="M5 18V9" />
-      <path d="M12 18V5" />
-      <path d="M19 18v-6" />
-      <path d="M4 18h16" />
+      <rect x="3" y="3" width="8" height="8" rx="2" />
+      <rect x="13" y="3" width="8" height="4" rx="1.5" />
+      <rect x="13" y="9" width="8" height="12" rx="2" />
+      <rect x="3" y="13" width="8" height="8" rx="2" />
+    </BaseIcon>
+  );
+}
+
+export function BoardsIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <rect x="3" y="3" width="7" height="9" rx="1.5" />
+      <rect x="14" y="3" width="7" height="5" rx="1.5" />
+      <rect x="14" y="12" width="7" height="9" rx="1.5" />
+      <rect x="3" y="16" width="7" height="5" rx="1.5" />
+    </BaseIcon>
+  );
+}
+
+export function BackIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="m15 18-6-6 6-6" />
     </BaseIcon>
   );
 }
