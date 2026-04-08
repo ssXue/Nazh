@@ -1,3 +1,9 @@
+//! 基于 DAG 的工作流图：解析、校验与异步部署。
+//!
+//! [`WorkflowGraph`] 从前端画布导出的 JSON AST 反序列化而来。
+//! [`deploy_workflow`] 校验 DAG（拓扑排序、环检测），将每个节点实例化为
+//! Tokio 任务，并通过 MPSC 通道连接。
+
 use std::{
     collections::{HashMap, VecDeque},
     panic::AssertUnwindSafe,
@@ -20,6 +26,7 @@ use crate::{
     WorkflowContext,
 };
 
+/// 从前端 AST 反序列化得到的顶层工作流定义。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowGraph {
     #[serde(default)]
@@ -32,6 +39,7 @@ pub struct WorkflowGraph {
     pub edges: Vec<WorkflowEdge>,
 }
 
+/// [`WorkflowGraph`] 中的单节点配置。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowNodeDefinition {
     #[serde(default)]
@@ -50,6 +58,7 @@ pub struct WorkflowNodeDefinition {
     pub buffer: usize,
 }
 
+/// 工作流 DAG 中连接两个节点的有向边。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowEdge {
     #[serde(alias = "source")]
@@ -62,29 +71,42 @@ pub struct WorkflowEdge {
     pub target_port_id: Option<String>,
 }
 
+/// 工作流执行过程中产生的可观测事件，会转发给前端。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum WorkflowEvent {
-    NodeStarted { node_id: String, trace_id: Uuid },
-    NodeCompleted { node_id: String, trace_id: Uuid },
+    NodeStarted {
+        node_id: String,
+        trace_id: Uuid,
+    },
+    NodeCompleted {
+        node_id: String,
+        trace_id: Uuid,
+    },
     NodeFailed {
         node_id: String,
         trace_id: Uuid,
         error: String,
     },
-    WorkflowOutput { node_id: String, trace_id: Uuid },
+    WorkflowOutput {
+        node_id: String,
+        trace_id: Uuid,
+    },
 }
 
+/// 入口句柄，用于向已部署工作流的根节点提交数据。
 #[derive(Clone)]
 pub struct WorkflowIngress {
     root_nodes: Vec<String>,
     root_senders: HashMap<String, mpsc::Sender<WorkflowContext>>,
 }
 
+/// 已部署工作流的事件流和结果流接收端。
 pub struct WorkflowStreams {
     event_rx: mpsc::Receiver<WorkflowEvent>,
     result_rx: mpsc::Receiver<WorkflowContext>,
 }
 
+/// 完整部署的工作流：入口用于提交数据，流用于观测结果。
 pub struct WorkflowDeployment {
     ingress: WorkflowIngress,
     streams: WorkflowStreams,
@@ -106,6 +128,7 @@ fn default_node_buffer() -> usize {
 }
 
 impl WorkflowGraph {
+    /// 将 JSON AST 字符串解析为经过校验的 `WorkflowGraph`。
     pub fn from_json(ast: &str) -> Result<Self, EngineError> {
         let mut graph: WorkflowGraph = serde_json::from_str(ast)
             .map_err(|error| EngineError::graph_deserialization(error.to_string()))?;
@@ -128,6 +151,7 @@ impl WorkflowGraph {
         Ok(graph)
     }
 
+    /// 校验图为合法 DAG 且至少包含一个根节点。
     pub fn validate(&self) -> Result<(), EngineError> {
         let topology = self.topology()?;
         if topology.root_nodes.is_empty() {
@@ -138,6 +162,7 @@ impl WorkflowGraph {
         Ok(())
     }
 
+    /// 计算拓扑序（Kahn 算法）并检测环。
     fn topology(&self) -> Result<WorkflowTopology, EngineError> {
         let mut incoming: HashMap<String, usize> = self
             .nodes
@@ -294,6 +319,10 @@ impl WorkflowDeployment {
     }
 }
 
+/// 校验、实例化并将工作流图部署为并发 Tokio 任务。
+///
+/// 每个节点获得独立的任务，通过 MPSC 通道连接。叶节点将结果写入结果流；
+/// 所有节点向事件流发送执行事件。图中的连接定义会被写入共享连接管理器。
 pub async fn deploy_workflow(
     graph: WorkflowGraph,
     connection_manager: SharedConnectionManager,
@@ -364,7 +393,10 @@ pub async fn deploy_workflow(
             root_nodes: topology.root_nodes,
             root_senders,
         },
-        streams: WorkflowStreams { event_rx, result_rx },
+        streams: WorkflowStreams {
+            event_rx,
+            result_rx,
+        },
     })
 }
 
@@ -375,7 +407,9 @@ fn instantiate_node(
     match definition.node_type.as_str() {
         "native" | "native/log" | "log" => {
             let mut config: NativeNodeConfig = serde_json::from_value(definition.config.clone())
-                .map_err(|error| EngineError::node_config(definition.id.clone(), error.to_string()))?;
+                .map_err(|error| {
+                    EngineError::node_config(definition.id.clone(), error.to_string())
+                })?;
 
             if config.connection_id.is_none() {
                 config.connection_id = definition.connection_id.clone();
@@ -394,10 +428,13 @@ fn instantiate_node(
         }
         "rhai" | "code" | "code/rhai" => {
             let config: RhaiNodeConfig = serde_json::from_value(definition.config.clone())
-                .map_err(|error| EngineError::node_config(definition.id.clone(), error.to_string()))?;
-            let description = definition.ai_description.clone().unwrap_or_else(|| {
-                "Execute business logic with a bounded Rhai script".to_owned()
-            });
+                .map_err(|error| {
+                    EngineError::node_config(definition.id.clone(), error.to_string())
+                })?;
+            let description = definition
+                .ai_description
+                .clone()
+                .unwrap_or_else(|| "Execute business logic with a bounded Rhai script".to_owned());
             Ok(Arc::new(RhaiNode::new(
                 definition.id.clone(),
                 config,

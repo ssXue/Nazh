@@ -1,0 +1,31 @@
+# Normalize line endings
+* text=auto eol=lf
+
+# Rust
+*.rs text diff=rust
+*.toml text
+Cargo.lock text -diff
+
+# Web
+*.ts text
+*.tsx text
+*.js text
+*.jsx text
+*.json text
+*.css text
+*.html text
+
+# Documentation
+*.md text diff=markdown
+
+# Binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.svg text
+
+# Archives
+*.zip binary
+*.tar.gz binary

@@ -1,6 +1,8 @@
 use std::time::Duration;
 
-use nazh_engine::{build_linear_pipeline, EngineError, PipelineEvent, PipelineStage, WorkflowContext};
+use nazh_engine::{
+    build_linear_pipeline, EngineError, PipelineEvent, PipelineStage, WorkflowContext,
+};
 use serde_json::json;
 
 #[tokio::main]
@@ -8,7 +10,11 @@ async fn main() -> Result<(), EngineError> {
     let stages = vec![
         PipelineStage::new("normalize", |ctx| async move {
             let trace_id = ctx.trace_id;
-            let Some(value) = ctx.payload.get("temperature").and_then(|value| value.as_f64()) else {
+            let Some(value) = ctx
+                .payload
+                .get("temperature")
+                .and_then(|value| value.as_f64())
+            else {
                 return Err(EngineError::stage_execution(
                     "normalize",
                     trace_id,

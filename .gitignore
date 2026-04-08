@@ -1,10 +1,32 @@
-/\.DS_Store
+/.DS_Store
 **/.DS_Store
-.codex/
+
+# Rust
 /target
-Cargo.lock
+/src-tauri/target
+*.d
+*.rlib
+*.rmeta
+*.pdb
+
+# Web
 /web/node_modules
 /web/dist
-/src-tauri/target
+
+# IDE
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/launch.json
+!.vscode/tasks.json
+
+# Claude Code
+.claude
+.codex/
+
+# OS
+Thumbs.db
+
+# Archived examples
 examples/flowgram.ai-main/
 examples/flowgram.ai-main.zip

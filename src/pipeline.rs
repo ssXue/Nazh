@@ -1,3 +1,8 @@
+//! 线性流水线抽象，用于顺序阶段执行。
+//!
+//! [`build_linear_pipeline`] 将一系列 [`PipelineStage`] 串联为 Tokio 驱动的流水线，
+//! 每个阶段具备独立的超时保护和基于 `catch_unwind` 的 panic 隔离。
+
 use std::{future::Future, panic::AssertUnwindSafe, pin::Pin, sync::Arc, time::Duration};
 
 use futures_util::FutureExt;
@@ -6,9 +11,11 @@ use uuid::Uuid;
 
 use crate::{EngineError, WorkflowContext};
 
+/// 流水线阶段处理器返回的 boxed future。
 pub type StageFuture = Pin<Box<dyn Future<Output = Result<WorkflowContext, EngineError>> + Send>>;
 type StageHandler = Arc<dyn Fn(WorkflowContext) -> StageFuture + Send + Sync>;
 
+/// 线性流水线中的单个处理步骤。
 #[derive(Clone)]
 pub struct PipelineStage {
     pub name: String,
@@ -18,6 +25,7 @@ pub struct PipelineStage {
 }
 
 impl PipelineStage {
+    /// 使用给定名称和异步处理函数创建阶段。
     pub fn new<F, Fut>(name: impl Into<String>, executor: F) -> Self
     where
         F: Fn(WorkflowContext) -> Fut + Send + Sync + 'static,
@@ -37,29 +45,41 @@ impl PipelineStage {
         }
     }
 
+    /// 设置该阶段每次调用的超时时间。
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = Some(timeout);
         self
     }
 
+    /// 设置该阶段与下一阶段之间的 MPSC 通道缓冲区大小（最小为 1）。
     pub fn with_buffer(mut self, buffer: usize) -> Self {
         self.buffer = buffer.max(1);
         self
     }
 }
 
+/// 流水线执行过程中产生的可观测事件。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PipelineEvent {
-    StageStarted { stage: String, trace_id: Uuid },
-    StageCompleted { stage: String, trace_id: Uuid },
+    StageStarted {
+        stage: String,
+        trace_id: Uuid,
+    },
+    StageCompleted {
+        stage: String,
+        trace_id: Uuid,
+    },
     StageFailed {
         stage: String,
         trace_id: Uuid,
         error: String,
     },
-    PipelineCompleted { trace_id: Uuid },
+    PipelineCompleted {
+        trace_id: Uuid,
+    },
 }
 
+/// 运行中线性流水线的句柄，提供入口、结果和事件通道。
 pub struct PipelineHandle {
     input_tx: mpsc::Sender<WorkflowContext>,
     result_rx: mpsc::Receiver<WorkflowContext>,
@@ -67,6 +87,7 @@ pub struct PipelineHandle {
 }
 
 impl PipelineHandle {
+    /// 将上下文发送到流水线的第一个阶段。
     pub async fn submit(&self, ctx: WorkflowContext) -> Result<(), EngineError> {
         self.input_tx
             .send(ctx)
@@ -76,19 +97,26 @@ impl PipelineHandle {
             })
     }
 
+    /// 从最终阶段接收下一个成功完成的上下文。
     pub async fn next_result(&mut self) -> Option<WorkflowContext> {
         self.result_rx.recv().await
     }
 
+    /// 接收下一个生命周期事件（阶段开始/完成/失败）。
     pub async fn next_event(&mut self) -> Option<PipelineEvent> {
         self.event_rx.recv().await
     }
 
+    /// 克隆入口发送端供外部使用。
     pub fn ingress(&self) -> mpsc::Sender<WorkflowContext> {
         self.input_tx.clone()
     }
 }
 
+/// 构建并启动顺序执行的线性流水线。
+///
+/// 每个阶段在独立的 Tokio 任务中运行，上下文通过 MPSC 通道从一个阶段流向下一个。
+/// 阶段处理器中的 panic 会被捕获并转换为 [`EngineError::StagePanicked`]。
 pub fn build_linear_pipeline(
     stages: Vec<PipelineStage>,
     ingress_buffer: usize,
@@ -194,9 +222,11 @@ async fn run_stage(
         match result {
             Ok(next_ctx) => {
                 let forward_result = if let Some(tx) = &output_tx {
-                    tx.send(next_ctx).await.map_err(|_| EngineError::ChannelClosed {
-                        stage: stage_name.clone(),
-                    })
+                    tx.send(next_ctx)
+                        .await
+                        .map_err(|_| EngineError::ChannelClosed {
+                            stage: stage_name.clone(),
+                        })
                 } else {
                     result_tx
                         .send(next_ctx)

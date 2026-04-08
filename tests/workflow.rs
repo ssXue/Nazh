@@ -131,7 +131,10 @@ async fn workflow_graph_executes_end_to_end() {
 
     let connections = connection_manager.read().await.list();
     assert_eq!(connections.len(), 1, "expected one registered connection");
-    assert!(!connections[0].in_use, "connection should have been released");
+    assert!(
+        !connections[0].in_use,
+        "connection should have been released"
+    );
 }
 
 #[tokio::test]

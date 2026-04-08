@@ -1,5 +1,14 @@
-use std::process::Command;
+//! 节点执行系统：原生/脚本混合节点模型。
+//!
+//! 所有节点实现 [`NodeTrait`]，提供多种具体类型：
+//! - [`NativeNode`] — 纯 Rust 原生逻辑，负责 I/O、数据注入和连接借用。
+//! - [`RhaiNode`] — 沙箱化脚本执行，基于有界 Rhai 虚拟机。
+//! - [`HttpClientNode`] — HTTP 请求节点。
+//! - [`SqlWriterNode`] — SQLite 写入节点。
+//! - [`DebugConsoleNode`] — 调试输出节点。
+//! - [`LoopNode`] — 循环迭代节点。
 
+use std::process::Command;
 use async_trait::async_trait;
 use chrono::Utc;
 use rhai::{
@@ -11,24 +20,30 @@ use serde_json::{Map, Value};
 
 use crate::{ConnectionLease, EngineError, SharedConnectionManager, WorkflowContext};
 
+/// 节点输出的分发策略。
 #[derive(Debug, Clone)]
 pub enum NodeDispatch {
+    /// 向所有下游节点广播。
     Broadcast,
+    /// 按端口名称路由到特定下游。
     Route(Vec<String>),
 }
 
+/// 节点执行后产出的单条输出。
 #[derive(Debug, Clone)]
 pub struct NodeOutput {
     pub ctx: WorkflowContext,
     pub dispatch: NodeDispatch,
 }
 
+/// 节点执行结果，可包含多条输出（如循环节点为每个元素生成一条）。
 #[derive(Debug, Clone)]
 pub struct NodeExecution {
     pub outputs: Vec<NodeOutput>,
 }
 
 impl NodeExecution {
+    /// 创建一条广播到所有下游的执行结果。
     pub fn broadcast(ctx: WorkflowContext) -> Self {
         Self {
             outputs: vec![NodeOutput {
@@ -38,6 +53,7 @@ impl NodeExecution {
         }
     }
 
+    /// 创建一条按端口路由的执行结果。
     pub fn route<I, S>(ctx: WorkflowContext, ports: I) -> Self
     where
         I: IntoIterator<Item = S>,
@@ -51,23 +67,33 @@ impl NodeExecution {
         }
     }
 
+    /// 从多条输出构造执行结果。
     pub fn from_outputs(outputs: Vec<NodeOutput>) -> Self {
         Self { outputs }
     }
 
+    /// 获取第一条输出（如果存在）。
     pub fn first(&self) -> Option<&NodeOutput> {
         self.outputs.first()
     }
 }
 
+/// 所有工作流节点的统一异步 Trait。
+///
+/// 实现必须满足 `Send + Sync`，因为每个节点在独立的 Tokio 任务中运行。
 #[async_trait]
 pub trait NodeTrait: Send + Sync {
+    /// 节点在工作流图中的唯一标识。
     fn id(&self) -> &str;
+    /// 返回 `"native"` 或 `"rhai"`。
     fn kind(&self) -> &'static str;
+    /// 供 LLM 代码生成使用的自然语言描述。
     fn ai_description(&self) -> &str;
+    /// 处理一个 [`WorkflowContext`]，返回包含分发策略的 [`NodeExecution`]。
     async fn execute(&self, ctx: WorkflowContext) -> Result<NodeExecution, EngineError>;
 }
 
+/// [`NativeNode`] 的配置。
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct NativeNodeConfig {
     #[serde(default)]
@@ -78,6 +104,10 @@ pub struct NativeNodeConfig {
     pub connection_id: Option<String>,
 }
 
+/// 纯 Rust 原生节点，负责协议 I/O、数据注入和连接管理。
+///
+/// 若设置了 `connection_id`，则从全局 [`crate::ConnectionManager`] 借出连接，
+/// 将注入字段和连接元数据写入 payload，执行完毕后释放连接。
 pub struct NativeNode {
     id: String,
     ai_description: String,

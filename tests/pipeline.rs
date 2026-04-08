@@ -1,6 +1,8 @@
 use std::time::Duration;
 
-use nazh_engine::{build_linear_pipeline, EngineError, PipelineEvent, PipelineStage, WorkflowContext};
+use nazh_engine::{
+    build_linear_pipeline, EngineError, PipelineEvent, PipelineStage, WorkflowContext,
+};
 use serde_json::json;
 use tokio::time::{sleep, timeout, Instant};
 
@@ -83,7 +85,10 @@ async fn stage_errors_do_not_block_following_messages() {
     let ok_trace_id = ok_ctx.trace_id;
 
     let failed_submit = pipeline.submit(failed_ctx).await;
-    assert!(failed_submit.is_ok(), "invalid message should still be accepted");
+    assert!(
+        failed_submit.is_ok(),
+        "invalid message should still be accepted"
+    );
 
     let ok_submit = pipeline.submit(ok_ctx).await;
     assert!(ok_submit.is_ok(), "valid message should still be accepted");
@@ -114,7 +119,10 @@ async fn stage_errors_do_not_block_following_messages() {
     }
 
     assert!(saw_failure, "expected a failure event for invalid input");
-    assert!(saw_result, "expected the valid input to complete successfully");
+    assert!(
+        saw_result,
+        "expected the valid input to complete successfully"
+    );
 }
 
 #[tokio::test]
@@ -139,10 +147,16 @@ async fn panicking_stage_is_isolated() {
     let ok_trace_id = ok_ctx.trace_id;
 
     let panic_submit = pipeline.submit(panic_ctx).await;
-    assert!(panic_submit.is_ok(), "panic case should still enter the pipeline");
+    assert!(
+        panic_submit.is_ok(),
+        "panic case should still enter the pipeline"
+    );
 
     let ok_submit = pipeline.submit(ok_ctx).await;
-    assert!(ok_submit.is_ok(), "second message should still enter the pipeline");
+    assert!(
+        ok_submit.is_ok(),
+        "second message should still enter the pipeline"
+    );
 
     let deadline = Instant::now() + Duration::from_secs(2);
     let mut saw_failure = false;
@@ -151,9 +165,15 @@ async fn panicking_stage_is_isolated() {
     while Instant::now() < deadline && (!saw_failure || !saw_result) {
         if !saw_failure {
             let event = timeout(Duration::from_millis(100), pipeline.next_event()).await;
-            if let Ok(Some(PipelineEvent::StageFailed { trace_id, error, .. })) = event {
+            if let Ok(Some(PipelineEvent::StageFailed {
+                trace_id, error, ..
+            })) = event
+            {
                 if trace_id == panic_trace_id {
-                    assert!(error.contains("panicked"), "failure event should report panic");
+                    assert!(
+                        error.contains("panicked"),
+                        "failure event should report panic"
+                    );
                     saw_failure = true;
                 }
             }
@@ -194,7 +214,10 @@ async fn timeout_reports_failure_without_killing_pipeline() {
 
     let event = timeout(Duration::from_secs(1), pipeline.next_event()).await;
     match event {
-        Ok(Some(PipelineEvent::StageStarted { trace_id: started_trace_id, .. })) => {
+        Ok(Some(PipelineEvent::StageStarted {
+            trace_id: started_trace_id,
+            ..
+        })) => {
             assert_eq!(started_trace_id, trace_id);
         }
         Ok(Some(other)) => panic!("unexpected first event: {other:?}"),
@@ -204,9 +227,16 @@ async fn timeout_reports_failure_without_killing_pipeline() {
 
     let event = timeout(Duration::from_secs(1), pipeline.next_event()).await;
     match event {
-        Ok(Some(PipelineEvent::StageFailed { trace_id: failed_trace_id, error, .. })) => {
+        Ok(Some(PipelineEvent::StageFailed {
+            trace_id: failed_trace_id,
+            error,
+            ..
+        })) => {
             assert_eq!(failed_trace_id, trace_id);
-            assert!(error.contains("timed out"), "failure event should mention timeout");
+            assert!(
+                error.contains("timed out"),
+                "failure event should mention timeout"
+            );
         }
         Ok(Some(other)) => panic!("unexpected second event: {other:?}"),
         Ok(None) => panic!("event channel closed unexpectedly"),

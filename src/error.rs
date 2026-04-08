@@ -1,6 +1,14 @@
+//! 引擎全局错误类型。
+//!
+//! 所有可失败操作均返回 [`EngineError`]，引擎绝不 panic。
+
 use thiserror::Error;
 use uuid::Uuid;
 
+/// 覆盖引擎所有失败模式的结构化错误类型。
+///
+/// 每个变体都携带足够的上下文信息（节点 ID、trace ID、阶段名称），
+/// 无需在调用点额外打日志即可完成问题诊断。
 #[derive(Debug, Error)]
 pub enum EngineError {
     #[error("pipeline configuration is invalid: {0}")]

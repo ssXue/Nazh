@@ -1,3 +1,12 @@
+//! Nazh 的 Tauri 桌面壳层。
+//!
+//! 向 React 前端暴露三个 IPC 命令：
+//! - [`deploy_workflow`] — 解析并部署工作流 DAG。
+//! - [`dispatch_payload`] — 向运行中的工作流提交测试载荷。
+//! - [`list_connections`] — 获取连接池快照。
+//!
+//! 引擎事件通过 `Window::emit` 转发给前端。
+
 use nazh_engine::{
     deploy_workflow as deploy_workflow_graph, shared_connection_manager, ConnectionRecord,
     EngineError, TimerNodeConfig, WorkflowContext, WorkflowGraph, WorkflowIngress,
@@ -9,12 +18,14 @@ use tokio::sync::Mutex;
 
 use std::path::{Component, Path, PathBuf};
 
+/// 已部署工作流的运行时包装，包含入口句柄和定时器任务。
 struct DesktopWorkflow {
     ingress: WorkflowIngress,
     timer_tasks: Vec<tauri::async_runtime::JoinHandle<()>>,
 }
 
 impl DesktopWorkflow {
+    /// 中止所有定时器任务，返回中止数量。
     fn abort_timers(&mut self) -> usize {
         let aborted = self.timer_tasks.len();
         for task in self.timer_tasks.drain(..) {
@@ -24,6 +35,7 @@ impl DesktopWorkflow {
     }
 }
 
+/// Tauri 托管的应用状态，持有连接池和当前活跃的工作流。
 struct DesktopState {
     connection_manager: nazh_engine::SharedConnectionManager,
     workflow: Mutex<Option<DesktopWorkflow>>,

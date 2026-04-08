@@ -2,7 +2,18 @@
 name = "nazh-desktop"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.94"
 description = "Tauri desktop shell for Nazh"
+license = "MIT"
+authors = ["Niu Zhihong"]
+repository = "https://github.com/zhihongniu/Nazh"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
 
 [lib]
 name = "nazh_desktop_lib"
