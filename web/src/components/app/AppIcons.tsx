@@ -89,6 +89,350 @@ export function PayloadIcon(props: IconProps) {
   );
 }
 
+export function RunActionIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="m8 6 9 6-9 6Z" />
+    </BaseIcon>
+  );
+}
+
+export function StopActionIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <rect x="7" y="7" width="10" height="10" rx="2.4" />
+    </BaseIcon>
+  );
+}
+
+export function TriggerActionIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="m7 6 7 6-7 6Z" />
+      <path d="M16 7v10" />
+    </BaseIcon>
+  );
+}
+
+export function DockToggleIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="m7 10 5 5 5-5" />
+    </BaseIcon>
+  );
+}
+
+export function DownloadIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="M12 4v10" />
+      <path d="m8 10 4 4 4-4" />
+      <path d="M5 18h14" />
+    </BaseIcon>
+  );
+}
+
+export function MinimapIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <rect x="4" y="5" width="16" height="14" rx="2.5" />
+      <path d="M8 9h8" />
+      <path d="M8 13h5" />
+      <rect x="14.5" y="11.5" width="3" height="3" rx="0.8" />
+    </BaseIcon>
+  );
+}
+
+export function LockClosedIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <rect x="6" y="10" width="12" height="10" rx="2.4" />
+      <path d="M8.5 10V8.3a3.5 3.5 0 1 1 7 0V10" />
+    </BaseIcon>
+  );
+}
+
+export function LockOpenIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <rect x="6" y="10" width="12" height="10" rx="2.4" />
+      <path d="M9 10V8.5a3.5 3.5 0 0 1 6-2.5" />
+    </BaseIcon>
+  );
+}
+
+export function MouseModeIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="M9 4.8a3 3 0 0 1 6 0v14.4a3 3 0 0 1-6 0Z" />
+      <path d="M12 5v5" />
+    </BaseIcon>
+  );
+}
+
+export function TrackpadModeIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <rect x="4" y="6" width="16" height="12" rx="2.6" />
+      <path d="M8 14h8" />
+      <path d="M12 10v4" />
+    </BaseIcon>
+  );
+}
+
+export function NativeNodeIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <circle cx="7" cy="7" r="2.4" />
+      <circle cx="17" cy="17" r="2.4" />
+      <path d="M8.8 8.8 15.2 15.2" />
+      <path d="M7 9.8v6.4" />
+    </BaseIcon>
+  );
+}
+
+export function ScriptNodeIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="m9 7-4 5 4 5" />
+      <path d="m15 7 4 5-4 5" />
+      <path d="m13 5-2 14" />
+    </BaseIcon>
+  );
+}
+
+export function IfNodeIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="M12 4 18 10 12 16 6 10 12 4Z" />
+      <path d="M12 16v4" />
+      <path d="M8.5 20h7" />
+    </BaseIcon>
+  );
+}
+
+export function SwitchNodeIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="M6 7h8" />
+      <path d="m10 3 4 4-4 4" />
+      <path d="M14 17H6" />
+      <path d="m10 13 4 4-4 4" />
+      <path d="M18 7v10" />
+    </BaseIcon>
+  );
+}
+
+export function TryCatchNodeIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="M7 5h10v4c0 4-2.2 7.5-5 9-2.8-1.5-5-5-5-9V5Z" />
+      <path d="M10 10h4" />
+      <path d="M10 13h3" />
+    </BaseIcon>
+  );
+}
+
+export function LoopNodeIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="M7 8a5 5 0 0 1 8.6-2.9" />
+      <path d="m16 3 1.4 2.7L20 5" />
+      <path d="M17 16a5 5 0 0 1-8.6 2.9" />
+      <path d="m8 21-1.4-2.7L4 19" />
+    </BaseIcon>
+  );
+}
+
+export function TimerNodeIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <circle cx="12" cy="12" r="7" />
+      <path d="M12 8v4l2.8 1.8" />
+      <path d="M9 3h6" />
+    </BaseIcon>
+  );
+}
+
+export function ModbusNodeIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <rect x="5" y="5" width="14" height="14" rx="3" />
+      <path d="M9 9h6" />
+      <path d="M9 13h6" />
+      <path d="M9 17h3" />
+    </BaseIcon>
+  );
+}
+
+export function HttpClientNodeIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="M4 12h10" />
+      <path d="m11 6 6 6-6 6" />
+      <path d="M5 6h3" />
+      <path d="M5 18h3" />
+    </BaseIcon>
+  );
+}
+
+export function SqlWriterNodeIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <ellipse cx="12" cy="6.5" rx="6.5" ry="2.8" />
+      <path d="M5.5 6.5v8.5c0 1.5 2.9 2.8 6.5 2.8s6.5-1.3 6.5-2.8V6.5" />
+      <path d="M5.5 11c0 1.5 2.9 2.8 6.5 2.8s6.5-1.3 6.5-2.8" />
+    </BaseIcon>
+  );
+}
+
+export function DebugConsoleNodeIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <rect x="4" y="5" width="16" height="12" rx="2.5" />
+      <path d="m8 10 2 2-2 2" />
+      <path d="M12.5 14H16" />
+      <path d="M10 19h4" />
+    </BaseIcon>
+  );
+}
+
+export function ZoomInIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <circle cx="10.5" cy="10.5" r="5.5" />
+      <path d="M10.5 8v5" />
+      <path d="M8 10.5h5" />
+      <path d="m15.2 15.2 4.3 4.3" />
+    </BaseIcon>
+  );
+}
+
+export function ZoomOutIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <circle cx="10.5" cy="10.5" r="5.5" />
+      <path d="M8 10.5h5" />
+      <path d="m15.2 15.2 4.3 4.3" />
+    </BaseIcon>
+  );
+}
+
+export function FitViewIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="M8 5H5v3" />
+      <path d="M16 5h3v3" />
+      <path d="M8 19H5v-3" />
+      <path d="M16 19h3v-3" />
+    </BaseIcon>
+  );
+}
+
+export function AutoLayoutIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <rect x="4" y="5" width="6" height="5" rx="1.5" />
+      <rect x="14" y="5" width="6" height="5" rx="1.5" />
+      <rect x="9" y="14" width="6" height="5" rx="1.5" />
+      <path d="M10 8h4" />
+      <path d="M12 10v4" />
+    </BaseIcon>
+  );
+}
+
+export function BezierIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <circle cx="6" cy="16" r="1.5" />
+      <circle cx="18" cy="8" r="1.5" />
+      <path d="M7.5 15.5c2.5 0 3-5 6-5s3.5 0 4.5-1.5" />
+    </BaseIcon>
+  );
+}
+
+export function FoldLineIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <circle cx="6" cy="16" r="1.5" />
+      <circle cx="18" cy="8" r="1.5" />
+      <path d="M7.5 16H12V8h4.5" />
+    </BaseIcon>
+  );
+}
+
+export function UndoActionIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="M9 7 5 11l4 4" />
+      <path d="M5 11h8a5 5 0 1 1 0 10h-1" />
+    </BaseIcon>
+  );
+}
+
+export function RedoActionIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="m15 7 4 4-4 4" />
+      <path d="M19 11h-8a5 5 0 1 0 0 10h1" />
+    </BaseIcon>
+  );
+}
+
+export function GroupNodesIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <rect x="4" y="6" width="7" height="7" rx="1.6" />
+      <rect x="13" y="11" width="7" height="7" rx="1.6" />
+      <path d="M11 9h2" />
+      <path d="M12 8v2" />
+    </BaseIcon>
+  );
+}
+
+export function UngroupNodesIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <rect x="4" y="6" width="7" height="7" rx="1.6" />
+      <rect x="13" y="11" width="7" height="7" rx="1.6" />
+      <path d="M11 9h2" />
+    </BaseIcon>
+  );
+}
+
+export function MoveOutIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <rect x="4" y="5" width="10" height="14" rx="2" />
+      <path d="M14 12h6" />
+      <path d="m17 9 3 3-3 3" />
+    </BaseIcon>
+  );
+}
+
+export function InspectIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="M4 12h16" />
+      <path d="M12 4v16" />
+      <circle cx="12" cy="12" r="7" />
+    </BaseIcon>
+  );
+}
+
+export function DeleteActionIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="M5 7h14" />
+      <path d="M9 7V5.5h6V7" />
+      <path d="M8 9.5v8" />
+      <path d="M12 9.5v8" />
+      <path d="M16 9.5v8" />
+      <path d="M6.5 7.5 7 19h10l.5-11.5" />
+    </BaseIcon>
+  );
+}
+
 export function SettingsIcon(props: IconProps) {
   return (
     <BaseIcon {...props}>

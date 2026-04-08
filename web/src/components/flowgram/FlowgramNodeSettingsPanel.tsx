@@ -3,7 +3,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { type FlowNodeEntity, useClientContext } from '@flowgram.ai/free-layout-editor';
 import { type PanelFactory, usePanelManager } from '@flowgram.ai/panel-manager-plugin';
 
-import { parseTimeoutMs } from './flowgram-node-library';
+import {
+  getLogicNodeBranchDefinitions,
+  parseTimeoutMs,
+  type FlowgramLogicBranch,
+} from './flowgram-node-library';
 import type { ConnectionDefinition } from '../../types';
 
 export interface FlowgramNodeSettingsPanelProps {
@@ -20,6 +24,21 @@ interface SelectedNodeDraft {
   timeoutMs: string;
   message: string;
   script: string;
+  branches: FlowgramLogicBranch[];
+  timerIntervalMs: string;
+  timerImmediate: boolean;
+  modbusUnitId: string;
+  modbusRegister: string;
+  modbusQuantity: string;
+  modbusBaseValue: string;
+  modbusAmplitude: string;
+  httpUrl: string;
+  httpMethod: string;
+  httpHeaders: string;
+  sqlDatabasePath: string;
+  sqlTable: string;
+  debugLabel: string;
+  debugPretty: boolean;
 }
 
 interface NodeValidation {
@@ -27,7 +46,95 @@ interface NodeValidation {
   message: string;
 }
 
+type NodeConfigMap = Record<string, unknown>;
+
 export const FLOWGRAM_NODE_SETTINGS_PANEL_KEY = 'nazh-flowgram-node-settings';
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function readString(value: unknown, fallback = ''): string {
+  return typeof value === 'string' ? value : fallback;
+}
+
+function readBoolean(value: unknown, fallback: boolean): boolean {
+  return typeof value === 'boolean' ? value : fallback;
+}
+
+function readNumberString(value: unknown, fallback: string): string {
+  return typeof value === 'number' && Number.isFinite(value) ? String(value) : fallback;
+}
+
+function parsePositiveInteger(value: string): number | null {
+  const normalized = value.trim();
+  if (!normalized) {
+    return null;
+  }
+
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return null;
+  }
+
+  return Math.round(parsed);
+}
+
+function parseFiniteNumber(value: string): number | null {
+  const normalized = value.trim();
+  if (!normalized) {
+    return null;
+  }
+
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function parseHeadersJson(text: string): Record<string, unknown> | null {
+  const normalized = text.trim();
+  if (!normalized) {
+    return {};
+  }
+
+  try {
+    const value = JSON.parse(normalized);
+    return isRecord(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function isConnectionNode(nodeType: string): boolean {
+  return nodeType === 'native' || nodeType === 'modbusRead';
+}
+
+function isScriptNode(nodeType: string): boolean {
+  return (
+    nodeType === 'code' ||
+    nodeType === 'rhai' ||
+    nodeType === 'if' ||
+    nodeType === 'switch' ||
+    nodeType === 'tryCatch' ||
+    nodeType === 'loop'
+  );
+}
+
+function usesDynamicPorts(nodeType: string): boolean {
+  return (
+    nodeType === 'if' ||
+    nodeType === 'switch' ||
+    nodeType === 'tryCatch' ||
+    nodeType === 'loop'
+  );
+}
+
+function readEditableBranches(nodeType: string, config: unknown): FlowgramLogicBranch[] {
+  if (nodeType !== 'switch') {
+    return [];
+  }
+
+  return getLogicNodeBranchDefinitions(nodeType, config).filter((branch) => !branch.fixed);
+}
 
 function readNodeDraft(node: FlowNodeEntity): SelectedNodeDraft {
   const rawData = (node.getExtInfo() ?? {}) as {
@@ -36,22 +143,130 @@ function readNodeDraft(node: FlowNodeEntity): SelectedNodeDraft {
     connectionId?: string | null;
     aiDescription?: string | null;
     timeoutMs?: number | null;
-    config?: {
-      message?: string;
-      script?: string;
-    };
+    config?: unknown;
   };
+  const config = isRecord(rawData.config) ? rawData.config : {};
+  const nodeType = String(rawData.nodeType ?? node.flowNodeType);
 
   return {
     id: node.id,
-    nodeType: String(rawData.nodeType ?? node.flowNodeType),
+    nodeType,
     label: rawData.label ?? node.id,
     connectionId: rawData.connectionId ?? '',
     aiDescription: rawData.aiDescription ?? '',
     timeoutMs: rawData.timeoutMs ? String(rawData.timeoutMs) : '',
-    message: rawData.config?.message ?? '',
-    script: rawData.config?.script ?? '',
+    message: readString(config.message),
+    script: readString(config.script),
+    branches: readEditableBranches(nodeType, config),
+    timerIntervalMs: readNumberString(config.interval_ms, '5000'),
+    timerImmediate: readBoolean(config.immediate, true),
+    modbusUnitId: readNumberString(config.unit_id, '1'),
+    modbusRegister: readNumberString(config.register, '40001'),
+    modbusQuantity: readNumberString(config.quantity, '1'),
+    modbusBaseValue: readNumberString(config.base_value, '64'),
+    modbusAmplitude: readNumberString(config.amplitude, '6'),
+    httpUrl: readString(config.url),
+    httpMethod: readString(config.method, 'POST'),
+    httpHeaders: JSON.stringify(isRecord(config.headers) ? config.headers : {}, null, 2),
+    sqlDatabasePath: readString(config.database_path, './nazh-local.sqlite3'),
+    sqlTable: readString(config.table, 'workflow_logs'),
+    debugLabel: readString(config.label),
+    debugPretty: readBoolean(config.pretty, true),
   };
+}
+
+function getPrimaryEditorLabel(nodeType: string): string {
+  switch (nodeType) {
+    case 'native':
+      return '消息内容';
+    case 'if':
+      return '条件脚本';
+    case 'switch':
+      return '路由脚本';
+    case 'tryCatch':
+      return 'Try 脚本';
+    case 'loop':
+      return '迭代脚本';
+    case 'code':
+    case 'rhai':
+      return 'Code Script';
+    default:
+      return '脚本';
+  }
+}
+
+function buildNodeConfig(draft: SelectedNodeDraft, currentConfig: NodeConfigMap): NodeConfigMap {
+  if (draft.nodeType === 'native') {
+    return {
+      ...currentConfig,
+      message: draft.message,
+    };
+  }
+
+  if (draft.nodeType === 'timer') {
+    return {
+      ...currentConfig,
+      interval_ms: parsePositiveInteger(draft.timerIntervalMs) ?? 5000,
+      immediate: draft.timerImmediate,
+      inject: isRecord(currentConfig.inject) ? currentConfig.inject : {},
+    };
+  }
+
+  if (draft.nodeType === 'modbusRead') {
+    return {
+      ...currentConfig,
+      unit_id: parsePositiveInteger(draft.modbusUnitId) ?? 1,
+      register: parsePositiveInteger(draft.modbusRegister) ?? 40001,
+      quantity: parsePositiveInteger(draft.modbusQuantity) ?? 1,
+      base_value: parseFiniteNumber(draft.modbusBaseValue) ?? 64,
+      amplitude: parseFiniteNumber(draft.modbusAmplitude) ?? 6,
+    };
+  }
+
+  if (draft.nodeType === 'switch') {
+    return {
+      ...currentConfig,
+      script: draft.script,
+      branches: draft.branches.map((branch) => ({
+        key: branch.key,
+        label: branch.label,
+      })),
+    };
+  }
+
+  if (draft.nodeType === 'httpClient') {
+    return {
+      ...currentConfig,
+      url: draft.httpUrl.trim(),
+      method: draft.httpMethod.trim().toUpperCase() || 'POST',
+      headers: parseHeadersJson(draft.httpHeaders) ?? (isRecord(currentConfig.headers) ? currentConfig.headers : {}),
+    };
+  }
+
+  if (draft.nodeType === 'sqlWriter') {
+    return {
+      ...currentConfig,
+      database_path: draft.sqlDatabasePath.trim() || './nazh-local.sqlite3',
+      table: draft.sqlTable.trim() || 'workflow_logs',
+    };
+  }
+
+  if (draft.nodeType === 'debugConsole') {
+    return {
+      ...currentConfig,
+      label: draft.debugLabel.trim(),
+      pretty: draft.debugPretty,
+    };
+  }
+
+  if (isScriptNode(draft.nodeType)) {
+    return {
+      ...currentConfig,
+      script: draft.script,
+    };
+  }
+
+  return currentConfig;
 }
 
 function FlowgramNodeSettingsPanel({
@@ -128,9 +343,8 @@ function FlowgramNodeSettingsPanel({
 
     const nextDiagnostics: NodeValidation[] = [];
     const selectedConnection = connections.find((connection) => connection.id === draft.connectionId);
-    const trimmedMessage = draft.message.trim();
-    const trimmedScript = draft.script.trim();
     const parsedTimeoutMs = parseTimeoutMs(draft.timeoutMs);
+    const parsedHeaders = parseHeadersJson(draft.httpHeaders);
 
     if (stats) {
       if (stats.incoming === 0 && stats.outgoing === 0) {
@@ -156,21 +370,23 @@ function FlowgramNodeSettingsPanel({
       }
     }
 
-    if (draft.connectionId && !selectedConnection) {
-      nextDiagnostics.push({
-        tone: 'danger',
-        message: `连接 ${draft.connectionId} 未注册。`,
-      });
-    } else if (selectedConnection) {
-      nextDiagnostics.push({
-        tone: 'info',
-        message: `已绑定 ${selectedConnection.id} · ${selectedConnection.type}`,
-      });
-    } else if (draft.nodeType === 'native' && connections.length > 0) {
-      nextDiagnostics.push({
-        tone: 'warning',
-        message: '原生节点未绑定连接。',
-      });
+    if (isConnectionNode(draft.nodeType)) {
+      if (draft.connectionId && !selectedConnection) {
+        nextDiagnostics.push({
+          tone: 'danger',
+          message: `连接 ${draft.connectionId} 未注册。`,
+        });
+      } else if (selectedConnection) {
+        nextDiagnostics.push({
+          tone: 'info',
+          message: `已绑定 ${selectedConnection.id} · ${selectedConnection.type}`,
+        });
+      } else if (connections.length > 0) {
+        nextDiagnostics.push({
+          tone: 'warning',
+          message: '当前节点未绑定连接资源。',
+        });
+      }
     }
 
     if (draft.timeoutMs.trim() && parsedTimeoutMs === null) {
@@ -180,22 +396,101 @@ function FlowgramNodeSettingsPanel({
       });
     }
 
-    if (draft.nodeType === 'native' && !trimmedMessage) {
+    if (draft.nodeType === 'native' && !draft.message.trim()) {
       nextDiagnostics.push({
         tone: 'warning',
-        message: 'Native Message 为空。',
+        message: '消息内容为空。',
       });
     }
 
-    if (draft.nodeType === 'rhai' && !trimmedScript) {
+    if (isScriptNode(draft.nodeType) && !draft.script.trim()) {
       nextDiagnostics.push({
         tone: 'danger',
-        message: 'Rhai Script 为空。',
+        message: '脚本为空。',
+      });
+    }
+
+    if (draft.nodeType === 'switch' && draft.branches.length === 0) {
+      nextDiagnostics.push({
+        tone: 'warning',
+        message: 'Switch 节点至少建议保留一个自定义分支。',
+      });
+    }
+
+    if (draft.nodeType === 'timer' && parsePositiveInteger(draft.timerIntervalMs) === null) {
+      nextDiagnostics.push({
+        tone: 'danger',
+        message: '定时间隔必须是大于 0 的毫秒数。',
+      });
+    }
+
+    if (
+      draft.nodeType === 'modbusRead' &&
+      (
+        parsePositiveInteger(draft.modbusUnitId) === null ||
+        parsePositiveInteger(draft.modbusRegister) === null ||
+        parsePositiveInteger(draft.modbusQuantity) === null ||
+        parseFiniteNumber(draft.modbusBaseValue) === null ||
+        parseFiniteNumber(draft.modbusAmplitude) === null
+      )
+    ) {
+      nextDiagnostics.push({
+        tone: 'danger',
+        message: 'Modbus 参数必须是有效数字。',
+      });
+    }
+
+    if (draft.nodeType === 'httpClient') {
+      if (!draft.httpUrl.trim()) {
+        nextDiagnostics.push({
+          tone: 'danger',
+          message: 'HTTP Client 需要配置 URL。',
+        });
+      }
+
+      if (parsedHeaders === null) {
+        nextDiagnostics.push({
+          tone: 'danger',
+          message: '请求头 JSON 必须是对象。',
+        });
+      }
+    }
+
+    if (draft.nodeType === 'sqlWriter') {
+      if (!draft.sqlDatabasePath.trim()) {
+        nextDiagnostics.push({
+          tone: 'warning',
+          message: '数据库路径为空。',
+        });
+      }
+
+      if (!draft.sqlTable.trim()) {
+        nextDiagnostics.push({
+          tone: 'danger',
+          message: '表名不能为空。',
+        });
+      }
+    }
+
+    if (draft.nodeType === 'debugConsole') {
+      nextDiagnostics.push({
+        tone: 'info',
+        message: draft.debugPretty ? '当前以格式化 JSON 输出。' : '当前以紧凑 JSON 输出。',
       });
     }
 
     return nextDiagnostics;
   }, [connections, draft, stats]);
+
+  const branchSummary = useMemo(
+    () =>
+      draft
+        ? getLogicNodeBranchDefinitions(draft.nodeType, {
+            branches: draft.branches,
+          })
+        : [],
+    [draft],
+  );
 
   const updateDraft = useCallback(
     (patch: Partial<SelectedNodeDraft>) => {
@@ -207,6 +502,9 @@ function FlowgramNodeSettingsPanel({
         ...draft,
         ...patch,
       };
+      const currentConfig = isRecord(((node.getExtInfo() ?? {}) as { config?: unknown }).config)
+        ? ((((node.getExtInfo() ?? {}) as { config?: unknown }).config) as NodeConfigMap)
+        : {};
 
       const nextExtInfo = {
         ...(node.getExtInfo() ?? {}),
@@ -215,20 +513,17 @@ function FlowgramNodeSettingsPanel({
         connectionId: nextDraft.connectionId.trim() || null,
         aiDescription: nextDraft.aiDescription.trim() || null,
         timeoutMs: parseTimeoutMs(nextDraft.timeoutMs),
-        config:
-          nextDraft.nodeType === 'native'
-            ? {
-                ...(((node.getExtInfo() ?? {}) as { config?: Record<string, unknown> }).config ?? {}),
-                message: nextDraft.message,
-              }
-            : {
-                ...(((node.getExtInfo() ?? {}) as { config?: Record<string, unknown> }).config ?? {}),
-                script: nextDraft.script,
-              },
+        config: buildNodeConfig(nextDraft, currentConfig),
       };
 
       node.updateExtInfo(nextExtInfo);
       setDraft(nextDraft);
+
+      if (usesDynamicPorts(nextDraft.nodeType)) {
+        window.requestAnimationFrame(() => {
+          node.ports.updateDynamicPorts();
+        });
+      }
     },
     [draft, node],
   );
@@ -259,42 +554,44 @@ function FlowgramNodeSettingsPanel({
           <span>节点类型</span>
           <input value={draft.nodeType} readOnly />
         </label>
-        <label>
-          <span>连接资源</span>
-          <select
-            value={
-              draft.connectionId && !connections.some((connection) => connection.id === draft.connectionId)
-                ? `__missing__:${draft.connectionId}`
-                : draft.connectionId || '__none__'
-            }
-            onChange={(event) => {
-              const value = event.target.value;
-
-              if (value === '__none__') {
-                updateDraft({ connectionId: '' });
-                return;
+        {isConnectionNode(draft.nodeType) ? (
+          <label>
+            <span>连接资源</span>
+            <select
+              value={
+                draft.connectionId && !connections.some((connection) => connection.id === draft.connectionId)
+                  ? `__missing__:${draft.connectionId}`
+                  : draft.connectionId || '__none__'
               }
+              onChange={(event) => {
+                const value = event.target.value;
 
-              if (value.startsWith('__missing__:')) {
-                updateDraft({ connectionId: value.replace('__missing__:', '') });
-                return;
-              }
+                if (value === '__none__') {
+                  updateDraft({ connectionId: '' });
+                  return;
+                }
 
-              updateDraft({ connectionId: value });
-            }}
-            disabled={connections.length === 0 && !draft.connectionId}
-          >
-            <option value="__none__">纯逻辑节点</option>
-            {draft.connectionId && !connections.some((connection) => connection.id === draft.connectionId) ? (
-              <option value={`__missing__:${draft.connectionId}`}>未注册连接: {draft.connectionId}</option>
-            ) : null}
-            {connections.map((connection) => (
-              <option key={connection.id} value={connection.id}>
-                {connection.id} · {connection.type}
-              </option>
-            ))}
-          </select>
-        </label>
+                if (value.startsWith('__missing__:')) {
+                  updateDraft({ connectionId: value.replace('__missing__:', '') });
+                  return;
+                }
+
+                updateDraft({ connectionId: value });
+              }}
+              disabled={connections.length === 0 && !draft.connectionId}
+            >
+              <option value="__none__">未绑定</option>
+              {draft.connectionId && !connections.some((connection) => connection.id === draft.connectionId) ? (
+                <option value={`__missing__:${draft.connectionId}`}>未注册连接: {draft.connectionId}</option>
+              ) : null}
+              {connections.map((connection) => (
+                <option key={connection.id} value={connection.id}>
+                  {connection.id} · {connection.type}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
         <label>
           <span>AI 描述</span>
           <textarea
@@ -310,18 +607,234 @@ function FlowgramNodeSettingsPanel({
             placeholder="留空表示不限"
           />
         </label>
+
         {draft.nodeType === 'native' ? (
           <label>
-            <span>Native Message</span>
+            <span>{getPrimaryEditorLabel(draft.nodeType)}</span>
             <textarea value={draft.message} onChange={(event) => updateDraft({ message: event.target.value })} />
           </label>
-        ) : (
+        ) : null}
+
+        {isScriptNode(draft.nodeType) ? (
           <label>
-            <span>Rhai Script</span>
+            <span>{getPrimaryEditorLabel(draft.nodeType)}</span>
             <textarea value={draft.script} onChange={(event) => updateDraft({ script: event.target.value })} />
           </label>
-        )}
+        ) : null}
+
+        {draft.nodeType === 'timer' ? (
+          <>
+            <label>
+              <span>触发间隔 ms</span>
+              <input
+                value={draft.timerIntervalMs}
+                onChange={(event) => updateDraft({ timerIntervalMs: event.target.value })}
+              />
+            </label>
+            <label>
+              <span>部署后立即触发</span>
+              <select
+                value={draft.timerImmediate ? 'true' : 'false'}
+                onChange={(event) =>
+                  updateDraft({ timerImmediate: event.target.value === 'true' })
+                }
+              >
+                <option value="true">是</option>
+                <option value="false">否</option>
+              </select>
+            </label>
+          </>
+        ) : null}
+
+        {draft.nodeType === 'modbusRead' ? (
+          <>
+            <label>
+              <span>设备单元 ID</span>
+              <input
+                value={draft.modbusUnitId}
+                onChange={(event) => updateDraft({ modbusUnitId: event.target.value })}
+              />
+            </label>
+            <label>
+              <span>寄存器地址</span>
+              <input
+                value={draft.modbusRegister}
+                onChange={(event) => updateDraft({ modbusRegister: event.target.value })}
+              />
+            </label>
+            <label>
+              <span>读取数量</span>
+              <input
+                value={draft.modbusQuantity}
+                onChange={(event) => updateDraft({ modbusQuantity: event.target.value })}
+              />
+            </label>
+            <label>
+              <span>基准值</span>
+              <input
+                value={draft.modbusBaseValue}
+                onChange={(event) => updateDraft({ modbusBaseValue: event.target.value })}
+              />
+            </label>
+            <label>
+              <span>波动幅度</span>
+              <input
+                value={draft.modbusAmplitude}
+                onChange={(event) => updateDraft({ modbusAmplitude: event.target.value })}
+              />
+            </label>
+          </>
+        ) : null}
+
+        {draft.nodeType === 'httpClient' ? (
+          <>
+            <label>
+              <span>请求地址</span>
+              <input value={draft.httpUrl} onChange={(event) => updateDraft({ httpUrl: event.target.value })} />
+            </label>
+            <label>
+              <span>请求方法</span>
+              <select
+                value={draft.httpMethod || 'POST'}
+                onChange={(event) => updateDraft({ httpMethod: event.target.value })}
+              >
+                <option value="POST">POST</option>
+                <option value="PUT">PUT</option>
+                <option value="PATCH">PATCH</option>
+                <option value="GET">GET</option>
+              </select>
+            </label>
+            <label>
+              <span>请求头 JSON</span>
+              <textarea
+                value={draft.httpHeaders}
+                onChange={(event) => updateDraft({ httpHeaders: event.target.value })}
+              />
+            </label>
+          </>
+        ) : null}
+
+        {draft.nodeType === 'sqlWriter' ? (
+          <>
+            <label>
+              <span>数据库路径</span>
+              <input
+                value={draft.sqlDatabasePath}
+                onChange={(event) => updateDraft({ sqlDatabasePath: event.target.value })}
+              />
+            </label>
+            <label>
+              <span>表名</span>
+              <input value={draft.sqlTable} onChange={(event) => updateDraft({ sqlTable: event.target.value })} />
+            </label>
+          </>
+        ) : null}
+
+        {draft.nodeType === 'debugConsole' ? (
+          <>
+            <label>
+              <span>输出标签</span>
+              <input
+                value={draft.debugLabel}
+                onChange={(event) => updateDraft({ debugLabel: event.target.value })}
+              />
+            </label>
+            <label>
+              <span>输出格式</span>
+              <select
+                value={draft.debugPretty ? 'pretty' : 'compact'}
+                onChange={(event) => updateDraft({ debugPretty: event.target.value === 'pretty' })}
+              >
+                <option value="pretty">格式化 JSON</option>
+                <option value="compact">紧凑 JSON</option>
+              </select>
+            </label>
+          </>
+        ) : null}
       </div>
+
+      {draft.nodeType === 'switch' ? (
+        <section className="flowgram-panel flowgram-panel--branches">
+          <div className="flowgram-panel__header">
+            <h4>分支设置</h4>
+          </div>
+
+          <div className="flowgram-branch-editor">
+            {draft.branches.map((branch, index) => (
+              <div key={`${branch.key}:${index}`} className="flowgram-branch-editor__row">
+                <input
+                  value={branch.key}
+                  onChange={(event) => {
+                    const nextBranches = draft.branches.map((item, itemIndex) =>
+                      itemIndex === index
+                        ? { ...item, key: event.target.value }
+                        : item,
+                    );
+                    updateDraft({ branches: nextBranches });
+                  }}
+                  placeholder="branch_key"
+                />
+                <input
+                  value={branch.label}
+                  onChange={(event) => {
+                    const nextBranches = draft.branches.map((item, itemIndex) =>
+                      itemIndex === index
+                        ? { ...item, label: event.target.value }
+                        : item,
+                    );
+                    updateDraft({ branches: nextBranches });
+                  }}
+                  placeholder="显示名称"
+                />
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() =>
+                    updateDraft({
+                      branches: draft.branches.filter((_, itemIndex) => itemIndex !== index),
+                    })
+                  }
+                >
+                  删除
+                </button>
+              </div>
+            ))}
+
+            <button
+              type="button"
+              className="ghost"
+              onClick={() =>
+                updateDraft({
+                  branches: [
+                    ...draft.branches,
+                    {
+                      key: `branch_${draft.branches.length + 1}`,
+                      label: `Branch ${draft.branches.length + 1}`,
+                    },
+                  ],
+                })
+              }
+            >
+              添加分支
+            </button>
+          </div>
+        </section>
+      ) : null}
+
+      {branchSummary.length > 0 ? (
+        <section className="flowgram-panel flowgram-panel--branches">
+          <div className="flowgram-panel__header">
+            <h4>输出分支</h4>
+          </div>
+          <div className="flowgram-branch-list">
+            {branchSummary.map((branch) => (
+              <span key={branch.key} className="flowgram-branch-pill">
+                {branch.label}
+              </span>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       {stats ? (
         <div className="flowgram-stats">

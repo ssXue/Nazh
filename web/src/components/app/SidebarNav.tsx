@@ -1,6 +1,5 @@
 import {
   AboutIcon,
-  BackIcon,
   BoardsIcon,
   ConnectionsIcon,
   DashboardIcon,
@@ -43,8 +42,6 @@ export function SidebarNav({
   workflowStatusPillClass,
   themeMode,
   onToggleTheme,
-  activeBoardName,
-  onBackToBoards,
 }: SidebarNavProps) {
   const isDarkMode = themeMode === 'dark';
   const groupedSections = [
@@ -106,24 +103,6 @@ export function SidebarNav({
                 );
               })}
             </nav>
-
-            {group.key === 'top' && activeBoardName ? (
-              <section className="studio-nav-project" aria-label="当前工程">
-                <button
-                  type="button"
-                  className="studio-nav-project__back"
-                  onClick={onBackToBoards}
-                  aria-label="返回所有看板"
-                  title="返回所有看板"
-                >
-                  <BackIcon />
-                </button>
-                <div className="studio-nav-project__copy">
-                  <strong>{activeBoardName}</strong>
-                  <span>当前工程</span>
-                </div>
-              </section>
-            ) : null}
           </section>
         ))}
       </div>

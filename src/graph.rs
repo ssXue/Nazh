@@ -12,8 +12,12 @@ use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use crate::{
-    ConnectionDefinition, EngineError, NativeNode, NativeNodeConfig, NodeTrait, RhaiNode,
-    RhaiNodeConfig, SharedConnectionManager, WorkflowContext,
+    ConnectionDefinition, DebugConsoleNode, DebugConsoleNodeConfig, EngineError, HttpClientNode,
+    HttpClientNodeConfig, IfNode, IfNodeConfig, LoopNode, LoopNodeConfig, ModbusReadNode,
+    ModbusReadNodeConfig, NativeNode, NativeNodeConfig, NodeDispatch, NodeTrait, RhaiNode,
+    RhaiNodeConfig, SharedConnectionManager, SqlWriterNode, SqlWriterNodeConfig, SwitchNode,
+    SwitchNodeConfig, TimerNode, TimerNodeConfig, TryCatchNode, TryCatchNodeConfig,
+    WorkflowContext,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -52,6 +56,10 @@ pub struct WorkflowEdge {
     pub from: String,
     #[serde(alias = "target")]
     pub to: String,
+    #[serde(default, alias = "sourcePortID")]
+    pub source_port_id: Option<String>,
+    #[serde(default, alias = "targetPortID")]
+    pub target_port_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -69,7 +77,7 @@ pub enum WorkflowEvent {
 #[derive(Clone)]
 pub struct WorkflowIngress {
     root_nodes: Vec<String>,
-    root_senders: Vec<mpsc::Sender<WorkflowContext>>,
+    root_senders: HashMap<String, mpsc::Sender<WorkflowContext>>,
 }
 
 pub struct WorkflowStreams {
@@ -84,7 +92,13 @@ pub struct WorkflowDeployment {
 
 struct WorkflowTopology {
     root_nodes: Vec<String>,
-    downstream: HashMap<String, Vec<String>>,
+    downstream: HashMap<String, Vec<WorkflowEdge>>,
+}
+
+#[derive(Clone)]
+struct DownstreamTarget {
+    source_port_id: Option<String>,
+    sender: mpsc::Sender<WorkflowContext>,
 }
 
 fn default_node_buffer() -> usize {
@@ -130,7 +144,7 @@ impl WorkflowGraph {
             .keys()
             .map(|node_id| (node_id.clone(), 0_usize))
             .collect();
-        let mut downstream: HashMap<String, Vec<String>> = self
+        let mut downstream: HashMap<String, Vec<WorkflowEdge>> = self
             .nodes
             .keys()
             .map(|node_id| (node_id.clone(), Vec::new()))
@@ -154,7 +168,7 @@ impl WorkflowGraph {
             downstream
                 .entry(edge.from.clone())
                 .or_default()
-                .push(edge.to.clone());
+                .push(edge.clone());
 
             if let Some(count) = incoming.get_mut(&edge.to) {
                 *count += 1;
@@ -175,10 +189,10 @@ impl WorkflowGraph {
             processed += 1;
             if let Some(neighbors) = downstream.get(&node_id) {
                 for neighbor in neighbors {
-                    if let Some(count) = remaining_incoming.get_mut(neighbor) {
+                    if let Some(count) = remaining_incoming.get_mut(&neighbor.to) {
                         *count -= 1;
                         if *count == 0 {
-                            queue.push_back(neighbor.clone());
+                            queue.push_back(neighbor.to.clone());
                         }
                     }
                 }
@@ -206,7 +220,7 @@ impl WorkflowIngress {
             ));
         }
 
-        for sender in &self.root_senders {
+        for sender in self.root_senders.values() {
             sender
                 .send(ctx.clone())
                 .await
@@ -216,6 +230,22 @@ impl WorkflowIngress {
         }
 
         Ok(())
+    }
+
+    pub async fn submit_to(
+        &self,
+        node_id: &str,
+        ctx: WorkflowContext,
+    ) -> Result<(), EngineError> {
+        let sender = self.root_senders.get(node_id).ok_or_else(|| {
+            EngineError::invalid_graph(format!(
+                "root node sender `{node_id}` is not available in the deployed workflow"
+            ))
+        })?;
+
+        sender.send(ctx).await.map_err(|_| EngineError::ChannelClosed {
+            stage: "workflow-ingress".to_owned(),
+        })
     }
 
     pub fn root_nodes(&self) -> &[String] {
@@ -301,8 +331,13 @@ pub async fn deploy_workflow(
             .downstream
             .get(node_id)
             .into_iter()
-            .flat_map(|nodes| nodes.iter())
-            .filter_map(|downstream_id| senders.get(downstream_id).cloned())
+            .flat_map(|edges| edges.iter())
+            .filter_map(|edge| {
+                senders.get(&edge.to).cloned().map(|sender| DownstreamTarget {
+                    source_port_id: edge.source_port_id.clone(),
+                    sender,
+                })
+            })
             .collect::<Vec<_>>();
 
         runtime.spawn(run_node(
@@ -318,8 +353,8 @@ pub async fn deploy_workflow(
     let root_senders = topology
         .root_nodes
         .iter()
-        .filter_map(|node_id| senders.get(node_id).cloned())
-        .collect::<Vec<_>>();
+        .filter_map(|node_id| senders.get(node_id).cloned().map(|sender| (node_id.clone(), sender)))
+        .collect::<HashMap<_, _>>();
 
     drop(result_tx);
     drop(event_tx);
@@ -369,6 +404,122 @@ fn instantiate_node(
                 description,
             )?))
         }
+        "timer" => {
+            let config: TimerNodeConfig = serde_json::from_value(definition.config.clone())
+                .map_err(|error| EngineError::node_config(definition.id.clone(), error.to_string()))?;
+            let description = definition.ai_description.clone().unwrap_or_else(|| {
+                "Trigger the workflow on a fixed interval and inject timer metadata".to_owned()
+            });
+            Ok(Arc::new(TimerNode::new(
+                definition.id.clone(),
+                config,
+                description,
+            )))
+        }
+        "modbusRead" | "modbus/read" => {
+            let mut config: ModbusReadNodeConfig =
+                serde_json::from_value(definition.config.clone()).map_err(|error| {
+                    EngineError::node_config(definition.id.clone(), error.to_string())
+                })?;
+
+            if config.connection_id.is_none() {
+                config.connection_id = definition.connection_id.clone();
+            }
+
+            let description = definition.ai_description.clone().unwrap_or_else(|| {
+                "Read simulated Modbus registers and enrich the payload with telemetry".to_owned()
+            });
+            Ok(Arc::new(ModbusReadNode::new(
+                definition.id.clone(),
+                config,
+                description,
+                connection_manager,
+            )))
+        }
+        "if" => {
+            let config: IfNodeConfig = serde_json::from_value(definition.config.clone())
+                .map_err(|error| EngineError::node_config(definition.id.clone(), error.to_string()))?;
+            let description = definition.ai_description.clone().unwrap_or_else(|| {
+                "Evaluate a boolean script and dispatch to true or false".to_owned()
+            });
+            Ok(Arc::new(IfNode::new(
+                definition.id.clone(),
+                config,
+                description,
+            )?))
+        }
+        "switch" => {
+            let config: SwitchNodeConfig = serde_json::from_value(definition.config.clone())
+                .map_err(|error| EngineError::node_config(definition.id.clone(), error.to_string()))?;
+            let description = definition.ai_description.clone().unwrap_or_else(|| {
+                "Evaluate a route script and dispatch to the matched branch".to_owned()
+            });
+            Ok(Arc::new(SwitchNode::new(
+                definition.id.clone(),
+                config,
+                description,
+            )?))
+        }
+        "tryCatch" => {
+            let config: TryCatchNodeConfig = serde_json::from_value(definition.config.clone())
+                .map_err(|error| EngineError::node_config(definition.id.clone(), error.to_string()))?;
+            let description = definition.ai_description.clone().unwrap_or_else(|| {
+                "Execute a guarded script and dispatch to try or catch".to_owned()
+            });
+            Ok(Arc::new(TryCatchNode::new(
+                definition.id.clone(),
+                config,
+                description,
+            )?))
+        }
+        "loop" => {
+            let config: LoopNodeConfig = serde_json::from_value(definition.config.clone())
+                .map_err(|error| EngineError::node_config(definition.id.clone(), error.to_string()))?;
+            let description = definition.ai_description.clone().unwrap_or_else(|| {
+                "Evaluate an iterable script and dispatch each item through body before done".to_owned()
+            });
+            Ok(Arc::new(LoopNode::new(
+                definition.id.clone(),
+                config,
+                description,
+            )?))
+        }
+        "httpClient" | "http/client" => {
+            let config: HttpClientNodeConfig = serde_json::from_value(definition.config.clone())
+                .map_err(|error| EngineError::node_config(definition.id.clone(), error.to_string()))?;
+            let description = definition.ai_description.clone().unwrap_or_else(|| {
+                "Send the payload to an HTTP endpoint such as DingTalk robot alarms".to_owned()
+            });
+            Ok(Arc::new(HttpClientNode::new(
+                definition.id.clone(),
+                config,
+                description,
+            )))
+        }
+        "sqlWriter" | "sql/writer" => {
+            let config: SqlWriterNodeConfig = serde_json::from_value(definition.config.clone())
+                .map_err(|error| EngineError::node_config(definition.id.clone(), error.to_string()))?;
+            let description = definition.ai_description.clone().unwrap_or_else(|| {
+                "Persist the current payload into a local SQLite table".to_owned()
+            });
+            Ok(Arc::new(SqlWriterNode::new(
+                definition.id.clone(),
+                config,
+                description,
+            )))
+        }
+        "debugConsole" | "debug/console" => {
+            let config: DebugConsoleNodeConfig = serde_json::from_value(definition.config.clone())
+                .map_err(|error| EngineError::node_config(definition.id.clone(), error.to_string()))?;
+            let description = definition.ai_description.clone().unwrap_or_else(|| {
+                "Print the payload to the debug console for inspection".to_owned()
+            });
+            Ok(Arc::new(DebugConsoleNode::new(
+                definition.id.clone(),
+                config,
+                description,
+            )))
+        }
         other => Err(EngineError::unsupported_node_type(other)),
     }
 }
@@ -377,7 +528,7 @@ async fn run_node(
     node: Arc<dyn NodeTrait>,
     timeout: Option<Duration>,
     mut input_rx: mpsc::Receiver<WorkflowContext>,
-    downstream_senders: Vec<mpsc::Sender<WorkflowContext>>,
+    downstream_senders: Vec<DownstreamTarget>,
     result_tx: mpsc::Sender<WorkflowContext>,
     event_tx: mpsc::Sender<WorkflowEvent>,
 ) {
@@ -419,59 +570,82 @@ async fn run_node(
         };
 
         match result {
-            Ok(output_ctx) => {
-                let send_result = if downstream_senders.is_empty() {
-                    result_tx
-                        .send(output_ctx)
-                        .await
-                        .map_err(|_| EngineError::ChannelClosed {
-                            stage: node_id.clone(),
-                        })
-                } else {
-                    let mut send_error = None;
-                    for sender in &downstream_senders {
-                        if let Err(_) = sender.send(output_ctx.clone()).await {
-                            send_error = Some(EngineError::ChannelClosed {
+            Ok(output) => {
+                let mut send_error = None;
+
+                for node_output in output.outputs {
+                    let matching_targets = match &node_output.dispatch {
+                        NodeDispatch::Broadcast => downstream_senders.iter().collect::<Vec<_>>(),
+                        NodeDispatch::Route(port_ids) => downstream_senders
+                            .iter()
+                            .filter(|target| {
+                                target
+                                    .source_port_id
+                                    .as_ref()
+                                    .map(|port_id| port_ids.iter().any(|candidate| candidate == port_id))
+                                    .unwrap_or(false)
+                            })
+                            .collect::<Vec<_>>(),
+                    };
+
+                    let write_result = if matching_targets.is_empty() {
+                        result_tx
+                            .send(node_output.ctx)
+                            .await
+                            .map_err(|_| EngineError::ChannelClosed {
                                 stage: node_id.clone(),
-                            });
+                            })
+                    } else {
+                        let mut downstream_error = None;
+                        for target in &matching_targets {
+                            if let Err(_) = target.sender.send(node_output.ctx.clone()).await {
+                                downstream_error = Some(EngineError::ChannelClosed {
+                                    stage: node_id.clone(),
+                                });
+                                break;
+                            }
+                        }
+
+                        if let Some(error) = downstream_error {
+                            Err(error)
+                        } else {
+                            Ok(())
+                        }
+                    };
+
+                    match write_result {
+                        Ok(()) => {
+                            if matching_targets.is_empty() {
+                                emit_workflow_event(
+                                    &event_tx,
+                                    WorkflowEvent::WorkflowOutput {
+                                        node_id: node_id.clone(),
+                                        trace_id,
+                                    },
+                                )
+                                .await;
+                            }
+                        }
+                        Err(error) => {
+                            send_error = Some(error);
                             break;
                         }
                     }
-
-                    if let Some(error) = send_error {
-                        Err(error)
-                    } else {
-                        Ok(())
-                    }
-                };
-
-                match send_result {
-                    Ok(()) => {
-                        emit_workflow_event(
-                            &event_tx,
-                            WorkflowEvent::NodeCompleted {
-                                node_id: node_id.clone(),
-                                trace_id,
-                            },
-                        )
-                        .await;
-
-                        if downstream_senders.is_empty() {
-                            emit_workflow_event(
-                                &event_tx,
-                                WorkflowEvent::WorkflowOutput {
-                                    node_id: node_id.clone(),
-                                    trace_id,
-                                },
-                            )
-                            .await;
-                        }
-                    }
-                    Err(error) => {
-                        emit_workflow_failure(&event_tx, &node_id, trace_id, &error).await;
-                        break;
-                    }
                 }
+
+                if let Some(error) = send_error {
+                    emit_workflow_failure(&event_tx, &node_id, trace_id, &error).await;
+                    break;
+                }
+
+                emit_workflow_event(
+                    &event_tx,
+                    WorkflowEvent::NodeCompleted {
+                        node_id: node_id.clone(),
+                        trace_id,
+                    },
+                )
+                .await;
             }
             Err(error) => {
                 emit_workflow_failure(&event_tx, &node_id, trace_id, &error).await;

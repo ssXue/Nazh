@@ -6,6 +6,7 @@ import type {
   ConnectionRecord,
   DeployResponse,
   DispatchResponse,
+  UndeployResponse,
   WorkflowResult,
 } from '../types';
 
@@ -41,6 +42,14 @@ export function installDesktopShellGuards(): () => void {
   const handleWindowDragMouseDown = (event: MouseEvent) => {
     const target = event.target;
     if (!(target instanceof Element)) {
+      return;
+    }
+
+    if (
+      target.closest(
+        'button, input, textarea, select, option, a, summary, [role="button"], [data-no-window-drag]',
+      )
+    ) {
       return;
     }
 
@@ -279,6 +288,10 @@ export async function dispatchPayload(payload: unknown): Promise<DispatchRespons
   return invoke<DispatchResponse>('dispatch_payload', { payload });
 }
 
+export async function undeployWorkflow(): Promise<UndeployResponse> {
+  return invoke<UndeployResponse>('undeploy_workflow');
+}
+
 export async function listConnections(): Promise<ConnectionRecord[]> {
   return invoke<ConnectionRecord[]>('list_connections');
 }
@@ -311,6 +324,18 @@ export async function onWorkflowDeployed(
   handler: (payload: DeployResponse) => void,
 ): Promise<() => void> {
   const unlisten = await listen<DeployResponse>('workflow://deployed', (event) => {
+    handler(event.payload);
+  });
+
+  return () => {
+    unlisten();
+  };
+}
+
+export async function onWorkflowUndeployed(
+  handler: (payload: UndeployResponse) => void,
+): Promise<() => void> {
+  const unlisten = await listen<UndeployResponse>('workflow://undeployed', (event) => {
     handler(event.payload);
   });
 

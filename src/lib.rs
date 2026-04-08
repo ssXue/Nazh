@@ -16,7 +16,13 @@ pub use graph::{
     deploy_workflow, WorkflowDeployment, WorkflowEvent, WorkflowGraph, WorkflowIngress,
     WorkflowNodeDefinition, WorkflowStreams,
 };
-pub use nodes::{NativeNode, NativeNodeConfig, NodeTrait, RhaiNode, RhaiNodeConfig};
+pub use nodes::{
+    DebugConsoleNode, DebugConsoleNodeConfig, HttpClientNode, HttpClientNodeConfig, IfNode,
+    IfNodeConfig, LoopNode, LoopNodeConfig, ModbusReadNode, ModbusReadNodeConfig, NativeNode,
+    NativeNodeConfig, NodeDispatch, NodeExecution, NodeTrait, RhaiNode, RhaiNodeConfig,
+    SqlWriterNode, SqlWriterNodeConfig, SwitchBranchConfig, SwitchNode, SwitchNodeConfig,
+    TimerNode, TimerNodeConfig, TryCatchNode, TryCatchNodeConfig,
+};
 pub use pipeline::{
     build_linear_pipeline, PipelineEvent, PipelineHandle, PipelineStage, StageFuture,
 };

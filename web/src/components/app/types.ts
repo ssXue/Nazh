@@ -1,6 +1,8 @@
 import type {
+  AppErrorRecord,
   ConnectionRecord,
   DeployResponse,
+  RuntimeLogEntry,
   WorkflowRuntimeState,
   WorkflowResult,
 } from '../../types';
@@ -38,8 +40,6 @@ export interface SidebarNavProps {
   workflowStatusPillClass: string;
   themeMode: ThemeMode;
   onToggleTheme: () => void;
-  activeBoardName: string | null;
-  onBackToBoards: () => void;
 }
 
 export interface SourcePanelProps {
@@ -54,30 +54,16 @@ export interface PayloadPanelProps {
   onPayloadTextChange: (value: string) => void;
 }
 
-export interface StudioControlBarProps {
-  workflowStatusLabel: string;
-  workflowStatusPillClass: string;
-  isTauriRuntime: boolean;
-  runtimeModeLabel: string;
-  runtimeSnapshot: string;
-  runtimeUpdatedLabel: string;
-  statusMessage: string;
-  graphNodeCount: number;
-  graphEdgeCount: number;
-  graphConnectionCount: number;
-  activeNodeCount: number;
-  canDispatchPayload: boolean;
-  onDeploy: () => void;
-  onDispatchPayload: () => void;
-  onRefreshConnections: () => void;
-}
-
 export interface RuntimeDockProps {
   deployInfo: DeployResponse | null;
   runtimeState: WorkflowRuntimeState;
-  eventFeed: string[];
+  eventFeed: RuntimeLogEntry[];
+  appErrors: AppErrorRecord[];
   results: WorkflowResult[];
   connectionPreview: ConnectionRecord[];
+  themeMode: ThemeMode;
+  isCollapsed: boolean;
+  onToggleCollapsed: () => void;
 }
 
 export interface SettingsPanelProps {

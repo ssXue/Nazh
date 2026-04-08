@@ -38,9 +38,16 @@ export interface WorkflowNodeDefinition {
   };
 }
 
+export interface WorkflowLogicBranch {
+  key: string;
+  label?: string;
+}
+
 export interface WorkflowEdge {
   from: string;
   to: string;
+  source_port_id?: string;
+  target_port_id?: string;
 }
 
 export interface WorkflowEvent {
@@ -89,10 +96,32 @@ export interface WorkflowResult {
   payload: JsonValue;
 }
 
+export interface RuntimeLogEntry {
+  id: string;
+  timestamp: number;
+  level: 'info' | 'success' | 'warn' | 'error';
+  source: string;
+  message: string;
+  detail?: string | null;
+}
+
+export interface AppErrorRecord {
+  id: string;
+  timestamp: number;
+  scope: 'workflow' | 'command' | 'frontend' | 'runtime';
+  title: string;
+  detail?: string | null;
+}
+
 export interface DeployResponse {
   nodeCount: number;
   edgeCount: number;
   rootNodes: string[];
+}
+
+export interface UndeployResponse {
+  hadWorkflow: boolean;
+  abortedTimerCount: number;
 }
 
 export interface DispatchResponse {

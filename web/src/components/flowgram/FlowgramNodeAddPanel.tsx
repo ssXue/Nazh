@@ -13,16 +13,23 @@ import {
   getFlowgramPaletteSections,
   type NodeSeed,
 } from './flowgram-node-library';
+import {
+  FlowgramNodeGlyph,
+  getFlowgramDisplayLabel,
+  normalizeFlowgramDisplayType,
+} from './FlowgramNodeGlyph';
 
 interface FlowgramNodeAddPanelProps {
   primaryConnectionId: string | null;
   hasSelection: boolean;
+  disabled?: boolean;
   onInsertSeed: (seed: NodeSeed, mode: 'standalone' | 'downstream') => void | Promise<void>;
 }
 
 export function FlowgramNodeAddPanel({
   primaryConnectionId,
   hasSelection,
+  disabled = false,
   onInsertSeed,
 }: FlowgramNodeAddPanelProps) {
   const workflowDocument = useService(WorkflowDocument);
@@ -34,6 +41,10 @@ export function FlowgramNodeAddPanel({
     event: MouseEvent<HTMLButtonElement>,
     seed: NodeSeed,
   ) {
+    if (disabled) {
+      return;
+    }
+
     if (event.button !== 0) {
       return;
     }
@@ -51,27 +62,44 @@ export function FlowgramNodeAddPanel({
   }
 
   return (
-    <aside className="flowgram-add-panel">
+    <aside
+      className={disabled ? 'flowgram-add-panel is-disabled' : 'flowgram-add-panel'}
+      data-no-window-drag
+    >
       {paletteSections.map((section) => (
         <section key={section.key} className="flowgram-add-panel__section">
           <div className="flowgram-add-panel__title">{section.title}</div>
 
           <div className="flowgram-add-panel__list">
-            {section.items.map((item) => (
-              <button
-                key={item.key}
-                type="button"
-                className={`flowgram-add-card flowgram-add-card--${item.seed.kind}`}
-                data-flow-editor-selectable="false"
-                onMouseDown={(event) => void handleCardMouseDown(event, item.seed)}
-                onDoubleClick={() =>
-                  void onInsertSeed(item.seed, hasSelection ? 'downstream' : 'standalone')
-                }
-              >
-                <strong>{item.title}</strong>
-                <span>{item.badge}</span>
-              </button>
-            ))}
+            {section.items.map((item) => {
+              const displayType = normalizeFlowgramDisplayType(item.seed.displayType ?? item.seed.kind);
+
+              return (
+                <button
+                  key={item.key}
+                  type="button"
+                  className={`flowgram-add-card flowgram-add-card--${displayType}`}
+                  data-flow-editor-selectable="false"
+                  disabled={disabled}
+                  onMouseDown={(event) => void handleCardMouseDown(event, item.seed)}
+                  onDoubleClick={() => {
+                    if (disabled) {
+                      return;
+                    }
+
+                    void onInsertSeed(item.seed, hasSelection ? 'downstream' : 'standalone');
+                  }}
+                >
+                  <span className={`flowgram-add-card__icon flowgram-add-card__icon--${displayType}`}>
+                    <FlowgramNodeGlyph displayType={displayType} width={16} height={16} />
+                  </span>
+                  <span className="flowgram-add-card__copy">
+                    <strong>{item.title}</strong>
+                    <span>{item.badge || getFlowgramDisplayLabel(displayType)}</span>
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </section>
       ))}

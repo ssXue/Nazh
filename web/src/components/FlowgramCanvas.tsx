@@ -7,24 +7,46 @@ import {
   WorkflowLineEntity,
   type WorkflowJSON as FlowgramWorkflowJSON,
   type WorkflowContentChangeEvent,
-  WorkflowNodeEntity,
   WorkflowNodeRenderer,
+  type InteractiveType as EditorInteractiveType,
   useClientContext,
   usePlaygroundTools,
   useService,
   type FreeLayoutPluginContext,
 } from '@flowgram.ai/free-layout-editor';
-import { NodeIntoContainerService } from '@flowgram.ai/free-container-plugin';
-import { WorkflowGroupService } from '@flowgram.ai/free-group-plugin';
 import { PanelManager } from '@flowgram.ai/panel-manager-plugin';
-import { usePanelManager } from '@flowgram.ai/panel-manager-plugin';
-import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  type CSSProperties,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { MinimapRender } from '@flowgram.ai/minimap-plugin';
 
+import {
+  DownloadIcon,
+  FitViewIcon,
+  LockClosedIcon,
+  LockOpenIcon,
+  MinimapIcon,
+  MouseModeIcon,
+  RedoActionIcon,
+  UndoActionIcon,
+  TrackpadModeIcon,
+} from './app/AppIcons';
 import { FlowgramNodeAddPanel } from './flowgram/FlowgramNodeAddPanel';
 import { FLOWGRAM_NODE_SETTINGS_PANEL_KEY } from './flowgram/FlowgramNodeSettingsPanel';
-import { FLOWGRAM_RUNTIME_PANEL_KEY } from './flowgram/FlowgramRuntimePanel';
 import {
+  FlowgramNodeGlyph,
+  getFlowgramDisplayLabel,
+  normalizeFlowgramDisplayType,
+} from './flowgram/FlowgramNodeGlyph';
+import {
+  getLogicNodeBranchDefinitions,
   resolveNodeData,
   type NodeSeed,
 } from './flowgram/flowgram-node-library';
@@ -35,6 +57,7 @@ import {
   toFlowgramWorkflowJson,
   toNazhWorkflowGraph,
 } from '../lib/flowgram';
+import { FlowDownloadFormat, FlowDownloadService } from '@flowgram.ai/export-plugin';
 import type { WorkflowGraph, WorkflowRuntimeState, WorkflowWindowStatus } from '../types';
 
 interface FlowgramCanvasProps {
@@ -44,6 +67,7 @@ interface FlowgramCanvasProps {
   workflowStatus: WorkflowWindowStatus;
   accentHex: string;
   nodeRhaiColor: string;
+  onRunRequested?: () => void;
   onGraphChange: (nextAstText: string) => void;
 }
 
@@ -57,47 +81,76 @@ interface FlowgramNodeMaterialProps {
 
 type RuntimeNodeStatus = 'idle' | 'running' | 'completed' | 'failed' | 'output';
 
+type FlowgramInteractiveType = 'MOUSE' | 'PAD';
+
 interface FlowgramToolbarProps {
-  canDeleteSelection: boolean;
-  onDeleteSelection: () => void;
+  canRun: boolean;
+  canSave: boolean;
+  minimapVisible: boolean;
+  onToggleMinimap: () => void;
+  onRun?: () => void;
+  onSave: () => void;
+  onDownload: (format: FlowDownloadFormat) => void | Promise<void>;
 }
 
 const FLOWGRAM_BUTTON_STYLE: CSSProperties = {
-  border: '1px solid var(--toolbar-border)',
-  borderRadius: '4px',
+  border: '0',
+  borderRadius: '8px',
   cursor: 'pointer',
-  padding: '4px 8px',
-  minHeight: 26,
-  height: 26,
+  padding: '0',
+  minHeight: 32,
+  height: 32,
+  minWidth: 32,
   lineHeight: 1,
-  fontSize: 12,
+  fontSize: 'var(--font-callout)',
   display: 'inline-flex',
   alignItems: 'center',
   justifyContent: 'center',
   whiteSpace: 'nowrap',
   color: 'var(--toolbar-text)',
-  background: 'var(--toolbar-bg)',
+  background: 'transparent',
   boxShadow: 'none',
   transform: 'none',
-  transition: 'none',
+  transition: 'background 160ms ease, color 160ms ease, opacity 160ms ease',
 };
 
 const FLOWGRAM_TOOLS_STYLE: CSSProperties = {
   position: 'absolute',
-  zIndex: 10,
+  zIndex: 20,
   left: 16,
   bottom: 16,
   display: 'flex',
   alignItems: 'center',
-  flexWrap: 'wrap',
   gap: 8,
   maxWidth: 'calc(100% - 164px)',
+  pointerEvents: 'none',
+};
+
+const FLOWGRAM_TOOLS_SECTION_STYLE: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 2,
+  minHeight: 40,
+  padding: '0 4px',
+  border: '1px solid var(--toolbar-border)',
+  borderRadius: 10,
+  background: 'var(--panel-strong)',
+  boxShadow: 'var(--shadow-low)',
+  backdropFilter: 'blur(16px)',
+  pointerEvents: 'auto',
 };
 
 const FLOWGRAM_ZOOM_STYLE: CSSProperties = {
-  ...FLOWGRAM_BUTTON_STYLE,
   cursor: 'default',
-  width: 40,
+  minWidth: 42,
+  height: 24,
+  minHeight: 24,
+  padding: '0 6px',
+  borderRadius: 8,
+  border: '1px solid var(--toolbar-border)',
+  background: 'var(--surface-muted)',
+  color: 'var(--toolbar-text)',
+  fontSize: 'var(--font-subheadline)',
 };
 
 const FLOWGRAM_MINIMAP_CANVAS_WIDTH = 110;
@@ -136,7 +189,44 @@ const FLOWGRAM_MINIMAP_INACTIVE_STYLE = {
   translateY: 0,
 } as const;
 
-const BEZIER_LINE_TYPE = 0;
+const FLOWGRAM_INTERACTIVE_CACHE_KEY = 'workflow_prefer_interactive_type';
+
+function isMacLikePlatform() {
+  if (typeof navigator === 'undefined') {
+    return false;
+  }
+
+  return /(Macintosh|MacIntel|MacPPC|Mac68K|iPad)/.test(navigator.userAgent);
+}
+
+function getPreferredInteractiveType(): FlowgramInteractiveType {
+  if (typeof window === 'undefined') {
+    return isMacLikePlatform() ? 'PAD' : 'MOUSE';
+  }
+
+  try {
+    const stored = window.localStorage.getItem(FLOWGRAM_INTERACTIVE_CACHE_KEY);
+    if (stored === 'MOUSE' || stored === 'PAD') {
+      return stored;
+    }
+  } catch {
+    // Ignore storage failures and fall back to platform defaults.
+  }
+
+  return isMacLikePlatform() ? 'PAD' : 'MOUSE';
+}
+
+function setPreferredInteractiveType(nextType: FlowgramInteractiveType) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(FLOWGRAM_INTERACTIVE_CACHE_KEY, nextType);
+  } catch {
+    // Ignore storage failures.
+  }
+}
 
 function getCanvasWorkflowStatusLabel(status: WorkflowWindowStatus): string {
   switch (status) {
@@ -152,21 +242,6 @@ function getCanvasWorkflowStatusLabel(status: WorkflowWindowStatus): string {
       return '已完成';
     case 'failed':
       return '失败';
-  }
-}
-
-function getCanvasWorkflowStatusPillClass(status: WorkflowWindowStatus): string {
-  switch (status) {
-    case 'running':
-      return 'runtime-pill--running';
-    case 'failed':
-      return 'runtime-pill--failed';
-    case 'completed':
-    case 'deployed':
-      return 'runtime-pill--ready';
-    case 'idle':
-    case 'preview':
-      return 'runtime-pill--idle';
   }
 }
 
@@ -269,7 +344,78 @@ function isBusinessFlowNode(node: FlowNodeEntity | null): node is FlowNodeEntity
     nodeType?: string;
   };
 
-  return rawData.nodeType === 'native' || rawData.nodeType === 'rhai' || node.flowNodeType === 'native' || node.flowNodeType === 'rhai';
+  return (
+    rawData.nodeType === 'timer' ||
+    rawData.nodeType === 'modbusRead' ||
+    rawData.nodeType === 'code' ||
+    rawData.nodeType === 'native' ||
+    rawData.nodeType === 'rhai' ||
+    rawData.nodeType === 'if' ||
+    rawData.nodeType === 'switch' ||
+    rawData.nodeType === 'tryCatch' ||
+    rawData.nodeType === 'loop' ||
+    rawData.nodeType === 'httpClient' ||
+    rawData.nodeType === 'sqlWriter' ||
+    rawData.nodeType === 'debugConsole' ||
+    node.flowNodeType === 'timer' ||
+    node.flowNodeType === 'modbusRead' ||
+    node.flowNodeType === 'code' ||
+    node.flowNodeType === 'native' ||
+    node.flowNodeType === 'rhai' ||
+    node.flowNodeType === 'if' ||
+    node.flowNodeType === 'switch' ||
+    node.flowNodeType === 'tryCatch' ||
+    node.flowNodeType === 'loop' ||
+    node.flowNodeType === 'httpClient' ||
+    node.flowNodeType === 'sqlWriter' ||
+    node.flowNodeType === 'debugConsole'
+  );
+}
+
+function resolveNodePortColor(
+  displayType: string,
+  accentHex: string,
+  nodeRhaiColor: string,
+): string {
+  switch (displayType) {
+    case 'timer':
+      return 'color-mix(in srgb, var(--accent) 55%, var(--warning) 45%)';
+    case 'modbusRead':
+      return 'color-mix(in srgb, var(--accent) 58%, var(--success) 42%)';
+    case 'if':
+      return 'var(--success)';
+    case 'switch':
+      return 'var(--warning)';
+    case 'tryCatch':
+      return 'var(--danger)';
+    case 'loop':
+      return 'color-mix(in srgb, var(--accent) 72%, var(--success) 28%)';
+    case 'httpClient':
+      return 'color-mix(in srgb, var(--warning) 56%, var(--danger) 44%)';
+    case 'sqlWriter':
+      return 'color-mix(in srgb, var(--success) 68%, var(--accent) 32%)';
+    case 'debugConsole':
+      return 'var(--muted)';
+    case 'code':
+    case 'rhai':
+      return nodeRhaiColor;
+    case 'native':
+    default:
+      return accentHex;
+  }
+}
+
+function getDefaultOutputPortId(node: FlowNodeEntity | null): string | undefined {
+  if (!node) {
+    return undefined;
+  }
+
+  const rawData = (node.getExtInfo() ?? {}) as {
+    nodeType?: string;
+    config?: unknown;
+  };
+  const nodeType = String(rawData.nodeType ?? node.flowNodeType);
+  return getLogicNodeBranchDefinitions(nodeType, rawData.config)[0]?.key;
 }
 
 function FlowgramNodeCard(props: FlowgramNodeMaterialProps) {
@@ -277,36 +423,93 @@ function FlowgramNodeCard(props: FlowgramNodeMaterialProps) {
     | {
         label?: string;
         nodeType?: string;
+        displayType?: string;
         connectionId?: string | null;
         aiDescription?: string | null;
         timeoutMs?: number | null;
         config?: {
           message?: string;
           script?: string;
+          branches?: Array<{
+            key?: string;
+            label?: string;
+          }>;
+          interval_ms?: number;
+          register?: number;
+          quantity?: number;
+          url?: string;
+          method?: string;
+          table?: string;
+          database_path?: string;
+          label?: string;
         };
       }
     | undefined;
 
   const nodeType = rawData?.nodeType ?? props.node.flowNodeType;
+  const displayType = normalizeFlowgramDisplayType(rawData?.displayType ?? nodeType);
   const runtimeStatus = props.runtimeStatus ?? 'idle';
+  const branchDefinitions = useMemo(
+    () => getLogicNodeBranchDefinitions(nodeType, rawData?.config),
+    [nodeType, rawData?.config],
+  );
+  const branchSignature = branchDefinitions
+    .map((branch) => `${branch.key}:${branch.label}`)
+    .join('|');
+
+  useLayoutEffect(() => {
+    if (branchDefinitions.length === 0) {
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      props.node.ports.updateDynamicPorts();
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [branchDefinitions.length, branchSignature, props.node]);
+
   const preview =
-    nodeType === 'native'
+    nodeType === 'timer'
+      ? `${rawData?.config?.interval_ms ?? 5000} ms`
+      : nodeType === 'modbusRead'
+        ? `寄存器 ${rawData?.config?.register ?? 40001} · ${rawData?.config?.quantity ?? 1} 点`
+      : nodeType === 'native'
       ? rawData?.config?.message ?? 'Native I/O passthrough'
-      : rawData?.config?.script ?? 'Rhai business script';
+      : nodeType === 'code' || nodeType === 'rhai'
+        ? rawData?.config?.script ?? 'Transform payload'
+      : nodeType === 'if'
+        ? rawData?.config?.script ?? 'return boolean'
+      : nodeType === 'switch'
+        ? rawData?.config?.script ?? 'return branch key'
+      : nodeType === 'loop'
+        ? rawData?.config?.script ?? 'return array or count'
+        : nodeType === 'httpClient'
+          ? `${rawData?.config?.method ?? 'POST'} ${rawData?.config?.url ?? ''}`.trim()
+        : nodeType === 'sqlWriter'
+          ? `${rawData?.config?.table ?? 'workflow_logs'} → ${rawData?.config?.database_path ?? './nazh-local.sqlite3'}`
+        : nodeType === 'debugConsole'
+          ? rawData?.config?.label ?? 'Console output'
+        : rawData?.config?.script ?? 'Guarded script';
 
   return (
     <WorkflowNodeRenderer
       node={props.node}
-      className={`flowgram-card flowgram-card--${nodeType} flowgram-card--${runtimeStatus} ${props.activated ? 'is-activated' : ''}`}
+      className={`flowgram-card flowgram-card--${nodeType} flowgram-card--display-${displayType} flowgram-card--${runtimeStatus} ${props.activated ? 'is-activated' : ''}`}
       portClassName="flowgram-card__port"
       portBackgroundColor="var(--panel-strong)"
-      portPrimaryColor={nodeType === 'native' ? props.accentHex : props.nodeRhaiColor}
+      portPrimaryColor={resolveNodePortColor(displayType, props.accentHex, props.nodeRhaiColor)}
       portSecondaryColor="var(--surface-elevated)"
       portErrorColor="var(--danger)"
     >
       <div data-flow-editor-selectable="false" className="flowgram-card__body" draggable={false}>
         <div className="flowgram-card__topline">
-          <span className="flowgram-card__type">{nodeType}</span>
+          <div className="flowgram-card__identity">
+            <span className={`flowgram-card__icon flowgram-card__icon--${displayType}`}>
+              <FlowgramNodeGlyph displayType={displayType} width={14} height={14} />
+            </span>
+            <span className="flowgram-card__type">{getFlowgramDisplayLabel(displayType)}</span>
+          </div>
           {runtimeStatus !== 'idle' ? (
             <span className={`flowgram-card__runtime flowgram-card__runtime--${runtimeStatus}`}>
               {runtimeStatus}
@@ -315,6 +518,21 @@ function FlowgramNodeCard(props: FlowgramNodeMaterialProps) {
         </div>
         <strong>{rawData?.label ?? props.node.id}</strong>
         <p className="flowgram-card__preview">{preview}</p>
+        {branchDefinitions.length > 0 ? (
+          <div className="flowgram-card__branches">
+            {branchDefinitions.map((branch) => (
+              <div key={branch.key} className="flowgram-card__branch-row">
+                <span className="flowgram-card__branch-label">{branch.label}</span>
+                <span
+                  className="flowgram-card__branch-port"
+                  data-port-id={branch.key}
+                  data-port-type="output"
+                  data-port-location="right"
+                />
+              </div>
+            ))}
+          </div>
+        ) : null}
         <div className="flowgram-card__meta">
           <span>{rawData?.connectionId ? `conn: ${rawData.connectionId}` : 'logic-only node'}</span>
           <span>{rawData?.timeoutMs ? `${rawData.timeoutMs} ms timeout` : 'no timeout'}</span>
@@ -325,20 +543,68 @@ function FlowgramNodeCard(props: FlowgramNodeMaterialProps) {
   );
 }
 
-function FlowgramToolbar({ canDeleteSelection, onDeleteSelection }: FlowgramToolbarProps) {
-  const { document, history } = useClientContext();
+function FlowgramToolButton({
+  label,
+  disabled,
+  destructive = false,
+  onClick,
+  children,
+}: {
+  label: string;
+  disabled?: boolean;
+  destructive?: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      style={{
+        ...FLOWGRAM_BUTTON_STYLE,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        color: disabled
+          ? 'var(--toolbar-disabled)'
+          : destructive
+            ? 'var(--danger-ink)'
+            : 'var(--toolbar-text)',
+        opacity: disabled ? 0.7 : 1,
+      }}
+      onClick={onClick}
+      disabled={disabled}
+    >
+      {children}
+    </button>
+  );
+}
+
+function FlowgramToolbar({
+  canRun,
+  canSave,
+  minimapVisible,
+  onToggleMinimap,
+  onRun,
+  onSave,
+  onDownload,
+}: FlowgramToolbarProps) {
+  const { history, playground } = useClientContext();
+  const downloadService = useService(FlowDownloadService);
   const tools = usePlaygroundTools({
     minZoom: 0.24,
     maxZoom: 2,
   });
-  const panelManager = usePanelManager();
-  const groupService = useService(WorkflowGroupService);
-  const nodeIntoContainerService = useService(NodeIntoContainerService);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
-  const [canGroupSelection, setCanGroupSelection] = useState(false);
-  const [selectedGroupNode, setSelectedGroupNode] = useState<FlowNodeEntity | null>(null);
-  const [selectedMovableNode, setSelectedMovableNode] = useState<FlowNodeEntity | null>(null);
+  const [isReadonly, setIsReadonly] = useState(playground.config.readonly);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [interactiveType, setInteractiveType] = useState<FlowgramInteractiveType>(
+    () => getPreferredInteractiveType(),
+  );
+  const [savedPulse, setSavedPulse] = useState(false);
+  const zoomMenuRef = useRef<HTMLDetailsElement | null>(null);
+  const interactiveMenuRef = useRef<HTMLDetailsElement | null>(null);
+  const downloadMenuRef = useRef<HTMLDetailsElement | null>(null);
 
   useEffect(() => {
     if (!history?.undoRedoService) {
@@ -359,171 +625,276 @@ function FlowgramToolbar({ canDeleteSelection, onDeleteSelection }: FlowgramTool
   }, [history]);
 
   useEffect(() => {
-    const syncSelectionState = () => {
-      const selectedNodes = document.selectServices.selectedNodes;
-      const nextSelectedGroup =
-        selectedNodes.length === 1 && selectedNodes[0].flowNodeType === FlowNodeBaseType.GROUP
-          ? selectedNodes[0]
-          : null;
-      const nextSelectedMovableNode =
-        selectedNodes.length === 1 &&
-        selectedNodes[0].parent?.flowNodeType === FlowNodeBaseType.GROUP &&
-        nodeIntoContainerService.canMoveOutContainer(selectedNodes[0])
-          ? selectedNodes[0]
-          : null;
-
-      setCanGroupSelection(
-        selectedNodes.length > 1 && selectedNodes.every((node) => node.flowNodeType !== FlowNodeBaseType.GROUP),
-      );
-      setSelectedGroupNode(nextSelectedGroup);
-      setSelectedMovableNode(nextSelectedMovableNode);
-    };
-
-    syncSelectionState();
-
-    const dispose = document.selectServices.onSelectionChanged(syncSelectionState);
-    return () => dispose.dispose();
-  }, [document, nodeIntoContainerService]);
-
-  async function handleGroupSelection() {
-    const selectedNodes = document.selectServices.selectedNodes.filter(
-      (node) => node.flowNodeType !== FlowNodeBaseType.GROUP,
-    );
-
-    if (selectedNodes.length < 2) {
-      return;
-    }
-
-    const groupNode = groupService.createGroup(selectedNodes);
-
-    if (!groupNode) {
-      return;
-    }
-
-    document.selectServices.selectNode(groupNode);
-    await document.selectServices.selectNodeAndScrollToView(groupNode, false);
-  }
-
-  function handleUngroupSelection() {
-    if (!selectedGroupNode) {
-      return;
-    }
-
-    groupService.ungroup(selectedGroupNode);
-  }
-
-  async function handleMoveOutContainer() {
-    if (!selectedMovableNode) {
-      return;
-    }
-
-    await nodeIntoContainerService.moveOutContainer({
-      node: selectedMovableNode,
+    setIsReadonly(playground.config.readonly);
+    const dispose = playground.config.onReadonlyOrDisabledChange(({ readonly }) => {
+      setIsReadonly(readonly);
     });
+    return () => dispose.dispose();
+  }, [playground]);
+
+  useEffect(() => {
+    setIsDownloading(downloadService.downloading);
+    const dispose = downloadService.onDownloadingChange((value) => {
+      setIsDownloading(value);
+    });
+    return () => dispose.dispose();
+  }, [downloadService]);
+
+  useEffect(() => {
+    tools.setInteractiveType(interactiveType as EditorInteractiveType);
+    setPreferredInteractiveType(interactiveType);
+  }, [interactiveType, tools]);
+
+  useEffect(() => {
+    if (!savedPulse) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => setSavedPulse(false), 1200);
+    return () => window.clearTimeout(timer);
+  }, [savedPulse]);
+
+  useEffect(() => {
+    function handlePointerDown(event: PointerEvent) {
+      const target = event.target as Node | null;
+      if (
+        interactiveMenuRef.current?.contains(target) ||
+        zoomMenuRef.current?.contains(target) ||
+        downloadMenuRef.current?.contains(target)
+      ) {
+        return;
+      }
+
+      closeMenu(interactiveMenuRef);
+      closeMenu(zoomMenuRef);
+      closeMenu(downloadMenuRef);
+    }
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+    };
+  }, []);
+
+  function closeMenu(ref: { current: HTMLDetailsElement | null }) {
+    ref.current?.removeAttribute('open');
   }
 
   return (
     <div style={FLOWGRAM_TOOLS_STYLE} data-flow-editor-selectable="false">
-      <button type="button" style={FLOWGRAM_BUTTON_STYLE} onClick={() => tools.zoomin()}>
-        放大
-      </button>
-      <button type="button" style={FLOWGRAM_BUTTON_STYLE} onClick={() => tools.zoomout()}>
-        缩小
-      </button>
-      <span style={FLOWGRAM_ZOOM_STYLE}>{Math.floor(tools.zoom * 100)}%</span>
-      <button type="button" style={FLOWGRAM_BUTTON_STYLE} onClick={() => tools.fitView()}>
-        适配
-      </button>
-      <button type="button" style={FLOWGRAM_BUTTON_STYLE} onClick={() => void tools.autoLayout()}>
-        布局
-      </button>
-      <button type="button" style={FLOWGRAM_BUTTON_STYLE} onClick={() => tools.switchLineType()}>
-        {tools.lineType === BEZIER_LINE_TYPE ? '贝塞尔' : '折线'}
-      </button>
-      <button
-        type="button"
-        style={{
-          ...FLOWGRAM_BUTTON_STYLE,
-          cursor: canUndo ? 'pointer' : 'not-allowed',
-          color: canUndo ? 'var(--toolbar-text)' : 'var(--toolbar-disabled)',
-        }}
-        onClick={() => void history.undo()}
-        disabled={!canUndo}
-      >
-        撤销
-      </button>
-      <button
-        type="button"
-        style={{
-          ...FLOWGRAM_BUTTON_STYLE,
-          cursor: canRedo ? 'pointer' : 'not-allowed',
-          color: canRedo ? 'var(--toolbar-text)' : 'var(--toolbar-disabled)',
-        }}
-        onClick={() => void history.redo()}
-        disabled={!canRedo}
-      >
-        重做
-      </button>
-      <button
-        type="button"
-        style={{
-          ...FLOWGRAM_BUTTON_STYLE,
-          cursor: canGroupSelection ? 'pointer' : 'not-allowed',
-          color: canGroupSelection ? 'var(--toolbar-text)' : 'var(--toolbar-disabled)',
-        }}
-        onClick={() => void handleGroupSelection()}
-        disabled={!canGroupSelection}
-      >
-        分组
-      </button>
-      <button
-        type="button"
-        style={{
-          ...FLOWGRAM_BUTTON_STYLE,
-          cursor: selectedGroupNode ? 'pointer' : 'not-allowed',
-          color: selectedGroupNode ? 'var(--toolbar-text)' : 'var(--toolbar-disabled)',
-        }}
-        onClick={handleUngroupSelection}
-        disabled={!selectedGroupNode}
-      >
-        解组
-      </button>
-      <button
-        type="button"
-        style={{
-          ...FLOWGRAM_BUTTON_STYLE,
-          cursor: selectedMovableNode ? 'pointer' : 'not-allowed',
-          color: selectedMovableNode ? 'var(--toolbar-text)' : 'var(--toolbar-disabled)',
-        }}
-        onClick={() => void handleMoveOutContainer()}
-        disabled={!selectedMovableNode}
-      >
-        移出容器
-      </button>
-      <button
-        type="button"
-        style={FLOWGRAM_BUTTON_STYLE}
-        onClick={() => panelManager.open(FLOWGRAM_RUNTIME_PANEL_KEY, 'bottom')}
-      >
-        预检
-      </button>
-      <button
-        type="button"
-        style={{
-          ...FLOWGRAM_BUTTON_STYLE,
-          cursor: canDeleteSelection ? 'pointer' : 'not-allowed',
-          color: canDeleteSelection ? 'var(--toolbar-text)' : 'var(--toolbar-disabled)',
-        }}
-        onClick={onDeleteSelection}
-        disabled={!canDeleteSelection}
-      >
-        删除
-      </button>
+      <div style={FLOWGRAM_TOOLS_SECTION_STYLE} className="flowgram-tools">
+        <details ref={interactiveMenuRef} className="flowgram-tools__menu" data-no-window-drag>
+          <summary
+            className="flowgram-tools__icon-button"
+            aria-label={interactiveType === 'PAD' ? '触控板模式' : '鼠标模式'}
+            title={interactiveType === 'PAD' ? '触控板模式' : '鼠标模式'}
+          >
+            {interactiveType === 'PAD' ? (
+              <TrackpadModeIcon width={16} height={16} />
+            ) : (
+              <MouseModeIcon width={16} height={16} />
+            )}
+          </summary>
+          <div className="flowgram-tools__menu-panel">
+            <button
+              type="button"
+              className={
+                interactiveType === 'PAD'
+                  ? 'flowgram-tools__menu-item is-active'
+                  : 'flowgram-tools__menu-item'
+              }
+              onClick={() => {
+                setInteractiveType('PAD');
+                closeMenu(interactiveMenuRef);
+              }}
+            >
+              触控板优先
+            </button>
+            <button
+              type="button"
+              className={
+                interactiveType === 'MOUSE'
+                  ? 'flowgram-tools__menu-item is-active'
+                  : 'flowgram-tools__menu-item'
+              }
+              onClick={() => {
+                setInteractiveType('MOUSE');
+                closeMenu(interactiveMenuRef);
+              }}
+            >
+              鼠标优先
+            </button>
+          </div>
+        </details>
+
+        <details ref={zoomMenuRef} className="flowgram-tools__menu" data-no-window-drag>
+          <summary className="flowgram-tools__zoom" style={FLOWGRAM_ZOOM_STYLE}>
+            {Math.floor(tools.zoom * 100)}%
+          </summary>
+          <div className="flowgram-tools__menu-panel">
+            <button
+              type="button"
+              className="flowgram-tools__menu-item"
+              onClick={() => {
+                tools.zoomin();
+                closeMenu(zoomMenuRef);
+              }}
+            >
+              放大
+            </button>
+            <button
+              type="button"
+              className="flowgram-tools__menu-item"
+              onClick={() => {
+                tools.zoomout();
+                closeMenu(zoomMenuRef);
+              }}
+            >
+              缩小
+            </button>
+            <div className="flowgram-tools__menu-divider" />
+            {[0.5, 1, 1.5, 2].map((zoomValue) => (
+              <button
+                key={zoomValue}
+                type="button"
+                className="flowgram-tools__menu-item"
+                onClick={() => {
+                  playground.config.updateZoom(zoomValue);
+                  closeMenu(zoomMenuRef);
+                }}
+              >
+                {`${Math.floor(zoomValue * 100)}%`}
+              </button>
+            ))}
+          </div>
+        </details>
+
+        <FlowgramToolButton label="适配视图" onClick={() => tools.fitView()}>
+          <FitViewIcon width={16} height={16} />
+        </FlowgramToolButton>
+        <FlowgramToolButton
+          label={minimapVisible ? '隐藏缩略图' : '显示缩略图'}
+          onClick={onToggleMinimap}
+        >
+          <MinimapIcon width={16} height={16} />
+        </FlowgramToolButton>
+        <FlowgramToolButton
+          label={isReadonly ? '退出只读' : '只读模式'}
+          onClick={() => {
+            playground.config.readonly = !playground.config.readonly;
+          }}
+        >
+          {isReadonly ? (
+            <LockClosedIcon width={16} height={16} />
+          ) : (
+            <LockOpenIcon width={16} height={16} />
+          )}
+        </FlowgramToolButton>
+        <FlowgramToolButton label="撤销" disabled={!canUndo} onClick={() => void history.undo()}>
+          <UndoActionIcon width={16} height={16} />
+        </FlowgramToolButton>
+        <FlowgramToolButton label="重做" disabled={!canRedo} onClick={() => void history.redo()}>
+          <RedoActionIcon width={16} height={16} />
+        </FlowgramToolButton>
+
+        <details ref={downloadMenuRef} className="flowgram-tools__menu" data-no-window-drag>
+          <summary
+            className="flowgram-tools__icon-button"
+            aria-label={isDownloading ? '导出中' : '下载'}
+            title={isDownloading ? '导出中' : '下载'}
+          >
+            <DownloadIcon width={16} height={16} />
+          </summary>
+          <div className="flowgram-tools__menu-panel">
+            <button
+              type="button"
+              className="flowgram-tools__menu-item"
+              disabled={isDownloading || isReadonly}
+              onClick={() => {
+                void onDownload(FlowDownloadFormat.PNG);
+                closeMenu(downloadMenuRef);
+              }}
+            >
+              PNG
+            </button>
+            <button
+              type="button"
+              className="flowgram-tools__menu-item"
+              disabled={isDownloading || isReadonly}
+              onClick={() => {
+                void onDownload(FlowDownloadFormat.JPEG);
+                closeMenu(downloadMenuRef);
+              }}
+            >
+              JPEG
+            </button>
+            <button
+              type="button"
+              className="flowgram-tools__menu-item"
+              disabled={isDownloading || isReadonly}
+              onClick={() => {
+                void onDownload(FlowDownloadFormat.SVG);
+                closeMenu(downloadMenuRef);
+              }}
+            >
+              SVG
+            </button>
+            <div className="flowgram-tools__menu-divider" />
+            <button
+              type="button"
+              className="flowgram-tools__menu-item"
+              disabled={isDownloading || isReadonly}
+              onClick={() => {
+                void onDownload(FlowDownloadFormat.JSON);
+                closeMenu(downloadMenuRef);
+              }}
+            >
+              JSON
+            </button>
+            <button
+              type="button"
+              className="flowgram-tools__menu-item"
+              disabled={isDownloading || isReadonly}
+              onClick={() => {
+                void onDownload(FlowDownloadFormat.YAML);
+                closeMenu(downloadMenuRef);
+              }}
+            >
+              YAML
+            </button>
+          </div>
+        </details>
+
+        <button
+          type="button"
+          className={savedPulse ? 'flowgram-tools__action is-saved' : 'flowgram-tools__action'}
+          onClick={() => {
+            onSave();
+            setSavedPulse(true);
+          }}
+          disabled={!canSave || isReadonly}
+        >
+          {savedPulse ? '已保存' : '保存'}
+        </button>
+
+        <button
+          type="button"
+          className="flowgram-tools__action flowgram-tools__action--primary"
+          onClick={onRun}
+          disabled={!canRun}
+        >
+          运行
+        </button>
+      </div>
     </div>
   );
 }
 
-function FlowgramMinimap() {
+function FlowgramMinimap({ hidden = false }: { hidden?: boolean }) {
+  if (hidden) {
+    return null;
+  }
+
   return (
     <div style={FLOWGRAM_MINIMAP_WRAPPER_STYLE} data-flow-editor-selectable="false">
       <MinimapRender
@@ -542,11 +913,14 @@ export function FlowgramCanvas({
   workflowStatus,
   accentHex,
   nodeRhaiColor,
+  onRunRequested,
   onGraphChange,
 }: FlowgramCanvasProps) {
   const [lastChange, setLastChange] = useState<string | null>(null);
   const [editorCtx, setEditorCtx] = useState<FreeLayoutPluginContext | null>(null);
   const [hasSelection, setHasSelection] = useState(false);
+  const [minimapVisible, setMinimapVisible] = useState(false);
+  const [isReadonlyMode, setIsReadonlyMode] = useState(false);
   const syncTimerRef = useRef<number | null>(null);
   const selectedNodeRef = useRef<FlowNodeEntity | null>(null);
   const latestGraphRef = useRef<WorkflowGraph | null>(graph);
@@ -604,7 +978,6 @@ export function FlowgramCanvas({
   const isWorkflowRuntimeMapped =
     workflowStatus === 'running' || workflowStatus === 'completed' || workflowStatus === 'failed';
   const workflowStatusLabel = getCanvasWorkflowStatusLabel(workflowStatus);
-  const workflowStatusPillClass = getCanvasWorkflowStatusPillClass(workflowStatus);
 
   const resolveNodeRuntimeStatus = useCallback(
     (nodeId: string): RuntimeNodeStatus => {
@@ -701,7 +1074,6 @@ export function FlowgramCanvas({
     }),
     [renderNodeCard],
   );
-  const canDeleteSelection = Boolean(editorCtx && editorCtx.selection.selection.length > 0);
   const syncSelectionState = useCallback(
     (ctx: FreeLayoutPluginContext | null) => {
       if (!ctx) {
@@ -726,6 +1098,11 @@ export function FlowgramCanvas({
         return;
       }
 
+      if (ctx.playground.config.readonly) {
+        panelManager.close(FLOWGRAM_NODE_SETTINGS_PANEL_KEY, 'right');
+        return;
+      }
+
       if (nextBusinessNode) {
         panelManager.open(FLOWGRAM_NODE_SETTINGS_PANEL_KEY, 'right', {
           props: {
@@ -739,6 +1116,50 @@ export function FlowgramCanvas({
       panelManager.close(FLOWGRAM_NODE_SETTINGS_PANEL_KEY, 'right');
     },
     [connectionOptions],
+  );
+
+  const buildCurrentAstText = useCallback(
+    (ctx: FreeLayoutPluginContext) => {
+      if (!latestGraphRef.current) {
+        return null;
+      }
+
+      const nextFlowgramGraph = ctx.document.toJSON();
+      const nextGraph = toNazhWorkflowGraph(nextFlowgramGraph, latestGraphRef.current);
+      return formatWorkflowGraph(nextGraph);
+    },
+    [],
+  );
+
+  const handleSaveCurrentGraph = useCallback(() => {
+    if (!editorCtx) {
+      return;
+    }
+
+    const nextAstText = buildCurrentAstText(editorCtx);
+    if (!nextAstText) {
+      return;
+    }
+
+    onGraphChange(nextAstText);
+  }, [buildCurrentAstText, editorCtx, onGraphChange]);
+
+  const handleDownloadCurrentGraph = useCallback(
+    async (format: FlowDownloadFormat) => {
+      if (!editorCtx) {
+        return;
+      }
+
+      const downloadService = (editorCtx as FreeLayoutPluginContext & {
+        get?: <T>(token: unknown) => T;
+      }).get?.<FlowDownloadService>(FlowDownloadService);
+      if (!downloadService) {
+        return;
+      }
+
+      await downloadService.download({ format });
+    },
+    [editorCtx],
   );
 
   const handleEditorRef = useCallback(
@@ -799,6 +1220,7 @@ export function FlowgramCanvas({
 
   useEffect(() => {
     if (!editorCtx) {
+      setIsReadonlyMode(false);
       return;
     }
 
@@ -810,6 +1232,24 @@ export function FlowgramCanvas({
 
     return () => {
       selectionDisposable.dispose();
+    };
+  }, [editorCtx, syncSelectionState]);
+
+  useEffect(() => {
+    if (!editorCtx) {
+      return;
+    }
+
+    setIsReadonlyMode(editorCtx.playground.config.readonly);
+    const disposable = editorCtx.playground.config.onReadonlyOrDisabledChange(({ readonly }) => {
+      setIsReadonlyMode(readonly);
+      if (readonly) {
+        syncSelectionState(editorCtx);
+      }
+    });
+
+    return () => {
+      disposable.dispose();
     };
   }, [editorCtx, syncSelectionState]);
 
@@ -859,10 +1299,10 @@ export function FlowgramCanvas({
     }
 
     syncTimerRef.current = window.setTimeout(() => {
-      const nextFlowgramGraph = ctx.document.toJSON();
-      const nextGraph = toNazhWorkflowGraph(nextFlowgramGraph, latestGraphRef.current as WorkflowGraph);
-      const nextAstText = formatWorkflowGraph(nextGraph);
-      onGraphChange(nextAstText);
+      const nextAstText = buildCurrentAstText(ctx);
+      if (nextAstText) {
+        onGraphChange(nextAstText);
+      }
     }, 120);
   }
 
@@ -898,7 +1338,7 @@ export function FlowgramCanvas({
   }
 
   async function handleInsertNode(seed: NodeSeed, mode: 'standalone' | 'downstream') {
-    if (!editorCtx) {
+    if (!editorCtx || editorCtx.playground.config.readonly) {
       return;
     }
 
@@ -908,74 +1348,23 @@ export function FlowgramCanvas({
       seed.kind,
       buildInsertionPosition(anchorNode),
       {
-      id: nextId,
-      type: seed.kind,
-      data: resolveNodeData(seed, nextId, primaryConnectionId),
+        id: nextId,
+        type: seed.kind,
+        data: resolveNodeData(seed, nextId, primaryConnectionId),
       },
     );
 
     if (anchorNode) {
+      const fromPort = getDefaultOutputPortId(anchorNode);
       editorCtx.document.linesManager.createLine({
         from: anchorNode.id,
         to: node.id,
+        ...(fromPort ? { fromPort } : {}),
       });
     }
 
     editorCtx.document.selectServices.selectNode(node);
     await editorCtx.document.selectServices.selectNodeAndScrollToView(node, false);
-    syncSelectionState(editorCtx);
-  }
-
-  async function handleAutoLayout() {
-    if (!editorCtx) {
-      return;
-    }
-
-    await editorCtx.tools.autoLayout();
-    await editorCtx.tools.fitView(true);
-  }
-
-  async function handleFitView() {
-    if (!editorCtx) {
-      return;
-    }
-
-    await editorCtx.tools.fitView(true);
-  }
-
-  function handleDeleteSelection() {
-    if (!editorCtx) {
-      return;
-    }
-
-    editorCtx.selection.selection.forEach((entity) => {
-      if (entity instanceof WorkflowNodeEntity) {
-        if (!editorCtx.document.canRemove(entity)) {
-          return;
-        }
-
-        const nodeMeta = entity.getNodeMeta();
-        const subCanvas = nodeMeta.subCanvas?.(entity);
-        if (subCanvas?.isCanvas) {
-          subCanvas.parentNode.dispose();
-          return;
-        }
-
-        entity.dispose();
-        return;
-      }
-
-      if (entity instanceof WorkflowLineEntity) {
-        if (!editorCtx.document.linesManager.canRemove(entity)) {
-          return;
-        }
-
-        entity.dispose();
-      }
-    });
-
-    editorCtx.selection.selection = editorCtx.selection.selection.filter((entity) => !entity.disposed);
-    editorCtx.playground.flush();
     syncSelectionState(editorCtx);
   }
 
@@ -998,41 +1387,41 @@ export function FlowgramCanvas({
 
   return (
     <section className="canvas-shell">
-      <div className="canvas-header">
-        <div>
-          <p className="eyebrow">FlowGram Editor</p>
-          <h2>工业画布编辑器</h2>
-        </div>
-        <div className={`runtime-pill ${workflowStatusPillClass}`}>{workflowStatusLabel}</div>
-      </div>
-
       {!graph || !flowgramData ? (
         <div className="canvas-empty">无有效流程</div>
       ) : (
         <FreeLayoutEditorProvider ref={handleEditorRef} {...editorProps}>
-          <div className="flowgram-workspace">
-            <FlowgramNodeAddPanel
-              primaryConnectionId={primaryConnectionId}
-              hasSelection={hasSelection}
-              onInsertSeed={handleInsertNode}
-            />
-
-            <div className="flowgram-host">
-              <EditorRenderer className="flowgram-editor" />
-              <FlowgramToolbar
-                canDeleteSelection={canDeleteSelection}
-                onDeleteSelection={handleDeleteSelection}
+          <div className="flowgram-host">
+            <div className="flowgram-workspace">
+              <FlowgramNodeAddPanel
+                primaryConnectionId={primaryConnectionId}
+                hasSelection={hasSelection}
+                disabled={isReadonlyMode}
+                onInsertSeed={handleInsertNode}
               />
-              <FlowgramMinimap />
-              <div className="flowgram-overlay">
-                <span>{`工作流状态: ${workflowStatusLabel}`}</span>
-                <span>{lastChange ? `最近变更: ${lastChange}` : '未变更'}</span>
-                <span>{`${flowgramData.nodes.length} nodes / ${flowgramData.edges.length} edges`}</span>
-                <span>
-                  {isWorkflowRuntimeMapped && runtimeState.traceId
-                    ? `运行态: ${runtimeState.lastEventType ?? 'idle'} @ ${runtimeState.lastNodeId ?? '--'}`
-                    : '运行态: non-runtime'}
-                </span>
+
+              <div className="flowgram-stage">
+                <EditorRenderer className="flowgram-editor" />
+                <FlowgramToolbar
+                  canRun={Boolean(onRunRequested)}
+                  canSave={Boolean(editorCtx && graph)}
+                  minimapVisible={minimapVisible}
+                  onToggleMinimap={() => setMinimapVisible((visible) => !visible)}
+                  onRun={onRunRequested}
+                  onSave={handleSaveCurrentGraph}
+                  onDownload={handleDownloadCurrentGraph}
+                />
+                <FlowgramMinimap hidden={!minimapVisible || (hasSelection && !isReadonlyMode)} />
+                <div className="flowgram-overlay">
+                  <span>{`工作流状态: ${workflowStatusLabel}`}</span>
+                  <span>{lastChange ? `最近变更: ${lastChange}` : '未变更'}</span>
+                  <span>{`${flowgramData.nodes.length} nodes / ${flowgramData.edges.length} edges`}</span>
+                  <span>
+                    {isWorkflowRuntimeMapped && runtimeState.traceId
+                      ? `运行态: ${runtimeState.lastEventType ?? 'idle'} @ ${runtimeState.lastNodeId ?? '--'}`
+                      : '运行态: non-runtime'}
+                  </span>
+                </div>
               </div>
             </div>
           </div>

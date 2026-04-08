@@ -12,6 +12,7 @@ import type {
   onDragLineEndParams,
   FreeLayoutPluginContext,
 } from '@flowgram.ai/free-layout-editor';
+import { createDownloadPlugin } from '@flowgram.ai/export-plugin';
 
 import {
   createFlowgramNodeRegistries,
@@ -133,6 +134,7 @@ export function useFlowgramEditorProps({
         createFreeGroupPlugin({
           groupNodeRender: FlowgramGroupNodeRender,
         }),
+        createDownloadPlugin({}),
         createPanelManagerPlugin({
           factories: [flowgramNodeSettingsPanelFactory, flowgramRuntimePanelFactory],
           right: {

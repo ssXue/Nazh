@@ -1,6 +1,12 @@
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 
 import { AboutPanel } from './components/app/AboutPanel';
+import {
+  BackIcon,
+  RunActionIcon,
+  StopActionIcon,
+  TriggerActionIcon,
+} from './components/app/AppIcons';
 import { BOARD_LIBRARY, BoardsPanel, type BoardItem } from './components/app/BoardsPanel';
 import { DashboardPanel } from './components/app/DashboardPanel';
 import { PayloadPanel } from './components/app/PayloadPanel';
@@ -8,7 +14,6 @@ import { RuntimeDock } from './components/app/RuntimeDock';
 import { SettingsPanel } from './components/app/SettingsPanel';
 import { SidebarNav } from './components/app/SidebarNav';
 import { SourcePanel } from './components/app/SourcePanel';
-import { StudioControlBar } from './components/app/StudioControlBar';
 import type {
   MotionMode,
   SidebarSection,
@@ -36,12 +41,17 @@ import {
   onWorkflowDeployed,
   onWorkflowEvent,
   onWorkflowResult,
+  onWorkflowUndeployed,
+  undeployWorkflow,
 } from './lib/tauri';
 import type {
+  AppErrorRecord,
   ConnectionRecord,
   DeployResponse,
   JsonValue,
+  RuntimeLogEntry,
   WorkflowEvent,
+  WorkflowGraph,
   WorkflowRuntimeState,
   WorkflowResult,
   WorkflowWindowStatus,
@@ -186,7 +196,137 @@ function getInitialStartupPage(): StartupPage {
   return 'dashboard';
 }
 
-function buildProjectAst(boardName: string): string {
+function buildIndustrialAlarmExample(boardName: string): WorkflowGraph {
+  return {
+    name: boardName,
+    connections: [
+      {
+        id: 'plc-main',
+        type: 'modbus',
+        metadata: {
+          host: '192.168.10.11',
+          port: 502,
+          unit_id: 1,
+          register: 40001,
+        },
+      },
+    ],
+    nodes: {
+      timer_trigger: {
+        type: 'timer',
+        ai_description: 'Poll the PLC on a steady interval and seed runtime metadata.',
+        config: {
+          interval_ms: 5000,
+          immediate: true,
+          inject: {
+            gateway: 'edge-a',
+            scene: boardName,
+          },
+        },
+        meta: {
+          position: { x: 48, y: 88 },
+        },
+      },
+      modbus_read: {
+        type: 'modbusRead',
+        connection_id: 'plc-main',
+        ai_description: 'Read a simulated Modbus register from the main PLC.',
+        timeout_ms: 1000,
+        config: {
+          unit_id: 1,
+          register: 40001,
+          quantity: 1,
+          base_value: 68,
+          amplitude: 6,
+        },
+        meta: {
+          position: { x: 348, y: 88 },
+        },
+      },
+      code_clean: {
+        type: 'code',
+        ai_description: 'Normalize the PLC value and derive route-ready severity fields.',
+        timeout_ms: 1000,
+        config: {
+          script:
+            'let value = payload["value"]; payload["temperature_c"] = value; payload["temperature_f"] = (value * 1.8) + 32.0; payload["severity"] = value > 120 ? "alert" : "nominal"; payload["route"] = payload["severity"]; payload["tag"] = `${payload["gateway"]}:boiler-a`; payload',
+        },
+        meta: {
+          position: { x: 648, y: 88 },
+        },
+      },
+      route_switch: {
+        type: 'switch',
+        ai_description: 'Route nominal telemetry into SQLite and alert telemetry into DingTalk.',
+        timeout_ms: 1000,
+        config: {
+          script: 'payload["route"]',
+          branches: [
+            { key: 'nominal', label: 'Nominal' },
+            { key: 'alert', label: 'Alert' },
+          ],
+        },
+        meta: {
+          position: { x: 968, y: 72 },
+        },
+      },
+      sql_writer: {
+        type: 'sqlWriter',
+        ai_description: 'Persist nominal telemetry into a local SQLite audit table.',
+        timeout_ms: 1500,
+        config: {
+          database_path: './data/edge-runtime.sqlite3',
+          table: 'temperature_audit',
+        },
+        meta: {
+          position: { x: 1288, y: 176 },
+        },
+      },
+      http_alarm: {
+        type: 'httpClient',
+        ai_description: 'Send high severity telemetry to a DingTalk robot webhook after replacing the token.',
+        timeout_ms: 1500,
+        config: {
+          method: 'POST',
+          url: 'https://oapi.dingtalk.com/robot/send?access_token=replace_me',
+          headers: {
+            'X-Alarm-Source': 'nazh',
+          },
+        },
+        meta: {
+          position: { x: 1288, y: -8 },
+        },
+      },
+      debug_console: {
+        type: 'debugConsole',
+        ai_description: 'Mirror the final branch payload into the desktop debug console.',
+        timeout_ms: 500,
+        config: {
+          label: 'final-output',
+          pretty: true,
+        },
+        meta: {
+          position: { x: 1608, y: 88 },
+        },
+      },
+    },
+    edges: [
+      { from: 'timer_trigger', to: 'modbus_read' },
+      { from: 'modbus_read', to: 'code_clean' },
+      { from: 'code_clean', to: 'route_switch' },
+      { from: 'route_switch', to: 'sql_writer', source_port_id: 'nominal' },
+      { from: 'route_switch', to: 'http_alarm', source_port_id: 'alert' },
+      { from: 'sql_writer', to: 'debug_console' },
+      { from: 'http_alarm', to: 'debug_console' },
+    ],
+  };
+}
+
+function buildProjectAst(boardId: string, boardName: string): string {
+  if (boardId === 'default') {
+    return JSON.stringify(buildIndustrialAlarmExample(boardName), null, 2);
+  }
+
   const base = JSON.parse(SAMPLE_AST) as {
     name?: string;
     nodes?: Record<string, { config?: Record<string, JsonValue> }>;
@@ -204,8 +344,19 @@ function buildProjectAst(boardName: string): string {
 function buildInitialProjectDrafts(): Record<string, ProjectDraft> {
   return BOARD_LIBRARY.reduce<Record<string, ProjectDraft>>((drafts, board) => {
     drafts[board.id] = {
-      astText: buildProjectAst(board.name),
-      payloadText: SAMPLE_PAYLOAD,
+      astText: buildProjectAst(board.id, board.name),
+      payloadText:
+        board.id === 'default'
+          ? JSON.stringify(
+              {
+                manual: true,
+                operator: CURRENT_USER_NAME,
+                reason: 'manual override',
+              },
+              null,
+              2,
+            )
+          : SAMPLE_PAYLOAD,
     };
     return drafts;
   }, {});
@@ -270,6 +421,67 @@ function pushUnique(items: string[], item: string): string[] {
 
 function removeItem(items: string[], item: string): string[] {
   return items.filter((current) => current !== item);
+}
+
+function createClientEntryId(prefix: string): string {
+  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+}
+
+function describeUnknownError(error: unknown): { message: string; detail?: string | null } {
+  if (error instanceof Error) {
+    return {
+      message: error.message || '未知错误',
+      detail: error.stack ?? null,
+    };
+  }
+
+  if (typeof error === 'string') {
+    return { message: error };
+  }
+
+  if (error && typeof error === 'object') {
+    try {
+      return {
+        message: JSON.stringify(error),
+      };
+    } catch {
+      return {
+        message: '发生了无法序列化的异常对象',
+      };
+    }
+  }
+
+  return { message: '未知错误' };
+}
+
+function buildRuntimeLogEntry(
+  source: string,
+  level: RuntimeLogEntry['level'],
+  message: string,
+  detail?: string | null,
+): RuntimeLogEntry {
+  return {
+    id: createClientEntryId('log'),
+    timestamp: Date.now(),
+    level,
+    source,
+    message,
+    detail: detail ?? null,
+  };
+}
+
+function buildAppErrorRecord(
+  scope: AppErrorRecord['scope'],
+  title: string,
+  detail?: string | null,
+): AppErrorRecord {
+  return {
+    id: createClientEntryId('error'),
+    timestamp: Date.now(),
+    scope,
+    title,
+    detail: detail ?? null,
+  };
 }
 
 function parseWorkflowEventPayload(payload: unknown): ParsedWorkflowEvent | null {
@@ -451,10 +663,12 @@ function App() {
   );
   const [deployInfo, setDeployInfo] = useState<DeployResponse | null>(null);
   const [results, setResults] = useState<WorkflowResult[]>([]);
-  const [eventFeed, setEventFeed] = useState<string[]>([]);
+  const [eventFeed, setEventFeed] = useState<RuntimeLogEntry[]>([]);
+  const [appErrors, setAppErrors] = useState<AppErrorRecord[]>([]);
   const [connections, setConnections] = useState<ConnectionRecord[]>([]);
   const [flowgramReloadVersion, setFlowgramReloadVersion] = useState(0);
   const [runtimeState, setRuntimeState] = useState<WorkflowRuntimeState>(EMPTY_RUNTIME_STATE);
+  const [isRuntimeDockCollapsed, setIsRuntimeDockCollapsed] = useState(false);
   const [boardWorkspaceKey, setBoardWorkspaceKey] = useState(0);
 
   const currentBoardId = activeBoard?.id ?? DEFAULT_BOARD_ID;
@@ -474,6 +688,25 @@ function App() {
     () => buildAccentThemeVariables(accentHex, themeMode),
     [accentHex, themeMode],
   );
+
+  function appendRuntimeLog(
+    source: string,
+    level: RuntimeLogEntry['level'],
+    message: string,
+    detail?: string | null,
+  ) {
+    const nextEntry = buildRuntimeLogEntry(source, level, message, detail);
+    setEventFeed((current) => [...current, nextEntry].slice(-180));
+  }
+
+  function appendAppError(
+    scope: AppErrorRecord['scope'],
+    title: string,
+    detail?: string | null,
+  ) {
+    const nextError = buildAppErrorRecord(scope, title, detail);
+    setAppErrors((current) => [...current, nextError].slice(-24));
+  }
 
   useEffect(() => {
     document.documentElement.dataset.theme = themeMode;
@@ -519,6 +752,22 @@ function App() {
   }, [motionMode]);
 
   useEffect(() => {
+    setIsRuntimeDockCollapsed(false);
+  }, [activeBoard?.id]);
+
+  useEffect(() => {
+    if (!hasTauriRuntime() || !activeBoard) {
+      return;
+    }
+
+    if (sidebarSection !== 'connections' && !deployInfo) {
+      return;
+    }
+
+    void refreshConnections();
+  }, [activeBoard?.id, deployInfo, sidebarSection]);
+
+  useEffect(() => {
     try {
       window.localStorage.setItem(STARTUP_PAGE_STORAGE_KEY, startupPage);
     } catch {
@@ -543,6 +792,39 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const handleWindowError = (event: ErrorEvent) => {
+      const message = event.message || '前端运行时异常';
+      const detail =
+        event.error instanceof Error
+          ? event.error.stack ?? event.error.message
+          : [event.filename, event.lineno, event.colno].filter(Boolean).join(':') || null;
+
+      appendAppError('frontend', message, detail);
+      setStatusMessage(`前端异常已捕获: ${message}`);
+      event.preventDefault();
+    };
+
+    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+      const { message, detail } = describeUnknownError(event.reason);
+      appendAppError('runtime', `未处理的 Promise 异常: ${message}`, detail);
+      setStatusMessage(`未处理的 Promise 异常: ${message}`);
+      event.preventDefault();
+    };
+
+    window.addEventListener('error', handleWindowError);
+    window.addEventListener('unhandledrejection', handleUnhandledRejection);
+
+    return () => {
+      window.removeEventListener('error', handleWindowError);
+      window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!hasTauriRuntime()) {
       return;
     }
@@ -558,12 +840,27 @@ function App() {
       const parsedEvent = parseWorkflowEventPayload(payload);
       if (parsedEvent) {
         setRuntimeState((current) => reduceRuntimeState(current, parsedEvent));
-      }
 
-      setEventFeed((current) => [
-        `${new Date().toLocaleTimeString()} ${JSON.stringify(payload)}`,
-        ...current,
-      ].slice(0, 14));
+        switch (parsedEvent.kind) {
+          case 'started':
+            appendRuntimeLog(parsedEvent.nodeId, 'info', '节点开始执行');
+            break;
+          case 'completed':
+            appendRuntimeLog(parsedEvent.nodeId, 'success', '节点执行完成');
+            break;
+          case 'output':
+            appendRuntimeLog(parsedEvent.nodeId, 'success', '节点产生输出');
+            break;
+          case 'failed':
+            appendRuntimeLog(parsedEvent.nodeId, 'error', '节点执行失败', parsedEvent.error ?? null);
+            appendAppError(
+              'workflow',
+              `节点 ${parsedEvent.nodeId} 执行失败`,
+              parsedEvent.error ?? null,
+            );
+            break;
+        }
+      }
     }).then((cleanup) => {
       if (alive) {
         cleanups.push(cleanup);
@@ -588,10 +885,43 @@ function App() {
       }
 
       setDeployInfo(payload);
-      setEventFeed([]);
+      setEventFeed([
+        buildRuntimeLogEntry(
+          'system',
+          'success',
+          '工作流部署完成',
+          payload.rootNodes.length > 0 ? `根节点: ${payload.rootNodes.join(', ')}` : null,
+        ),
+      ]);
       setResults([]);
+      setAppErrors([]);
       setRuntimeState(EMPTY_RUNTIME_STATE);
       setStatusMessage(`已部署 ${payload.nodeCount} 个节点，根节点: ${payload.rootNodes.join(', ')}`);
+    }).then((cleanup) => {
+      if (alive) {
+        cleanups.push(cleanup);
+      }
+    });
+
+    void onWorkflowUndeployed((payload) => {
+      if (!alive) {
+        return;
+      }
+
+      setDeployInfo(null);
+      setResults([]);
+      setRuntimeState(EMPTY_RUNTIME_STATE);
+      appendRuntimeLog(
+        'system',
+        payload.hadWorkflow ? 'warn' : 'info',
+        payload.hadWorkflow ? '工作流已反部署' : '当前没有已部署工作流',
+        payload.hadWorkflow ? `已停止 ${payload.abortedTimerCount} 个定时任务` : null,
+      );
+      setStatusMessage(
+        payload.hadWorkflow
+          ? `工作流已反部署，已停止 ${payload.abortedTimerCount} 个定时任务。`
+          : '当前没有已部署工作流。',
+      );
     }).then((cleanup) => {
       if (alive) {
         cleanups.push(cleanup);
@@ -610,6 +940,7 @@ function App() {
     setDeployInfo(null);
     setResults([]);
     setEventFeed([]);
+    setAppErrors([]);
     setRuntimeState(EMPTY_RUNTIME_STATE);
     setStatusMessage(nextMessage);
   }
@@ -619,7 +950,7 @@ function App() {
       ...current,
       [boardId]: {
         ...(current[boardId] ?? {
-          astText: buildProjectAst(activeBoard?.name ?? '默认工作流'),
+          astText: buildProjectAst(activeBoard?.id ?? DEFAULT_BOARD_ID, activeBoard?.name ?? '默认工作流'),
           payloadText: SAMPLE_PAYLOAD,
         }),
         ...nextDraft,
@@ -687,25 +1018,49 @@ function App() {
     }
 
     if (graphState.error) {
+      appendAppError('command', '部署前 AST 校验失败', graphState.error);
       setStatusMessage(`AST 无法部署: ${graphState.error}`);
       return;
     }
 
     if (!hasTauriRuntime()) {
       setStatusMessage('纯 Web 预览模式下不会实际调用后端，已完成 AST 结构校验。');
+      appendRuntimeLog('system', 'info', '纯 Web 预览模式下跳过实际部署');
       return;
     }
 
     try {
       const response = await deployWorkflow(astText);
-      setDeployInfo(response);
-      setEventFeed([]);
-      setResults([]);
-      setRuntimeState(EMPTY_RUNTIME_STATE);
       setStatusMessage(`部署完成，节点数 ${response.nodeCount}，边数 ${response.edgeCount}。`);
       await refreshConnections();
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : '部署失败');
+      const { message, detail } = describeUnknownError(error);
+      appendAppError('command', '部署工作流失败', detail ?? message);
+      setStatusMessage(message);
+    }
+  }
+
+  async function handleUndeploy() {
+    if (!activeBoard) {
+      setStatusMessage('请先从所有看板进入工程。');
+      return;
+    }
+
+    if (!hasTauriRuntime()) {
+      resetWorkspaceRuntime('已在预览态清空部署状态。');
+      appendRuntimeLog('system', 'info', '预览态已清空部署状态');
+      return;
+    }
+
+    try {
+      const response = await undeployWorkflow();
+      if (!response.hadWorkflow) {
+        setStatusMessage('当前没有已部署工作流。');
+      }
+    } catch (error) {
+      const { message, detail } = describeUnknownError(error);
+      appendAppError('command', '反部署失败', detail ?? message);
+      setStatusMessage(message);
     }
   }
 
@@ -720,6 +1075,11 @@ function App() {
     try {
       payload = JSON.parse(payloadText);
     } catch (error) {
+      appendAppError(
+        'command',
+        '测试载荷 JSON 无法解析',
+        error instanceof Error ? error.message : null,
+      );
       setStatusMessage(
         error instanceof Error ? `Payload JSON 无法解析: ${error.message}` : 'Payload JSON 无法解析',
       );
@@ -736,19 +1096,24 @@ function App() {
         ...current,
       ].slice(0, 8));
       setStatusMessage('已在纯 Web 预览模式下模拟发送 payload。');
+      appendRuntimeLog('system', 'info', '已在预览态模拟发送测试载荷');
       return;
     }
 
     if (!deployInfo) {
+      appendAppError('command', '发送测试载荷失败', '请先部署工作流');
       setStatusMessage('请先部署工作流，再发送测试消息。');
       return;
     }
 
     try {
       const response = await dispatchPayload(payload);
+      appendRuntimeLog('dispatch', 'info', `已提交测试载荷`, `trace_id=${response.traceId}`);
       setStatusMessage(`已提交 payload，trace_id=${response.traceId}`);
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : '发送 payload 失败');
+      const { message, detail } = describeUnknownError(error);
+      appendAppError('command', '发送测试载荷失败', detail ?? message);
+      setStatusMessage(message);
     }
   }
 
@@ -761,7 +1126,9 @@ function App() {
       const nextConnections = await listConnections();
       setConnections(nextConnections);
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : '加载连接列表失败');
+      const { message, detail } = describeUnknownError(error);
+      appendAppError('command', '加载连接列表失败', detail ?? message);
+      setStatusMessage(message);
     }
   }
 
@@ -779,14 +1146,7 @@ function App() {
   );
   const workflowStatusLabel = getWorkflowStatusLabel(workflowStatus);
   const workflowStatusPillClass = getWorkflowStatusPillClass(workflowStatus);
-  const runtimeSnapshot =
-    runtimeState.lastNodeId && runtimeState.lastEventType
-      ? `${runtimeState.lastEventType} @ ${runtimeState.lastNodeId}`
-      : workflowStatusLabel;
-  const runtimeUpdatedLabel = runtimeState.lastUpdatedAt
-    ? new Date(runtimeState.lastUpdatedAt).toLocaleTimeString()
-    : '尚无事件';
-  const hasRuntimeDock = Boolean(activeBoard && deployInfo);
+  const hasRuntimeDock = Boolean(activeBoard);
   const canDispatchPayload = Boolean(activeBoard) && (!isTauriRuntime || Boolean(deployInfo));
   const connectionPreview = connections.slice(0, 4);
   const sidebarSections = buildSidebarSections(
@@ -826,16 +1186,70 @@ function App() {
 
     return (
       <section className="studio-content studio-content--board">
-        <div key={`${activeBoard.id}-${boardWorkspaceKey}`} className="studio-board-workspace">
+        <div
+          key={`${activeBoard.id}-${boardWorkspaceKey}`}
+          className={`studio-board-workspace ${isRuntimeDockCollapsed ? 'is-runtime-collapsed' : ''}`}
+        >
           <div
             className="studio-board-workspace__header window-safe-header"
             data-window-drag-region
           >
-            <div>
-              <h2>{activeBoard.name}</h2>
-              <span>{activeBoard.updatedAt}</span>
+            <div className="studio-board-workspace__header-main">
+              <div className="studio-board-workspace__header-heading">
+                <button
+                  type="button"
+                  className="studio-board-workspace__back"
+                  onClick={handleBackToBoards}
+                  aria-label="返回所有看板"
+                  title="返回所有看板"
+                >
+                  <BackIcon />
+                </button>
+                <h2>{activeBoard.name}</h2>
+              </div>
+              <span>{`${activeBoard.updatedAt} · ${graphNodeCount} 节点`}</span>
             </div>
-            <span className="panel__badge">{graphNodeCount} 节点</span>
+            <div className="studio-board-workspace__header-actions">
+              <span className={`runtime-pill ${workflowStatusPillClass}`}>{workflowStatusLabel}</span>
+              <div className="studio-board-workspace__toolbar" data-no-window-drag>
+                {deployInfo || canDispatchPayload ? (
+                  <div className="studio-board-workspace__action-group">
+                    {canDispatchPayload ? (
+                      <button
+                        type="button"
+                        className="studio-board-workspace__action"
+                        onClick={handleDispatchPayload}
+                        disabled={!canDispatchPayload}
+                        aria-label="手动触发"
+                        title="手动触发"
+                      >
+                        <TriggerActionIcon />
+                      </button>
+                    ) : null}
+                    {deployInfo ? (
+                      <button
+                        type="button"
+                        className="studio-board-workspace__action is-danger"
+                        onClick={handleUndeploy}
+                        aria-label="停止"
+                        title="停止"
+                      >
+                        <StopActionIcon />
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
+                <button
+                  type="button"
+                  className="studio-board-workspace__action studio-board-workspace__action--primary"
+                  onClick={handleDeploy}
+                  aria-label={deployInfo ? '重新运行' : '运行'}
+                  title={deployInfo ? '重新运行' : '运行'}
+                >
+                  <RunActionIcon />
+                </button>
+              </div>
+            </div>
           </div>
 
           <FlowgramCanvas
@@ -845,25 +1259,8 @@ function App() {
             workflowStatus={workflowStatus}
             accentHex={accentHex}
             nodeRhaiColor={accentThemeVariables['--node-rhai']}
+            onRunRequested={handleDeploy}
             onGraphChange={handleGraphChange}
-          />
-
-          <StudioControlBar
-            workflowStatusLabel={workflowStatusLabel}
-            workflowStatusPillClass={workflowStatusPillClass}
-            isTauriRuntime={isTauriRuntime}
-            runtimeModeLabel={runtimeModeLabel}
-            runtimeSnapshot={runtimeSnapshot}
-            runtimeUpdatedLabel={runtimeUpdatedLabel}
-            statusMessage={statusMessage}
-            graphNodeCount={graphNodeCount}
-            graphEdgeCount={graphEdgeCount}
-            graphConnectionCount={graphConnectionCount}
-            activeNodeCount={runtimeState.activeNodeIds.length}
-            canDispatchPayload={canDispatchPayload}
-            onDeploy={handleDeploy}
-            onDispatchPayload={handleDispatchPayload}
-            onRefreshConnections={refreshConnections}
           />
 
           {hasRuntimeDock ? (
@@ -871,8 +1268,12 @@ function App() {
               deployInfo={deployInfo}
               runtimeState={runtimeState}
               eventFeed={eventFeed}
+              appErrors={appErrors}
               results={results}
               connectionPreview={connectionPreview}
+              themeMode={themeMode}
+              isCollapsed={isRuntimeDockCollapsed}
+              onToggleCollapsed={() => setIsRuntimeDockCollapsed((current) => !current)}
             />
           ) : null}
         </div>
@@ -1018,8 +1419,6 @@ function App() {
             workflowStatusPillClass={workflowStatusPillClass}
             themeMode={themeMode}
             onToggleTheme={handleToggleTheme}
-            activeBoardName={activeBoard?.name ?? null}
-            onBackToBoards={handleBackToBoards}
           />
         </aside>
 

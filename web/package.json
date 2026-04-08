@@ -10,6 +10,9 @@
     "tauri": "tauri"
   },
   "dependencies": {
+    "@flowgram.ai/core": "^0.4.19",
+    "@flowgram.ai/document": "^0.4.19",
+    "@flowgram.ai/export-plugin": "^0.1.8",
     "@flowgram.ai/form-materials": "^0.4.19",
     "@flowgram.ai/free-container-plugin": "^0.4.19",
     "@flowgram.ai/free-group-plugin": "^0.4.19",
@@ -22,16 +25,27 @@
     "@flowgram.ai/runtime-interface": "^0.4.19",
     "@flowgram.ai/runtime-js": "^0.4.19",
     "@tauri-apps/api": "^2.0.0",
+    "js-yaml": "^4.1.1",
+    "modern-screenshot": "^4.6.7",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-json-view-lite": "^2.5.0",
     "reflect-metadata": "^0.2.2"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0",
+    "@types/js-yaml": "^4.0.9",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
     "typescript": "^5.6.3",
     "vite": "^5.4.10"
+  },
+  "overrides": {
+    "@flowgram.ai/export-plugin": {
+      "@flowgram.ai/core": "0.4.19",
+      "@flowgram.ai/document": "0.4.19",
+      "@flowgram.ai/utils": "0.4.19"
+    }
   }
 }

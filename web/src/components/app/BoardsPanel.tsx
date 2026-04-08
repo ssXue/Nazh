@@ -15,23 +15,23 @@ interface BoardsPanelProps {
 export const BOARD_LIBRARY: BoardItem[] = [
   {
     id: 'default',
-    name: '默认工作流',
-    description: '主工作流画布，包含核心业务逻辑节点',
-    nodeCount: 0,
+    name: '工业告警联动',
+    description: 'Timer + Modbus + Code + Switch + HTTP / SQLite / Debug 的完整示例工程',
+    nodeCount: 7,
     updatedAt: '刚刚',
   },
   {
     id: 'data-pipeline',
     name: '数据管道',
     description: '从数据源到输出的 ETL 数据清洗管道',
-    nodeCount: 0,
+    nodeCount: 3,
     updatedAt: '2 小时前',
   },
   {
     id: 'notification',
     name: '告警通知流',
     description: '监控事件触发的多通道告警通知流程',
-    nodeCount: 0,
+    nodeCount: 3,
     updatedAt: '昨天',
   },
 ];
@@ -59,7 +59,7 @@ export function BoardsPanel({ onOpenBoard }: BoardsPanelProps) {
               <span className="board-card__desc">{board.description}</span>
             </div>
             <div className="board-card__footer">
-              <span className="board-card__meta">{board.updatedAt}</span>
+              <span className="board-card__meta">{`${board.nodeCount} 节点 · ${board.updatedAt}`}</span>
               <span className="board-card__badge">进入 →</span>
             </div>
           </button>

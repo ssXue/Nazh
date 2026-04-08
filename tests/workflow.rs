@@ -1,11 +1,19 @@
-use std::time::Duration;
+use std::{
+    io::{Read, Write},
+    net::TcpListener,
+    process::Command,
+    time::Duration,
+};
 
 use nazh_engine::{
     deploy_workflow, shared_connection_manager, ConnectionDefinition, ConnectionManager,
-    EngineError, NodeTrait, RhaiNode, RhaiNodeConfig, WorkflowContext, WorkflowGraph,
+    DebugConsoleNode, DebugConsoleNodeConfig, EngineError, HttpClientNode, HttpClientNodeConfig,
+    ModbusReadNode, ModbusReadNodeConfig, NodeDispatch, NodeTrait, RhaiNode, RhaiNodeConfig,
+    SqlWriterNode, SqlWriterNodeConfig, TimerNode, TimerNodeConfig, WorkflowContext, WorkflowGraph,
 };
 use serde_json::json;
 use tokio::time::timeout;
+use uuid::Uuid;
 
 #[tokio::test]
 async fn rhai_node_can_transform_json_payload() {
@@ -26,7 +34,18 @@ async fn rhai_node_can_transform_json_payload() {
         .await;
 
     match result {
-        Ok(ctx) => assert_eq!(ctx.payload, json!({ "value": 10 })),
+        Ok(execution) => {
+            match execution.first() {
+                Some(first_output) => {
+                    match &first_output.dispatch {
+                        NodeDispatch::Broadcast => {}
+                        NodeDispatch::Route(_) => panic!("plain rhai node should broadcast"),
+                    }
+                    assert_eq!(first_output.ctx.payload, json!({ "value": 10 }));
+                }
+                None => panic!("rhai node should produce a single output"),
+            }
+        }
         Err(error) => panic!("rhai node should execute successfully: {error}"),
     }
 }
@@ -164,4 +183,603 @@ fn connection_manager_borrows_and_releases_connections() {
 
     let release_result = manager.release("plc-1");
     assert!(release_result.is_ok(), "connection should release");
+}
+
+#[tokio::test]
+async fn if_node_routes_only_to_the_matching_branch() {
+    let graph = match WorkflowGraph::from_json(
+        &json!({
+            "nodes": {
+                "decision": {
+                    "type": "if",
+                    "config": {
+                        "script": "payload[\"value\"] > 80"
+                    }
+                },
+                "high_path": {
+                    "type": "native",
+                    "config": {
+                        "inject": {
+                            "branch": "high"
+                        }
+                    }
+                },
+                "low_path": {
+                    "type": "native",
+                    "config": {
+                        "inject": {
+                            "branch": "low"
+                        }
+                    }
+                }
+            },
+            "edges": [
+                {
+                    "from": "decision",
+                    "to": "high_path",
+                    "source_port_id": "true"
+                },
+                {
+                    "from": "decision",
+                    "to": "low_path",
+                    "source_port_id": "false"
+                }
+            ]
+        })
+        .to_string(),
+    ) {
+        Ok(graph) => graph,
+        Err(error) => panic!("graph JSON should parse: {error}"),
+    };
+
+    let mut deployment = match deploy_workflow(graph, shared_connection_manager()).await {
+        Ok(deployment) => deployment,
+        Err(error) => panic!("workflow should deploy successfully: {error}"),
+    };
+
+    let submit_result = deployment
+        .submit(WorkflowContext::new(json!({ "value": 90 })))
+        .await;
+    assert!(submit_result.is_ok(), "workflow should accept payload");
+
+    let result = timeout(Duration::from_secs(1), deployment.next_result()).await;
+    match result {
+        Ok(Some(ctx)) => {
+            assert_eq!(ctx.payload["branch"], json!("high"));
+        }
+        Ok(None) => panic!("result stream closed unexpectedly"),
+        Err(_) => panic!("workflow did not produce a result in time"),
+    }
+}
+
+#[tokio::test]
+async fn switch_node_routes_using_source_ports() {
+    let graph = match WorkflowGraph::from_json(
+        &json!({
+            "nodes": {
+                "decision": {
+                    "type": "switch",
+                    "config": {
+                        "script": "payload[\"route\"]",
+                        "branches": [
+                            { "key": "high", "label": "High" }
+                        ]
+                    }
+                },
+                "high_path": {
+                    "type": "native",
+                    "config": {
+                        "inject": {
+                            "route_taken": "high"
+                        }
+                    }
+                },
+                "default_path": {
+                    "type": "native",
+                    "config": {
+                        "inject": {
+                            "route_taken": "default"
+                        }
+                    }
+                }
+            },
+            "edges": [
+                {
+                    "from": "decision",
+                    "to": "high_path",
+                    "source_port_id": "high"
+                },
+                {
+                    "from": "decision",
+                    "to": "default_path",
+                    "source_port_id": "default"
+                }
+            ]
+        })
+        .to_string(),
+    ) {
+        Ok(graph) => graph,
+        Err(error) => panic!("graph JSON should parse: {error}"),
+    };
+
+    let mut deployment = match deploy_workflow(graph, shared_connection_manager()).await {
+        Ok(deployment) => deployment,
+        Err(error) => panic!("workflow should deploy successfully: {error}"),
+    };
+
+    let submit_result = deployment
+        .submit(WorkflowContext::new(json!({ "route": "high" })))
+        .await;
+    assert!(submit_result.is_ok(), "workflow should accept payload");
+
+    let result = timeout(Duration::from_secs(1), deployment.next_result()).await;
+    match result {
+        Ok(Some(ctx)) => {
+            assert_eq!(ctx.payload["route_taken"], json!("high"));
+        }
+        Ok(None) => panic!("result stream closed unexpectedly"),
+        Err(_) => panic!("workflow did not produce a result in time"),
+    }
+}
+
+#[tokio::test]
+async fn try_catch_node_routes_runtime_errors_to_catch_branch() {
+    let graph = match WorkflowGraph::from_json(
+        &json!({
+            "nodes": {
+                "guarded": {
+                    "type": "tryCatch",
+                    "config": {
+                        "script": "missing_handler(payload)"
+                    }
+                },
+                "success_path": {
+                    "type": "native",
+                    "config": {
+                        "inject": {
+                            "handled_by": "try"
+                        }
+                    }
+                },
+                "catch_path": {
+                    "type": "native",
+                    "config": {
+                        "inject": {
+                            "handled_by": "catch"
+                        }
+                    }
+                }
+            },
+            "edges": [
+                {
+                    "from": "guarded",
+                    "to": "success_path",
+                    "source_port_id": "try"
+                },
+                {
+                    "from": "guarded",
+                    "to": "catch_path",
+                    "source_port_id": "catch"
+                }
+            ]
+        })
+        .to_string(),
+    ) {
+        Ok(graph) => graph,
+        Err(error) => panic!("graph JSON should parse: {error}"),
+    };
+
+    let mut deployment = match deploy_workflow(graph, shared_connection_manager()).await {
+        Ok(deployment) => deployment,
+        Err(error) => panic!("workflow should deploy successfully: {error}"),
+    };
+
+    let submit_result = deployment.submit(WorkflowContext::new(json!({}))).await;
+    assert!(submit_result.is_ok(), "workflow should accept payload");
+
+    let result = timeout(Duration::from_secs(1), deployment.next_result()).await;
+    match result {
+        Ok(Some(ctx)) => {
+            assert_eq!(ctx.payload["handled_by"], json!("catch"));
+            assert!(ctx.payload["_error"].is_string(), "catch branch should include error payload");
+        }
+        Ok(None) => panic!("result stream closed unexpectedly"),
+        Err(_) => panic!("workflow did not produce a result in time"),
+    }
+}
+
+#[tokio::test]
+async fn loop_node_routes_body_iterations_and_done() {
+    let graph = match WorkflowGraph::from_json(
+        &json!({
+            "nodes": {
+                "loop_items": {
+                    "type": "loop",
+                    "config": {
+                        "script": "payload[\"items\"]"
+                    }
+                },
+                "body_path": {
+                    "type": "native",
+                    "config": {
+                        "inject": {
+                            "branch": "body"
+                        }
+                    }
+                },
+                "done_path": {
+                    "type": "native",
+                    "config": {
+                        "inject": {
+                            "branch": "done"
+                        }
+                    }
+                }
+            },
+            "edges": [
+                {
+                    "from": "loop_items",
+                    "to": "body_path",
+                    "source_port_id": "body"
+                },
+                {
+                    "from": "loop_items",
+                    "to": "done_path",
+                    "source_port_id": "done"
+                }
+            ]
+        })
+        .to_string(),
+    ) {
+        Ok(graph) => graph,
+        Err(error) => panic!("graph JSON should parse: {error}"),
+    };
+
+    let mut deployment = match deploy_workflow(graph, shared_connection_manager()).await {
+        Ok(deployment) => deployment,
+        Err(error) => panic!("workflow should deploy successfully: {error}"),
+    };
+
+    let submit_result = deployment
+        .submit(WorkflowContext::new(json!({
+            "items": ["alpha", "beta", "gamma"]
+        })))
+        .await;
+    assert!(submit_result.is_ok(), "workflow should accept payload");
+
+    let mut body_results = Vec::new();
+    let mut done_result = None;
+
+    for _ in 0..4 {
+        let result = timeout(Duration::from_secs(1), deployment.next_result()).await;
+        match result {
+            Ok(Some(ctx)) => {
+                let phase = ctx.payload["_loop"]["phase"].as_str();
+                match phase {
+                    Some("body") => body_results.push(ctx.payload),
+                    Some("done") => {
+                        done_result = Some(ctx.payload);
+                    }
+                    Some(other) => panic!("unexpected loop phase `{other}`"),
+                    None => panic!("loop output should include phase"),
+                }
+            }
+            Ok(None) => panic!("result stream closed unexpectedly"),
+            Err(_) => panic!("workflow did not produce a result in time"),
+        }
+    }
+
+    assert_eq!(body_results.len(), 3, "loop should emit three body iterations");
+
+    for (index, payload) in body_results.iter().enumerate() {
+        assert_eq!(payload["branch"], json!("body"));
+        assert_eq!(payload["_loop"]["phase"], json!("body"));
+        assert_eq!(payload["_loop"]["index"], json!(index as u64));
+        assert_eq!(payload["_loop"]["count"], json!(3));
+        assert_eq!(payload["_loop"]["item"], json!(["alpha", "beta", "gamma"][index]));
+    }
+
+    match done_result {
+        Some(payload) => {
+            assert_eq!(payload["branch"], json!("done"));
+            assert_eq!(payload["_loop"]["phase"], json!("done"));
+            assert_eq!(payload["_loop"]["count"], json!(3));
+        }
+        None => panic!("loop should emit a done output"),
+    }
+}
+
+#[tokio::test]
+async fn timer_node_injects_trigger_metadata() {
+    let mut inject = serde_json::Map::new();
+    inject.insert("source".to_owned(), json!("timer"));
+
+    let node = TimerNode::new(
+        "tick",
+        TimerNodeConfig {
+            interval_ms: 2_500,
+            immediate: true,
+            inject,
+        },
+        "interval trigger",
+    );
+
+    let result = node
+        .execute(WorkflowContext::new(json!({ "seed": "keep" })))
+        .await;
+
+    match result {
+        Ok(execution) => match execution.first() {
+            Some(first_output) => {
+                assert_eq!(first_output.ctx.payload["seed"], json!("keep"));
+                assert_eq!(first_output.ctx.payload["source"], json!("timer"));
+                assert_eq!(first_output.ctx.payload["_timer"]["node_id"], json!("tick"));
+                assert_eq!(first_output.ctx.payload["_timer"]["interval_ms"], json!(2_500));
+                assert_eq!(first_output.ctx.payload["_timer"]["immediate"], json!(true));
+            }
+            None => panic!("timer node should produce one output"),
+        },
+        Err(error) => panic!("timer node should execute successfully: {error}"),
+    }
+}
+
+#[tokio::test]
+async fn code_node_alias_executes_like_rhai() {
+    let graph = match WorkflowGraph::from_json(
+        &json!({
+            "nodes": {
+                "transform": {
+                    "type": "code",
+                    "config": {
+                        "script": "payload[\"normalized\"] = true; payload[\"value\"] = payload[\"value\"] + 2; payload"
+                    }
+                }
+            },
+            "edges": []
+        })
+        .to_string(),
+    ) {
+        Ok(graph) => graph,
+        Err(error) => panic!("graph JSON should parse: {error}"),
+    };
+
+    let mut deployment = match deploy_workflow(graph, shared_connection_manager()).await {
+        Ok(deployment) => deployment,
+        Err(error) => panic!("workflow should deploy successfully: {error}"),
+    };
+
+    let submit_result = deployment
+        .submit(WorkflowContext::new(json!({ "value": 40 })))
+        .await;
+    assert!(submit_result.is_ok(), "workflow should accept payload");
+
+    let result = timeout(Duration::from_secs(1), deployment.next_result()).await;
+    match result {
+        Ok(Some(ctx)) => {
+            assert_eq!(ctx.payload["normalized"], json!(true));
+            assert_eq!(ctx.payload["value"], json!(42));
+        }
+        Ok(None) => panic!("result stream closed unexpectedly"),
+        Err(_) => panic!("workflow did not produce a result in time"),
+    }
+}
+
+#[tokio::test]
+async fn modbus_read_node_emits_simulated_values() {
+    let node = ModbusReadNode::new(
+        "modbus-main",
+        ModbusReadNodeConfig {
+            connection_id: None,
+            unit_id: 1,
+            register: 40_001,
+            quantity: 2,
+            base_value: 72.0,
+            amplitude: 5.0,
+        },
+        "read modbus data",
+        shared_connection_manager(),
+    );
+
+    let result = node.execute(WorkflowContext::new(json!({}))).await;
+
+    match result {
+        Ok(execution) => match execution.first() {
+            Some(first_output) => {
+                assert_eq!(first_output.ctx.payload["_modbus"]["simulated"], json!(true));
+                assert_eq!(first_output.ctx.payload["_modbus"]["register"], json!(40_001));
+                assert_eq!(first_output.ctx.payload["_modbus"]["quantity"], json!(2));
+                assert!(
+                    first_output.ctx.payload["values"].as_array().map(|values| values.len()) == Some(2),
+                    "modbus read node should output two simulated values",
+                );
+            }
+            None => panic!("modbus read node should produce one output"),
+        },
+        Err(error) => panic!("modbus read node should execute successfully: {error}"),
+    }
+}
+
+fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack.windows(needle.len()).position(|window| window == needle)
+}
+
+#[tokio::test]
+async fn http_client_node_posts_payload_and_records_response() {
+    let listener = match TcpListener::bind("127.0.0.1:0") {
+        Ok(listener) => listener,
+        Err(error) => panic!("listener should bind: {error}"),
+    };
+    let address = match listener.local_addr() {
+        Ok(address) => address,
+        Err(error) => panic!("listener should expose address: {error}"),
+    };
+
+    let server = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("request should connect");
+        let mut request_bytes = Vec::new();
+        let mut buffer = [0_u8; 4096];
+        let mut headers_end = None;
+        let mut expected_len = None;
+
+        loop {
+            let read_count = stream.read(&mut buffer).expect("request should be readable");
+            if read_count == 0 {
+                break;
+            }
+
+            request_bytes.extend_from_slice(&buffer[..read_count]);
+
+            if headers_end.is_none() {
+                headers_end = find_bytes(&request_bytes, b"\r\n\r\n");
+                if let Some(index) = headers_end {
+                    let header_text = String::from_utf8_lossy(&request_bytes[..index]);
+                    let content_length = header_text
+                        .lines()
+                        .find_map(|line| {
+                            line.split_once(':').and_then(|(name, value)| {
+                                if name.eq_ignore_ascii_case("Content-Length") {
+                                    value.trim().parse::<usize>().ok()
+                                } else {
+                                    None
+                                }
+                            })
+                        })
+                        .unwrap_or(0);
+                    expected_len = Some(index + 4 + content_length);
+                }
+            }
+
+            if let Some(total_len) = expected_len {
+                if request_bytes.len() >= total_len {
+                    break;
+                }
+            }
+        }
+
+        let request_text = String::from_utf8_lossy(&request_bytes);
+        assert!(request_text.starts_with("POST /robot "), "request should target POST /robot");
+        assert!(
+            request_text.contains("\"severity\":\"high\""),
+            "request body should include the serialized payload"
+        );
+
+        let response_body = r#"{"ok":true,"channel":"dingtalk"}"#;
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            response_body.len(),
+            response_body
+        );
+        stream
+            .write_all(response.as_bytes())
+            .expect("response should be writable");
+    });
+
+    let node = HttpClientNode::new(
+        "dingtalk-alert",
+        HttpClientNodeConfig {
+            url: format!("http://{address}/robot"),
+            method: "POST".to_owned(),
+            headers: serde_json::Map::new(),
+        },
+        "send alarm",
+    );
+
+    let result = node
+        .execute(WorkflowContext::new(json!({ "severity": "high", "value": 92 })))
+        .await;
+
+    match result {
+        Ok(execution) => match execution.first() {
+            Some(first_output) => {
+                assert_eq!(first_output.ctx.payload["_http"]["status"], json!(200));
+                assert_eq!(first_output.ctx.payload["http_response"]["ok"], json!(true));
+                assert_eq!(
+                    first_output.ctx.payload["http_response"]["channel"],
+                    json!("dingtalk")
+                );
+            }
+            None => panic!("http client node should produce one output"),
+        },
+        Err(error) => panic!("http client node should execute successfully: {error}"),
+    }
+
+    match server.join() {
+        Ok(()) => {}
+        Err(_) => panic!("http test server should finish cleanly"),
+    }
+}
+
+#[tokio::test]
+async fn sql_writer_node_persists_payload_into_sqlite() {
+    let database_path = std::env::temp_dir()
+        .join(format!("nazh-sql-writer-{}.sqlite3", Uuid::new_v4()));
+    let database_path_string = database_path.to_string_lossy().to_string();
+
+    let node = SqlWriterNode::new(
+        "sqlite-log",
+        SqlWriterNodeConfig {
+            database_path: database_path_string.clone(),
+            table: "workflow_logs".to_owned(),
+        },
+        "write sqlite log",
+    );
+
+    let result = node
+        .execute(WorkflowContext::new(json!({ "value": 7, "status": "stored" })))
+        .await;
+
+    match result {
+        Ok(execution) => match execution.first() {
+            Some(first_output) => {
+                assert_eq!(
+                    first_output.ctx.payload["_sql_writer"]["table"],
+                    json!("workflow_logs")
+                );
+            }
+            None => panic!("sql writer node should produce one output"),
+        },
+        Err(error) => panic!("sql writer node should execute successfully: {error}"),
+    }
+
+    let query_output = match Command::new("sqlite3")
+        .arg(&database_path_string)
+        .arg("SELECT COUNT(*) FROM workflow_logs;")
+        .output()
+    {
+        Ok(output) => output,
+        Err(error) => panic!("sqlite3 should query the test database: {error}"),
+    };
+
+    assert!(query_output.status.success(), "sqlite query should succeed");
+    assert_eq!(String::from_utf8_lossy(&query_output.stdout).trim(), "1");
+
+    let _ = std::fs::remove_file(database_path);
+}
+
+#[tokio::test]
+async fn debug_console_node_marks_payload_and_passes_through() {
+    let node = DebugConsoleNode::new(
+        "debug-tap",
+        DebugConsoleNodeConfig {
+            label: Some("tap".to_owned()),
+            pretty: false,
+        },
+        "debug payload",
+    );
+
+    let result = node
+        .execute(WorkflowContext::new(json!({ "status": "ok" })))
+        .await;
+
+    match result {
+        Ok(execution) => match execution.first() {
+            Some(first_output) => {
+                assert_eq!(first_output.ctx.payload["status"], json!("ok"));
+                assert_eq!(first_output.ctx.payload["_debug_console"]["label"], json!("tap"));
+                assert_eq!(first_output.ctx.payload["_debug_console"]["pretty"], json!(false));
+            }
+            None => panic!("debug console node should produce one output"),
+        },
+        Err(error) => panic!("debug console node should execute successfully: {error}"),
+    }
 }

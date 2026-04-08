@@ -6,6 +6,7 @@ import type { WorkflowGraph, WorkflowNodeDefinition } from '../types';
 interface FlowgramNodeData {
   label: string;
   nodeType: string;
+  displayType?: string;
   connectionId: string | null;
   aiDescription: string | null;
   timeoutMs: number | null;
@@ -14,7 +15,20 @@ interface FlowgramNodeData {
   blockIDs?: string[];
 }
 
-const FLOWGRAM_BUSINESS_NODE_TYPES = new Set(['native', 'rhai']);
+const FLOWGRAM_BUSINESS_NODE_TYPES = new Set([
+  'native',
+  'rhai',
+  'code',
+  'timer',
+  'modbusRead',
+  'if',
+  'switch',
+  'tryCatch',
+  'loop',
+  'httpClient',
+  'sqlWriter',
+  'debugConsole',
+]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -34,7 +48,7 @@ function isBusinessNode(node: FlowgramWorkflowJSON['nodes'][number]): boolean {
 }
 
 function buildEdgeKey(edge: FlowgramWorkflowJSON['edges'][number]): string {
-  return `${edge.sourceNodeID}->${edge.targetNodeID}`;
+  return `${edge.sourceNodeID}:${String(edge.sourcePortID ?? '')}->${edge.targetNodeID}:${String(edge.targetPortID ?? '')}`;
 }
 
 function buildBaseFlowgramWorkflowJson(graph: WorkflowGraph): FlowgramWorkflowJSON {
@@ -50,6 +64,7 @@ function buildBaseFlowgramWorkflowJson(graph: WorkflowGraph): FlowgramWorkflowJS
       const data: FlowgramNodeData = {
         label: positionedNode.id,
         nodeType: definition?.type ?? 'unknown',
+        displayType: definition?.type ?? 'unknown',
         connectionId: definition?.connection_id ?? null,
         aiDescription: definition?.ai_description ?? null,
         timeoutMs: definition?.timeout_ms ?? null,
@@ -68,6 +83,8 @@ function buildBaseFlowgramWorkflowJson(graph: WorkflowGraph): FlowgramWorkflowJS
     edges: (graph.edges ?? []).map((edge) => ({
       sourceNodeID: edge.from,
       targetNodeID: edge.to,
+      sourcePortID: edge.source_port_id,
+      targetPortID: edge.target_port_id,
     })),
   };
 }
@@ -201,6 +218,10 @@ export function toNazhWorkflowGraph(
       .map((edge) => ({
         from: edge.sourceNodeID,
         to: edge.targetNodeID,
+        source_port_id:
+          typeof edge.sourcePortID === 'string' ? edge.sourcePortID : undefined,
+        target_port_id:
+          typeof edge.targetPortID === 'string' ? edge.targetPortID : undefined,
       })),
   };
 }

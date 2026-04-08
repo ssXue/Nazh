@@ -4,6 +4,11 @@ import type { NodePanelRenderProps } from '@flowgram.ai/free-node-panel-plugin';
 import type { WorkflowNodeJSON } from '@flowgram.ai/free-layout-editor';
 
 import { buildPaletteNodeJson, getFlowgramPaletteSections } from './flowgram-node-library';
+import {
+  FlowgramNodeGlyph,
+  getFlowgramDisplayLabel,
+  normalizeFlowgramDisplayType,
+} from './FlowgramNodeGlyph';
 
 export function createFlowgramQuickNodePanel(primaryConnectionId: string | null) {
   return function FlowgramQuickNodePanel(props: NodePanelRenderProps) {
@@ -35,23 +40,32 @@ export function createFlowgramQuickNodePanel(primaryConnectionId: string | null)
             <div className="flowgram-node-panel__title">{section.title}</div>
 
             <div className="flowgram-node-panel__list">
-              {section.items.map((item) => (
-                <button
-                  key={item.key}
-                  type="button"
-                  className={`flowgram-node-panel__item flowgram-node-panel__item--${item.seed.kind}`}
-                  onClick={(event) =>
-                    handleSelect(
-                      event,
-                      item.seed.kind,
-                      buildPaletteNodeJson(item.seed, primaryConnectionId) as WorkflowNodeJSON,
-                    )
-                  }
-                >
-                  <strong>{item.title}</strong>
-                  <span>{item.badge}</span>
-                </button>
-              ))}
+              {section.items.map((item) => {
+                const displayType = normalizeFlowgramDisplayType(item.seed.displayType ?? item.seed.kind);
+
+                return (
+                  <button
+                    key={item.key}
+                    type="button"
+                    className={`flowgram-node-panel__item flowgram-node-panel__item--${displayType}`}
+                    onClick={(event) =>
+                      handleSelect(
+                        event,
+                        item.seed.kind,
+                        buildPaletteNodeJson(item.seed, primaryConnectionId) as WorkflowNodeJSON,
+                      )
+                    }
+                  >
+                    <span className={`flowgram-node-panel__glyph flowgram-node-panel__glyph--${displayType}`}>
+                      <FlowgramNodeGlyph displayType={displayType} width={14} height={14} />
+                    </span>
+                    <span className="flowgram-node-panel__copy">
+                      <strong>{item.title}</strong>
+                      <span>{item.badge || getFlowgramDisplayLabel(displayType)}</span>
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </section>
         ))}
