@@ -85,6 +85,10 @@ Three commands exposed to the frontend:
 - `lib/graph.ts` — Client-side topological sort for layout positioning.
 - `App.tsx` — Main orchestrator: state management, panel routing, workflow deployment lifecycle.
 
+## Git Conventions
+
+- All commits must use `--signoff` (`git commit -s`) to add a `Signed-off-by` trailer.
+
 ## Critical Coding Constraints
 
 These come from the project's industrial reliability requirements (see `AI-Context.md`):
