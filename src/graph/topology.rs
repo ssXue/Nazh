@@ -46,9 +46,7 @@ impl WorkflowGraph {
     pub fn validate(&self) -> Result<(), EngineError> {
         let topology = self.topology()?;
         if topology.root_nodes.is_empty() {
-            return Err(EngineError::invalid_graph(
-                "工作流图必须包含至少一个根节点",
-            ));
+            return Err(EngineError::invalid_graph("工作流图必须包含至少一个根节点"));
         }
         Ok(())
     }

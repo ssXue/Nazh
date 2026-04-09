@@ -101,8 +101,7 @@ mod tests {
     fn test_vars(payload: &Value) -> TemplateVars<'_> {
         // 使用固定 UUID 避免测试中依赖随机值
         let trace_id = Box::leak(Box::new(
-            Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000")
-                .unwrap_or_else(|_| Uuid::nil()),
+            Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap_or_else(|_| Uuid::nil()),
         ));
         TemplateVars {
             payload,
@@ -148,10 +147,7 @@ mod tests {
     #[test]
     fn json_path_支持数组索引() {
         let data = json!({"items": [10, 20, 30]});
-        assert_eq!(
-            resolve_json_path(&data, "items.1"),
-            Some(&Value::from(20))
-        );
+        assert_eq!(resolve_json_path(&data, "items.1"), Some(&Value::from(20)));
     }
 
     #[test]

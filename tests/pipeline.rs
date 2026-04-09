@@ -3,7 +3,7 @@ use std::time::Duration;
 use nazh_engine::{
     build_linear_pipeline, EngineError, ExecutionEvent, PipelineStage, WorkflowContext,
 };
-use serde_json::json;
+use serde_json::{json, Value};
 use tokio::time::{sleep, timeout, Instant};
 
 #[tokio::test]
@@ -12,7 +12,7 @@ async fn linear_pipeline_transforms_payload() {
         vec![
             PipelineStage::new("increment", |ctx| async move {
                 let trace_id = ctx.trace_id;
-                let Some(value) = ctx.payload.get("value").and_then(|value| value.as_i64()) else {
+                let Some(value) = ctx.payload.get("value").and_then(Value::as_i64) else {
                     return Err(EngineError::stage_execution(
                         "increment",
                         trace_id,
@@ -54,7 +54,7 @@ async fn linear_pipeline_transforms_payload() {
             assert_eq!(ctx.payload, json!({ "value": 42, "status": "ok" }));
         }
         Ok(None) => panic!("result channel closed unexpectedly"),
-        Err(_) => panic!("pipeline did not produce a result in time"),
+        Err(elapsed) => panic!("pipeline did not produce a result in time: {elapsed}"),
     }
 }
 
@@ -63,7 +63,7 @@ async fn stage_errors_do_not_block_following_messages() {
     let mut pipeline = match build_linear_pipeline(
         vec![PipelineStage::new("validate", |ctx| async move {
             let trace_id = ctx.trace_id;
-            let Some(value) = ctx.payload.get("value").and_then(|value| value.as_i64()) else {
+            let Some(value) = ctx.payload.get("value").and_then(Value::as_i64) else {
                 return Err(EngineError::stage_execution(
                     "validate",
                     trace_id,
@@ -129,10 +129,10 @@ async fn stage_errors_do_not_block_following_messages() {
 async fn panicking_stage_is_isolated() {
     let mut pipeline = match build_linear_pipeline(
         vec![PipelineStage::new("fragile", |ctx| async move {
-            if ctx.payload.get("panic").and_then(|value| value.as_bool()) == Some(true) {
-                panic!("synthetic panic for resilience test");
-            }
-
+            assert!(
+                ctx.payload.get("panic").and_then(Value::as_bool) != Some(true),
+                "synthetic panic for resilience test"
+            );
             Ok(ctx)
         })],
         8,
@@ -222,7 +222,7 @@ async fn timeout_reports_failure_without_killing_pipeline() {
         }
         Ok(Some(other)) => panic!("unexpected first event: {other:?}"),
         Ok(None) => panic!("event channel closed unexpectedly"),
-        Err(_) => panic!("timed out waiting for first event"),
+        Err(elapsed) => panic!("timed out waiting for first event: {elapsed}"),
     }
 
     let event = timeout(Duration::from_secs(1), pipeline.next_event()).await;
@@ -240,6 +240,6 @@ async fn timeout_reports_failure_without_killing_pipeline() {
         }
         Ok(Some(other)) => panic!("unexpected second event: {other:?}"),
         Ok(None) => panic!("event channel closed unexpectedly"),
-        Err(_) => panic!("timed out waiting for timeout event"),
+        Err(elapsed) => panic!("timed out waiting for timeout event: {elapsed}"),
     }
 }

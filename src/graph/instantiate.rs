@@ -20,7 +20,9 @@ use crate::{
 };
 
 /// 从节点定义中反序列化配置。
-fn parse_config<T: DeserializeOwned>(definition: &WorkflowNodeDefinition) -> Result<T, EngineError> {
+fn parse_config<T: DeserializeOwned>(
+    definition: &WorkflowNodeDefinition,
+) -> Result<T, EngineError> {
     serde_json::from_value(definition.config.clone())
         .map_err(|error| EngineError::node_config(definition.id.clone(), error.to_string()))
 }
@@ -38,6 +40,7 @@ fn resolve_description(definition: &WorkflowNodeDefinition, fallback: &str) -> S
 /// # Errors
 ///
 /// 配置反序列化失败或节点类型不支持时返回 [`EngineError`]。
+#[allow(clippy::too_many_lines)]
 pub(crate) fn instantiate_node(
     definition: &WorkflowNodeDefinition,
     connection_manager: SharedConnectionManager,
@@ -48,7 +51,8 @@ pub(crate) fn instantiate_node(
             if config.connection_id.is_none() {
                 config.connection_id.clone_from(&definition.connection_id);
             }
-            let description = resolve_description(definition, "打印 payload 元数据，可选附加连接上下文");
+            let description =
+                resolve_description(definition, "打印 payload 元数据，可选附加连接上下文");
             Ok(Arc::new(NativeNode::new(
                 definition.id.clone(),
                 config,
@@ -67,7 +71,8 @@ pub(crate) fn instantiate_node(
         }
         "timer" => {
             let config: TimerNodeConfig = parse_config(definition)?;
-            let description = resolve_description(definition, "按固定间隔触发工作流并注入计时元数据");
+            let description =
+                resolve_description(definition, "按固定间隔触发工作流并注入计时元数据");
             Ok(Arc::new(TimerNode::new(
                 definition.id.clone(),
                 config,
@@ -75,12 +80,12 @@ pub(crate) fn instantiate_node(
             )))
         }
         "modbusRead" | "modbus/read" => {
-            let mut config: ModbusReadNodeConfig =
-                parse_config(definition)?;
+            let mut config: ModbusReadNodeConfig = parse_config(definition)?;
             if config.connection_id.is_none() {
                 config.connection_id.clone_from(&definition.connection_id);
             }
-            let description = resolve_description(definition, "读取模拟 Modbus 寄存器并将遥测数据写入 payload");
+            let description =
+                resolve_description(definition, "读取模拟 Modbus 寄存器并将遥测数据写入 payload");
             Ok(Arc::new(ModbusReadNode::new(
                 definition.id.clone(),
                 config,
@@ -89,9 +94,9 @@ pub(crate) fn instantiate_node(
             )))
         }
         "if" => {
-            let config: IfNodeConfig =
-                parse_config(definition)?;
-            let description = resolve_description(definition, "求值布尔脚本并路由到 true 或 false 分支");
+            let config: IfNodeConfig = parse_config(definition)?;
+            let description =
+                resolve_description(definition, "求值布尔脚本并路由到 true 或 false 分支");
             Ok(Arc::new(IfNode::new(
                 definition.id.clone(),
                 config,
@@ -109,7 +114,8 @@ pub(crate) fn instantiate_node(
         }
         "tryCatch" => {
             let config: TryCatchNodeConfig = parse_config(definition)?;
-            let description = resolve_description(definition, "执行受保护的脚本并路由到 try 或 catch 分支");
+            let description =
+                resolve_description(definition, "执行受保护的脚本并路由到 try 或 catch 分支");
             Ok(Arc::new(TryCatchNode::new(
                 definition.id.clone(),
                 config,
@@ -118,7 +124,10 @@ pub(crate) fn instantiate_node(
         }
         "loop" => {
             let config: LoopNodeConfig = parse_config(definition)?;
-            let description = resolve_description(definition, "求值可迭代脚本，逐项通过 body 分发，完成后发送 done");
+            let description = resolve_description(
+                definition,
+                "求值可迭代脚本，逐项通过 body 分发，完成后发送 done",
+            );
             Ok(Arc::new(LoopNode::new(
                 definition.id.clone(),
                 config,
@@ -127,7 +136,10 @@ pub(crate) fn instantiate_node(
         }
         "httpClient" | "http/client" => {
             let config: HttpClientNodeConfig = parse_config(definition)?;
-            let description = resolve_description(definition, "将 payload 发送到 HTTP 端点（如钉钉机器人告警）");
+            let description = resolve_description(
+                definition,
+                "将 payload 发送到 HTTP 端点（如钉钉机器人告警）",
+            );
             Ok(Arc::new(HttpClientNode::new(
                 definition.id.clone(),
                 config,
@@ -136,7 +148,8 @@ pub(crate) fn instantiate_node(
         }
         "sqlWriter" | "sql/writer" => {
             let config: SqlWriterNodeConfig = parse_config(definition)?;
-            let description = resolve_description(definition, "将当前 payload 持久化到本地 SQLite 表");
+            let description =
+                resolve_description(definition, "将当前 payload 持久化到本地 SQLite 表");
             Ok(Arc::new(SqlWriterNode::new(
                 definition.id.clone(),
                 config,
@@ -145,7 +158,8 @@ pub(crate) fn instantiate_node(
         }
         "debugConsole" | "debug/console" => {
             let config: DebugConsoleNodeConfig = parse_config(definition)?;
-            let description = resolve_description(definition, "将 payload 打印到调试控制台以供检查");
+            let description =
+                resolve_description(definition, "将 payload 打印到调试控制台以供检查");
             Ok(Arc::new(DebugConsoleNode::new(
                 definition.id.clone(),
                 config,

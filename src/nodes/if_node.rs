@@ -1,7 +1,7 @@
 //! 布尔条件分支节点，基于 Rhai 脚本求值结果路由到 `"true"` 或 `"false"` 端口。
 
-use async_trait::async_trait;
 use ::rhai::serde::from_dynamic;
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 use super::helpers::{default_max_operations, RhaiNodeBase};

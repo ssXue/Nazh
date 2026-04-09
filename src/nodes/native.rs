@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use super::helpers::{insert_connection_lease, into_payload_map, with_connection};
+#[allow(unused_imports)] // clippy 无法追踪 macro_rules! 宏的使用
 use super::{impl_node_meta, NodeExecution, NodeTrait};
 use crate::{ConnectionLease, EngineError, SharedConnectionManager, WorkflowContext};
 

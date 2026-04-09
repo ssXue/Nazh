@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 
 use super::helpers::into_payload_map;
+#[allow(unused_imports)] // clippy 无法追踪 macro_rules! 宏的使用
 use super::{impl_node_meta, NodeExecution, NodeTrait};
 use crate::{EngineError, WorkflowContext};
 
@@ -64,7 +65,10 @@ impl NodeTrait for TimerNode {
             .unwrap_or_default();
         let mut timer_meta = existing_timer;
         timer_meta.insert("node_id".to_owned(), json!(self.id));
-        timer_meta.insert("interval_ms".to_owned(), json!(self.config.interval_ms.max(1)));
+        timer_meta.insert(
+            "interval_ms".to_owned(),
+            json!(self.config.interval_ms.max(1)),
+        );
         timer_meta.insert("immediate".to_owned(), json!(self.config.immediate));
         timer_meta.insert("triggered_at".to_owned(), json!(Utc::now().to_rfc3339()));
         payload_map.insert("_timer".to_owned(), Value::Object(timer_meta));

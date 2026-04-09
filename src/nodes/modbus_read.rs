@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use super::helpers::{insert_connection_lease, into_payload_map, with_connection};
+#[allow(unused_imports)] // clippy 无法追踪 macro_rules! 宏的使用
 use super::{impl_node_meta, NodeExecution, NodeTrait};
 use crate::{ConnectionLease, EngineError, SharedConnectionManager, WorkflowContext};
 
@@ -107,13 +108,16 @@ impl ModbusReadNode {
             payload_map.insert("values".to_owned(), Value::Array(values));
         }
 
-        payload_map.insert("_modbus".to_owned(), json!({
-            "simulated": true,
-            "unit_id": self.config.unit_id,
-            "register": self.config.register,
-            "quantity": quantity,
-            "sampled_at": Utc::now().to_rfc3339(),
-        }));
+        payload_map.insert(
+            "_modbus".to_owned(),
+            json!({
+                "simulated": true,
+                "unit_id": self.config.unit_id,
+                "register": self.config.register,
+                "quantity": quantity,
+                "sampled_at": Utc::now().to_rfc3339(),
+            }),
+        );
 
         if let Some(lease) = lease {
             insert_connection_lease(&self.id, &mut payload_map, lease)?;

@@ -19,12 +19,12 @@
 //! 所有硬件访问通过全局 [`ConnectionManager`] 中介，
 //! 每次节点执行均受超时保护与 panic 隔离，保证运行时绝不崩溃。
 
-mod guard;
 pub mod connection;
 pub mod context;
 pub mod error;
 pub mod event;
 pub mod graph;
+mod guard;
 pub mod nodes;
 pub mod pipeline;
 
@@ -36,8 +36,8 @@ pub use context::WorkflowContext;
 pub use error::EngineError;
 pub use event::ExecutionEvent;
 pub use graph::{
-    deploy_workflow, WorkflowDeployment, WorkflowGraph, WorkflowIngress,
-    WorkflowNodeDefinition, WorkflowStreams,
+    deploy_workflow, WorkflowDeployment, WorkflowGraph, WorkflowIngress, WorkflowNodeDefinition,
+    WorkflowStreams,
 };
 pub use nodes::{
     DebugConsoleNode, DebugConsoleNodeConfig, HttpClientNode, HttpClientNodeConfig, IfNode,
@@ -46,6 +46,4 @@ pub use nodes::{
     SqlWriterNode, SqlWriterNodeConfig, SwitchBranchConfig, SwitchNode, SwitchNodeConfig,
     TimerNode, TimerNodeConfig, TryCatchNode, TryCatchNodeConfig,
 };
-pub use pipeline::{
-    build_linear_pipeline, PipelineHandle, PipelineStage, StageFuture,
-};
+pub use pipeline::{build_linear_pipeline, PipelineHandle, PipelineStage, StageFuture};

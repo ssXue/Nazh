@@ -50,12 +50,9 @@ pub(crate) async fn run_node(
                         NodeDispatch::Route(port_ids) => downstream_senders
                             .iter()
                             .filter(|target| {
-                                target
-                                    .source_port_id
-                                    .as_ref()
-                                    .is_some_and(|port_id| {
-                                        port_ids.iter().any(|candidate| candidate == port_id)
-                                    })
+                                target.source_port_id.as_ref().is_some_and(|port_id| {
+                                    port_ids.iter().any(|candidate| candidate == port_id)
+                                })
                             })
                             .collect::<Vec<_>>(),
                     };
@@ -123,4 +120,3 @@ pub(crate) async fn run_node(
         }
     }
 }
-

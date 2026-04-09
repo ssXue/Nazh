@@ -24,9 +24,8 @@ pub async fn deploy_workflow(
     connection_manager: SharedConnectionManager,
 ) -> Result<WorkflowDeployment, EngineError> {
     let topology = graph.topology()?;
-    let runtime = tokio::runtime::Handle::try_current().map_err(|_| {
-        EngineError::invalid_graph("deploy_workflow 必须在 Tokio 运行时中调用")
-    })?;
+    let runtime = tokio::runtime::Handle::try_current()
+        .map_err(|_| EngineError::invalid_graph("deploy_workflow 必须在 Tokio 运行时中调用"))?;
 
     if !graph.connections.is_empty() {
         let connections = std::mem::take(&mut graph.connections);

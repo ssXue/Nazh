@@ -150,14 +150,13 @@ impl RhaiNodeBase {
             .map_err(|error| EngineError::payload_conversion(self.id.clone(), error.to_string()))?;
         let mut scope = Scope::new();
         scope.push_dynamic("payload", payload);
-        let script_result =
-            match self
-                .engine
-                .eval_ast_with_scope::<Dynamic>(&mut scope, &self.ast)
-            {
-                Ok(value) => Ok(value),
-                Err(error) => Err(error.to_string()),
-            };
+        let script_result = match self
+            .engine
+            .eval_ast_with_scope::<Dynamic>(&mut scope, &self.ast)
+        {
+            Ok(value) => Ok(value),
+            Err(error) => Err(error.to_string()),
+        };
         Ok((scope, script_result))
     }
 

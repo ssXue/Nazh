@@ -20,6 +20,6 @@ mod types;
 
 pub use deploy::deploy_workflow;
 pub use types::{
-    WorkflowDeployment, WorkflowEdge, WorkflowGraph, WorkflowIngress,
-    WorkflowNodeDefinition, WorkflowStreams,
+    WorkflowDeployment, WorkflowEdge, WorkflowGraph, WorkflowIngress, WorkflowNodeDefinition,
+    WorkflowStreams,
 };

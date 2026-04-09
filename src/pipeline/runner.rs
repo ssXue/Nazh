@@ -66,8 +66,7 @@ pub(crate) async fn run_stage(
                         .await;
 
                         if output_tx.is_none() {
-                            emit_event(&event_tx, ExecutionEvent::Finished { trace_id })
-                                .await;
+                            emit_event(&event_tx, ExecutionEvent::Finished { trace_id }).await;
                         }
                     }
                     Err(error) => {
@@ -82,4 +81,3 @@ pub(crate) async fn run_stage(
         }
     }
 }
-

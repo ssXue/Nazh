@@ -49,8 +49,8 @@ pub struct ConnectionRecord {
 ///
 /// 当前为骨架实现，尚未对接真实的 Modbus/MQTT/HTTP 驱动。
 /// 资源池保证同一连接同时只能被一个节点借出。
-/// 内部使用细粒度锁：外层 RwLock 保护 HashMap 结构，
-/// 每条连接记录由独立的 Mutex 保护，不同连接可并发借出。
+/// 内部使用细粒度锁：外层 `RwLock` 保护 `HashMap` 结构，
+/// 每条连接记录由独立的 `Mutex` 保护，不同连接可并发借出。
 #[derive(Debug, Default)]
 pub struct ConnectionManager {
     connections: RwLock<HashMap<String, Arc<Mutex<ConnectionRecord>>>>,

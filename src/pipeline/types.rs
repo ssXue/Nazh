@@ -106,9 +106,7 @@ pub fn build_linear_pipeline(
     ingress_buffer: usize,
 ) -> Result<PipelineHandle, EngineError> {
     if stages.is_empty() {
-        return Err(EngineError::invalid_pipeline(
-            "流水线至少需要一个阶段",
-        ));
+        return Err(EngineError::invalid_pipeline("流水线至少需要一个阶段"));
     }
 
     let ingress_buffer = ingress_buffer.max(1);
@@ -124,9 +122,7 @@ pub fn build_linear_pipeline(
 
     for (index, stage) in stages.into_iter().enumerate() {
         let Some(stage_input_rx) = current_rx.take() else {
-            return Err(EngineError::invalid_pipeline(
-                "流水线输入通道连接失败",
-            ));
+            return Err(EngineError::invalid_pipeline("流水线输入通道连接失败"));
         };
         let is_last = index + 1 == stage_count;
         let stage_buffer = stage.buffer.max(1);

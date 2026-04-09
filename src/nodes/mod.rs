@@ -40,6 +40,7 @@ macro_rules! delegate_node_base {
         }
     };
 }
+#[allow(unused_imports)] // clippy 无法追踪 macro_rules! 宏的使用
 pub(crate) use delegate_node_base;
 
 /// 为持有 `id` 和 `ai_description` 字段的非脚本节点实现 [`NodeTrait`] 元数据方法。

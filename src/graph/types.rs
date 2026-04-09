@@ -6,10 +6,10 @@
 
 use std::collections::HashMap;
 
+use crate::{EngineError, ExecutionEvent, WorkflowContext};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::mpsc;
-use crate::{EngineError, ExecutionEvent, WorkflowContext};
 
 /// 从前端 AST 反序列化得到的顶层工作流定义。
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -120,9 +120,7 @@ impl WorkflowIngress {
     /// 指定节点不存在或通道已关闭时返回错误。
     pub async fn submit_to(&self, node_id: &str, ctx: WorkflowContext) -> Result<(), EngineError> {
         let sender = self.root_senders.get(node_id).ok_or_else(|| {
-            EngineError::invalid_graph(format!(
-                "根节点发送端 `{node_id}` 在已部署的工作流中不可用"
-            ))
+            EngineError::invalid_graph(format!("根节点发送端 `{node_id}` 在已部署的工作流中不可用"))
         })?;
         sender
             .send(ctx)

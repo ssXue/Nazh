@@ -123,7 +123,7 @@ async fn workflow_graph_executes_end_to_end() {
             );
         }
         Ok(None) => panic!("result stream closed unexpectedly"),
-        Err(_) => panic!("workflow did not produce a result in time"),
+        Err(elapsed) => panic!("workflow did not produce a result in time: {elapsed}"),
     }
 
     let connections = connection_manager.list().await;
@@ -162,11 +162,13 @@ async fn invalid_graph_rejects_cycles() {
 #[tokio::test]
 async fn connection_manager_borrows_and_releases_connections() {
     let manager = ConnectionManager::default();
-    let register_result = manager.register_connection(ConnectionDefinition {
-        id: "plc-1".to_owned(),
-        kind: "modbus".to_owned(),
-        metadata: json!({ "unit_id": 1 }),
-    }).await;
+    let register_result = manager
+        .register_connection(ConnectionDefinition {
+            id: "plc-1".to_owned(),
+            kind: "modbus".to_owned(),
+            metadata: json!({ "unit_id": 1 }),
+        })
+        .await;
     assert!(register_result.is_ok(), "connection should register");
 
     let lease = manager.borrow("plc-1").await;
@@ -248,7 +250,7 @@ async fn if_node_routes_only_to_the_matching_branch() {
             assert_eq!(ctx.payload["branch"], json!("high"));
         }
         Ok(None) => panic!("result stream closed unexpectedly"),
-        Err(_) => panic!("workflow did not produce a result in time"),
+        Err(elapsed) => panic!("workflow did not produce a result in time: {elapsed}"),
     }
 }
 
@@ -318,7 +320,7 @@ async fn switch_node_routes_using_source_ports() {
             assert_eq!(ctx.payload["route_taken"], json!("high"));
         }
         Ok(None) => panic!("result stream closed unexpectedly"),
-        Err(_) => panic!("workflow did not produce a result in time"),
+        Err(elapsed) => panic!("workflow did not produce a result in time: {elapsed}"),
     }
 }
 
@@ -387,7 +389,7 @@ async fn try_catch_node_routes_runtime_errors_to_catch_branch() {
             );
         }
         Ok(None) => panic!("result stream closed unexpectedly"),
-        Err(_) => panic!("workflow did not produce a result in time"),
+        Err(elapsed) => panic!("workflow did not produce a result in time: {elapsed}"),
     }
 }
 
@@ -468,7 +470,7 @@ async fn loop_node_routes_body_iterations_and_done() {
                 }
             }
             Ok(None) => panic!("result stream closed unexpectedly"),
-            Err(_) => panic!("workflow did not produce a result in time"),
+            Err(elapsed) => panic!("workflow did not produce a result in time: {elapsed}"),
         }
     }
 
@@ -573,7 +575,7 @@ async fn code_node_alias_executes_like_rhai() {
             assert_eq!(ctx.payload["value"], json!(42));
         }
         Ok(None) => panic!("result stream closed unexpectedly"),
-        Err(_) => panic!("workflow did not produce a result in time"),
+        Err(elapsed) => panic!("workflow did not produce a result in time: {elapsed}"),
     }
 }
 
@@ -608,10 +610,7 @@ async fn modbus_read_node_emits_simulated_values() {
                 );
                 assert_eq!(first_output.ctx.payload["_modbus"]["quantity"], json!(2));
                 assert!(
-                    first_output.ctx.payload["values"]
-                        .as_array()
-                        .map(|values| values.len())
-                        == Some(2),
+                    first_output.ctx.payload["values"].as_array().map(Vec::len) == Some(2),
                     "modbus read node should output two simulated values",
                 );
             }
@@ -628,6 +627,7 @@ fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
 }
 
 #[tokio::test]
+#[allow(clippy::too_many_lines)]
 async fn http_client_node_posts_payload_and_records_response() {
     let listener = match TcpListener::bind("127.0.0.1:0") {
         Ok(listener) => listener,
@@ -741,11 +741,12 @@ async fn http_client_node_posts_payload_and_records_response() {
 
     match server.join() {
         Ok(()) => {}
-        Err(_) => panic!("http test server should finish cleanly"),
+        Err(error) => panic!("http test server should finish cleanly: {error:?}"),
     }
 }
 
 #[tokio::test]
+#[allow(clippy::too_many_lines)]
 async fn http_alarm_node_renders_dingtalk_markdown_body() {
     let listener = match TcpListener::bind("127.0.0.1:0") {
         Ok(listener) => listener,
@@ -839,9 +840,9 @@ async fn http_alarm_node_renders_dingtalk_markdown_body() {
             response_body.len(),
             response_body
         );
-        stream
-            .write_all(response.as_bytes())
-            .expect("response should be writable");
+        if let Err(error) = stream.write_all(response.as_bytes()) {
+            panic!("response should be writable: {error}");
+        }
     });
 
     let node = HttpClientNode::new(
@@ -894,7 +895,7 @@ async fn http_alarm_node_renders_dingtalk_markdown_body() {
 
     match server.join() {
         Ok(()) => {}
-        Err(_) => panic!("http alarm test server should finish cleanly"),
+        Err(error) => panic!("http alarm test server should finish cleanly: {error:?}"),
     }
 }
 

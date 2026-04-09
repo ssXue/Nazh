@@ -3,8 +3,8 @@
 //!
 //! 脚本可返回整数（生成 N 次无 item 的迭代）或数组（逐项迭代）。
 
-use async_trait::async_trait;
 use ::rhai::{serde::from_dynamic, Array, Dynamic};
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
@@ -80,10 +80,7 @@ fn collect_loop_items(node_id: &str, result: Dynamic) -> Result<Vec<Option<Value
 
     if let Some(count) = result.clone().try_cast::<u64>() {
         let n = usize::try_from(count).map_err(|_| {
-            EngineError::payload_conversion(
-                node_id.to_owned(),
-                "Loop 迭代次数超出平台 usize 容量",
-            )
+            EngineError::payload_conversion(node_id.to_owned(), "Loop 迭代次数超出平台 usize 容量")
         })?;
         return Ok((0..n).map(|_| None).collect());
     }
