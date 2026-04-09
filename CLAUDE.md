@@ -89,6 +89,13 @@ Three commands exposed to the frontend:
 
 - All commits must use `--signoff` (`git commit -s`) to add a `Signed-off-by` trailer.
 
+## Language Convention
+
+- All code comments, doc comments (`///`, `//!`), error messages, and log messages must be written in **Chinese (中文)**.
+- TypeScript/JSDoc comments in the frontend follow the same rule.
+- File-level documentation, CHANGELOG entries, and commit messages also use Chinese.
+- CLAUDE.md and AI-Context.md remain in their current language for tooling compatibility.
+
 ## Critical Coding Constraints
 
 These come from the project's industrial reliability requirements (see `AI-Context.md`):

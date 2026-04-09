@@ -1,7 +1,6 @@
 use std::{
     io::{Read, Write},
     net::TcpListener,
-    process::Command,
     time::Duration,
 };
 
@@ -640,16 +639,20 @@ async fn http_client_node_posts_payload_and_records_response() {
     };
 
     let server = std::thread::spawn(move || {
-        let (mut stream, _) = listener.accept().expect("request should connect");
+        let (mut stream, _) = match listener.accept() {
+            Ok(connection) => connection,
+            Err(error) => panic!("request should connect: {error}"),
+        };
         let mut request_bytes = Vec::new();
         let mut buffer = [0_u8; 4096];
         let mut headers_end = None;
         let mut expected_len = None;
 
         loop {
-            let read_count = stream
-                .read(&mut buffer)
-                .expect("request should be readable");
+            let read_count = match stream.read(&mut buffer) {
+                Ok(count) => count,
+                Err(error) => panic!("request should be readable: {error}"),
+            };
             if read_count == 0 {
                 break;
             }
@@ -699,9 +702,10 @@ async fn http_client_node_posts_payload_and_records_response() {
             response_body.len(),
             response_body
         );
-        stream
-            .write_all(response.as_bytes())
-            .expect("response should be writable");
+        match stream.write_all(response.as_bytes()) {
+            Ok(()) => {}
+            Err(error) => panic!("response should be writable: {error}"),
+        }
     });
 
     let node = HttpClientNode::new(
@@ -927,17 +931,16 @@ async fn sql_writer_node_persists_payload_into_sqlite() {
         Err(error) => panic!("sql writer node should execute successfully: {error}"),
     }
 
-    let query_output = match Command::new("sqlite3")
-        .arg(&database_path_string)
-        .arg("SELECT COUNT(*) FROM workflow_logs;")
-        .output()
-    {
-        Ok(output) => output,
-        Err(error) => panic!("sqlite3 should query the test database: {error}"),
+    let conn = match rusqlite::Connection::open(&database_path_string) {
+        Ok(conn) => conn,
+        Err(error) => panic!("should open the test database: {error}"),
     };
-
-    assert!(query_output.status.success(), "sqlite query should succeed");
-    assert_eq!(String::from_utf8_lossy(&query_output.stdout).trim(), "1");
+    let count: i64 =
+        match conn.query_row("SELECT COUNT(*) FROM workflow_logs", [], |row| row.get(0)) {
+            Ok(count) => count,
+            Err(error) => panic!("should query the test database: {error}"),
+        };
+    assert_eq!(count, 1);
 
     let _ = std::fs::remove_file(database_path);
 }

@@ -501,10 +501,6 @@ fn sanitize_sqlite_identifier(identifier: &str) -> Option<String> {
     }
 }
 
-fn escape_sqlite_text(input: &str) -> String {
-    input.replace('\'', "''")
-}
-
 fn resolve_json_path<'a>(root: &'a Value, path: &str) -> Option<&'a Value> {
     path.split('.')
         .filter(|segment| !segment.is_empty())
@@ -1462,18 +1458,12 @@ impl NodeTrait for SqlWriterNode {
         let payload_json = serde_json::to_string(&ctx.payload)
             .map_err(|error| EngineError::payload_conversion(self.id.clone(), error.to_string()))?;
         let timestamp = Utc::now().to_rfc3339();
-        let sql = format!(
-            "CREATE TABLE IF NOT EXISTS {table} (id INTEGER PRIMARY KEY AUTOINCREMENT, trace_id TEXT NOT NULL, node_id TEXT NOT NULL, created_at TEXT NOT NULL, payload_json TEXT NOT NULL); INSERT INTO {table} (trace_id, node_id, created_at, payload_json) VALUES ('{trace}', '{node}', '{created}', '{payload}');",
-            table = table,
-            trace = escape_sqlite_text(&trace_id.to_string()),
-            node = escape_sqlite_text(&node_id),
-            created = escape_sqlite_text(&timestamp),
-            payload = escape_sqlite_text(&payload_json),
-        );
-        let database_path_for_cmd = database_path.clone();
+        let db_path_clone = database_path.clone();
+        let table_clone = table.clone();
+        let timestamp_clone = timestamp.clone();
 
         tokio::task::spawn_blocking(move || {
-            if let Some(parent) = std::path::Path::new(&database_path_for_cmd).parent() {
+            if let Some(parent) = std::path::Path::new(&db_path_clone).parent() {
                 if !parent.as_os_str().is_empty() {
                     std::fs::create_dir_all(parent).map_err(|error| {
                         EngineError::stage_execution(
@@ -1485,27 +1475,47 @@ impl NodeTrait for SqlWriterNode {
                 }
             }
 
-            let output = Command::new("sqlite3")
-                .arg(&database_path_for_cmd)
-                .arg(&sql)
-                .output()
-                .map_err(|error| {
-                    EngineError::stage_execution(
-                        node_id.clone(),
-                        trace_id,
-                        format!("sqlite3 执行失败: {error}"),
-                    )
-                })?;
-
-            if output.status.success() {
-                Ok(())
-            } else {
-                Err(EngineError::stage_execution(
+            let conn = rusqlite::Connection::open(&db_path_clone).map_err(|error| {
+                EngineError::stage_execution(
                     node_id.clone(),
                     trace_id,
-                    String::from_utf8_lossy(&output.stderr).trim().to_owned(),
-                ))
-            }
+                    format!("打开 SQLite 数据库失败: {error}"),
+                )
+            })?;
+
+            let create_sql = format!(
+                "CREATE TABLE IF NOT EXISTS {table_clone} (\
+                 id INTEGER PRIMARY KEY AUTOINCREMENT, \
+                 trace_id TEXT NOT NULL, \
+                 node_id TEXT NOT NULL, \
+                 created_at TEXT NOT NULL, \
+                 payload_json TEXT NOT NULL)"
+            );
+            conn.execute_batch(&create_sql).map_err(|error| {
+                EngineError::stage_execution(
+                    node_id.clone(),
+                    trace_id,
+                    format!("创建 SQLite 表失败: {error}"),
+                )
+            })?;
+
+            let insert_sql = format!(
+                "INSERT INTO {table_clone} (trace_id, node_id, created_at, payload_json) \
+                 VALUES (?1, ?2, ?3, ?4)"
+            );
+            conn.execute(
+                &insert_sql,
+                rusqlite::params![trace_id.to_string(), node_id, timestamp_clone, payload_json,],
+            )
+            .map_err(|error| {
+                EngineError::stage_execution(
+                    node_id.clone(),
+                    trace_id,
+                    format!("SQLite 插入失败: {error}"),
+                )
+            })?;
+
+            Ok(())
         })
         .await
         .map_err(|_| EngineError::StagePanicked {
