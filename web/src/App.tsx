@@ -3,9 +3,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { AboutPanel } from './components/app/AboutPanel';
 import {
   BackIcon,
-  RunActionIcon,
-  StopActionIcon,
-  TriggerActionIcon,
 } from './components/app/AppIcons';
 import { BOARD_LIBRARY, BoardsPanel, type BoardItem } from './components/app/BoardsPanel';
 import { DashboardPanel } from './components/app/DashboardPanel';
@@ -419,7 +416,7 @@ function buildSidebarSections(
     {
       key: 'about',
       group: 'settings',
-      label: '帮助关于',
+      label: '关于',
       badge: 'Nazh',
     },
   ];
@@ -676,10 +673,8 @@ function App() {
   const [eventFeed, setEventFeed] = useState<RuntimeLogEntry[]>([]);
   const [appErrors, setAppErrors] = useState<AppErrorRecord[]>([]);
   const [connections, setConnections] = useState<ConnectionRecord[]>([]);
-  const [flowgramReloadVersion, setFlowgramReloadVersion] = useState(0);
   const [runtimeState, setRuntimeState] = useState<WorkflowRuntimeState>(EMPTY_RUNTIME_STATE);
   const [isRuntimeDockCollapsed, setIsRuntimeDockCollapsed] = useState(false);
-  const [boardWorkspaceKey, setBoardWorkspaceKey] = useState(0);
   const flowgramCanvasRef = useRef<FlowgramCanvasHandle | null>(null);
 
   const currentBoardId = activeBoard?.id ?? DEFAULT_BOARD_ID;
@@ -1019,15 +1014,12 @@ function App() {
   function handleOpenBoard(board: BoardItem) {
     setActiveBoard(board);
     setSidebarSection('boards');
-    setBoardWorkspaceKey((current) => current + 1);
-    setFlowgramReloadVersion((current) => current + 1);
     resetWorkspaceRuntime(`已进入工程 ${board.name}。`);
   }
 
   function handleBackToBoards() {
     setSidebarSection('boards');
     setActiveBoard(null);
-    setBoardWorkspaceKey((current) => current + 1);
     resetWorkspaceRuntime('已返回所有看板。');
   }
 
@@ -1208,7 +1200,6 @@ function App() {
   );
   const workflowStatusLabel = getWorkflowStatusLabel(workflowStatus);
   const workflowStatusPillClass = getWorkflowStatusPillClass(workflowStatus);
-  const hasRuntimeDock = Boolean(activeBoard);
   const canDispatchPayload = Boolean(activeBoard) && (!isTauriRuntime || Boolean(deployInfo));
   const connectionPreview = connections.slice(0, 4);
   const sidebarSections = buildSidebarSections(
@@ -1249,7 +1240,6 @@ function App() {
     return (
       <section className="studio-content studio-content--board">
         <div
-          key={`${activeBoard.id}-${boardWorkspaceKey}`}
           className={`studio-board-workspace ${isRuntimeDockCollapsed ? 'is-runtime-collapsed' : ''}`}
         >
           <div
@@ -1271,75 +1261,32 @@ function App() {
               </div>
               <span>{`${activeBoard.updatedAt} · ${graphNodeCount} 节点`}</span>
             </div>
-            <div className="studio-board-workspace__header-actions">
-              <span className={`runtime-pill ${workflowStatusPillClass}`}>{workflowStatusLabel}</span>
-              <div className="studio-board-workspace__toolbar" data-no-window-drag>
-                {deployInfo || canDispatchPayload ? (
-                  <div className="studio-board-workspace__action-group">
-                    {canDispatchPayload ? (
-                      <button
-                        type="button"
-                        className="studio-board-workspace__action"
-                        onClick={handleDispatchPayload}
-                        disabled={!canDispatchPayload}
-                        aria-label="手动触发"
-                        title="手动触发"
-                      >
-                        <TriggerActionIcon />
-                      </button>
-                    ) : null}
-                    {deployInfo ? (
-                      <button
-                        type="button"
-                        className="studio-board-workspace__action is-danger"
-                        onClick={handleUndeploy}
-                        aria-label="停止"
-                        title="停止"
-                      >
-                        <StopActionIcon />
-                      </button>
-                    ) : null}
-                  </div>
-                ) : null}
-                <button
-                  type="button"
-                  className="studio-board-workspace__action studio-board-workspace__action--primary"
-                  onClick={handleDeploy}
-                  aria-label={deployInfo ? '重新运行' : '运行'}
-                  title={deployInfo ? '重新运行' : '运行'}
-                >
-                  <RunActionIcon />
-                </button>
-              </div>
-            </div>
           </div>
 
           <FlowgramCanvas
             ref={flowgramCanvasRef}
             graph={graphState.graph}
-            reloadVersion={flowgramReloadVersion}
             runtimeState={runtimeState}
             workflowStatus={workflowStatus}
             accentHex={accentHex}
             nodeRhaiColor={accentThemeVariables['--node-rhai']}
             onRunRequested={handleDeploy}
+            onStopRequested={handleUndeploy}
+            onDispatchRequested={handleDispatchPayload}
+            canDispatchPayload={canDispatchPayload}
             onGraphChange={handleGraphChange}
             onError={handleFlowgramError}
           />
 
-          {hasRuntimeDock ? (
-            <RuntimeDock
-              deployInfo={deployInfo}
-              runtimeState={runtimeState}
-              eventFeed={eventFeed}
-              appErrors={appErrors}
-              results={results}
-              connectionPreview={connectionPreview}
-              themeMode={themeMode}
-              isCollapsed={isRuntimeDockCollapsed}
-              onToggleCollapsed={() => setIsRuntimeDockCollapsed((current) => !current)}
-            />
-          ) : null}
+          <RuntimeDock
+            eventFeed={eventFeed}
+            appErrors={appErrors}
+            results={results}
+            connectionPreview={connectionPreview}
+            themeMode={themeMode}
+            isCollapsed={isRuntimeDockCollapsed}
+            onToggleCollapsed={() => setIsRuntimeDockCollapsed((current) => !current)}
+          />
         </div>
       </section>
     );
@@ -1455,13 +1402,7 @@ function App() {
         return (
           <section className="studio-content studio-content--panel">
             <div className="panel studio-content__panel studio-content__panel--scroll">
-              <AboutPanel
-                isTauriRuntime={isTauriRuntime}
-                runtimeModeLabel={runtimeModeLabel}
-                graphNodeCount={graphNodeCount}
-                graphConnectionCount={graphConnectionCount}
-                deployInfo={deployInfo}
-              />
+              <AboutPanel />
             </div>
           </section>
         );

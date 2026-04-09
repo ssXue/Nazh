@@ -3,7 +3,6 @@ import type {
   ConnectionRecord,
   DeployResponse,
   RuntimeLogEntry,
-  WorkflowRuntimeState,
   WorkflowResult,
 } from '../../types';
 import type { AccentPreset, AccentPresetOption } from '../../lib/theme';
@@ -55,8 +54,6 @@ export interface PayloadPanelProps {
 }
 
 export interface RuntimeDockProps {
-  deployInfo: DeployResponse | null;
-  runtimeState: WorkflowRuntimeState;
   eventFeed: RuntimeLogEntry[];
   appErrors: AppErrorRecord[];
   results: WorkflowResult[];
@@ -84,12 +81,4 @@ export interface SettingsPanelProps {
   onMotionModeChange: (mode: MotionMode) => void;
   startupPage: StartupPage;
   onStartupPageChange: (page: StartupPage) => void;
-}
-
-export interface AboutPanelProps {
-  isTauriRuntime: boolean;
-  runtimeModeLabel: string;
-  graphNodeCount: number;
-  graphConnectionCount: number;
-  deployInfo: DeployResponse | null;
 }

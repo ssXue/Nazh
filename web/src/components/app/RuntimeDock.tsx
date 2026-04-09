@@ -143,8 +143,6 @@ function buildEventFeedPlainText(entries: RuntimeConsoleEntry[]): string {
 }
 
 export function RuntimeDock({
-  deployInfo,
-  runtimeState,
   eventFeed,
   appErrors,
   results,
@@ -236,32 +234,12 @@ export function RuntimeDock({
         <section className="runtime-dock__panel">
           <div className="runtime-dock__panel-header">
             <div>
-              <h3>部署快照</h3>
+              <h3>连接池</h3>
             </div>
           </div>
 
           <div className="runtime-dock__panel-body">
-            <div className="metric-grid metric-grid--ops">
-              <article>
-                <span>已部署节点</span>
-                <strong>{deployInfo?.nodeCount ?? '--'}</strong>
-              </article>
-              <article>
-                <span>已部署边数</span>
-                <strong>{deployInfo?.edgeCount ?? '--'}</strong>
-              </article>
-              <article>
-                <span>最近事件</span>
-                <strong>{runtimeState.lastEventType ?? '--'}</strong>
-              </article>
-              <article>
-                <span>根节点</span>
-                <strong>{deployInfo?.rootNodes.length ?? 0}</strong>
-              </article>
-            </div>
-
             <div className="rail-list">
-              <h3>连接池</h3>
               {connectionPreview.length === 0 ? (
                 <p>暂无连接</p>
               ) : (

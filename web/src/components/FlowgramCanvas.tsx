@@ -30,13 +30,21 @@ import {
 import { MinimapRender } from '@flowgram.ai/minimap-plugin';
 
 import {
+  AutoLayoutIcon,
   DownloadIcon,
+  FileImageIcon,
+  FileJsonIcon,
+  FileVectorIcon,
+  FileYamlIcon,
   FitViewIcon,
   LockClosedIcon,
   LockOpenIcon,
   MinimapIcon,
   MouseModeIcon,
+  RunActionIcon,
   RedoActionIcon,
+  StopActionIcon,
+  TriggerActionIcon,
   UndoActionIcon,
   TrackpadModeIcon,
 } from './app/AppIcons';
@@ -64,12 +72,14 @@ import type { WorkflowGraph, WorkflowRuntimeState, WorkflowWindowStatus } from '
 
 interface FlowgramCanvasProps {
   graph: WorkflowGraph | null;
-  reloadVersion: number;
   runtimeState: WorkflowRuntimeState;
   workflowStatus: WorkflowWindowStatus;
   accentHex: string;
   nodeRhaiColor: string;
   onRunRequested?: () => void;
+  onStopRequested?: () => void;
+  onDispatchRequested?: () => void;
+  canDispatchPayload?: boolean;
   onGraphChange: (nextAstText: string) => void;
   onError?: (title: string, detail?: string | null) => void;
 }
@@ -95,9 +105,13 @@ type FlowgramInteractiveType = 'MOUSE' | 'PAD';
 interface FlowgramToolbarProps {
   canRun: boolean;
   canSave: boolean;
+  canDispatch: boolean;
+  isWorkflowActive: boolean;
   minimapVisible: boolean;
   onToggleMinimap: () => void;
   onRun?: () => void;
+  onStop?: () => void;
+  onDispatch?: () => void;
   onSave: () => void;
   onDownload: (format: FlowDownloadFormat) => void | Promise<void>;
 }
@@ -165,15 +179,6 @@ const FLOWGRAM_ZOOM_STYLE: CSSProperties = {
 const FLOWGRAM_MINIMAP_CANVAS_WIDTH = 110;
 const FLOWGRAM_MINIMAP_CANVAS_HEIGHT = 76;
 const FLOWGRAM_MINIMAP_PANEL_PADDING = 4;
-
-const FLOWGRAM_MINIMAP_WRAPPER_STYLE: CSSProperties = {
-  position: 'absolute',
-  right: 16,
-  bottom: 72,
-  zIndex: 10,
-  width: 118,
-  height: FLOWGRAM_MINIMAP_CANVAS_HEIGHT + FLOWGRAM_MINIMAP_PANEL_PADDING * 2,
-};
 
 const FLOWGRAM_MINIMAP_CONTAINER_STYLE: CSSProperties = {
   pointerEvents: 'auto',
@@ -576,12 +581,14 @@ function FlowgramToolButton({
   label,
   disabled,
   destructive = false,
+  active = false,
   onClick,
   children,
 }: {
   label: string;
   disabled?: boolean;
   destructive?: boolean;
+  active?: boolean;
   onClick: () => void;
   children: ReactNode;
 }) {
@@ -598,6 +605,7 @@ function FlowgramToolButton({
           : destructive
             ? 'var(--danger-ink)'
             : 'var(--toolbar-text)',
+        background: active ? 'var(--surface-muted)' : 'transparent',
         opacity: disabled ? 0.7 : 1,
       }}
       onClick={onClick}
@@ -611,9 +619,13 @@ function FlowgramToolButton({
 function FlowgramToolbar({
   canRun,
   canSave,
+  canDispatch,
+  isWorkflowActive,
   minimapVisible,
   onToggleMinimap,
   onRun,
+  onStop,
+  onDispatch,
   onSave,
   onDownload,
 }: FlowgramToolbarProps) {
@@ -634,6 +646,7 @@ function FlowgramToolbar({
   const zoomMenuRef = useRef<HTMLDetailsElement | null>(null);
   const interactiveMenuRef = useRef<HTMLDetailsElement | null>(null);
   const downloadMenuRef = useRef<HTMLDetailsElement | null>(null);
+  const minimapPopoverRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!history?.undoRedoService) {
@@ -689,7 +702,8 @@ function FlowgramToolbar({
       if (
         interactiveMenuRef.current?.contains(target) ||
         zoomMenuRef.current?.contains(target) ||
-        downloadMenuRef.current?.contains(target)
+        downloadMenuRef.current?.contains(target) ||
+        minimapPopoverRef.current?.contains(target)
       ) {
         return;
       }
@@ -697,16 +711,39 @@ function FlowgramToolbar({
       closeMenu(interactiveMenuRef);
       closeMenu(zoomMenuRef);
       closeMenu(downloadMenuRef);
+      if (minimapVisible) {
+        onToggleMinimap();
+      }
     }
 
     document.addEventListener('pointerdown', handlePointerDown);
     return () => {
       document.removeEventListener('pointerdown', handlePointerDown);
     };
-  }, []);
+  }, [minimapVisible, onToggleMinimap]);
 
   function closeMenu(ref: { current: HTMLDetailsElement | null }) {
     ref.current?.removeAttribute('open');
+  }
+
+  const canStop = isWorkflowActive && Boolean(onStop);
+  const primaryActionLabel = canStop ? '停止' : '运行';
+  const handlePrimaryAction = () => {
+    if (canStop) {
+      onStop?.();
+      return;
+    }
+
+    onRun?.();
+  };
+
+  function renderMenuLabel(icon: ReactNode, label: string) {
+    return (
+      <>
+        <span className="flowgram-tools__menu-item-icon">{icon}</span>
+        <span>{label}</span>
+      </>
+    );
   }
 
   return (
@@ -737,7 +774,7 @@ function FlowgramToolbar({
                 closeMenu(interactiveMenuRef);
               }}
             >
-              触控板优先
+              {renderMenuLabel(<TrackpadModeIcon width={14} height={14} />, '触控板优先')}
             </button>
             <button
               type="button"
@@ -751,7 +788,7 @@ function FlowgramToolbar({
                 closeMenu(interactiveMenuRef);
               }}
             >
-              鼠标优先
+              {renderMenuLabel(<MouseModeIcon width={14} height={14} />, '鼠标优先')}
             </button>
           </div>
         </details>
@@ -802,11 +839,36 @@ function FlowgramToolbar({
           <FitViewIcon width={16} height={16} />
         </FlowgramToolButton>
         <FlowgramToolButton
-          label={minimapVisible ? '隐藏缩略图' : '显示缩略图'}
-          onClick={onToggleMinimap}
+          label="自动整理"
+          disabled={isReadonly}
+          onClick={() => {
+            void tools.autoLayout();
+          }}
         >
-          <MinimapIcon width={16} height={16} />
+          <AutoLayoutIcon width={16} height={16} />
         </FlowgramToolButton>
+        <div
+          ref={minimapPopoverRef}
+          className={`flowgram-tools__popover ${minimapVisible ? 'is-open' : ''}`}
+          data-no-window-drag
+        >
+          <FlowgramToolButton
+            label={minimapVisible ? '隐藏缩略图' : '显示缩略图'}
+            active={minimapVisible}
+            onClick={onToggleMinimap}
+          >
+            <MinimapIcon width={16} height={16} />
+          </FlowgramToolButton>
+          {minimapVisible ? (
+            <div className="flowgram-tools__popover-panel flowgram-tools__popover-panel--minimap">
+              <MinimapRender
+                containerStyles={FLOWGRAM_MINIMAP_CONTAINER_STYLE}
+                panelStyles={FLOWGRAM_MINIMAP_PANEL_STYLE}
+                inactiveStyle={FLOWGRAM_MINIMAP_INACTIVE_STYLE}
+              />
+            </div>
+          ) : null}
+        </div>
         <FlowgramToolButton
           label={isReadonly ? '退出只读' : '只读模式'}
           onClick={() => {
@@ -844,7 +906,7 @@ function FlowgramToolbar({
                 closeMenu(downloadMenuRef);
               }}
             >
-              PNG
+              {renderMenuLabel(<FileImageIcon width={14} height={14} />, 'PNG')}
             </button>
             <button
               type="button"
@@ -855,7 +917,7 @@ function FlowgramToolbar({
                 closeMenu(downloadMenuRef);
               }}
             >
-              JPEG
+              {renderMenuLabel(<FileImageIcon width={14} height={14} />, 'JPEG')}
             </button>
             <button
               type="button"
@@ -866,7 +928,7 @@ function FlowgramToolbar({
                 closeMenu(downloadMenuRef);
               }}
             >
-              SVG
+              {renderMenuLabel(<FileVectorIcon width={14} height={14} />, 'SVG')}
             </button>
             <div className="flowgram-tools__menu-divider" />
             <button
@@ -878,7 +940,7 @@ function FlowgramToolbar({
                 closeMenu(downloadMenuRef);
               }}
             >
-              JSON
+              {renderMenuLabel(<FileJsonIcon width={14} height={14} />, 'JSON')}
             </button>
             <button
               type="button"
@@ -889,7 +951,7 @@ function FlowgramToolbar({
                 closeMenu(downloadMenuRef);
               }}
             >
-              YAML
+              {renderMenuLabel(<FileYamlIcon width={14} height={14} />, 'YAML')}
             </button>
           </div>
         </details>
@@ -906,43 +968,40 @@ function FlowgramToolbar({
           {savedPulse ? '已保存' : '保存'}
         </button>
 
+        {canDispatch ? (
+          <FlowgramToolButton label="手动触发" onClick={() => onDispatch?.()}>
+            <TriggerActionIcon width={16} height={16} />
+          </FlowgramToolButton>
+        ) : null}
+
         <button
           type="button"
-          className="flowgram-tools__action flowgram-tools__action--primary"
-          onClick={onRun}
-          disabled={!canRun}
+          className={`flowgram-tools__action ${
+            canStop
+              ? 'flowgram-tools__action--stop'
+              : 'flowgram-tools__action--run'
+          }`}
+          onClick={handlePrimaryAction}
+          disabled={canStop ? !onStop : !canRun}
         >
-          运行
+          {canStop ? <StopActionIcon width={14} height={14} /> : <RunActionIcon width={14} height={14} />}
+          <span>{primaryActionLabel}</span>
         </button>
       </div>
     </div>
   );
 }
 
-function FlowgramMinimap({ hidden = false }: { hidden?: boolean }) {
-  if (hidden) {
-    return null;
-  }
-
-  return (
-    <div style={FLOWGRAM_MINIMAP_WRAPPER_STYLE} data-flow-editor-selectable="false">
-      <MinimapRender
-        containerStyles={FLOWGRAM_MINIMAP_CONTAINER_STYLE}
-        panelStyles={FLOWGRAM_MINIMAP_PANEL_STYLE}
-        inactiveStyle={FLOWGRAM_MINIMAP_INACTIVE_STYLE}
-      />
-    </div>
-  );
-}
-
 export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasProps>(function FlowgramCanvas({
   graph,
-  reloadVersion,
   runtimeState,
   workflowStatus,
   accentHex,
   nodeRhaiColor,
   onRunRequested,
+  onStopRequested,
+  onDispatchRequested,
+  canDispatchPayload = false,
   onGraphChange,
   onError,
 }, ref) {
@@ -957,7 +1016,6 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
   const applyingExternalGraphRef = useRef(false);
   const initialFlowgramDataRef = useRef<FlowgramWorkflowJSON | null>(null);
   const pendingFitViewRef = useRef(true);
-  const lastReloadVersionRef = useRef(reloadVersion);
   const flowgramData = useMemo(() => {
     if (!graph) {
       return null;
@@ -998,13 +1056,6 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
   const primaryConnectionId = resolvedGraph?.connections?.[0]?.id ?? null;
 
   useEffect(() => {
-    if (reloadVersion !== lastReloadVersionRef.current) {
-      lastReloadVersionRef.current = reloadVersion;
-      pendingFitViewRef.current = true;
-    }
-  }, [reloadVersion]);
-
-  useEffect(() => {
     if (!editorCtx && resolvedFlowgramData) {
       initialFlowgramDataRef.current = resolvedFlowgramData;
     }
@@ -1023,6 +1074,11 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
   const outputNodeIds = useMemo(() => new Set(runtimeState.outputNodeIds), [runtimeState.outputNodeIds]);
   const isWorkflowRuntimeMapped =
     workflowStatus === 'running' || workflowStatus === 'completed' || workflowStatus === 'failed';
+  const isWorkflowActive =
+    workflowStatus === 'deployed' ||
+    workflowStatus === 'running' ||
+    workflowStatus === 'completed' ||
+    workflowStatus === 'failed';
   const workflowStatusLabel = getCanvasWorkflowStatusLabel(workflowStatus);
 
   const resolveNodeRuntimeStatus = useCallback(
@@ -1382,7 +1438,7 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
     }
 
     applyExternalFlowgramGraph(editorCtx, nextFlowgramData);
-  }, [applyExternalFlowgramGraph, editorCtx, flowgramDataSignature, graph, reloadVersion]);
+  }, [applyExternalFlowgramGraph, editorCtx, flowgramDataSignature, graph]);
 
   function handleContentChange(
     ctx: FreeLayoutPluginContext,
@@ -1527,13 +1583,16 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
                 <FlowgramToolbar
                   canRun={Boolean(onRunRequested)}
                   canSave={Boolean(editorCtx && resolvedGraph)}
+                  canDispatch={canDispatchPayload}
+                  isWorkflowActive={isWorkflowActive}
                   minimapVisible={minimapVisible}
                   onToggleMinimap={() => setMinimapVisible((visible) => !visible)}
                   onRun={onRunRequested}
+                  onStop={onStopRequested}
+                  onDispatch={onDispatchRequested}
                   onSave={handleSaveCurrentGraph}
                   onDownload={handleDownloadCurrentGraph}
                 />
-                <FlowgramMinimap hidden={!minimapVisible || (hasSelection && !isReadonlyMode)} />
                 <div className="flowgram-overlay">
                   <span>{`工作流状态: ${workflowStatusLabel}`}</span>
                   <span>{lastChange ? `最近变更: ${lastChange}` : '未变更'}</span>
