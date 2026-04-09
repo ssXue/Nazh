@@ -9,9 +9,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::mpsc;
-use uuid::Uuid;
-
-use crate::{EngineError, WorkflowContext};
+use crate::{EngineError, ExecutionEvent, WorkflowContext};
 
 /// 从前端 AST 反序列化得到的顶层工作流定义。
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -58,15 +56,6 @@ pub struct WorkflowEdge {
     pub target_port_id: Option<String>,
 }
 
-/// 工作流执行过程中产生的可观测事件，会转发给前端。
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum WorkflowEvent {
-    NodeStarted { node_id: String, trace_id: Uuid },
-    NodeCompleted { node_id: String, trace_id: Uuid },
-    NodeFailed { node_id: String, trace_id: Uuid, error: String },
-    WorkflowOutput { node_id: String, trace_id: Uuid },
-}
-
 /// 入口句柄，用于向已部署工作流的根节点提交数据。
 #[derive(Clone)]
 pub struct WorkflowIngress {
@@ -76,7 +65,7 @@ pub struct WorkflowIngress {
 
 /// 已部署工作流的事件流和结果流接收端。
 pub struct WorkflowStreams {
-    pub(crate) event_rx: mpsc::Receiver<WorkflowEvent>,
+    pub(crate) event_rx: mpsc::Receiver<ExecutionEvent>,
     pub(crate) result_rx: mpsc::Receiver<WorkflowContext>,
 }
 
@@ -149,7 +138,7 @@ impl WorkflowIngress {
 }
 
 impl WorkflowStreams {
-    pub async fn next_event(&mut self) -> Option<WorkflowEvent> {
+    pub async fn next_event(&mut self) -> Option<ExecutionEvent> {
         self.event_rx.recv().await
     }
 
@@ -160,7 +149,7 @@ impl WorkflowStreams {
     pub fn into_receivers(
         self,
     ) -> (
-        mpsc::Receiver<WorkflowEvent>,
+        mpsc::Receiver<ExecutionEvent>,
         mpsc::Receiver<WorkflowContext>,
     ) {
         (self.event_rx, self.result_rx)
@@ -175,7 +164,7 @@ impl WorkflowDeployment {
         self.ingress.submit(ctx).await
     }
 
-    pub async fn next_event(&mut self) -> Option<WorkflowEvent> {
+    pub async fn next_event(&mut self) -> Option<ExecutionEvent> {
         self.streams.next_event().await
     }
 

@@ -23,6 +23,7 @@ mod guard;
 pub mod connection;
 pub mod context;
 pub mod error;
+pub mod event;
 pub mod graph;
 pub mod nodes;
 pub mod pipeline;
@@ -33,8 +34,9 @@ pub use connection::{
 };
 pub use context::WorkflowContext;
 pub use error::EngineError;
+pub use event::ExecutionEvent;
 pub use graph::{
-    deploy_workflow, WorkflowDeployment, WorkflowEvent, WorkflowGraph, WorkflowIngress,
+    deploy_workflow, WorkflowDeployment, WorkflowGraph, WorkflowIngress,
     WorkflowNodeDefinition, WorkflowStreams,
 };
 pub use nodes::{
@@ -45,5 +47,5 @@ pub use nodes::{
     TimerNode, TimerNodeConfig, TryCatchNode, TryCatchNodeConfig,
 };
 pub use pipeline::{
-    build_linear_pipeline, PipelineEvent, PipelineHandle, PipelineStage, StageFuture,
+    build_linear_pipeline, PipelineHandle, PipelineStage, StageFuture,
 };

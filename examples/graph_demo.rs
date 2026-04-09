@@ -56,7 +56,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     while let Some(event) = deployment.next_event().await {
         println!("workflow event: {event:?}");
-        if matches!(event, nazh_engine::WorkflowEvent::WorkflowOutput { .. }) {
+        if matches!(event, nazh_engine::ExecutionEvent::Output { .. }) {
             break;
         }
     }

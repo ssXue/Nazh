@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use nazh_engine::{
-    build_linear_pipeline, EngineError, PipelineEvent, PipelineStage, WorkflowContext,
+    build_linear_pipeline, EngineError, ExecutionEvent, PipelineStage, WorkflowContext,
 };
 use serde_json::json;
 use tokio::time::{sleep, timeout, Instant};
@@ -100,7 +100,7 @@ async fn stage_errors_do_not_block_following_messages() {
     while Instant::now() < deadline && (!saw_failure || !saw_result) {
         if !saw_failure {
             let event = timeout(Duration::from_millis(100), pipeline.next_event()).await;
-            if let Ok(Some(PipelineEvent::StageFailed { trace_id, .. })) = event {
+            if let Ok(Some(ExecutionEvent::Failed { trace_id, .. })) = event {
                 if trace_id == failed_trace_id {
                     saw_failure = true;
                 }
@@ -165,7 +165,7 @@ async fn panicking_stage_is_isolated() {
     while Instant::now() < deadline && (!saw_failure || !saw_result) {
         if !saw_failure {
             let event = timeout(Duration::from_millis(100), pipeline.next_event()).await;
-            if let Ok(Some(PipelineEvent::StageFailed {
+            if let Ok(Some(ExecutionEvent::Failed {
                 trace_id, error, ..
             })) = event
             {
@@ -214,7 +214,7 @@ async fn timeout_reports_failure_without_killing_pipeline() {
 
     let event = timeout(Duration::from_secs(1), pipeline.next_event()).await;
     match event {
-        Ok(Some(PipelineEvent::StageStarted {
+        Ok(Some(ExecutionEvent::Started {
             trace_id: started_trace_id,
             ..
         })) => {
@@ -227,7 +227,7 @@ async fn timeout_reports_failure_without_killing_pipeline() {
 
     let event = timeout(Duration::from_secs(1), pipeline.next_event()).await;
     match event {
-        Ok(Some(PipelineEvent::StageFailed {
+        Ok(Some(ExecutionEvent::Failed {
             trace_id: failed_trace_id,
             error,
             ..

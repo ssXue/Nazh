@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use nazh_engine::{
-    build_linear_pipeline, EngineError, PipelineEvent, PipelineStage, WorkflowContext,
+    build_linear_pipeline, EngineError, ExecutionEvent, PipelineStage, WorkflowContext,
 };
 use serde_json::json;
 
@@ -56,7 +56,7 @@ async fn main() -> Result<(), EngineError> {
 
     while let Some(event) = pipeline.next_event().await {
         match event {
-            PipelineEvent::PipelineCompleted { .. } => {
+            ExecutionEvent::Finished { .. } => {
                 println!("pipeline finished");
                 break;
             }

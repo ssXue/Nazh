@@ -6,8 +6,12 @@
 
 use tokio::sync::mpsc;
 
-use super::types::{PipelineEvent, PipelineStage};
-use crate::{guard::guarded_execute, EngineError, WorkflowContext};
+use super::types::PipelineStage;
+use crate::{
+    event::{emit_event, emit_failure, ExecutionEvent},
+    guard::guarded_execute,
+    EngineError, WorkflowContext,
+};
 
 /// 单阶段的异步执行循环。
 pub(crate) async fn run_stage(
@@ -15,7 +19,7 @@ pub(crate) async fn run_stage(
     mut input_rx: mpsc::Receiver<WorkflowContext>,
     output_tx: Option<mpsc::Sender<WorkflowContext>>,
     result_tx: mpsc::Sender<WorkflowContext>,
-    event_tx: mpsc::Sender<PipelineEvent>,
+    event_tx: mpsc::Sender<ExecutionEvent>,
 ) {
     while let Some(ctx) = input_rx.recv().await {
         let trace_id = ctx.trace_id;
@@ -23,7 +27,7 @@ pub(crate) async fn run_stage(
 
         emit_event(
             &event_tx,
-            PipelineEvent::StageStarted {
+            ExecutionEvent::Started {
                 stage: stage_name.clone(),
                 trace_id,
             },
@@ -54,7 +58,7 @@ pub(crate) async fn run_stage(
                     Ok(()) => {
                         emit_event(
                             &event_tx,
-                            PipelineEvent::StageCompleted {
+                            ExecutionEvent::Completed {
                                 stage: stage_name.clone(),
                                 trace_id,
                             },
@@ -62,7 +66,7 @@ pub(crate) async fn run_stage(
                         .await;
 
                         if output_tx.is_none() {
-                            emit_event(&event_tx, PipelineEvent::PipelineCompleted { trace_id })
+                            emit_event(&event_tx, ExecutionEvent::Finished { trace_id })
                                 .await;
                         }
                     }
@@ -79,23 +83,3 @@ pub(crate) async fn run_stage(
     }
 }
 
-async fn emit_failure(
-    event_tx: &mpsc::Sender<PipelineEvent>,
-    stage: &str,
-    trace_id: uuid::Uuid,
-    error: &EngineError,
-) {
-    emit_event(
-        event_tx,
-        PipelineEvent::StageFailed {
-            stage: stage.to_owned(),
-            trace_id,
-            error: error.to_string(),
-        },
-    )
-    .await;
-}
-
-async fn emit_event(event_tx: &mpsc::Sender<PipelineEvent>, event: PipelineEvent) {
-    let _ = event_tx.send(event).await;
-}

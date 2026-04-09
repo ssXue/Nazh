@@ -48,7 +48,7 @@ import type {
   DeployResponse,
   JsonValue,
   RuntimeLogEntry,
-  WorkflowEvent,
+  ExecutionEvent,
   WorkflowGraph,
   WorkflowRuntimeState,
   WorkflowResult,
@@ -496,38 +496,38 @@ function parseWorkflowEventPayload(payload: unknown): ParsedWorkflowEvent | null
     return null;
   }
 
-  const event = payload as WorkflowEvent;
+  const event = payload as ExecutionEvent;
 
-  if (event.NodeStarted) {
+  if (event.Started) {
     return {
       kind: 'started',
-      nodeId: event.NodeStarted.node_id,
-      traceId: event.NodeStarted.trace_id,
+      nodeId: event.Started.stage,
+      traceId: event.Started.trace_id,
     };
   }
 
-  if (event.NodeCompleted) {
+  if (event.Completed) {
     return {
       kind: 'completed',
-      nodeId: event.NodeCompleted.node_id,
-      traceId: event.NodeCompleted.trace_id,
+      nodeId: event.Completed.stage,
+      traceId: event.Completed.trace_id,
     };
   }
 
-  if (event.NodeFailed) {
+  if (event.Failed) {
     return {
       kind: 'failed',
-      nodeId: event.NodeFailed.node_id,
-      traceId: event.NodeFailed.trace_id,
-      error: event.NodeFailed.error,
+      nodeId: event.Failed.stage,
+      traceId: event.Failed.trace_id,
+      error: event.Failed.error,
     };
   }
 
-  if (event.WorkflowOutput) {
+  if (event.Output) {
     return {
       kind: 'output',
-      nodeId: event.WorkflowOutput.node_id,
-      traceId: event.WorkflowOutput.trace_id,
+      nodeId: event.Output.stage,
+      traceId: event.Output.trace_id,
     };
   }
 

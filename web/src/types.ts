@@ -50,24 +50,12 @@ export interface WorkflowEdge {
   target_port_id?: string;
 }
 
-export interface WorkflowEvent {
-  NodeStarted?: {
-    node_id: string;
-    trace_id: string;
-  };
-  NodeCompleted?: {
-    node_id: string;
-    trace_id: string;
-  };
-  NodeFailed?: {
-    node_id: string;
-    trace_id: string;
-    error: string;
-  };
-  WorkflowOutput?: {
-    node_id: string;
-    trace_id: string;
-  };
+export interface ExecutionEvent {
+  Started?: { stage: string; trace_id: string };
+  Completed?: { stage: string; trace_id: string };
+  Failed?: { stage: string; trace_id: string; error: string };
+  Output?: { stage: string; trace_id: string };
+  Finished?: { trace_id: string };
 }
 
 export interface WorkflowRuntimeState {

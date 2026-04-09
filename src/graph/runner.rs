@@ -7,10 +7,13 @@
 use std::{sync::Arc, time::Duration};
 
 use tokio::sync::mpsc;
-use uuid::Uuid;
 
-use super::types::{DownstreamTarget, WorkflowEvent};
-use crate::{guard::guarded_execute, EngineError, NodeDispatch, NodeTrait, WorkflowContext};
+use super::types::DownstreamTarget;
+use crate::{
+    event::{emit_event, emit_failure, ExecutionEvent},
+    guard::guarded_execute,
+    EngineError, NodeDispatch, NodeTrait, WorkflowContext,
+};
 
 /// 单节点的异步执行循环：接收 → 执行 → 分发 → 发射事件。
 pub(crate) async fn run_node(
@@ -19,7 +22,7 @@ pub(crate) async fn run_node(
     mut input_rx: mpsc::Receiver<WorkflowContext>,
     downstream_senders: Vec<DownstreamTarget>,
     result_tx: mpsc::Sender<WorkflowContext>,
-    event_tx: mpsc::Sender<WorkflowEvent>,
+    event_tx: mpsc::Sender<ExecutionEvent>,
 ) {
     let node_id = node.id().to_owned();
 
@@ -28,8 +31,8 @@ pub(crate) async fn run_node(
 
         emit_event(
             &event_tx,
-            WorkflowEvent::NodeStarted {
-                node_id: node_id.clone(),
+            ExecutionEvent::Started {
+                stage: node_id.clone(),
                 trace_id,
             },
         )
@@ -85,8 +88,8 @@ pub(crate) async fn run_node(
                             if matching_targets.is_empty() {
                                 emit_event(
                                     &event_tx,
-                                    WorkflowEvent::WorkflowOutput {
-                                        node_id: node_id.clone(),
+                                    ExecutionEvent::Output {
+                                        stage: node_id.clone(),
                                         trace_id,
                                     },
                                 )
@@ -107,8 +110,8 @@ pub(crate) async fn run_node(
 
                 emit_event(
                     &event_tx,
-                    WorkflowEvent::NodeCompleted {
-                        node_id: node_id.clone(),
+                    ExecutionEvent::Completed {
+                        stage: node_id.clone(),
                         trace_id,
                     },
                 )
@@ -121,23 +124,3 @@ pub(crate) async fn run_node(
     }
 }
 
-async fn emit_failure(
-    event_tx: &mpsc::Sender<WorkflowEvent>,
-    node_id: &str,
-    trace_id: Uuid,
-    error: &EngineError,
-) {
-    emit_event(
-        event_tx,
-        WorkflowEvent::NodeFailed {
-            node_id: node_id.to_owned(),
-            trace_id,
-            error: error.to_string(),
-        },
-    )
-    .await;
-}
-
-async fn emit_event(event_tx: &mpsc::Sender<WorkflowEvent>, event: WorkflowEvent) {
-    let _ = event_tx.send(event).await;
-}

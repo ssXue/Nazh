@@ -5,7 +5,7 @@ use std::{future::Future, pin::Pin, sync::Arc, time::Duration};
 use tokio::sync::mpsc;
 
 use super::runner::run_stage;
-use crate::{EngineError, WorkflowContext};
+use crate::{EngineError, ExecutionEvent, WorkflowContext};
 
 /// 流水线阶段处理器返回的 boxed future。
 pub type StageFuture = Pin<Box<dyn Future<Output = Result<WorkflowContext, EngineError>> + Send>>;
@@ -55,20 +55,11 @@ impl PipelineStage {
     }
 }
 
-/// 流水线执行过程中产生的可观测事件。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PipelineEvent {
-    StageStarted { stage: String, trace_id: uuid::Uuid },
-    StageCompleted { stage: String, trace_id: uuid::Uuid },
-    StageFailed { stage: String, trace_id: uuid::Uuid, error: String },
-    PipelineCompleted { trace_id: uuid::Uuid },
-}
-
 /// 运行中线性流水线的句柄，提供入口、结果和事件通道。
 pub struct PipelineHandle {
     input_tx: mpsc::Sender<WorkflowContext>,
     result_rx: mpsc::Receiver<WorkflowContext>,
-    event_rx: mpsc::Receiver<PipelineEvent>,
+    event_rx: mpsc::Receiver<ExecutionEvent>,
 }
 
 impl PipelineHandle {
@@ -92,7 +83,7 @@ impl PipelineHandle {
     }
 
     /// 接收下一个生命周期事件（阶段开始/完成/失败）。
-    pub async fn next_event(&mut self) -> Option<PipelineEvent> {
+    pub async fn next_event(&mut self) -> Option<ExecutionEvent> {
         self.event_rx.recv().await
     }
 
