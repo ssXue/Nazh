@@ -19,6 +19,7 @@
 //! 所有硬件访问通过全局 [`ConnectionManager`] 中介，
 //! 每次节点执行均受超时保护与 panic 隔离，保证运行时绝不崩溃。
 
+mod guard;
 pub mod connection;
 pub mod context;
 pub mod error;

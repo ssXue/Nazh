@@ -4,13 +4,10 @@
 //! 执行阶段处理器，并将结果转发到下一阶段或最终结果通道。
 //! 所有执行阶段都带有 panic 隔离和可选超时保护。
 
-use std::panic::AssertUnwindSafe;
-
-use futures_util::FutureExt;
 use tokio::sync::mpsc;
 
 use super::types::{PipelineEvent, PipelineStage};
-use crate::{EngineError, WorkflowContext};
+use crate::{guard::guarded_execute, EngineError, WorkflowContext};
 
 /// 单阶段的异步执行循环。
 pub(crate) async fn run_stage(
@@ -33,30 +30,8 @@ pub(crate) async fn run_stage(
         )
         .await;
 
-        let execution = AssertUnwindSafe((stage.handler)(ctx)).catch_unwind();
-
-        let result = if let Some(timeout) = stage.timeout {
-            match tokio::time::timeout(timeout, execution).await {
-                Ok(Ok(outcome)) => outcome,
-                Ok(Err(_)) => Err(EngineError::StagePanicked {
-                    stage: stage_name.clone(),
-                    trace_id,
-                }),
-                Err(_) => Err(EngineError::StageTimeout {
-                    stage: stage_name.clone(),
-                    trace_id,
-                    timeout_ms: timeout.as_millis(),
-                }),
-            }
-        } else {
-            match execution.await {
-                Ok(outcome) => outcome,
-                Err(_) => Err(EngineError::StagePanicked {
-                    stage: stage_name.clone(),
-                    trace_id,
-                }),
-            }
-        };
+        let result =
+            guarded_execute(&stage_name, trace_id, stage.timeout, (stage.handler)(ctx)).await;
 
         match result {
             Ok(next_ctx) => {

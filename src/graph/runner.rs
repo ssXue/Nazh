@@ -4,17 +4,15 @@
 //! 执行节点逻辑，并根据 [`NodeDispatch`] 将输出分发到下游或结果流。
 //! 所有执行阶段都带有 panic 隔离和可选超时保护。
 
-use std::{panic::AssertUnwindSafe, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
-use futures_util::FutureExt;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use super::types::{DownstreamTarget, WorkflowEvent};
-use crate::{EngineError, NodeDispatch, NodeTrait, WorkflowContext};
+use crate::{guard::guarded_execute, EngineError, NodeDispatch, NodeTrait, WorkflowContext};
 
 /// 单节点的异步执行循环：接收 → 执行 → 分发 → 发射事件。
-#[allow(clippy::too_many_lines)]
 pub(crate) async fn run_node(
     node: Arc<dyn NodeTrait>,
     timeout: Option<Duration>,
@@ -37,29 +35,7 @@ pub(crate) async fn run_node(
         )
         .await;
 
-        let execution = AssertUnwindSafe(node.execute(ctx)).catch_unwind();
-        let result = if let Some(timeout) = timeout {
-            match tokio::time::timeout(timeout, execution).await {
-                Ok(Ok(outcome)) => outcome,
-                Ok(Err(_)) => Err(EngineError::StagePanicked {
-                    stage: node_id.clone(),
-                    trace_id,
-                }),
-                Err(_) => Err(EngineError::StageTimeout {
-                    stage: node_id.clone(),
-                    trace_id,
-                    timeout_ms: timeout.as_millis(),
-                }),
-            }
-        } else {
-            match execution.await {
-                Ok(outcome) => outcome,
-                Err(_) => Err(EngineError::StagePanicked {
-                    stage: node_id.clone(),
-                    trace_id,
-                }),
-            }
-        };
+        let result = guarded_execute(&node_id, trace_id, timeout, node.execute(ctx)).await;
 
         match result {
             Ok(output) => {
