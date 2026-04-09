@@ -61,6 +61,10 @@ pub fn shared_connection_manager() -> SharedConnectionManager {
 
 impl ConnectionManager {
     /// 注册新连接。若 ID 已存在则返回错误。
+    ///
+    /// # Errors
+    ///
+    /// 连接 ID 已存在时返回 [`EngineError::ConnectionAlreadyExists`]。
     pub fn register_connection(
         &mut self,
         definition: ConnectionDefinition,
@@ -96,6 +100,11 @@ impl ConnectionManager {
     }
 
     /// 排他借出一个连接。若已被借出或不存在则返回错误。
+    ///
+    /// # Errors
+    ///
+    /// 连接不存在时返回 [`EngineError::ConnectionNotFound`]，
+    /// 已被借出时返回 [`EngineError::ConnectionBusy`]。
     pub fn borrow(&mut self, connection_id: &str) -> Result<ConnectionLease, EngineError> {
         let Some(record) = self.connections.get_mut(connection_id) else {
             return Err(EngineError::ConnectionNotFound(connection_id.to_owned()));
@@ -118,6 +127,10 @@ impl ConnectionManager {
     }
 
     /// 将已借出的连接归还到资源池。
+    ///
+    /// # Errors
+    ///
+    /// 连接不存在时返回 [`EngineError::ConnectionNotFound`]。
     pub fn release(&mut self, connection_id: &str) -> Result<(), EngineError> {
         let Some(record) = self.connections.get_mut(connection_id) else {
             return Err(EngineError::ConnectionNotFound(connection_id.to_owned()));

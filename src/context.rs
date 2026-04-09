@@ -36,6 +36,7 @@ impl WorkflowContext {
     }
 
     /// 替换 payload 并刷新时间戳，消费 `self`。
+    #[must_use]
     pub fn with_payload(mut self, payload: Value) -> Self {
         self.payload = payload;
         self.timestamp = Utc::now();
@@ -43,6 +44,7 @@ impl WorkflowContext {
     }
 
     /// 仅刷新时间戳，不改变 payload。
+    #[must_use]
     pub fn touch(mut self) -> Self {
         self.timestamp = Utc::now();
         self

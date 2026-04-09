@@ -11,60 +11,60 @@ use uuid::Uuid;
 /// 无需在调用点额外打日志即可完成问题诊断。
 #[derive(Debug, Error)]
 pub enum EngineError {
-    #[error("pipeline configuration is invalid: {0}")]
+    #[error("流水线配置无效: {0}")]
     InvalidPipeline(String),
 
-    #[error("workflow graph is invalid: {0}")]
+    #[error("工作流图无效: {0}")]
     InvalidGraph(String),
 
-    #[error("workflow graph JSON could not be parsed: {0}")]
+    #[error("工作流图 JSON 解析失败: {0}")]
     GraphDeserialization(String),
 
-    #[error("stage `{stage}` failed for trace `{trace_id}`: {message}")]
+    #[error("阶段 `{stage}` 在 trace `{trace_id}` 中执行失败: {message}")]
     StageExecution {
         stage: String,
         trace_id: Uuid,
         message: String,
     },
 
-    #[error("stage `{stage}` timed out for trace `{trace_id}` after {timeout_ms} ms")]
+    #[error("阶段 `{stage}` 在 trace `{trace_id}` 中 timed out（{timeout_ms} ms）")]
     StageTimeout {
         stage: String,
         trace_id: Uuid,
         timeout_ms: u128,
     },
 
-    #[error("stage `{stage}` panicked for trace `{trace_id}`")]
+    #[error("阶段 `{stage}` 在 trace `{trace_id}` 中 panicked")]
     StagePanicked { stage: String, trace_id: Uuid },
 
-    #[error("channel for stage `{stage}` is closed")]
+    #[error("阶段 `{stage}` 的通道已关闭")]
     ChannelClosed { stage: String },
 
-    #[error("node `{node_id}` has invalid configuration: {message}")]
+    #[error("节点 `{node_id}` 配置无效: {message}")]
     NodeConfig { node_id: String, message: String },
 
-    #[error("node type `{0}` is not supported")]
+    #[error("不支持的节点类型 `{0}`")]
     UnsupportedNodeType(String),
 
-    #[error("rhai script for node `{node_id}` failed to compile: {message}")]
+    #[error("节点 `{node_id}` 的 Rhai 脚本编译失败: {message}")]
     RhaiCompile { node_id: String, message: String },
 
-    #[error("rhai script for node `{node_id}` failed at runtime: {message}")]
+    #[error("节点 `{node_id}` 的 Rhai 脚本运行时错误: {message}")]
     RhaiRuntime { node_id: String, message: String },
 
-    #[error("payload conversion failed for node `{node_id}`: {message}")]
+    #[error("节点 `{node_id}` 的 payload 转换失败: {message}")]
     PayloadConversion { node_id: String, message: String },
 
-    #[error("connection `{0}` already exists")]
+    #[error("连接 `{0}` 已存在")]
     ConnectionAlreadyExists(String),
 
-    #[error("connection `{0}` does not exist")]
+    #[error("连接 `{0}` 不存在")]
     ConnectionNotFound(String),
 
-    #[error("connection `{0}` is already borrowed")]
+    #[error("连接 `{0}` 已被借出")]
     ConnectionBusy(String),
 
-    #[error("no workflow has been deployed yet")]
+    #[error("尚未部署任何工作流")]
     WorkflowUnavailable,
 }
 

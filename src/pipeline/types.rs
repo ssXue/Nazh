@@ -1,14 +1,10 @@
-//! 线性流水线抽象，用于顺序阶段执行。
-//!
-//! [`build_linear_pipeline`] 将一系列 [`PipelineStage`] 串联为 Tokio 驱动的流水线，
-//! 每个阶段具备独立的超时保护和基于 `catch_unwind` 的 panic 隔离。
+//! 流水线的类型定义、句柄方法与构建函数。
 
-use std::{future::Future, panic::AssertUnwindSafe, pin::Pin, sync::Arc, time::Duration};
+use std::{future::Future, pin::Pin, sync::Arc, time::Duration};
 
-use futures_util::FutureExt;
 use tokio::sync::mpsc;
-use uuid::Uuid;
 
+use super::runner::run_stage;
 use crate::{EngineError, WorkflowContext};
 
 /// 流水线阶段处理器返回的 boxed future。
@@ -21,7 +17,7 @@ pub struct PipelineStage {
     pub name: String,
     pub timeout: Option<Duration>,
     pub buffer: usize,
-    handler: StageHandler,
+    pub(crate) handler: StageHandler,
 }
 
 impl PipelineStage {
@@ -36,7 +32,6 @@ impl PipelineStage {
             let executor = Arc::clone(&executor);
             Box::pin(async move { (*executor)(ctx).await })
         });
-
         Self {
             name: name.into(),
             timeout: None,
@@ -46,12 +41,14 @@ impl PipelineStage {
     }
 
     /// 设置该阶段每次调用的超时时间。
+    #[must_use]
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = Some(timeout);
         self
     }
 
     /// 设置该阶段与下一阶段之间的 MPSC 通道缓冲区大小（最小为 1）。
+    #[must_use]
     pub fn with_buffer(mut self, buffer: usize) -> Self {
         self.buffer = buffer.max(1);
         self
@@ -61,22 +58,10 @@ impl PipelineStage {
 /// 流水线执行过程中产生的可观测事件。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PipelineEvent {
-    StageStarted {
-        stage: String,
-        trace_id: Uuid,
-    },
-    StageCompleted {
-        stage: String,
-        trace_id: Uuid,
-    },
-    StageFailed {
-        stage: String,
-        trace_id: Uuid,
-        error: String,
-    },
-    PipelineCompleted {
-        trace_id: Uuid,
-    },
+    StageStarted { stage: String, trace_id: uuid::Uuid },
+    StageCompleted { stage: String, trace_id: uuid::Uuid },
+    StageFailed { stage: String, trace_id: uuid::Uuid, error: String },
+    PipelineCompleted { trace_id: uuid::Uuid },
 }
 
 /// 运行中线性流水线的句柄，提供入口、结果和事件通道。
@@ -88,6 +73,10 @@ pub struct PipelineHandle {
 
 impl PipelineHandle {
     /// 将上下文发送到流水线的第一个阶段。
+    ///
+    /// # Errors
+    ///
+    /// 入口通道已关闭时返回 [`EngineError::ChannelClosed`]。
     pub async fn submit(&self, ctx: WorkflowContext) -> Result<(), EngineError> {
         self.input_tx
             .send(ctx)
@@ -117,13 +106,17 @@ impl PipelineHandle {
 ///
 /// 每个阶段在独立的 Tokio 任务中运行，上下文通过 MPSC 通道从一个阶段流向下一个。
 /// 阶段处理器中的 panic 会被捕获并转换为 [`EngineError::StagePanicked`]。
+///
+/// # Errors
+///
+/// 阶段列表为空或不在 Tokio 运行时中调用时返回错误。
 pub fn build_linear_pipeline(
     stages: Vec<PipelineStage>,
     ingress_buffer: usize,
 ) -> Result<PipelineHandle, EngineError> {
     if stages.is_empty() {
         return Err(EngineError::invalid_pipeline(
-            "at least one pipeline stage is required",
+            "流水线至少需要一个阶段",
         ));
     }
 
@@ -132,7 +125,7 @@ pub fn build_linear_pipeline(
     let (result_tx, result_rx) = mpsc::channel(ingress_buffer);
     let (event_tx, event_rx) = mpsc::channel(ingress_buffer * (stages.len() + 1));
     let runtime = tokio::runtime::Handle::try_current().map_err(|_| {
-        EngineError::invalid_pipeline("build_linear_pipeline must run inside a Tokio runtime")
+        EngineError::invalid_pipeline("build_linear_pipeline 必须在 Tokio 运行时中调用")
     })?;
 
     let mut current_rx = Some(input_rx);
@@ -141,7 +134,7 @@ pub fn build_linear_pipeline(
     for (index, stage) in stages.into_iter().enumerate() {
         let Some(stage_input_rx) = current_rx.take() else {
             return Err(EngineError::invalid_pipeline(
-                "failed to wire the pipeline input channel",
+                "流水线输入通道连接失败",
             ));
         };
         let is_last = index + 1 == stage_count;
@@ -172,116 +165,4 @@ pub fn build_linear_pipeline(
         result_rx,
         event_rx,
     })
-}
-
-async fn run_stage(
-    stage: PipelineStage,
-    mut input_rx: mpsc::Receiver<WorkflowContext>,
-    output_tx: Option<mpsc::Sender<WorkflowContext>>,
-    result_tx: mpsc::Sender<WorkflowContext>,
-    event_tx: mpsc::Sender<PipelineEvent>,
-) {
-    while let Some(ctx) = input_rx.recv().await {
-        let trace_id = ctx.trace_id;
-        let stage_name = stage.name.clone();
-
-        emit_event(
-            &event_tx,
-            PipelineEvent::StageStarted {
-                stage: stage_name.clone(),
-                trace_id,
-            },
-        )
-        .await;
-
-        let execution = AssertUnwindSafe((stage.handler)(ctx)).catch_unwind();
-
-        let result = if let Some(timeout) = stage.timeout {
-            match tokio::time::timeout(timeout, execution).await {
-                Ok(Ok(outcome)) => outcome,
-                Ok(Err(_)) => Err(EngineError::StagePanicked {
-                    stage: stage_name.clone(),
-                    trace_id,
-                }),
-                Err(_) => Err(EngineError::StageTimeout {
-                    stage: stage_name.clone(),
-                    trace_id,
-                    timeout_ms: timeout.as_millis(),
-                }),
-            }
-        } else {
-            match execution.await {
-                Ok(outcome) => outcome,
-                Err(_) => Err(EngineError::StagePanicked {
-                    stage: stage_name.clone(),
-                    trace_id,
-                }),
-            }
-        };
-
-        match result {
-            Ok(next_ctx) => {
-                let forward_result = if let Some(tx) = &output_tx {
-                    tx.send(next_ctx)
-                        .await
-                        .map_err(|_| EngineError::ChannelClosed {
-                            stage: stage_name.clone(),
-                        })
-                } else {
-                    result_tx
-                        .send(next_ctx)
-                        .await
-                        .map_err(|_| EngineError::ChannelClosed {
-                            stage: stage_name.clone(),
-                        })
-                };
-
-                match forward_result {
-                    Ok(()) => {
-                        emit_event(
-                            &event_tx,
-                            PipelineEvent::StageCompleted {
-                                stage: stage_name.clone(),
-                                trace_id,
-                            },
-                        )
-                        .await;
-
-                        if output_tx.is_none() {
-                            emit_event(&event_tx, PipelineEvent::PipelineCompleted { trace_id })
-                                .await;
-                        }
-                    }
-                    Err(error) => {
-                        emit_failure(&event_tx, &stage_name, trace_id, &error).await;
-                        break;
-                    }
-                }
-            }
-            Err(error) => {
-                emit_failure(&event_tx, &stage_name, trace_id, &error).await;
-            }
-        }
-    }
-}
-
-async fn emit_failure(
-    event_tx: &mpsc::Sender<PipelineEvent>,
-    stage: &str,
-    trace_id: Uuid,
-    error: &EngineError,
-) {
-    emit_event(
-        event_tx,
-        PipelineEvent::StageFailed {
-            stage: stage.to_owned(),
-            trace_id,
-            error: error.to_string(),
-        },
-    )
-    .await;
-}
-
-async fn emit_event(event_tx: &mpsc::Sender<PipelineEvent>, event: PipelineEvent) {
-    let _ = event_tx.send(event).await;
 }
