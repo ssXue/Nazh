@@ -2,23 +2,37 @@
 
 Nazh 是一个面向工业边缘场景的工作流编排原型，目标是把设备接入、数据转换、脚本逻辑和桌面化运维界面串成一套轻量但可靠的本地运行时。
 
-当前仓库已经打通了 `Rust 引擎 + Tauri 桌面壳 + React/FlowGram 画布` 这一条主链路，适合继续往工业协议节点、运行观测和 AI 辅助编排方向迭代。
+当前仓库已经打通了 `Rust 引擎 + Tauri 桌面壳 + React / FlowGram 工作台` 这一条主链路，桌面端已经具备 Dashboard、工程看板、可视化画布、连接资源编辑、Payload 调试、运行观测、设置与关于等完整工作区骨架，适合继续往工业协议节点、运行观测和 AI 辅助编排方向迭代。
 
 ## 当前完成度
 
 - 已完成 Rust 侧 `WorkflowContext`、线性 Pipeline、DAG 部署与事件流输出。
-- 已完成 `Native Node` 与 `Rhai Node` 两类节点抽象，并支持脚本步数上限。
 - 已完成 DAG 校验、节点超时保护、panic 隔离、失败不拖垮后续消息。
+- 已完成 `Native`、`Rhai / Code`、`Timer`、`Modbus Read`、`IF`、`Switch`、`Try/Catch`、`Loop`、`HTTP Client`、`SQL Writer`、`Debug Console` 等节点类型骨架。
 - 已完成连接资源池骨架，可注册、借出、释放并向节点注入连接上下文。
-- 已完成 Tauri IPC：`deploy_workflow`、`dispatch_payload`、`list_connections`。
-- 已完成 React + FlowGram 的桌面工作台，包括看板入口、画布编辑、连接资源、Payload 面板、运行观测与设置面板。
+- 已完成 Tauri IPC：`deploy_workflow`、`dispatch_payload`、`undeploy_workflow`、`list_connections`。
+- 已完成 React + FlowGram 的桌面工作台，包括 Dashboard、工程看板、项目画布、流程源配置、连接资源、Payload 调试、运行观测、设置与关于页面。
 - 已补充基础自动化验证：`cargo test`、Web 构建、Tauri 桌面编译检查。
 
-## 界面截图
+## 界面导览
 
-开发态客户端主界面：
+### Dashboard
+
+展示当前工作区的工程数量、节点 / 边统计、运行态分布、会话热度与部署摘要。
 
 ![Nazh Desktop Dashboard](docs/screenshots/desktop-dashboard.png)
+
+### 项目工作区
+
+左侧是节点库和导航，中间是 FlowGram 画布与工具栏，底部是连接池、执行事件流和结果载荷面板，适合直接围绕单个工程进行编排与调试。
+
+![Nazh Project Workspace](docs/screenshots/project.png)
+
+### 连接资源编辑
+
+支持直接维护连接 ID、协议类型和 Metadata JSON，并展示当前连接被哪些节点引用，方便把资源定义同步回 AST。
+
+![Nazh Connection Studio](docs/screenshots/连接资源管理器.png)
 
 ## 技术栈
 
@@ -56,18 +70,20 @@ flowchart LR
 ### 2. 节点模型
 
 - `Native Node`：用于原生逻辑占位，目前支持消息注入、字段注入与连接上下文附着。
-- `Rhai Node`：用于动态业务逻辑，支持脚本编译、执行和 JSON payload 读写。
+- `Rhai Node / Code Node`：用于动态业务逻辑，支持脚本编译、执行和 JSON payload 读写。
+- 流程控制节点：已包含 `Timer`、`IF`、`Switch`、`Try/Catch`、`Loop` 等基础编排能力。
+- 工业 / 输出节点：已包含 `Modbus Read`、`HTTP Client`、`SQL Writer`、`Debug Console` 等桌面演示节点。
 - `ai_description` 字段已打通，方便后续接入自然语言生成脚本或节点建议。
 
 ### 3. 桌面工作台
 
 - Dashboard：展示工程数量、节点/边统计、状态分布、热度与部署摘要。
-- Boards：以工程看板形式进入工作区。
+- Boards：以工程看板形式进入工作区，并切入具体项目画布。
+- Project Workspace：集成节点库、FlowGram 画布、缩放 / 运行工具栏和底部运行观测面板。
 - Source：直接编辑工作流 AST 文本。
 - Connections：维护连接定义并同步回 AST。
-- Payload：发送测试载荷。
-- Canvas：在 FlowGram 画布上查看与调整节点、连线和布局。
-- Runtime Dock：展示部署快照、事件流、结果载荷与连接池预览。
+- Payload：发送测试载荷并查看结果回流。
+- Settings / About：管理主题、密度、启动页等桌面偏好，并展示应用信息。
 
 ## 项目结构
 
@@ -130,6 +146,7 @@ npm --prefix web run build
 
 - `deploy_workflow(ast: String)`：部署工作流图并注册事件/结果监听。
 - `dispatch_payload(payload: Value)`：向当前工作流入口发送测试数据。
+- `undeploy_workflow()`：停止当前部署并中止活跃定时任务。
 - `list_connections()`：读取运行时连接池快照。
 
 ### 前端示例数据
