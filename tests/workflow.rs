@@ -809,8 +809,9 @@ async fn http_alarm_node_renders_dingtalk_markdown_body() {
             request_text.starts_with("POST /robot "),
             "request should target POST /robot"
         );
+        let request_lower = request_text.to_lowercase();
         assert!(
-            request_text.contains("Content-Type: application/json"),
+            request_lower.contains("content-type: application/json"),
             "dingtalk alarm should send a JSON content type"
         );
         assert!(

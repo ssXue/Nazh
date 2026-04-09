@@ -16,7 +16,6 @@ use rhai::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
-use std::process::Command;
 
 use crate::{ConnectionLease, EngineError, SharedConnectionManager, WorkflowContext};
 
@@ -285,6 +284,7 @@ pub struct HttpClientNode {
     id: String,
     ai_description: String,
     config: HttpClientNodeConfig,
+    client: reqwest::Client,
 }
 
 pub struct SqlWriterNode {
@@ -1243,10 +1243,15 @@ impl HttpClientNode {
         config: HttpClientNodeConfig,
         ai_description: impl Into<String>,
     ) -> Self {
+        let client = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::limited(10))
+            .build()
+            .unwrap_or_default();
         Self {
             id: id.into(),
             ai_description: ai_description.into(),
             config,
+            client,
         }
     }
 }
@@ -1275,100 +1280,57 @@ impl NodeTrait for HttpClientNode {
             ));
         }
 
-        let trace_id = ctx.trace_id;
-        let payload = ctx.payload.clone();
         let requested_at = Utc::now().to_rfc3339();
         let request_timeout_ms = self.config.request_timeout_ms.max(500);
         let (payload_body, content_type, webhook_kind, body_mode) =
             prepare_http_request_body(&self.id, &self.config, &ctx, &requested_at)?;
-        let mut headers = self
-            .config
-            .headers
-            .iter()
-            .map(|(key, value)| (key.clone(), value_to_header_string(value)))
-            .collect::<Vec<_>>();
-        let has_content_type_header = headers
-            .iter()
-            .any(|(key, _)| key.eq_ignore_ascii_case("content-type"));
-        if method != "GET"
-            && method != "HEAD"
-            && !has_content_type_header
-            && !content_type.is_empty()
-        {
-            headers.push(("Content-Type".to_owned(), content_type.clone()));
-        }
-        let node_id = self.id.clone();
-        let url_for_cmd = url.clone();
-        let method_for_cmd = method.clone();
-        let payload_body_for_cmd = payload_body.clone();
         let requested_at_for_meta = requested_at.clone();
         let content_type_for_meta = content_type.clone();
         let webhook_kind_for_meta = webhook_kind.clone();
         let body_mode_for_meta = body_mode.clone();
 
-        let (status_code, response_value) = tokio::task::spawn_blocking(move || {
-            let mut args = vec![
-                "-sS".to_owned(),
-                "-X".to_owned(),
-                method_for_cmd.clone(),
-                url_for_cmd.clone(),
-                "--connect-timeout".to_owned(),
-                format!("{:.3}", (request_timeout_ms.min(2_000) as f64) / 1_000.0),
-                "--max-time".to_owned(),
-                format!("{:.3}", (request_timeout_ms as f64) / 1_000.0),
-                "--write-out".to_owned(),
-                "\n__NAZH_STATUS__:%{http_code}".to_owned(),
-            ];
+        let reqwest_method = method.parse::<reqwest::Method>().map_err(|error| {
+            EngineError::node_config(self.id.clone(), format!("无效的 HTTP 方法: {error}"))
+        })?;
 
-            for (key, value) in &headers {
-                args.push("-H".to_owned());
-                args.push(format!("{key}: {value}"));
+        let mut request = self
+            .client
+            .request(reqwest_method, &url)
+            .timeout(std::time::Duration::from_millis(request_timeout_ms as u64));
+
+        for (key, value) in &self.config.headers {
+            request = request.header(key.as_str(), value_to_header_string(value));
+        }
+
+        if method != "GET" && method != "HEAD" {
+            let has_content_type_header = self
+                .config
+                .headers
+                .keys()
+                .any(|key| key.eq_ignore_ascii_case("content-type"));
+            if !has_content_type_header && !content_type.is_empty() {
+                request = request.header("Content-Type", content_type.as_str());
             }
+            request = request.body(payload_body.clone());
+        }
 
-            if method_for_cmd != "GET" && method_for_cmd != "HEAD" {
-                args.push("-d".to_owned());
-                args.push(payload_body_for_cmd.clone());
-            }
+        let response = request.send().await.map_err(|error| {
+            EngineError::stage_execution(
+                self.id.clone(),
+                ctx.trace_id,
+                format!("HTTP 请求失败: {error}"),
+            )
+        })?;
 
-            let output = Command::new("curl").args(&args).output().map_err(|error| {
-                EngineError::stage_execution(
-                    node_id.clone(),
-                    trace_id,
-                    format!("curl 执行失败: {error}"),
-                )
-            })?;
-
-            if !output.status.success() {
-                return Err(EngineError::stage_execution(
-                    node_id.clone(),
-                    trace_id,
-                    String::from_utf8_lossy(&output.stderr).trim().to_owned(),
-                ));
-            }
-
-            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-            let (body, status) = stdout.rsplit_once("\n__NAZH_STATUS__:").ok_or_else(|| {
-                EngineError::stage_execution(
-                    node_id.clone(),
-                    trace_id,
-                    "无法解析 HTTP Client 返回状态码",
-                )
-            })?;
-            let status_code = status.trim().parse::<u16>().map_err(|error| {
-                EngineError::stage_execution(
-                    node_id.clone(),
-                    trace_id,
-                    format!("HTTP 状态码解析失败: {error}"),
-                )
-            })?;
-
-            Ok((status_code, parse_json_or_string(body)))
-        })
-        .await
-        .map_err(|_| EngineError::StagePanicked {
-            stage: self.id.clone(),
-            trace_id,
-        })??;
+        let status_code = response.status().as_u16();
+        let response_body = response.text().await.map_err(|error| {
+            EngineError::stage_execution(
+                self.id.clone(),
+                ctx.trace_id,
+                format!("读取 HTTP 响应体失败: {error}"),
+            )
+        })?;
+        let response_value = parse_json_or_string(&response_body);
 
         if status_code >= 400 {
             return Err(EngineError::stage_execution(
@@ -1381,7 +1343,8 @@ impl NodeTrait for HttpClientNode {
             ));
         }
 
-        let mut payload_map = into_payload_map(payload);
+        let trace_id = ctx.trace_id;
+        let mut payload_map = into_payload_map(ctx.payload);
         let mut http_meta = Map::new();
         http_meta.insert("url".to_owned(), Value::String(url));
         http_meta.insert("method".to_owned(), Value::String(method));
@@ -1411,9 +1374,11 @@ impl NodeTrait for HttpClientNode {
         payload_map.insert("_http".to_owned(), Value::Object(http_meta));
         payload_map.insert("http_response".to_owned(), response_value);
 
-        Ok(NodeExecution::broadcast(
-            ctx.with_payload(Value::Object(payload_map)),
-        ))
+        Ok(NodeExecution::broadcast(WorkflowContext::from_parts(
+            trace_id,
+            Utc::now(),
+            Value::Object(payload_map),
+        )))
     }
 }
 
