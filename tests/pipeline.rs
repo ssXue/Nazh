@@ -170,10 +170,7 @@ async fn panicking_stage_is_isolated() {
             })) = event
             {
                 if trace_id == panic_trace_id {
-                    assert!(
-                        error.contains("panicked"),
-                        "failure event should report panic"
-                    );
+                    assert!(error.contains("panic"), "failure event should report panic");
                     saw_failure = true;
                 }
             }
@@ -234,7 +231,7 @@ async fn timeout_reports_failure_without_killing_pipeline() {
         })) => {
             assert_eq!(failed_trace_id, trace_id);
             assert!(
-                error.contains("timed out"),
+                error.contains("超时"),
                 "failure event should mention timeout"
             );
         }

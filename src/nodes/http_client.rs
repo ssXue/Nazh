@@ -34,11 +34,9 @@ fn default_http_request_timeout_ms() -> u64 {
     4_000
 }
 
+/// HTTP 头部值转换：复用模板模块的显示逻辑。
 fn value_to_header_string(value: &Value) -> String {
-    match value {
-        Value::String(text) => text.clone(),
-        other => other.to_string(),
-    }
+    template::value_to_display_string(value)
 }
 
 fn parse_json_or_string(raw: &str) -> Value {
@@ -253,6 +251,7 @@ impl NodeTrait for HttpClientNode {
             request = request.header(key.as_str(), value_to_header_string(value));
         }
 
+        let body_preview = template::truncate(&payload_body, 320);
         if method != "GET" && method != "HEAD" {
             let has_content_type_header = self
                 .config
@@ -262,7 +261,7 @@ impl NodeTrait for HttpClientNode {
             if !has_content_type_header && !content_type.is_empty() {
                 request = request.header("Content-Type", content_type.as_str());
             }
-            request = request.body(payload_body.clone());
+            request = request.body(payload_body);
         }
 
         let response = request.send().await.map_err(|error| {
@@ -288,7 +287,7 @@ impl NodeTrait for HttpClientNode {
                 self.id.clone(),
                 ctx.trace_id,
                 format!(
-                    "HTTP Alarm 返回状态码 {status_code}: {}",
+                    "HTTP 请求返回错误状态码 {status_code}: {}",
                     template::truncate(&template::value_to_display_string(&response_value), 240)
                 ),
             ));
@@ -304,9 +303,8 @@ impl NodeTrait for HttpClientNode {
             "content_type": content_type,
             "request_timeout_ms": request_timeout_ms,
             "status": status_code,
-            "ok": status_code < 400,
             "requested_at": requested_at,
-            "request_body_preview": template::truncate(&payload_body, 320),
+            "request_body_preview": body_preview,
         });
         payload_map.insert("_http".to_owned(), http_meta);
         payload_map.insert("http_response".to_owned(), response_value);

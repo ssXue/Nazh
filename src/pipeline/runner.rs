@@ -21,9 +21,9 @@ pub(crate) async fn run_stage(
     result_tx: mpsc::Sender<WorkflowContext>,
     event_tx: mpsc::Sender<ExecutionEvent>,
 ) {
+    let stage_name = stage.name.clone();
     while let Some(ctx) = input_rx.recv().await {
         let trace_id = ctx.trace_id;
-        let stage_name = stage.name.clone();
 
         emit_event(
             &event_tx,

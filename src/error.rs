@@ -27,14 +27,14 @@ pub enum EngineError {
         message: String,
     },
 
-    #[error("阶段 `{stage}` 在 trace `{trace_id}` 中 timed out（{timeout_ms} ms）")]
+    #[error("阶段 `{stage}` 在 trace `{trace_id}` 中超时（{timeout_ms} ms）")]
     StageTimeout {
         stage: String,
         trace_id: Uuid,
         timeout_ms: u128,
     },
 
-    #[error("阶段 `{stage}` 在 trace `{trace_id}` 中 panicked")]
+    #[error("阶段 `{stage}` 在 trace `{trace_id}` 中发生 panic")]
     StagePanicked { stage: String, trace_id: Uuid },
 
     #[error("阶段 `{stage}` 的通道已关闭")]

@@ -57,6 +57,7 @@ macro_rules! impl_node_meta {
         }
     };
 }
+#[allow(unused_imports)] // clippy 无法追踪 macro_rules! 宏的使用
 pub(crate) use impl_node_meta;
 
 mod helpers;

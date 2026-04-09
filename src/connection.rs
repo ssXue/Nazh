@@ -71,14 +71,18 @@ impl ConnectionManager {
         &self,
         definition: ConnectionDefinition,
     ) -> Result<(), EngineError> {
-        {
-            let connections = self.connections.read().await;
-            if connections.contains_key(&definition.id) {
-                return Err(EngineError::ConnectionAlreadyExists(definition.id));
-            }
+        let mut connections = self.connections.write().await;
+        if connections.contains_key(&definition.id) {
+            return Err(EngineError::ConnectionAlreadyExists(definition.id));
         }
-
-        self.upsert_connection(definition).await;
+        let record = ConnectionRecord {
+            id: definition.id.clone(),
+            kind: definition.kind,
+            metadata: definition.metadata,
+            in_use: false,
+            last_borrowed_at: None,
+        };
+        connections.insert(definition.id, Arc::new(Mutex::new(record)));
         Ok(())
     }
 
@@ -113,24 +117,28 @@ impl ConnectionManager {
         }
     }
 
-    /// 排他借出一个连接。若已被借出或不存在则返回错误。
+    /// 按 ID 定位连接的内层 `Arc`，释放外层读锁后返回。
     ///
-    /// 关键：先取出内层 Arc 副本并释放外层读锁，再 await 内层 Mutex，
-    /// 避免持有外层锁等待内层锁造成死锁。
+    /// 先取出内层 Arc 副本并释放外层读锁，避免持有外层锁跨 await。
+    async fn entry(
+        &self,
+        connection_id: &str,
+    ) -> Result<Arc<Mutex<ConnectionRecord>>, EngineError> {
+        let connections = self.connections.read().await;
+        connections
+            .get(connection_id)
+            .cloned()
+            .ok_or_else(|| EngineError::ConnectionNotFound(connection_id.to_owned()))
+    }
+
+    /// 排他借出一个连接。若已被借出或不存在则返回错误。
     ///
     /// # Errors
     ///
     /// 连接不存在时返回 [`EngineError::ConnectionNotFound`]，
     /// 已被借出时返回 [`EngineError::ConnectionBusy`]。
     pub async fn borrow(&self, connection_id: &str) -> Result<ConnectionLease, EngineError> {
-        let entry = {
-            let connections = self.connections.read().await;
-            connections
-                .get(connection_id)
-                .cloned()
-                .ok_or_else(|| EngineError::ConnectionNotFound(connection_id.to_owned()))?
-        };
-
+        let entry = self.entry(connection_id).await?;
         let mut record = entry.lock().await;
         if record.in_use {
             return Err(EngineError::ConnectionBusy(connection_id.to_owned()));
@@ -150,35 +158,21 @@ impl ConnectionManager {
 
     /// 将已借出的连接归还到资源池。
     ///
-    /// 关键：先取出内层 Arc 副本并释放外层读锁，再 await 内层 Mutex，
-    /// 避免死锁。
-    ///
     /// # Errors
     ///
     /// 连接不存在时返回 [`EngineError::ConnectionNotFound`]。
     pub async fn release(&self, connection_id: &str) -> Result<(), EngineError> {
-        let entry = {
-            let connections = self.connections.read().await;
-            connections
-                .get(connection_id)
-                .cloned()
-                .ok_or_else(|| EngineError::ConnectionNotFound(connection_id.to_owned()))?
-        };
-
-        let mut record = entry.lock().await;
-        record.in_use = false;
+        let entry = self.entry(connection_id).await?;
+        entry.lock().await.in_use = false;
         Ok(())
     }
 
     /// 返回单个连接记录的快照。
     pub async fn get(&self, connection_id: &str) -> Option<ConnectionRecord> {
-        let entry = {
-            let connections = self.connections.read().await;
-            connections.get(connection_id).cloned()?
-        };
-
+        let entry = self.entry(connection_id).await.ok()?;
         let record = entry.lock().await;
-        Some(record.clone())
+        let snapshot = record.clone();
+        Some(snapshot)
     }
 
     /// 返回所有已注册连接的快照列表。

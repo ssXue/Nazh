@@ -41,8 +41,9 @@ pub(crate) fn value_to_display_string(value: &Value) -> String {
 
 /// 截断字符串到指定字符数，超出部分用省略号替代。
 pub(crate) fn truncate(text: &str, limit: usize) -> String {
-    let mut result = text.chars().take(limit).collect::<String>();
-    if text.chars().count() > limit {
+    let mut chars = text.chars();
+    let mut result: String = chars.by_ref().take(limit).collect();
+    if chars.next().is_some() {
         result.push('\u{2026}');
     }
     result
@@ -98,14 +99,15 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    static TEST_TRACE_ID: Uuid = Uuid::from_bytes([
+        0x55, 0x0e, 0x84, 0x00, 0xe2, 0x9b, 0x41, 0xd4, 0xa7, 0x16, 0x44, 0x66, 0x55, 0x44, 0x00,
+        0x00,
+    ]);
+
     fn test_vars(payload: &Value) -> TemplateVars<'_> {
-        // 使用固定 UUID 避免测试中依赖随机值
-        let trace_id = Box::leak(Box::new(
-            Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap_or_else(|_| Uuid::nil()),
-        ));
         TemplateVars {
             payload,
-            trace_id,
+            trace_id: &TEST_TRACE_ID,
             node_id: "test-node",
             timestamp: "2026-01-01T00:00:00Z",
             extras: &[("custom_key", "custom_value")],
