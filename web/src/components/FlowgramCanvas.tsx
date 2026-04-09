@@ -18,8 +18,10 @@ import { PanelManager } from '@flowgram.ai/panel-manager-plugin';
 import {
   type CSSProperties,
   type ReactNode,
+  forwardRef,
   useCallback,
   useEffect,
+  useImperativeHandle,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -69,6 +71,13 @@ interface FlowgramCanvasProps {
   nodeRhaiColor: string;
   onRunRequested?: () => void;
   onGraphChange: (nextAstText: string) => void;
+  onError?: (title: string, detail?: string | null) => void;
+}
+
+export interface FlowgramCanvasHandle {
+  isReady: () => boolean;
+  getCurrentWorkflowGraph: () => WorkflowGraph | null;
+  loadWorkflowGraph: (graph: WorkflowGraph) => void;
 }
 
 interface FlowgramNodeMaterialProps {
@@ -372,6 +381,22 @@ function isBusinessFlowNode(node: FlowNodeEntity | null): node is FlowNodeEntity
   );
 }
 
+function describeFlowgramError(error: unknown): string {
+  if (error instanceof Error) {
+    return error.stack ?? error.message;
+  }
+
+  if (typeof error === 'string') {
+    return error;
+  }
+
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return '未知异常';
+  }
+}
+
 function resolveNodePortColor(
   displayType: string,
   accentHex: string,
@@ -439,6 +464,8 @@ function FlowgramNodeCard(props: FlowgramNodeMaterialProps) {
           quantity?: number;
           url?: string;
           method?: string;
+          webhook_kind?: string;
+          body_mode?: string;
           table?: string;
           database_path?: string;
           label?: string;
@@ -485,7 +512,9 @@ function FlowgramNodeCard(props: FlowgramNodeMaterialProps) {
       : nodeType === 'loop'
         ? rawData?.config?.script ?? 'return array or count'
         : nodeType === 'httpClient'
-          ? `${rawData?.config?.method ?? 'POST'} ${rawData?.config?.url ?? ''}`.trim()
+          ? rawData?.config?.webhook_kind === 'dingtalk'
+            ? `钉钉报警 · ${rawData?.config?.method ?? 'POST'}`
+            : `${rawData?.config?.method ?? 'POST'} ${rawData?.config?.url ?? ''}`.trim()
         : nodeType === 'sqlWriter'
           ? `${rawData?.config?.table ?? 'workflow_logs'} → ${rawData?.config?.database_path ?? './nazh-local.sqlite3'}`
         : nodeType === 'debugConsole'
@@ -906,7 +935,7 @@ function FlowgramMinimap({ hidden = false }: { hidden?: boolean }) {
   );
 }
 
-export function FlowgramCanvas({
+export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasProps>(function FlowgramCanvas({
   graph,
   reloadVersion,
   runtimeState,
@@ -915,7 +944,8 @@ export function FlowgramCanvas({
   nodeRhaiColor,
   onRunRequested,
   onGraphChange,
-}: FlowgramCanvasProps) {
+  onError,
+}, ref) {
   const [lastChange, setLastChange] = useState<string | null>(null);
   const [editorCtx, setEditorCtx] = useState<FreeLayoutPluginContext | null>(null);
   const [hasSelection, setHasSelection] = useState(false);
@@ -928,7 +958,6 @@ export function FlowgramCanvas({
   const initialFlowgramDataRef = useRef<FlowgramWorkflowJSON | null>(null);
   const pendingFitViewRef = useRef(true);
   const lastReloadVersionRef = useRef(reloadVersion);
-  const connectionOptions = graph?.connections ?? [];
   const flowgramData = useMemo(() => {
     if (!graph) {
       return null;
@@ -941,15 +970,32 @@ export function FlowgramCanvas({
     [flowgramData],
   );
   const latestFlowgramDataRef = useRef<FlowgramWorkflowJSON | null>(flowgramData);
-  const primaryConnectionId = graph?.connections?.[0]?.id ?? null;
+
+  const reportFlowgramError = useCallback(
+    (title: string, error: unknown) => {
+      const detail = describeFlowgramError(error);
+      console.error(title, error);
+      onError?.(title, detail);
+    },
+    [onError],
+  );
 
   useEffect(() => {
-    latestGraphRef.current = graph;
+    if (graph) {
+      latestGraphRef.current = graph;
+    }
   }, [graph]);
 
   useEffect(() => {
-    latestFlowgramDataRef.current = flowgramData;
+    if (flowgramData) {
+      latestFlowgramDataRef.current = flowgramData;
+    }
   }, [flowgramData]);
+
+  const resolvedGraph = graph ?? latestGraphRef.current;
+  const resolvedFlowgramData = flowgramData ?? latestFlowgramDataRef.current;
+  const connectionOptions = resolvedGraph?.connections ?? [];
+  const primaryConnectionId = resolvedGraph?.connections?.[0]?.id ?? null;
 
   useEffect(() => {
     if (reloadVersion !== lastReloadVersionRef.current) {
@@ -959,13 +1005,13 @@ export function FlowgramCanvas({
   }, [reloadVersion]);
 
   useEffect(() => {
-    if (!editorCtx) {
-      initialFlowgramDataRef.current = flowgramData;
+    if (!editorCtx && resolvedFlowgramData) {
+      initialFlowgramDataRef.current = resolvedFlowgramData;
     }
-  }, [editorCtx, flowgramData]);
+  }, [editorCtx, resolvedFlowgramData]);
 
-  if (!initialFlowgramDataRef.current && flowgramData) {
-    initialFlowgramDataRef.current = flowgramData;
+  if (!initialFlowgramDataRef.current && resolvedFlowgramData) {
+    initialFlowgramDataRef.current = resolvedFlowgramData;
   }
 
   const activeNodeIds = useMemo(() => new Set(runtimeState.activeNodeIds), [runtimeState.activeNodeIds]);
@@ -1012,8 +1058,11 @@ export function FlowgramCanvas({
         return 'idle';
       }
 
-      const fromId = line.from.id;
+      const fromId = line.from?.id;
       const toId = line.to?.id;
+      if (!fromId) {
+        return 'idle';
+      }
 
       if ((toId && failedNodeIds.has(toId)) || failedNodeIds.has(fromId)) {
         return 'failed';
@@ -1045,7 +1094,10 @@ export function FlowgramCanvas({
   const isErrorLine = useCallback(
     (_ctx: FreeLayoutPluginContext, fromPort: { node: FlowNodeEntity }, toPort?: { node: FlowNodeEntity }) =>
       isWorkflowRuntimeMapped &&
-      (failedNodeIds.has(fromPort.node.id) || Boolean(toPort && failedNodeIds.has(toPort.node.id))),
+      Boolean(
+        (fromPort?.node?.id && failedNodeIds.has(fromPort.node.id)) ||
+          (toPort?.node?.id && failedNodeIds.has(toPort.node.id)),
+      ),
     [failedNodeIds, isWorkflowRuntimeMapped],
   );
 
@@ -1076,104 +1128,69 @@ export function FlowgramCanvas({
   );
   const syncSelectionState = useCallback(
     (ctx: FreeLayoutPluginContext | null) => {
-      if (!ctx) {
-        selectedNodeRef.current = null;
-        setHasSelection(false);
-        return;
-      }
+      try {
+        if (!ctx) {
+          selectedNodeRef.current = null;
+          setHasSelection(false);
+          return;
+        }
 
-      const selectionService = ctx.document.selectServices;
-      const selectedNodes = selectionService.selectedNodes;
-      const nextSelectedNode = selectedNodes.length === 1 ? selectedNodes[0] : null;
-      const nextBusinessNode = isBusinessFlowNode(nextSelectedNode) ? nextSelectedNode : null;
+        const selectionService = ctx.document.selectServices;
+        const selectedNodes = selectionService.selectedNodes;
+        const nextSelectedNode = selectedNodes.length === 1 ? selectedNodes[0] : null;
+        const nextBusinessNode = isBusinessFlowNode(nextSelectedNode) ? nextSelectedNode : null;
 
-      selectedNodeRef.current = nextBusinessNode;
-      setHasSelection(Boolean(nextBusinessNode));
+        selectedNodeRef.current = nextBusinessNode;
+        setHasSelection(Boolean(nextBusinessNode));
 
-      const panelManager = (ctx as FreeLayoutPluginContext & {
-        get?: <T>(token: unknown) => T;
-      }).get?.<PanelManager>(PanelManager);
+        const panelManager = (ctx as FreeLayoutPluginContext & {
+          get?: <T>(token: unknown) => T;
+        }).get?.<PanelManager>(PanelManager);
 
-      if (!panelManager) {
-        return;
-      }
+        if (!panelManager) {
+          return;
+        }
 
-      if (ctx.playground.config.readonly) {
+        if (ctx.playground.config.readonly) {
+          panelManager.close(FLOWGRAM_NODE_SETTINGS_PANEL_KEY, 'right');
+          return;
+        }
+
+        if (nextBusinessNode) {
+          panelManager.open(FLOWGRAM_NODE_SETTINGS_PANEL_KEY, 'right', {
+            props: {
+              nodeId: nextBusinessNode.id,
+              connections: connectionOptions,
+            },
+          });
+          return;
+        }
+
         panelManager.close(FLOWGRAM_NODE_SETTINGS_PANEL_KEY, 'right');
+      } catch (error) {
+        reportFlowgramError('FlowGram 选择状态同步失败', error);
         return;
       }
-
-      if (nextBusinessNode) {
-        panelManager.open(FLOWGRAM_NODE_SETTINGS_PANEL_KEY, 'right', {
-          props: {
-            nodeId: nextBusinessNode.id,
-            connections: connectionOptions,
-          },
-        });
-        return;
-      }
-
-      panelManager.close(FLOWGRAM_NODE_SETTINGS_PANEL_KEY, 'right');
     },
-    [connectionOptions],
+    [connectionOptions, reportFlowgramError],
   );
 
-  const buildCurrentAstText = useCallback(
+  const buildCurrentWorkflowGraph = useCallback(
     (ctx: FreeLayoutPluginContext) => {
       if (!latestGraphRef.current) {
         return null;
       }
 
       const nextFlowgramGraph = ctx.document.toJSON();
-      const nextGraph = toNazhWorkflowGraph(nextFlowgramGraph, latestGraphRef.current);
-      return formatWorkflowGraph(nextGraph);
-    },
-    [],
-  );
-
-  const handleSaveCurrentGraph = useCallback(() => {
-    if (!editorCtx) {
-      return;
-    }
-
-    const nextAstText = buildCurrentAstText(editorCtx);
-    if (!nextAstText) {
-      return;
-    }
-
-    onGraphChange(nextAstText);
-  }, [buildCurrentAstText, editorCtx, onGraphChange]);
-
-  const handleDownloadCurrentGraph = useCallback(
-    async (format: FlowDownloadFormat) => {
-      if (!editorCtx) {
-        return;
-      }
-
-      const downloadService = (editorCtx as FreeLayoutPluginContext & {
-        get?: <T>(token: unknown) => T;
-      }).get?.<FlowDownloadService>(FlowDownloadService);
-      if (!downloadService) {
-        return;
-      }
-
-      await downloadService.download({ format });
-    },
-    [editorCtx],
-  );
-
-  const handleEditorRef = useCallback(
-    (ctx: FreeLayoutPluginContext | null) => {
-      setEditorCtx(ctx);
+      return toNazhWorkflowGraph(nextFlowgramGraph, latestGraphRef.current);
     },
     [],
   );
 
   const applyExternalFlowgramGraph = useCallback(
     (ctx: FreeLayoutPluginContext, nextGraph: FlowgramWorkflowJSON) => {
-      applyingExternalGraphRef.current = true;
-
       try {
+        applyingExternalGraphRef.current = true;
         const operationContext = ctx as FreeLayoutPluginContext & {
           operation?: {
             fromJSON: (graph: FlowgramWorkflowJSON) => void;
@@ -1187,11 +1204,106 @@ export function FlowgramCanvas({
         }
 
         syncSelectionState(ctx);
+      } catch (error) {
+        reportFlowgramError('FlowGram 外部数据载入失败', error);
       } finally {
         applyingExternalGraphRef.current = false;
       }
     },
-    [syncSelectionState],
+    [reportFlowgramError, syncSelectionState],
+  );
+
+  const emitCurrentGraphChange = useCallback(
+    (ctx: FreeLayoutPluginContext) => {
+      try {
+        const nextGraph = buildCurrentWorkflowGraph(ctx);
+        if (!nextGraph) {
+          return null;
+        }
+
+        const nextAstText = formatWorkflowGraph(nextGraph);
+        onGraphChange(nextAstText);
+        return nextAstText;
+      } catch (error) {
+        reportFlowgramError('FlowGram 当前工作流序列化失败', error);
+        return null;
+      }
+    },
+    [buildCurrentWorkflowGraph, onGraphChange, reportFlowgramError],
+  );
+
+  const loadWorkflowGraph = useCallback(
+    (nextGraph: WorkflowGraph) => {
+      try {
+        latestGraphRef.current = nextGraph;
+        const nextFlowgramGraph = toFlowgramWorkflowJson(nextGraph);
+        latestFlowgramDataRef.current = nextFlowgramGraph;
+
+        if (syncTimerRef.current !== null) {
+          window.clearTimeout(syncTimerRef.current);
+          syncTimerRef.current = null;
+        }
+
+        if (!editorCtx) {
+          initialFlowgramDataRef.current = nextFlowgramGraph;
+          return;
+        }
+
+        pendingFitViewRef.current = true;
+        applyExternalFlowgramGraph(editorCtx, nextFlowgramGraph);
+      } catch (error) {
+        reportFlowgramError('FlowGram 工作流导入失败', error);
+      }
+    },
+    [applyExternalFlowgramGraph, editorCtx, reportFlowgramError],
+  );
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      isReady: () => Boolean(editorCtx),
+      getCurrentWorkflowGraph: () =>
+        editorCtx ? buildCurrentWorkflowGraph(editorCtx) : latestGraphRef.current,
+      loadWorkflowGraph,
+    }),
+    [buildCurrentWorkflowGraph, editorCtx, loadWorkflowGraph],
+  );
+
+  const handleSaveCurrentGraph = useCallback(() => {
+    if (!editorCtx) {
+      return;
+    }
+
+    emitCurrentGraphChange(editorCtx);
+  }, [editorCtx, emitCurrentGraphChange]);
+
+  const handleDownloadCurrentGraph = useCallback(
+    async (format: FlowDownloadFormat) => {
+      if (!editorCtx) {
+        return;
+      }
+
+      try {
+        const downloadService = (editorCtx as FreeLayoutPluginContext & {
+          get?: <T>(token: unknown) => T;
+        }).get?.<FlowDownloadService>(FlowDownloadService);
+        if (!downloadService) {
+          return;
+        }
+
+        await downloadService.download({ format });
+      } catch (error) {
+        reportFlowgramError('FlowGram 导出失败', error);
+      }
+    },
+    [editorCtx, reportFlowgramError],
+  );
+
+  const handleEditorRef = useCallback(
+    (ctx: FreeLayoutPluginContext | null) => {
+      setEditorCtx(ctx);
+    },
+    [],
   );
 
   const handleAllLayersRendered = useCallback((ctx: FreeLayoutPluginContext) => {
@@ -1204,10 +1316,14 @@ export function FlowgramCanvas({
   }, []);
   const handleDragLineEnd = useCallback(
     async (ctx: FreeLayoutPluginContext, params: Parameters<typeof handleFlowgramDragLineEnd>[1]) => {
-      await handleFlowgramDragLineEnd(ctx, params);
-      syncSelectionState(ctx);
+      try {
+        await handleFlowgramDragLineEnd(ctx, params);
+        syncSelectionState(ctx);
+      } catch (error) {
+        reportFlowgramError('FlowGram 连线处理失败', error);
+      }
     },
-    [syncSelectionState],
+    [reportFlowgramError, syncSelectionState],
   );
 
   useEffect(() => {
@@ -1256,7 +1372,7 @@ export function FlowgramCanvas({
   useEffect(() => {
     const nextFlowgramData = latestFlowgramDataRef.current;
 
-    if (!editorCtx || !nextFlowgramData || !flowgramDataSignature) {
+    if (!editorCtx || !graph || !nextFlowgramData || !flowgramDataSignature) {
       return;
     }
 
@@ -1266,49 +1382,51 @@ export function FlowgramCanvas({
     }
 
     applyExternalFlowgramGraph(editorCtx, nextFlowgramData);
-  }, [applyExternalFlowgramGraph, editorCtx, flowgramDataSignature, reloadVersion]);
+  }, [applyExternalFlowgramGraph, editorCtx, flowgramDataSignature, graph, reloadVersion]);
 
   function handleContentChange(
     ctx: FreeLayoutPluginContext,
     event: WorkflowContentChangeEvent,
   ) {
-    if (applyingExternalGraphRef.current) {
-      return;
-    }
-
-    if (event.type === WorkflowContentChangeType.META_CHANGE) {
-      return;
-    }
-
-    if (
-      event.type === WorkflowContentChangeType.DELETE_NODE ||
-      event.type === WorkflowContentChangeType.DELETE_LINE
-    ) {
-      ctx.playground.flush();
-    }
-
-    setLastChange(event.type);
-    syncSelectionState(ctx);
-
-    if (!latestGraphRef.current) {
-      return;
-    }
-
-    if (syncTimerRef.current !== null) {
-      window.clearTimeout(syncTimerRef.current);
-    }
-
-    syncTimerRef.current = window.setTimeout(() => {
-      const nextAstText = buildCurrentAstText(ctx);
-      if (nextAstText) {
-        onGraphChange(nextAstText);
+    try {
+      if (applyingExternalGraphRef.current) {
+        return;
       }
-    }, 120);
+
+      if (event.type === WorkflowContentChangeType.META_CHANGE) {
+        return;
+      }
+
+      if (
+        event.type === WorkflowContentChangeType.DELETE_NODE ||
+        event.type === WorkflowContentChangeType.DELETE_LINE
+      ) {
+        ctx.playground.flush();
+      }
+
+      setLastChange(event.type);
+      syncSelectionState(ctx);
+
+      if (!latestGraphRef.current) {
+        return;
+      }
+
+      if (syncTimerRef.current !== null) {
+        window.clearTimeout(syncTimerRef.current);
+        syncTimerRef.current = null;
+      }
+
+      syncTimerRef.current = window.setTimeout(() => {
+        emitCurrentGraphChange(ctx);
+      }, 120);
+    } catch (error) {
+      reportFlowgramError('FlowGram 内容同步失败', error);
+    }
   }
 
   function nextNodeId(prefix: string): string {
     const currentIds = new Set(
-      editorCtx?.document.getAllNodes().map((node) => node.id) ?? Object.keys(graph?.nodes ?? {}),
+      editorCtx?.document.getAllNodes().map((node) => node.id) ?? Object.keys(resolvedGraph?.nodes ?? {}),
     );
 
     let index = 1;
@@ -1342,35 +1460,39 @@ export function FlowgramCanvas({
       return;
     }
 
-    const anchorNode = mode === 'downstream' ? selectedNodeRef.current : null;
-    const nextId = nextNodeId(seed.idPrefix);
-    const node = editorCtx.document.createWorkflowNodeByType(
-      seed.kind,
-      buildInsertionPosition(anchorNode),
-      {
-        id: nextId,
-        type: seed.kind,
-        data: resolveNodeData(seed, nextId, primaryConnectionId),
-      },
-    );
+    try {
+      const anchorNode = mode === 'downstream' ? selectedNodeRef.current : null;
+      const nextId = nextNodeId(seed.idPrefix);
+      const node = editorCtx.document.createWorkflowNodeByType(
+        seed.kind,
+        buildInsertionPosition(anchorNode),
+        {
+          id: nextId,
+          type: seed.kind,
+          data: resolveNodeData(seed, nextId, primaryConnectionId),
+        },
+      );
 
-    if (anchorNode) {
-      const fromPort = getDefaultOutputPortId(anchorNode);
-      editorCtx.document.linesManager.createLine({
-        from: anchorNode.id,
-        to: node.id,
-        ...(fromPort ? { fromPort } : {}),
-      });
+      if (anchorNode) {
+        const fromPort = getDefaultOutputPortId(anchorNode);
+        editorCtx.document.linesManager.createLine({
+          from: anchorNode.id,
+          to: node.id,
+          ...(fromPort ? { fromPort } : {}),
+        });
+      }
+
+      editorCtx.document.selectServices.selectNode(node);
+      await editorCtx.document.selectServices.selectNodeAndScrollToView(node, false);
+      syncSelectionState(editorCtx);
+    } catch (error) {
+      reportFlowgramError('FlowGram 节点插入失败', error);
     }
-
-    editorCtx.document.selectServices.selectNode(node);
-    await editorCtx.document.selectServices.selectNodeAndScrollToView(node, false);
-    syncSelectionState(editorCtx);
   }
 
   const editorProps = useFlowgramEditorProps({
     initialData: initialFlowgramDataRef.current ??
-      flowgramData ?? {
+      resolvedFlowgramData ?? {
         nodes: [],
         edges: [],
       },
@@ -1387,7 +1509,7 @@ export function FlowgramCanvas({
 
   return (
     <section className="canvas-shell">
-      {!graph || !flowgramData ? (
+      {!resolvedGraph || !resolvedFlowgramData ? (
         <div className="canvas-empty">无有效流程</div>
       ) : (
         <FreeLayoutEditorProvider ref={handleEditorRef} {...editorProps}>
@@ -1404,7 +1526,7 @@ export function FlowgramCanvas({
                 <EditorRenderer className="flowgram-editor" />
                 <FlowgramToolbar
                   canRun={Boolean(onRunRequested)}
-                  canSave={Boolean(editorCtx && graph)}
+                  canSave={Boolean(editorCtx && resolvedGraph)}
                   minimapVisible={minimapVisible}
                   onToggleMinimap={() => setMinimapVisible((visible) => !visible)}
                   onRun={onRunRequested}
@@ -1415,7 +1537,7 @@ export function FlowgramCanvas({
                 <div className="flowgram-overlay">
                   <span>{`工作流状态: ${workflowStatusLabel}`}</span>
                   <span>{lastChange ? `最近变更: ${lastChange}` : '未变更'}</span>
-                  <span>{`${flowgramData.nodes.length} nodes / ${flowgramData.edges.length} edges`}</span>
+                  <span>{`${resolvedFlowgramData.nodes.length} nodes / ${resolvedFlowgramData.edges.length} edges`}</span>
                   <span>
                     {isWorkflowRuntimeMapped && runtimeState.traceId
                       ? `运行态: ${runtimeState.lastEventType ?? 'idle'} @ ${runtimeState.lastNodeId ?? '--'}`
@@ -1429,4 +1551,4 @@ export function FlowgramCanvas({
       )}
     </section>
   );
-}
+});

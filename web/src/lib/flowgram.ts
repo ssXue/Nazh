@@ -34,6 +34,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function hasOwnKey<T extends object>(value: T, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(value, key);
+}
+
 function isBusinessNodeType(type: unknown): boolean {
   return typeof type === 'string' && FLOWGRAM_BUSINESS_NODE_TYPES.has(type);
 }
@@ -184,14 +188,31 @@ export function toNazhWorkflowGraph(
     const previousNode = previousGraph.nodes[node.id];
     const rawData = (node.data ?? {}) as Partial<FlowgramNodeData>;
     const position = node.meta?.position;
+    const hasNodeType = hasOwnKey(rawData, 'nodeType');
+    const hasConnectionId = hasOwnKey(rawData, 'connectionId');
+    const hasConfig = hasOwnKey(rawData, 'config');
+    const hasAiDescription = hasOwnKey(rawData, 'aiDescription');
+    const hasTimeoutMs = hasOwnKey(rawData, 'timeoutMs');
 
     acc[node.id] = {
       id: node.id,
-      type: String(rawData.nodeType ?? previousNode?.type ?? node.type),
-      connection_id: rawData.connectionId ?? previousNode?.connection_id,
-      config: (rawData.config as WorkflowNodeDefinition['config']) ?? previousNode?.config ?? {},
-      ai_description: rawData.aiDescription ?? previousNode?.ai_description,
-      timeout_ms: rawData.timeoutMs ?? previousNode?.timeout_ms,
+      type: String(
+        (hasNodeType ? rawData.nodeType : undefined) ?? previousNode?.type ?? node.type,
+      ),
+      connection_id: hasConnectionId
+        ? rawData.connectionId ?? undefined
+        : previousNode?.connection_id,
+      config: hasConfig
+        ? ((rawData.config as WorkflowNodeDefinition['config']) ?? {})
+        : previousNode?.config ?? {},
+      ai_description: hasAiDescription
+        ? rawData.aiDescription ?? undefined
+        : previousNode?.ai_description,
+      timeout_ms: hasTimeoutMs
+        ? typeof rawData.timeoutMs === 'number'
+          ? rawData.timeoutMs
+          : undefined
+        : previousNode?.timeout_ms,
       buffer: previousNode?.buffer,
       meta: position
         ? {

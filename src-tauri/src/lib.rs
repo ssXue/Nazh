@@ -176,9 +176,7 @@ async fn undeploy_workflow(
 }
 
 #[tauri::command]
-async fn list_connections(
-    state: State<'_, DesktopState>,
-) -> Result<Vec<ConnectionRecord>, String> {
+async fn list_connections(state: State<'_, DesktopState>) -> Result<Vec<ConnectionRecord>, String> {
     let connections = state.connection_manager.read().await.list();
     Ok(connections)
 }
@@ -211,8 +209,8 @@ fn collect_timer_root_specs(graph: &WorkflowGraph) -> Result<Vec<TimerRootSpec>,
             continue;
         }
 
-        let config: TimerNodeConfig =
-            serde_json::from_value(node_definition.config.clone()).map_err(|error| {
+        let config: TimerNodeConfig = serde_json::from_value(node_definition.config.clone())
+            .map_err(|error| {
                 EngineError::node_config(node_definition.id.clone(), error.to_string())
             })?;
 
@@ -237,7 +235,10 @@ fn spawn_timer_root_tasks(
             tauri::async_runtime::spawn(async move {
                 if timer_root.immediate {
                     let _ = ingress
-                        .submit_to(&timer_root.node_id, WorkflowContext::new(Value::Object(Default::default())))
+                        .submit_to(
+                            &timer_root.node_id,
+                            WorkflowContext::new(Value::Object(Default::default())),
+                        )
                         .await;
                 }
 
@@ -248,7 +249,10 @@ fn spawn_timer_root_tasks(
                 loop {
                     let _ = interval.tick().await;
                     let _ = ingress
-                        .submit_to(&timer_root.node_id, WorkflowContext::new(Value::Object(Default::default())))
+                        .submit_to(
+                            &timer_root.node_id,
+                            WorkflowContext::new(Value::Object(Default::default())),
+                        )
                         .await;
                 }
             })
@@ -260,9 +264,10 @@ fn normalize_sql_writer_paths(
     app: &AppHandle,
     graph: &mut WorkflowGraph,
 ) -> Result<(), EngineError> {
-    let data_root = app.path().app_local_data_dir().map_err(|error| {
-        EngineError::invalid_graph(format!("无法解析桌面数据目录: {error}"))
-    })?;
+    let data_root = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|error| EngineError::invalid_graph(format!("无法解析桌面数据目录: {error}")))?;
 
     for node_definition in graph.nodes.values_mut() {
         if node_definition.node_type != "sqlWriter" && node_definition.node_type != "sql/writer" {
@@ -284,7 +289,9 @@ fn normalize_sql_writer_paths(
             continue;
         }
 
-        let resolved_path = data_root.join("sqlite").join(sanitize_relative_path(raw_database_path));
+        let resolved_path = data_root
+            .join("sqlite")
+            .join(sanitize_relative_path(raw_database_path));
         config_map.insert(
             "database_path".to_owned(),
             Value::String(resolved_path.to_string_lossy().to_string()),

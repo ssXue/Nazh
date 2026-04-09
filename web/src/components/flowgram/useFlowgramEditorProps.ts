@@ -27,6 +27,10 @@ import { flowgramRuntimePanelFactory } from './FlowgramRuntimePanel';
 const FLOWGRAM_MINIMAP_CANVAS_WIDTH = 110;
 const FLOWGRAM_MINIMAP_CANVAS_HEIGHT = 76;
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 interface UseFlowgramEditorPropsParams {
   initialData: NonNullable<FreeLayoutProps['initialData']>;
   accentColor: string;
@@ -80,10 +84,17 @@ export function useFlowgramEditorProps({
         );
       },
       toNodeJSON(node, json) {
+        const liveExtInfo = isRecord(node.getExtInfo()) ? node.getExtInfo() : {};
+        const jsonData = isRecord(json.data) ? json.data : {};
+
         return normalizeFlowgramNodeJson(
           {
             ...json,
-            type: json.type ?? 'native',
+            type: json.type ?? node.flowNodeType ?? 'native',
+            data: {
+              ...jsonData,
+              ...liveExtInfo,
+            },
           },
           primaryConnectionId,
         );

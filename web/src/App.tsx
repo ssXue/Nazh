@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { AboutPanel } from './components/app/AboutPanel';
 import {
@@ -23,8 +23,9 @@ import type {
   UiDensity,
 } from './components/app/types';
 import { ConnectionStudio } from './components/ConnectionStudio';
-import { FlowgramCanvas } from './components/FlowgramCanvas';
+import { FlowgramCanvas, type FlowgramCanvasHandle } from './components/FlowgramCanvas';
 import { parseWorkflowGraph } from './lib/graph';
+import { formatWorkflowGraph } from './lib/flowgram';
 import {
   ACCENT_PRESET_OPTIONS,
   buildAccentThemeVariables,
@@ -284,11 +285,20 @@ function buildIndustrialAlarmExample(boardName: string): WorkflowGraph {
       },
       http_alarm: {
         type: 'httpClient',
-        ai_description: 'Send high severity telemetry to a DingTalk robot webhook after replacing the token.',
+        ai_description: 'Send high severity telemetry to a DingTalk robot webhook with a rendered markdown alarm body.',
         timeout_ms: 1500,
         config: {
           method: 'POST',
           url: 'https://oapi.dingtalk.com/robot/send?access_token=replace_me',
+          webhook_kind: 'dingtalk',
+          body_mode: 'dingtalk_markdown',
+          content_type: 'application/json',
+          request_timeout_ms: 4000,
+          title_template: 'Nazh 工业告警 · {{payload.tag}} · {{payload.severity}}',
+          body_template:
+            '### Nazh 工业告警\n- 设备：{{payload.tag}}\n- 场景：{{payload.scene}}\n- 温度：{{payload.temperature_c}} °C / {{payload.temperature_f}} °F\n- 严重级别：{{payload.severity}}\n- Trace：{{trace_id}}\n- 时间：{{timestamp}}',
+          at_mobiles: [],
+          at_all: false,
           headers: {
             'X-Alarm-Source': 'nazh',
           },
@@ -670,6 +680,7 @@ function App() {
   const [runtimeState, setRuntimeState] = useState<WorkflowRuntimeState>(EMPTY_RUNTIME_STATE);
   const [isRuntimeDockCollapsed, setIsRuntimeDockCollapsed] = useState(false);
   const [boardWorkspaceKey, setBoardWorkspaceKey] = useState(0);
+  const flowgramCanvasRef = useRef<FlowgramCanvasHandle | null>(null);
 
   const currentBoardId = activeBoard?.id ?? DEFAULT_BOARD_ID;
   const currentProject = projectDrafts[currentBoardId] ?? {
@@ -678,8 +689,7 @@ function App() {
   };
   const astText = currentProject.astText;
   const payloadText = currentProject.payloadText;
-  const deferredAstText = useDeferredValue(astText);
-  const graphState = useMemo(() => parseWorkflowGraph(deferredAstText), [deferredAstText]);
+  const graphState = useMemo(() => parseWorkflowGraph(astText), [astText]);
   const accentHex = useMemo(
     () => getAccentHex(accentPreset, customAccentHex),
     [accentPreset, customAccentHex],
@@ -706,6 +716,12 @@ function App() {
   ) {
     const nextError = buildAppErrorRecord(scope, title, detail);
     setAppErrors((current) => [...current, nextError].slice(-24));
+  }
+
+  function handleFlowgramError(title: string, detail?: string | null) {
+    appendAppError('frontend', title, detail);
+    appendRuntimeLog('flowgram', 'error', title, detail);
+    setStatusMessage(title);
   }
 
   useEffect(() => {
@@ -964,7 +980,11 @@ function App() {
     }
 
     updateProjectDraft(activeBoard.id, { astText: nextText });
-    setFlowgramReloadVersion((current) => current + 1);
+
+    const nextGraphState = parseWorkflowGraph(nextText);
+    if (!nextGraphState.error && nextGraphState.graph) {
+      flowgramCanvasRef.current?.loadWorkflowGraph(nextGraphState.graph);
+    }
   }
 
   function applyStructuredGraphChange(nextAstText: string, nextStatusMessage: string) {
@@ -1011,16 +1031,58 @@ function App() {
     resetWorkspaceRuntime('已返回所有看板。');
   }
 
+  function buildDeploySnapshot() {
+    const sourceGraphState = parseWorkflowGraph(astText);
+    if (sourceGraphState.error) {
+      return {
+        graph: null,
+        astText: null,
+        error: sourceGraphState.error,
+      };
+    }
+
+    const currentGraph =
+      flowgramCanvasRef.current?.getCurrentWorkflowGraph() ?? sourceGraphState.graph;
+    if (!currentGraph) {
+      return {
+        graph: null,
+        astText: null,
+        error: '当前没有可执行的工作流。',
+      };
+    }
+
+    const nextAstText = formatWorkflowGraph(currentGraph);
+    const nextGraphState = parseWorkflowGraph(nextAstText);
+    if (nextGraphState.error || !nextGraphState.graph) {
+      return {
+        graph: null,
+        astText: null,
+        error: nextGraphState.error ?? '当前工作流快照无法序列化。',
+      };
+    }
+
+    return {
+      graph: nextGraphState.graph,
+      astText: nextAstText,
+      error: null,
+    };
+  }
+
   async function handleDeploy() {
     if (!activeBoard) {
       setStatusMessage('请先从所有看板进入工程。');
       return;
     }
 
-    if (graphState.error) {
-      appendAppError('command', '部署前 AST 校验失败', graphState.error);
-      setStatusMessage(`AST 无法部署: ${graphState.error}`);
+    const deploySnapshot = buildDeploySnapshot();
+    if (deploySnapshot.error || !deploySnapshot.astText) {
+      appendAppError('command', '部署前 AST 校验失败', deploySnapshot.error ?? '未知错误');
+      setStatusMessage(`AST 无法部署: ${deploySnapshot.error ?? '未知错误'}`);
       return;
+    }
+
+    if (deploySnapshot.astText !== astText) {
+      updateProjectDraft(activeBoard.id, { astText: deploySnapshot.astText });
     }
 
     if (!hasTauriRuntime()) {
@@ -1030,7 +1092,7 @@ function App() {
     }
 
     try {
-      const response = await deployWorkflow(astText);
+      const response = await deployWorkflow(deploySnapshot.astText);
       setStatusMessage(`部署完成，节点数 ${response.nodeCount}，边数 ${response.edgeCount}。`);
       await refreshConnections();
     } catch (error) {
@@ -1253,6 +1315,7 @@ function App() {
           </div>
 
           <FlowgramCanvas
+            ref={flowgramCanvasRef}
             graph={graphState.graph}
             reloadVersion={flowgramReloadVersion}
             runtimeState={runtimeState}
@@ -1261,6 +1324,7 @@ function App() {
             nodeRhaiColor={accentThemeVariables['--node-rhai']}
             onRunRequested={handleDeploy}
             onGraphChange={handleGraphChange}
+            onError={handleFlowgramError}
           />
 
           {hasRuntimeDock ? (

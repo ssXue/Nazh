@@ -252,7 +252,9 @@ html.is-tauri-runtime input,
 html.is-tauri-runtime textarea,
 html.is-tauri-runtime select,
 html.is-tauri-runtime option,
-html.is-tauri-runtime [contenteditable="true"] {
+html.is-tauri-runtime [contenteditable="true"],
+html.is-tauri-runtime .runtime-log,
+html.is-tauri-runtime .runtime-log * {
   user-select: text;
   -webkit-user-select: text;
 }
@@ -3915,6 +3917,30 @@ html[data-theme='dark'] .dashboard-gauge__ring::after {
   padding: 0 2px;
 }
 
+.runtime-dock__panel-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.runtime-dock__panel-tool {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-soft);
+}
+
+.runtime-dock__panel-tool.is-active {
+  color: var(--accent-ink);
+  background: color-mix(in srgb, var(--accent-soft) 74%, transparent);
+}
+
 .runtime-dock__panel-body {
   display: flex;
   flex: 1;
@@ -3951,63 +3977,6 @@ html[data-theme='dark'] .dashboard-gauge__ring::after {
   max-height: 224px;
 }
 
-.runtime-errors {
-  display: grid;
-  gap: 8px;
-}
-
-.runtime-errors__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.runtime-errors__header span {
-  display: inline-flex;
-  align-items: center;
-  min-height: 22px;
-  padding: 0 0.5rem;
-  border-radius: 999px;
-  background: var(--surface-muted);
-  color: var(--muted);
-  font-size: var(--font-caption);
-}
-
-.runtime-errors__item {
-  display: grid;
-  gap: 4px;
-  padding: 9px 10px;
-  border: 1px solid var(--danger-border);
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--danger-soft) 72%, transparent);
-}
-
-.runtime-errors__meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  color: var(--muted);
-  font-size: var(--font-caption);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-
-.runtime-errors__item > strong {
-  font-size: var(--font-body);
-  line-height: 1.35;
-}
-
-.runtime-errors__item p {
-  margin: 0;
-  color: var(--text-soft);
-  font-size: var(--font-subheadline);
-  line-height: 1.45;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
 .runtime-log {
   display: flex;
   flex-direction: column;
@@ -4026,6 +3995,7 @@ html[data-theme='dark'] .dashboard-gauge__ring::after {
     "IBM Plex Mono",
     "SFMono-Regular",
     monospace;
+  cursor: text;
 }
 
 html[data-theme='dark'] .runtime-log {
@@ -4072,8 +4042,25 @@ html[data-theme='dark'] .runtime-log {
 }
 
 .runtime-log__source {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+.runtime-log__badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 16px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: rgba(255, 98, 122, 0.18);
+  color: #ffc4cd;
+  font-size: 10px;
+  font-style: normal;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .runtime-log__message {
@@ -4087,6 +4074,11 @@ html[data-theme='dark'] .runtime-log {
   color: rgba(255, 255, 255, 0.64);
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.runtime-log ::selection {
+  background: color-mix(in srgb, var(--accent) 42%, rgba(255, 255, 255, 0.22));
+  color: #fff;
 }
 
 .runtime-results {

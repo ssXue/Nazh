@@ -34,18 +34,16 @@ async fn rhai_node_can_transform_json_payload() {
         .await;
 
     match result {
-        Ok(execution) => {
-            match execution.first() {
-                Some(first_output) => {
-                    match &first_output.dispatch {
-                        NodeDispatch::Broadcast => {}
-                        NodeDispatch::Route(_) => panic!("plain rhai node should broadcast"),
-                    }
-                    assert_eq!(first_output.ctx.payload, json!({ "value": 10 }));
+        Ok(execution) => match execution.first() {
+            Some(first_output) => {
+                match &first_output.dispatch {
+                    NodeDispatch::Broadcast => {}
+                    NodeDispatch::Route(_) => panic!("plain rhai node should broadcast"),
                 }
-                None => panic!("rhai node should produce a single output"),
+                assert_eq!(first_output.ctx.payload, json!({ "value": 10 }));
             }
-        }
+            None => panic!("rhai node should produce a single output"),
+        },
         Err(error) => panic!("rhai node should execute successfully: {error}"),
     }
 }
@@ -384,7 +382,10 @@ async fn try_catch_node_routes_runtime_errors_to_catch_branch() {
     match result {
         Ok(Some(ctx)) => {
             assert_eq!(ctx.payload["handled_by"], json!("catch"));
-            assert!(ctx.payload["_error"].is_string(), "catch branch should include error payload");
+            assert!(
+                ctx.payload["_error"].is_string(),
+                "catch branch should include error payload"
+            );
         }
         Ok(None) => panic!("result stream closed unexpectedly"),
         Err(_) => panic!("workflow did not produce a result in time"),
@@ -472,14 +473,21 @@ async fn loop_node_routes_body_iterations_and_done() {
         }
     }
 
-    assert_eq!(body_results.len(), 3, "loop should emit three body iterations");
+    assert_eq!(
+        body_results.len(),
+        3,
+        "loop should emit three body iterations"
+    );
 
     for (index, payload) in body_results.iter().enumerate() {
         assert_eq!(payload["branch"], json!("body"));
         assert_eq!(payload["_loop"]["phase"], json!("body"));
         assert_eq!(payload["_loop"]["index"], json!(index as u64));
         assert_eq!(payload["_loop"]["count"], json!(3));
-        assert_eq!(payload["_loop"]["item"], json!(["alpha", "beta", "gamma"][index]));
+        assert_eq!(
+            payload["_loop"]["item"],
+            json!(["alpha", "beta", "gamma"][index])
+        );
     }
 
     match done_result {
@@ -517,7 +525,10 @@ async fn timer_node_injects_trigger_metadata() {
                 assert_eq!(first_output.ctx.payload["seed"], json!("keep"));
                 assert_eq!(first_output.ctx.payload["source"], json!("timer"));
                 assert_eq!(first_output.ctx.payload["_timer"]["node_id"], json!("tick"));
-                assert_eq!(first_output.ctx.payload["_timer"]["interval_ms"], json!(2_500));
+                assert_eq!(
+                    first_output.ctx.payload["_timer"]["interval_ms"],
+                    json!(2_500)
+                );
                 assert_eq!(first_output.ctx.payload["_timer"]["immediate"], json!(true));
             }
             None => panic!("timer node should produce one output"),
@@ -588,11 +599,20 @@ async fn modbus_read_node_emits_simulated_values() {
     match result {
         Ok(execution) => match execution.first() {
             Some(first_output) => {
-                assert_eq!(first_output.ctx.payload["_modbus"]["simulated"], json!(true));
-                assert_eq!(first_output.ctx.payload["_modbus"]["register"], json!(40_001));
+                assert_eq!(
+                    first_output.ctx.payload["_modbus"]["simulated"],
+                    json!(true)
+                );
+                assert_eq!(
+                    first_output.ctx.payload["_modbus"]["register"],
+                    json!(40_001)
+                );
                 assert_eq!(first_output.ctx.payload["_modbus"]["quantity"], json!(2));
                 assert!(
-                    first_output.ctx.payload["values"].as_array().map(|values| values.len()) == Some(2),
+                    first_output.ctx.payload["values"]
+                        .as_array()
+                        .map(|values| values.len())
+                        == Some(2),
                     "modbus read node should output two simulated values",
                 );
             }
@@ -603,7 +623,9 @@ async fn modbus_read_node_emits_simulated_values() {
 }
 
 fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    haystack.windows(needle.len()).position(|window| window == needle)
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
 }
 
 #[tokio::test]
@@ -625,7 +647,9 @@ async fn http_client_node_posts_payload_and_records_response() {
         let mut expected_len = None;
 
         loop {
-            let read_count = stream.read(&mut buffer).expect("request should be readable");
+            let read_count = stream
+                .read(&mut buffer)
+                .expect("request should be readable");
             if read_count == 0 {
                 break;
             }
@@ -660,7 +684,10 @@ async fn http_client_node_posts_payload_and_records_response() {
         }
 
         let request_text = String::from_utf8_lossy(&request_bytes);
-        assert!(request_text.starts_with("POST /robot "), "request should target POST /robot");
+        assert!(
+            request_text.starts_with("POST /robot "),
+            "request should target POST /robot"
+        );
         assert!(
             request_text.contains("\"severity\":\"high\""),
             "request body should include the serialized payload"
@@ -682,13 +709,15 @@ async fn http_client_node_posts_payload_and_records_response() {
         HttpClientNodeConfig {
             url: format!("http://{address}/robot"),
             method: "POST".to_owned(),
-            headers: serde_json::Map::new(),
+            ..HttpClientNodeConfig::default()
         },
         "send alarm",
     );
 
     let result = node
-        .execute(WorkflowContext::new(json!({ "severity": "high", "value": 92 })))
+        .execute(WorkflowContext::new(
+            json!({ "severity": "high", "value": 92 }),
+        ))
         .await;
 
     match result {
@@ -713,9 +742,161 @@ async fn http_client_node_posts_payload_and_records_response() {
 }
 
 #[tokio::test]
+async fn http_alarm_node_renders_dingtalk_markdown_body() {
+    let listener = match TcpListener::bind("127.0.0.1:0") {
+        Ok(listener) => listener,
+        Err(error) => panic!("test server should bind: {error}"),
+    };
+    let address = match listener.local_addr() {
+        Ok(address) => address,
+        Err(error) => panic!("local address should be available: {error}"),
+    };
+
+    let server = std::thread::spawn(move || {
+        let (mut stream, _) = match listener.accept() {
+            Ok(connection) => connection,
+            Err(error) => panic!("http alarm server should accept a connection: {error}"),
+        };
+
+        let mut request_bytes = Vec::new();
+        let mut expected_len: Option<usize> = None;
+
+        loop {
+            let mut buffer = [0_u8; 1024];
+            let bytes_read = match stream.read(&mut buffer) {
+                Ok(read) => read,
+                Err(error) => panic!("request should be readable: {error}"),
+            };
+
+            if bytes_read == 0 {
+                break;
+            }
+
+            request_bytes.extend_from_slice(&buffer[..bytes_read]);
+
+            if expected_len.is_none() {
+                let header_text = String::from_utf8_lossy(&request_bytes);
+                if let Some(header_end) = header_text.find("\r\n\r\n") {
+                    let headers = &header_text[..header_end];
+                    let content_length = headers
+                        .lines()
+                        .find_map(|line| {
+                            let (name, value) = line.split_once(':')?;
+                            if name.eq_ignore_ascii_case("content-length") {
+                                value.trim().parse::<usize>().ok()
+                            } else {
+                                None
+                            }
+                        })
+                        .unwrap_or(0);
+                    expected_len = Some(header_end + 4 + content_length);
+                }
+            }
+
+            if let Some(total_len) = expected_len {
+                if request_bytes.len() >= total_len {
+                    break;
+                }
+            }
+        }
+
+        let request_text = String::from_utf8_lossy(&request_bytes);
+        assert!(
+            request_text.starts_with("POST /robot "),
+            "request should target POST /robot"
+        );
+        assert!(
+            request_text.contains("Content-Type: application/json"),
+            "dingtalk alarm should send a JSON content type"
+        );
+        assert!(
+            request_text.contains("\"msgtype\":\"markdown\""),
+            "request body should use DingTalk markdown payload"
+        );
+        assert!(
+            request_text.contains("\"title\":\"Nazh 告警 · boiler-a · alert\""),
+            "request body should render the title template"
+        );
+        assert!(
+            request_text.contains(
+                "\"text\":\"### 告警\\n- 设备：boiler-a\\n- 严重级别：alert\\n- 温度：92\""
+            ),
+            "request body should render the markdown body template"
+        );
+        assert!(
+            request_text.contains("\"atMobiles\":[\"13800000000\"]"),
+            "request body should include the configured at mobile list"
+        );
+
+        let response_body = r#"{"errcode":0,"errmsg":"ok"}"#;
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            response_body.len(),
+            response_body
+        );
+        stream
+            .write_all(response.as_bytes())
+            .expect("response should be writable");
+    });
+
+    let node = HttpClientNode::new(
+        "http_alarm",
+        HttpClientNodeConfig {
+            url: format!("http://{address}/robot"),
+            method: "POST".to_owned(),
+            webhook_kind: "dingtalk".to_owned(),
+            body_mode: "dingtalk_markdown".to_owned(),
+            request_timeout_ms: 2_500,
+            title_template: "Nazh 告警 · {{payload.tag}} · {{payload.severity}}".to_owned(),
+            body_template:
+                "### 告警\n- 设备：{{payload.tag}}\n- 严重级别：{{payload.severity}}\n- 温度：{{payload.temperature_c}}"
+                    .to_owned(),
+            at_mobiles: vec!["13800000000".to_owned()],
+            ..HttpClientNodeConfig::default()
+        },
+        "send formatted dingtalk alarm",
+    );
+
+    let result = node
+        .execute(WorkflowContext::new(json!({
+            "tag": "boiler-a",
+            "severity": "alert",
+            "temperature_c": 92
+        })))
+        .await;
+
+    match result {
+        Ok(execution) => match execution.first() {
+            Some(first_output) => {
+                assert_eq!(first_output.ctx.payload["_http"]["status"], json!(200));
+                assert_eq!(
+                    first_output.ctx.payload["_http"]["webhook_kind"],
+                    json!("dingtalk")
+                );
+                assert_eq!(
+                    first_output.ctx.payload["_http"]["body_mode"],
+                    json!("dingtalk_markdown")
+                );
+                assert_eq!(
+                    first_output.ctx.payload["http_response"]["errcode"],
+                    json!(0)
+                );
+            }
+            None => panic!("http alarm node should produce one output"),
+        },
+        Err(error) => panic!("http alarm node should execute successfully: {error}"),
+    }
+
+    match server.join() {
+        Ok(()) => {}
+        Err(_) => panic!("http alarm test server should finish cleanly"),
+    }
+}
+
+#[tokio::test]
 async fn sql_writer_node_persists_payload_into_sqlite() {
-    let database_path = std::env::temp_dir()
-        .join(format!("nazh-sql-writer-{}.sqlite3", Uuid::new_v4()));
+    let database_path =
+        std::env::temp_dir().join(format!("nazh-sql-writer-{}.sqlite3", Uuid::new_v4()));
     let database_path_string = database_path.to_string_lossy().to_string();
 
     let node = SqlWriterNode::new(
@@ -728,7 +909,9 @@ async fn sql_writer_node_persists_payload_into_sqlite() {
     );
 
     let result = node
-        .execute(WorkflowContext::new(json!({ "value": 7, "status": "stored" })))
+        .execute(WorkflowContext::new(
+            json!({ "value": 7, "status": "stored" }),
+        ))
         .await;
 
     match result {
@@ -778,8 +961,14 @@ async fn debug_console_node_marks_payload_and_passes_through() {
         Ok(execution) => match execution.first() {
             Some(first_output) => {
                 assert_eq!(first_output.ctx.payload["status"], json!("ok"));
-                assert_eq!(first_output.ctx.payload["_debug_console"]["label"], json!("tap"));
-                assert_eq!(first_output.ctx.payload["_debug_console"]["pretty"], json!(false));
+                assert_eq!(
+                    first_output.ctx.payload["_debug_console"]["label"],
+                    json!("tap")
+                );
+                assert_eq!(
+                    first_output.ctx.payload["_debug_console"]["pretty"],
+                    json!(false)
+                );
             }
             None => panic!("debug console node should produce one output"),
         },

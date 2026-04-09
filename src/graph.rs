@@ -257,20 +257,19 @@ impl WorkflowIngress {
         Ok(())
     }
 
-    pub async fn submit_to(
-        &self,
-        node_id: &str,
-        ctx: WorkflowContext,
-    ) -> Result<(), EngineError> {
+    pub async fn submit_to(&self, node_id: &str, ctx: WorkflowContext) -> Result<(), EngineError> {
         let sender = self.root_senders.get(node_id).ok_or_else(|| {
             EngineError::invalid_graph(format!(
                 "root node sender `{node_id}` is not available in the deployed workflow"
             ))
         })?;
 
-        sender.send(ctx).await.map_err(|_| EngineError::ChannelClosed {
-            stage: "workflow-ingress".to_owned(),
-        })
+        sender
+            .send(ctx)
+            .await
+            .map_err(|_| EngineError::ChannelClosed {
+                stage: "workflow-ingress".to_owned(),
+            })
     }
 
     pub fn root_nodes(&self) -> &[String] {
@@ -362,10 +361,13 @@ pub async fn deploy_workflow(
             .into_iter()
             .flat_map(|edges| edges.iter())
             .filter_map(|edge| {
-                senders.get(&edge.to).cloned().map(|sender| DownstreamTarget {
-                    source_port_id: edge.source_port_id.clone(),
-                    sender,
-                })
+                senders
+                    .get(&edge.to)
+                    .cloned()
+                    .map(|sender| DownstreamTarget {
+                        source_port_id: edge.source_port_id.clone(),
+                        sender,
+                    })
             })
             .collect::<Vec<_>>();
 
@@ -382,7 +384,12 @@ pub async fn deploy_workflow(
     let root_senders = topology
         .root_nodes
         .iter()
-        .filter_map(|node_id| senders.get(node_id).cloned().map(|sender| (node_id.clone(), sender)))
+        .filter_map(|node_id| {
+            senders
+                .get(node_id)
+                .cloned()
+                .map(|sender| (node_id.clone(), sender))
+        })
         .collect::<HashMap<_, _>>();
 
     drop(result_tx);
@@ -443,7 +450,9 @@ fn instantiate_node(
         }
         "timer" => {
             let config: TimerNodeConfig = serde_json::from_value(definition.config.clone())
-                .map_err(|error| EngineError::node_config(definition.id.clone(), error.to_string()))?;
+                .map_err(|error| {
+                    EngineError::node_config(definition.id.clone(), error.to_string())
+                })?;
             let description = definition.ai_description.clone().unwrap_or_else(|| {
                 "Trigger the workflow on a fixed interval and inject timer metadata".to_owned()
             });
@@ -474,8 +483,10 @@ fn instantiate_node(
             )))
         }
         "if" => {
-            let config: IfNodeConfig = serde_json::from_value(definition.config.clone())
-                .map_err(|error| EngineError::node_config(definition.id.clone(), error.to_string()))?;
+            let config: IfNodeConfig =
+                serde_json::from_value(definition.config.clone()).map_err(|error| {
+                    EngineError::node_config(definition.id.clone(), error.to_string())
+                })?;
             let description = definition.ai_description.clone().unwrap_or_else(|| {
                 "Evaluate a boolean script and dispatch to true or false".to_owned()
             });
@@ -487,7 +498,9 @@ fn instantiate_node(
         }
         "switch" => {
             let config: SwitchNodeConfig = serde_json::from_value(definition.config.clone())
-                .map_err(|error| EngineError::node_config(definition.id.clone(), error.to_string()))?;
+                .map_err(|error| {
+                    EngineError::node_config(definition.id.clone(), error.to_string())
+                })?;
             let description = definition.ai_description.clone().unwrap_or_else(|| {
                 "Evaluate a route script and dispatch to the matched branch".to_owned()
             });
@@ -499,7 +512,9 @@ fn instantiate_node(
         }
         "tryCatch" => {
             let config: TryCatchNodeConfig = serde_json::from_value(definition.config.clone())
-                .map_err(|error| EngineError::node_config(definition.id.clone(), error.to_string()))?;
+                .map_err(|error| {
+                    EngineError::node_config(definition.id.clone(), error.to_string())
+                })?;
             let description = definition.ai_description.clone().unwrap_or_else(|| {
                 "Execute a guarded script and dispatch to try or catch".to_owned()
             });
@@ -511,9 +526,12 @@ fn instantiate_node(
         }
         "loop" => {
             let config: LoopNodeConfig = serde_json::from_value(definition.config.clone())
-                .map_err(|error| EngineError::node_config(definition.id.clone(), error.to_string()))?;
+                .map_err(|error| {
+                    EngineError::node_config(definition.id.clone(), error.to_string())
+                })?;
             let description = definition.ai_description.clone().unwrap_or_else(|| {
-                "Evaluate an iterable script and dispatch each item through body before done".to_owned()
+                "Evaluate an iterable script and dispatch each item through body before done"
+                    .to_owned()
             });
             Ok(Arc::new(LoopNode::new(
                 definition.id.clone(),
@@ -521,9 +539,11 @@ fn instantiate_node(
                 description,
             )?))
         }
-        "httpClient" | "http/client" => {
+        "httpClient" | "http/client" | "httpAlarm" | "http/alarm" => {
             let config: HttpClientNodeConfig = serde_json::from_value(definition.config.clone())
-                .map_err(|error| EngineError::node_config(definition.id.clone(), error.to_string()))?;
+                .map_err(|error| {
+                    EngineError::node_config(definition.id.clone(), error.to_string())
+                })?;
             let description = definition.ai_description.clone().unwrap_or_else(|| {
                 "Send the payload to an HTTP endpoint such as DingTalk robot alarms".to_owned()
             });
@@ -535,7 +555,9 @@ fn instantiate_node(
         }
         "sqlWriter" | "sql/writer" => {
             let config: SqlWriterNodeConfig = serde_json::from_value(definition.config.clone())
-                .map_err(|error| EngineError::node_config(definition.id.clone(), error.to_string()))?;
+                .map_err(|error| {
+                    EngineError::node_config(definition.id.clone(), error.to_string())
+                })?;
             let description = definition.ai_description.clone().unwrap_or_else(|| {
                 "Persist the current payload into a local SQLite table".to_owned()
             });
@@ -547,7 +569,9 @@ fn instantiate_node(
         }
         "debugConsole" | "debug/console" => {
             let config: DebugConsoleNodeConfig = serde_json::from_value(definition.config.clone())
-                .map_err(|error| EngineError::node_config(definition.id.clone(), error.to_string()))?;
+                .map_err(|error| {
+                    EngineError::node_config(definition.id.clone(), error.to_string())
+                })?;
             let description = definition.ai_description.clone().unwrap_or_else(|| {
                 "Print the payload to the debug console for inspection".to_owned()
             });
@@ -619,19 +643,20 @@ async fn run_node(
                                 target
                                     .source_port_id
                                     .as_ref()
-                                    .map(|port_id| port_ids.iter().any(|candidate| candidate == port_id))
+                                    .map(|port_id| {
+                                        port_ids.iter().any(|candidate| candidate == port_id)
+                                    })
                                     .unwrap_or(false)
                             })
                             .collect::<Vec<_>>(),
                     };
 
                     let write_result = if matching_targets.is_empty() {
-                        result_tx
-                            .send(node_output.ctx)
-                            .await
-                            .map_err(|_| EngineError::ChannelClosed {
+                        result_tx.send(node_output.ctx).await.map_err(|_| {
+                            EngineError::ChannelClosed {
                                 stage: node_id.clone(),
-                            })
+                            }
+                        })
                     } else {
                         let mut downstream_error = None;
                         for target in &matching_targets {

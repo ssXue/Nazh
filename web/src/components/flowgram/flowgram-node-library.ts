@@ -47,6 +47,14 @@ export interface NodeSeed {
     url?: string;
     method?: string;
     headers?: Record<string, unknown>;
+    webhook_kind?: string;
+    body_mode?: string;
+    content_type?: string;
+    request_timeout_ms?: number;
+    body_template?: string;
+    title_template?: string;
+    at_mobiles?: string[];
+    at_all?: boolean;
     database_path?: string;
     table?: string;
     pretty?: boolean;
@@ -77,12 +85,20 @@ interface FlowgramNodeData {
   connectionId?: string | null;
   aiDescription?: string | null;
   timeoutMs?: number | null;
-  config?: {
-    message?: string;
-    script?: string;
-    branches?: FlowgramLogicBranch[];
-    [key: string]: unknown;
-  };
+    config?: {
+      message?: string;
+      script?: string;
+      branches?: FlowgramLogicBranch[];
+      webhook_kind?: string;
+      body_mode?: string;
+      content_type?: string;
+      request_timeout_ms?: number;
+      body_template?: string;
+      title_template?: string;
+      at_mobiles?: string[];
+      at_all?: boolean;
+      [key: string]: unknown;
+    };
 }
 
 const STANDARD_NODE_SIZE = {
@@ -123,6 +139,11 @@ const LOOP_BRANCHES: FlowgramLogicBranch[] = [
 const DEFAULT_SWITCH_BRANCHES: FlowgramLogicBranch[] = [
   { key: 'default', label: 'Default', fixed: true },
 ];
+
+const DEFAULT_HTTP_ALARM_TITLE_TEMPLATE =
+  'Nazh 工业告警 · {{payload.tag}} · {{payload.severity}}';
+const DEFAULT_HTTP_ALARM_BODY_TEMPLATE =
+  '### Nazh 工业告警\n- 设备：{{payload.tag}}\n- 温度：{{payload.temperature_c}} °C\n- 严重级别：{{payload.severity}}\n- Trace：{{trace_id}}\n- 事件时间：{{timestamp}}';
 
 const NODE_TEMPLATES: FlowgramPaletteItem[] = [
   {
@@ -222,6 +243,14 @@ const NODE_TEMPLATES: FlowgramPaletteItem[] = [
       config: {
         method: 'POST',
         url: 'https://oapi.dingtalk.com/robot/send?access_token=demo',
+        webhook_kind: 'dingtalk',
+        body_mode: 'dingtalk_markdown',
+        content_type: 'application/json',
+        request_timeout_ms: 4000,
+        title_template: DEFAULT_HTTP_ALARM_TITLE_TEMPLATE,
+        body_template: DEFAULT_HTTP_ALARM_BODY_TEMPLATE,
+        at_mobiles: [],
+        at_all: false,
         headers: {
           'X-Alarm-Source': 'nazh',
         },
@@ -442,11 +471,42 @@ function normalizeNodeConfig(
   }
 
   if (nodeType === 'httpClient') {
+    const url = typeof rawConfig.url === 'string' ? rawConfig.url : '';
+    const webhookKind =
+      typeof rawConfig.webhook_kind === 'string' && rawConfig.webhook_kind.trim()
+        ? rawConfig.webhook_kind
+        : inferHttpWebhookKind(url);
+    const bodyMode = normalizeHttpBodyMode(rawConfig.body_mode, webhookKind);
+
     return {
       ...rawConfig,
-      url: typeof rawConfig.url === 'string' ? rawConfig.url : '',
+      url,
       method: typeof rawConfig.method === 'string' ? rawConfig.method : 'POST',
       headers: isRecord(rawConfig.headers) ? rawConfig.headers : {},
+      webhook_kind: webhookKind,
+      body_mode: bodyMode,
+      content_type:
+        typeof rawConfig.content_type === 'string' && rawConfig.content_type.trim()
+          ? rawConfig.content_type
+          : 'application/json',
+      request_timeout_ms:
+        typeof rawConfig.request_timeout_ms === 'number' && Number.isFinite(rawConfig.request_timeout_ms)
+          ? Math.max(500, Math.round(rawConfig.request_timeout_ms))
+          : 4000,
+      title_template:
+        typeof rawConfig.title_template === 'string'
+          ? rawConfig.title_template
+          : DEFAULT_HTTP_ALARM_TITLE_TEMPLATE,
+      body_template:
+        typeof rawConfig.body_template === 'string'
+          ? rawConfig.body_template
+          : bodyMode === 'dingtalk_markdown'
+            ? DEFAULT_HTTP_ALARM_BODY_TEMPLATE
+            : '',
+      at_mobiles: Array.isArray(rawConfig.at_mobiles)
+        ? rawConfig.at_mobiles.filter((value): value is string => typeof value === 'string')
+        : [],
+      at_all: rawConfig.at_all === true,
     };
   }
 
@@ -513,6 +573,34 @@ export function parseTimeoutMs(value: string): number | null {
 
   const numeric = Number(normalized);
   return normalizeTimeoutValue(numeric);
+}
+
+export function getDefaultHttpAlarmTitleTemplate(): string {
+  return DEFAULT_HTTP_ALARM_TITLE_TEMPLATE;
+}
+
+export function getDefaultHttpAlarmBodyTemplate(): string {
+  return DEFAULT_HTTP_ALARM_BODY_TEMPLATE;
+}
+
+export function inferHttpWebhookKind(url: string): 'generic' | 'dingtalk' {
+  return /dingtalk\.com|dingtalk\.cn|oapi\.dingtalk/i.test(url) ? 'dingtalk' : 'generic';
+}
+
+export function normalizeHttpBodyMode(
+  value: unknown,
+  webhookKind: string,
+): 'json' | 'template' | 'dingtalk_markdown' {
+  switch (value) {
+    case 'template':
+      return 'template';
+    case 'dingtalk_markdown':
+    case 'alarm-template':
+      return 'dingtalk_markdown';
+    case 'json':
+    default:
+      return webhookKind === 'dingtalk' ? 'dingtalk_markdown' : 'json';
+  }
 }
 
 export function buildDefaultNodeSeed(kind: NazhNodeKind): NodeSeed {
@@ -636,6 +724,14 @@ export function buildDefaultNodeSeed(kind: NazhNodeKind): NodeSeed {
           url: '',
           method: 'POST',
           headers: {},
+          webhook_kind: 'generic',
+          body_mode: 'json',
+          content_type: 'application/json',
+          request_timeout_ms: 4000,
+          title_template: DEFAULT_HTTP_ALARM_TITLE_TEMPLATE,
+          body_template: '',
+          at_mobiles: [],
+          at_all: false,
         },
       };
     case 'sqlWriter':

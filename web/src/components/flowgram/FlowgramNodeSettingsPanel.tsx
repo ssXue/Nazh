@@ -5,6 +5,10 @@ import { type PanelFactory, usePanelManager } from '@flowgram.ai/panel-manager-p
 
 import {
   getLogicNodeBranchDefinitions,
+  getDefaultHttpAlarmBodyTemplate,
+  getDefaultHttpAlarmTitleTemplate,
+  inferHttpWebhookKind,
+  normalizeHttpBodyMode,
   parseTimeoutMs,
   type FlowgramLogicBranch,
 } from './flowgram-node-library';
@@ -35,6 +39,14 @@ interface SelectedNodeDraft {
   httpUrl: string;
   httpMethod: string;
   httpHeaders: string;
+  httpWebhookKind: string;
+  httpBodyMode: string;
+  httpContentType: string;
+  httpRequestTimeoutMs: string;
+  httpTitleTemplate: string;
+  httpBodyTemplate: string;
+  httpAtMobiles: string;
+  httpAtAll: boolean;
   sqlDatabasePath: string;
   sqlTable: string;
   debugLabel: string;
@@ -104,6 +116,23 @@ function parseHeadersJson(text: string): Record<string, unknown> | null {
   }
 }
 
+function stringifyStringList(value: unknown): string {
+  if (!Array.isArray(value)) {
+    return '';
+  }
+
+  return value
+    .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    .join(', ');
+}
+
+function parseStringList(value: string): string[] {
+  return value
+    .split(',')
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+}
+
 function isConnectionNode(nodeType: string): boolean {
   return nodeType === 'native' || nodeType === 'modbusRead';
 }
@@ -147,6 +176,9 @@ function readNodeDraft(node: FlowNodeEntity): SelectedNodeDraft {
   };
   const config = isRecord(rawData.config) ? rawData.config : {};
   const nodeType = String(rawData.nodeType ?? node.flowNodeType);
+  const httpUrl = readString(config.url);
+  const httpWebhookKind = readString(config.webhook_kind, inferHttpWebhookKind(httpUrl));
+  const httpBodyMode = normalizeHttpBodyMode(config.body_mode, httpWebhookKind);
 
   return {
     id: node.id,
@@ -165,9 +197,20 @@ function readNodeDraft(node: FlowNodeEntity): SelectedNodeDraft {
     modbusQuantity: readNumberString(config.quantity, '1'),
     modbusBaseValue: readNumberString(config.base_value, '64'),
     modbusAmplitude: readNumberString(config.amplitude, '6'),
-    httpUrl: readString(config.url),
+    httpUrl,
     httpMethod: readString(config.method, 'POST'),
     httpHeaders: JSON.stringify(isRecord(config.headers) ? config.headers : {}, null, 2),
+    httpWebhookKind,
+    httpBodyMode,
+    httpContentType: readString(config.content_type, 'application/json'),
+    httpRequestTimeoutMs: readNumberString(config.request_timeout_ms, '4000'),
+    httpTitleTemplate: readString(config.title_template, getDefaultHttpAlarmTitleTemplate()),
+    httpBodyTemplate: readString(
+      config.body_template,
+      httpBodyMode === 'dingtalk_markdown' ? getDefaultHttpAlarmBodyTemplate() : '',
+    ),
+    httpAtMobiles: stringifyStringList(config.at_mobiles),
+    httpAtAll: readBoolean(config.at_all, false),
     sqlDatabasePath: readString(config.database_path, './nazh-local.sqlite3'),
     sqlTable: readString(config.table, 'workflow_logs'),
     debugLabel: readString(config.label),
@@ -240,6 +283,14 @@ function buildNodeConfig(draft: SelectedNodeDraft, currentConfig: NodeConfigMap)
       url: draft.httpUrl.trim(),
       method: draft.httpMethod.trim().toUpperCase() || 'POST',
       headers: parseHeadersJson(draft.httpHeaders) ?? (isRecord(currentConfig.headers) ? currentConfig.headers : {}),
+      webhook_kind: draft.httpWebhookKind,
+      body_mode: normalizeHttpBodyMode(draft.httpBodyMode, draft.httpWebhookKind),
+      content_type: draft.httpContentType.trim() || 'application/json',
+      request_timeout_ms: parsePositiveInteger(draft.httpRequestTimeoutMs) ?? 4000,
+      title_template: draft.httpTitleTemplate,
+      body_template: draft.httpBodyTemplate,
+      at_mobiles: parseStringList(draft.httpAtMobiles),
+      at_all: draft.httpAtAll,
     };
   }
 
@@ -290,6 +341,18 @@ function FlowgramNodeSettingsPanel({
 
     setDraft(readNodeDraft(node));
   }, [node, nodeId]);
+
+  useEffect(() => {
+    if (!node) {
+      return () => {};
+    }
+
+    const dispose = node.onExtInfoChange(() => {
+      setDraft(readNodeDraft(node));
+    });
+
+    return () => dispose.dispose();
+  }, [node]);
 
   useEffect(() => {
     const dispose = document.selectServices.onSelectionChanged(() => {
@@ -345,6 +408,7 @@ function FlowgramNodeSettingsPanel({
     const selectedConnection = connections.find((connection) => connection.id === draft.connectionId);
     const parsedTimeoutMs = parseTimeoutMs(draft.timeoutMs);
     const parsedHeaders = parseHeadersJson(draft.httpHeaders);
+    const parsedRequestTimeoutMs = parsePositiveInteger(draft.httpRequestTimeoutMs);
 
     if (stats) {
       if (stats.incoming === 0 && stats.outgoing === 0) {
@@ -454,6 +518,27 @@ function FlowgramNodeSettingsPanel({
           message: '请求头 JSON 必须是对象。',
         });
       }
+
+      if (parsedRequestTimeoutMs === null) {
+        nextDiagnostics.push({
+          tone: 'danger',
+          message: '请求超时必须是大于 0 的毫秒数。',
+        });
+      }
+
+      if (draft.httpBodyMode === 'template' && !draft.httpBodyTemplate.trim()) {
+        nextDiagnostics.push({
+          tone: 'warning',
+          message: '自定义模板模式下建议填写消息模板。',
+        });
+      }
+
+      if (draft.httpBodyMode === 'dingtalk_markdown' && !draft.httpTitleTemplate.trim()) {
+        nextDiagnostics.push({
+          tone: 'warning',
+          message: '钉钉 Markdown 模式建议填写标题模板。',
+        });
+      }
     }
 
     if (draft.nodeType === 'sqlWriter') {
@@ -494,38 +579,43 @@ function FlowgramNodeSettingsPanel({
 
   const updateDraft = useCallback(
     (patch: Partial<SelectedNodeDraft>) => {
-      if (!node || !draft) {
+      if (!node) {
         return;
       }
 
-      const nextDraft = {
-        ...draft,
-        ...patch,
-      };
-      const currentConfig = isRecord(((node.getExtInfo() ?? {}) as { config?: unknown }).config)
-        ? ((((node.getExtInfo() ?? {}) as { config?: unknown }).config) as NodeConfigMap)
-        : {};
+      setDraft((currentDraft) => {
+        const baseDraft = currentDraft ?? readNodeDraft(node);
+        const nextDraft = {
+          ...baseDraft,
+          ...patch,
+        };
+        const currentExtInfo = (node.getExtInfo() ?? {}) as { config?: unknown };
+        const currentConfig = isRecord(currentExtInfo.config)
+          ? (currentExtInfo.config as NodeConfigMap)
+          : {};
 
-      const nextExtInfo = {
-        ...(node.getExtInfo() ?? {}),
-        label: nextDraft.label || nextDraft.id,
-        nodeType: nextDraft.nodeType,
-        connectionId: nextDraft.connectionId.trim() || null,
-        aiDescription: nextDraft.aiDescription.trim() || null,
-        timeoutMs: parseTimeoutMs(nextDraft.timeoutMs),
-        config: buildNodeConfig(nextDraft, currentConfig),
-      };
+        const nextExtInfo = {
+          ...currentExtInfo,
+          label: nextDraft.label || nextDraft.id,
+          nodeType: nextDraft.nodeType,
+          connectionId: nextDraft.connectionId.trim() || null,
+          aiDescription: nextDraft.aiDescription.trim() || null,
+          timeoutMs: parseTimeoutMs(nextDraft.timeoutMs),
+          config: buildNodeConfig(nextDraft, currentConfig),
+        };
 
-      node.updateExtInfo(nextExtInfo);
-      setDraft(nextDraft);
+        node.updateExtInfo(nextExtInfo);
 
-      if (usesDynamicPorts(nextDraft.nodeType)) {
-        window.requestAnimationFrame(() => {
-          node.ports.updateDynamicPorts();
-        });
-      }
+        if (usesDynamicPorts(nextDraft.nodeType)) {
+          window.requestAnimationFrame(() => {
+            node.ports.updateDynamicPorts();
+          });
+        }
+
+        return readNodeDraft(node);
+      });
     },
-    [draft, node],
+    [node],
   );
 
   if (!node || !draft || playground.config.readonly) {
@@ -689,6 +779,32 @@ function FlowgramNodeSettingsPanel({
         {draft.nodeType === 'httpClient' ? (
           <>
             <label>
+              <span>Webhook 类型</span>
+              <select
+                value={draft.httpWebhookKind}
+                onChange={(event) => {
+                  const webhookKind = event.target.value;
+                  updateDraft({
+                    httpWebhookKind: webhookKind,
+                    httpBodyMode: normalizeHttpBodyMode(draft.httpBodyMode, webhookKind),
+                    httpTitleTemplate:
+                      webhookKind === 'dingtalk' && !draft.httpTitleTemplate.trim()
+                        ? getDefaultHttpAlarmTitleTemplate()
+                        : draft.httpTitleTemplate,
+                    httpBodyTemplate:
+                      webhookKind === 'dingtalk' &&
+                      normalizeHttpBodyMode(draft.httpBodyMode, webhookKind) === 'dingtalk_markdown' &&
+                      !draft.httpBodyTemplate.trim()
+                        ? getDefaultHttpAlarmBodyTemplate()
+                        : draft.httpBodyTemplate,
+                  });
+                }}
+              >
+                <option value="generic">通用 Webhook</option>
+                <option value="dingtalk">钉钉机器人</option>
+              </select>
+            </label>
+            <label>
               <span>请求地址</span>
               <input value={draft.httpUrl} onChange={(event) => updateDraft({ httpUrl: event.target.value })} />
             </label>
@@ -704,6 +820,83 @@ function FlowgramNodeSettingsPanel({
                 <option value="GET">GET</option>
               </select>
             </label>
+            <label>
+              <span>载荷模式</span>
+              <select
+                value={draft.httpBodyMode}
+                onChange={(event) =>
+                  updateDraft({
+                    httpBodyMode: event.target.value,
+                    httpTitleTemplate:
+                      event.target.value === 'dingtalk_markdown' && !draft.httpTitleTemplate.trim()
+                        ? getDefaultHttpAlarmTitleTemplate()
+                        : draft.httpTitleTemplate,
+                    httpBodyTemplate:
+                      event.target.value === 'dingtalk_markdown' && !draft.httpBodyTemplate.trim()
+                        ? getDefaultHttpAlarmBodyTemplate()
+                        : draft.httpBodyTemplate,
+                  })
+                }
+              >
+                <option value="json">JSON Payload</option>
+                <option value="template">自定义模板</option>
+                <option value="dingtalk_markdown">钉钉 Markdown</option>
+              </select>
+            </label>
+            <label>
+              <span>内容类型</span>
+              <input
+                value={draft.httpContentType}
+                onChange={(event) => updateDraft({ httpContentType: event.target.value })}
+              />
+            </label>
+            <label>
+              <span>请求超时 ms</span>
+              <input
+                value={draft.httpRequestTimeoutMs}
+                onChange={(event) => updateDraft({ httpRequestTimeoutMs: event.target.value })}
+              />
+            </label>
+            {draft.httpBodyMode === 'dingtalk_markdown' ? (
+              <label>
+                <span>标题模板</span>
+                <textarea
+                  value={draft.httpTitleTemplate}
+                  onChange={(event) => updateDraft({ httpTitleTemplate: event.target.value })}
+                />
+              </label>
+            ) : null}
+            {draft.httpBodyMode !== 'json' ? (
+              <label>
+                <span>{draft.httpBodyMode === 'dingtalk_markdown' ? '消息模板' : '请求体模板'}</span>
+                <textarea
+                  value={draft.httpBodyTemplate}
+                  onChange={(event) => updateDraft({ httpBodyTemplate: event.target.value })}
+                />
+              </label>
+            ) : null}
+            {draft.httpWebhookKind === 'dingtalk' ? (
+              <>
+                <label>
+                  <span>@ 手机号</span>
+                  <input
+                    value={draft.httpAtMobiles}
+                    onChange={(event) => updateDraft({ httpAtMobiles: event.target.value })}
+                    placeholder="13800000000, 13900000000"
+                  />
+                </label>
+                <label>
+                  <span>@ 所有人</span>
+                  <select
+                    value={draft.httpAtAll ? 'true' : 'false'}
+                    onChange={(event) => updateDraft({ httpAtAll: event.target.value === 'true' })}
+                  >
+                    <option value="false">否</option>
+                    <option value="true">是</option>
+                  </select>
+                </label>
+              </>
+            ) : null}
             <label>
               <span>请求头 JSON</span>
               <textarea

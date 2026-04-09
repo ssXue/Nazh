@@ -25,6 +25,46 @@ export class AppErrorBoundary extends Component<
     };
   }
 
+  private handleWindowError = (event: ErrorEvent) => {
+    const runtimeError =
+      event.error instanceof Error
+        ? event.error
+        : new Error(event.message || '前端运行时异常');
+
+    this.setState({
+      error: runtimeError,
+      componentStack: [event.filename, event.lineno, event.colno]
+        .filter(Boolean)
+        .join(':') || null,
+    });
+  };
+
+  private handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+    const rejectionError =
+      event.reason instanceof Error
+        ? event.reason
+        : new Error(
+            typeof event.reason === 'string'
+              ? event.reason
+              : '未处理的 Promise 异常',
+          );
+
+    this.setState({
+      error: rejectionError,
+      componentStack: null,
+    });
+  };
+
+  componentDidMount() {
+    window.addEventListener('error', this.handleWindowError);
+    window.addEventListener('unhandledrejection', this.handleUnhandledRejection);
+  }
+
+  componentWillUnmount() {
+    window.removeEventListener('error', this.handleWindowError);
+    window.removeEventListener('unhandledrejection', this.handleUnhandledRejection);
+  }
+
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error('Nazh UI crashed inside React render tree', error, errorInfo);
     this.setState({
