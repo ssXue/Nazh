@@ -62,6 +62,7 @@ macro_rules! impl_node_meta {
 pub(crate) use impl_node_meta;
 
 mod helpers;
+pub(crate) mod template;
 
 mod debug_console;
 mod http_client;

@@ -2,7 +2,7 @@
 //!
 //! 支持三种 body 模式：`json`（默认）、`template`（占位符渲染）和
 //! `dingtalk_markdown`（钉钉机器人 Markdown 格式）。GET/HEAD 不发送请求体，
-//! 其余方法根据 body_mode 渲染请求体。响应状态码 >= 400 视为错误。
+//! 其余方法根据 `body_mode` 渲染请求体。响应状态码 >= 400 视为错误。
 
 use async_trait::async_trait;
 use chrono::Utc;
@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 
 use super::helpers::into_payload_map;
+use super::template::{self, TemplateVars};
 use super::{NodeExecution, NodeTrait};
 use crate::{EngineError, WorkflowContext};
 
@@ -47,89 +48,6 @@ fn parse_json_or_string(raw: &str) -> Value {
     } else {
         serde_json::from_str(trimmed).unwrap_or_else(|_| Value::String(trimmed.to_owned()))
     }
-}
-
-fn resolve_json_path<'a>(root: &'a Value, path: &str) -> Option<&'a Value> {
-    path.split('.')
-        .filter(|segment| !segment.is_empty())
-        .try_fold(root, |current, segment| match current {
-            Value::Object(map) => map.get(segment),
-            Value::Array(items) => segment
-                .parse::<usize>()
-                .ok()
-                .and_then(|index| items.get(index)),
-            _ => None,
-        })
-}
-
-fn value_to_template_string(value: &Value) -> String {
-    match value {
-        Value::Null => String::new(),
-        Value::String(text) => text.clone(),
-        other => other.to_string(),
-    }
-}
-
-fn resolve_http_template_key(
-    key: &str,
-    payload: &Value,
-    trace_id: &uuid::Uuid,
-    node_id: &str,
-    event_timestamp: &str,
-    requested_at: &str,
-) -> String {
-    match key {
-        "trace_id" => trace_id.to_string(),
-        "node_id" => node_id.to_owned(),
-        "timestamp" | "event_at" => event_timestamp.to_owned(),
-        "requested_at" => requested_at.to_owned(),
-        "payload" => payload.to_string(),
-        _ => {
-            if let Some(path) = key.strip_prefix("payload.") {
-                resolve_json_path(payload, path)
-                    .map(value_to_template_string)
-                    .unwrap_or_default()
-            } else {
-                String::new()
-            }
-        }
-    }
-}
-
-fn render_http_template(
-    template: &str,
-    payload: &Value,
-    trace_id: &uuid::Uuid,
-    node_id: &str,
-    event_timestamp: &str,
-    requested_at: &str,
-) -> String {
-    let mut result = String::with_capacity(template.len() + 48);
-    let mut remaining = template;
-
-    while let Some(start_index) = remaining.find("{{") {
-        result.push_str(&remaining[..start_index]);
-        let placeholder_region = &remaining[start_index + 2..];
-
-        if let Some(end_index) = placeholder_region.find("}}") {
-            let key = placeholder_region[..end_index].trim();
-            result.push_str(&resolve_http_template_key(
-                key,
-                payload,
-                trace_id,
-                node_id,
-                event_timestamp,
-                requested_at,
-            ));
-            remaining = &placeholder_region[end_index + 2..];
-        } else {
-            result.push_str(&remaining[start_index..]);
-            return result;
-        }
-    }
-
-    result.push_str(remaining);
-    result
 }
 
 fn default_http_alarm_title_template() -> &'static str {
@@ -172,21 +90,22 @@ fn prepare_http_request_body(
     let body_mode = normalize_http_body_mode(&config.body_mode, &webhook_kind).to_owned();
     let event_timestamp = ctx.timestamp.to_rfc3339();
 
+    let vars = TemplateVars {
+        payload: &ctx.payload,
+        trace_id: &ctx.trace_id,
+        node_id,
+        timestamp: &event_timestamp,
+        extras: &[("requested_at", requested_at)],
+    };
+
     let body = match body_mode.as_str() {
         "template" => {
-            let template = if config.body_template.trim().is_empty() {
+            let tpl = if config.body_template.trim().is_empty() {
                 "{{payload}}"
             } else {
                 config.body_template.as_str()
             };
-            render_http_template(
-                template,
-                &ctx.payload,
-                &ctx.trace_id,
-                node_id,
-                &event_timestamp,
-                requested_at,
-            )
+            template::render(tpl, &vars)
         }
         "dingtalk_markdown" => {
             let title_template = if config.title_template.trim().is_empty() {
@@ -199,22 +118,8 @@ fn prepare_http_request_body(
             } else {
                 config.body_template.as_str()
             };
-            let rendered_title = render_http_template(
-                title_template,
-                &ctx.payload,
-                &ctx.trace_id,
-                node_id,
-                &event_timestamp,
-                requested_at,
-            );
-            let rendered_body = render_http_template(
-                body_template,
-                &ctx.payload,
-                &ctx.trace_id,
-                node_id,
-                &event_timestamp,
-                requested_at,
-            );
+            let rendered_title = template::render(title_template, &vars);
+            let rendered_body = template::render(body_template, &vars);
 
             serde_json::to_string(&json!({
                 "msgtype": "markdown",
@@ -242,14 +147,6 @@ fn prepare_http_request_body(
         webhook_kind,
         body_mode,
     ))
-}
-
-fn truncate_for_meta(text: &str, limit: usize) -> String {
-    let mut truncated = text.chars().take(limit).collect::<String>();
-    if text.chars().count() > limit {
-        truncated.push_str("…");
-    }
-    truncated
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -326,17 +223,7 @@ impl HttpClientNode {
 
 #[async_trait]
 impl NodeTrait for HttpClientNode {
-    fn id(&self) -> &str {
-        &self.id
-    }
-
-    fn kind(&self) -> &'static str {
-        "httpClient"
-    }
-
-    fn ai_description(&self) -> &str {
-        &self.ai_description
-    }
+    impl_node_meta!("httpClient");
 
     async fn execute(&self, ctx: WorkflowContext) -> Result<NodeExecution, EngineError> {
         let method = self.config.method.trim().to_uppercase();
@@ -352,10 +239,6 @@ impl NodeTrait for HttpClientNode {
         let request_timeout_ms = self.config.request_timeout_ms.max(500);
         let (payload_body, content_type, webhook_kind, body_mode) =
             prepare_http_request_body(&self.id, &self.config, &ctx, &requested_at)?;
-        let requested_at_for_meta = requested_at.clone();
-        let content_type_for_meta = content_type.clone();
-        let webhook_kind_for_meta = webhook_kind.clone();
-        let body_mode_for_meta = body_mode.clone();
 
         let reqwest_method = method.parse::<reqwest::Method>().map_err(|error| {
             EngineError::node_config(self.id.clone(), format!("无效的 HTTP 方法: {error}"))
@@ -364,7 +247,7 @@ impl NodeTrait for HttpClientNode {
         let mut request = self
             .client
             .request(reqwest_method, &url)
-            .timeout(std::time::Duration::from_millis(request_timeout_ms as u64));
+            .timeout(std::time::Duration::from_millis(request_timeout_ms));
 
         for (key, value) in &self.config.headers {
             request = request.header(key.as_str(), value_to_header_string(value));
@@ -406,40 +289,26 @@ impl NodeTrait for HttpClientNode {
                 ctx.trace_id,
                 format!(
                     "HTTP Alarm 返回状态码 {status_code}: {}",
-                    truncate_for_meta(&value_to_template_string(&response_value), 240)
+                    template::truncate(&template::value_to_display_string(&response_value), 240)
                 ),
             ));
         }
 
         let trace_id = ctx.trace_id;
         let mut payload_map = into_payload_map(ctx.payload);
-        let mut http_meta = Map::new();
-        http_meta.insert("url".to_owned(), Value::String(url));
-        http_meta.insert("method".to_owned(), Value::String(method));
-        http_meta.insert(
-            "webhook_kind".to_owned(),
-            Value::String(webhook_kind_for_meta),
-        );
-        http_meta.insert("body_mode".to_owned(), Value::String(body_mode_for_meta));
-        http_meta.insert(
-            "content_type".to_owned(),
-            Value::String(content_type_for_meta),
-        );
-        http_meta.insert(
-            "request_timeout_ms".to_owned(),
-            Value::from(request_timeout_ms),
-        );
-        http_meta.insert("status".to_owned(), Value::from(status_code));
-        http_meta.insert("ok".to_owned(), Value::Bool(status_code < 400));
-        http_meta.insert(
-            "requested_at".to_owned(),
-            Value::String(requested_at_for_meta),
-        );
-        http_meta.insert(
-            "request_body_preview".to_owned(),
-            Value::String(truncate_for_meta(&payload_body, 320)),
-        );
-        payload_map.insert("_http".to_owned(), Value::Object(http_meta));
+        let http_meta = json!({
+            "url": url,
+            "method": method,
+            "webhook_kind": webhook_kind,
+            "body_mode": body_mode,
+            "content_type": content_type,
+            "request_timeout_ms": request_timeout_ms,
+            "status": status_code,
+            "ok": status_code < 400,
+            "requested_at": requested_at,
+            "request_body_preview": template::truncate(&payload_body, 320),
+        });
+        payload_map.insert("_http".to_owned(), http_meta);
         payload_map.insert("http_response".to_owned(), response_value);
 
         Ok(NodeExecution::broadcast(WorkflowContext::from_parts(
