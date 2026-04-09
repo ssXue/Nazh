@@ -126,7 +126,7 @@ async fn workflow_graph_executes_end_to_end() {
         Err(_) => panic!("workflow did not produce a result in time"),
     }
 
-    let connections = connection_manager.read().await.list();
+    let connections = connection_manager.list().await;
     assert_eq!(connections.len(), 1, "expected one registered connection");
     assert!(
         !connections[0].in_use,
@@ -159,20 +159,20 @@ async fn invalid_graph_rejects_cycles() {
     }
 }
 
-#[test]
-fn connection_manager_borrows_and_releases_connections() {
-    let mut manager = ConnectionManager::default();
+#[tokio::test]
+async fn connection_manager_borrows_and_releases_connections() {
+    let manager = ConnectionManager::default();
     let register_result = manager.register_connection(ConnectionDefinition {
         id: "plc-1".to_owned(),
         kind: "modbus".to_owned(),
         metadata: json!({ "unit_id": 1 }),
-    });
+    }).await;
     assert!(register_result.is_ok(), "connection should register");
 
-    let lease = manager.borrow("plc-1");
+    let lease = manager.borrow("plc-1").await;
     assert!(lease.is_ok(), "connection should be borrowable");
 
-    let second_borrow = manager.borrow("plc-1");
+    let second_borrow = manager.borrow("plc-1").await;
     match second_borrow {
         Ok(_) => panic!("second borrow should fail"),
         Err(EngineError::ConnectionBusy(connection_id)) => {
@@ -181,7 +181,7 @@ fn connection_manager_borrows_and_releases_connections() {
         Err(error) => panic!("unexpected error: {error}"),
     }
 
-    let release_result = manager.release("plc-1");
+    let release_result = manager.release("plc-1").await;
     assert!(release_result.is_ok(), "connection should release");
 }
 

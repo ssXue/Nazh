@@ -177,7 +177,7 @@ async fn undeploy_workflow(
 
 #[tauri::command]
 async fn list_connections(state: State<'_, DesktopState>) -> Result<Vec<ConnectionRecord>, String> {
-    let connections = state.connection_manager.read().await.list();
+    let connections = state.connection_manager.list().await;
     Ok(connections)
 }
 

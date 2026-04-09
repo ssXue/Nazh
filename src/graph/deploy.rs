@@ -29,9 +29,8 @@ pub async fn deploy_workflow(
     })?;
 
     if !graph.connections.is_empty() {
-        let mut manager = connection_manager.write().await;
         let connections = std::mem::take(&mut graph.connections);
-        manager.upsert_connections(connections);
+        connection_manager.upsert_connections(connections).await;
     }
 
     let mut senders = HashMap::new();

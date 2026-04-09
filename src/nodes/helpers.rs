@@ -61,8 +61,7 @@ where
     F: FnOnce(Option<&ConnectionLease>) -> Result<WorkflowContext, EngineError>,
 {
     let lease = if let Some(conn_id) = connection_id {
-        let mut manager = connection_manager.write().await;
-        Some(manager.borrow(conn_id)?)
+        Some(connection_manager.borrow(conn_id).await?)
     } else {
         None
     };
@@ -70,8 +69,7 @@ where
     let result = operation(lease.as_ref());
 
     if let Some(conn_id) = connection_id {
-        let mut manager = connection_manager.write().await;
-        let release_result = manager.release(conn_id);
+        let release_result = connection_manager.release(conn_id).await;
         if result.is_ok() {
             release_result?;
         }
