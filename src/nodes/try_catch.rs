@@ -41,17 +41,7 @@ impl TryCatchNode {
 
 #[async_trait]
 impl NodeTrait for TryCatchNode {
-    fn id(&self) -> &str {
-        self.base.id()
-    }
-
-    fn kind(&self) -> &'static str {
-        "tryCatch"
-    }
-
-    fn ai_description(&self) -> &str {
-        self.base.ai_description()
-    }
+    delegate_node_base!("tryCatch");
 
     async fn execute(&self, ctx: WorkflowContext) -> Result<NodeExecution, EngineError> {
         let (scope, script_result) = self.base.evaluate_catching(&ctx)?;

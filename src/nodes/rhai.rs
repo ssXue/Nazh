@@ -40,17 +40,7 @@ impl RhaiNode {
 
 #[async_trait]
 impl NodeTrait for RhaiNode {
-    fn id(&self) -> &str {
-        self.base.id()
-    }
-
-    fn kind(&self) -> &'static str {
-        "rhai"
-    }
-
-    fn ai_description(&self) -> &str {
-        self.base.ai_description()
-    }
+    delegate_node_base!("rhai");
 
     async fn execute(&self, ctx: WorkflowContext) -> Result<NodeExecution, EngineError> {
         let (scope, result) = self.base.evaluate(&ctx)?;

@@ -62,17 +62,7 @@ impl SwitchNode {
 
 #[async_trait]
 impl NodeTrait for SwitchNode {
-    fn id(&self) -> &str {
-        self.base.id()
-    }
-
-    fn kind(&self) -> &'static str {
-        "switch"
-    }
-
-    fn ai_description(&self) -> &str {
-        self.base.ai_description()
-    }
+    delegate_node_base!("switch");
 
     async fn execute(&self, ctx: WorkflowContext) -> Result<NodeExecution, EngineError> {
         let (scope, result) = self.base.evaluate(&ctx)?;

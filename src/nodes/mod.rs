@@ -24,6 +24,43 @@
 //! 3. 在本文件中添加 `mod` 声明和 `pub use` 导出
 //! 4. 在 `graph/instantiate.rs` 的工厂函数中添加匹配分支
 
+/// 为嵌入 `RhaiNodeBase` 的脚本节点委托 [`NodeTrait`] 元数据方法。
+///
+/// 需要节点结构体含有 `base: RhaiNodeBase` 字段。
+macro_rules! delegate_node_base {
+    ($kind:expr) => {
+        fn id(&self) -> &str {
+            self.base.id()
+        }
+        fn kind(&self) -> &'static str {
+            $kind
+        }
+        fn ai_description(&self) -> &str {
+            self.base.ai_description()
+        }
+    };
+}
+#[allow(unused_imports)]
+pub(crate) use delegate_node_base;
+
+/// 为持有 `id` 和 `ai_description` 字段的非脚本节点实现 [`NodeTrait`] 元数据方法。
+#[allow(unused_macros)]
+macro_rules! impl_node_meta {
+    ($kind:expr) => {
+        fn id(&self) -> &str {
+            &self.id
+        }
+        fn kind(&self) -> &'static str {
+            $kind
+        }
+        fn ai_description(&self) -> &str {
+            &self.ai_description
+        }
+    };
+}
+#[allow(unused_imports)]
+pub(crate) use impl_node_meta;
+
 mod helpers;
 
 mod debug_console;

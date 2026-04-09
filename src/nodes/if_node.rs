@@ -38,17 +38,7 @@ impl IfNode {
 
 #[async_trait]
 impl NodeTrait for IfNode {
-    fn id(&self) -> &str {
-        self.base.id()
-    }
-
-    fn kind(&self) -> &'static str {
-        "if"
-    }
-
-    fn ai_description(&self) -> &str {
-        self.base.ai_description()
-    }
+    delegate_node_base!("if");
 
     async fn execute(&self, ctx: WorkflowContext) -> Result<NodeExecution, EngineError> {
         let (scope, result) = self.base.evaluate(&ctx)?;

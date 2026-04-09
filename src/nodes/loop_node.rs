@@ -110,17 +110,7 @@ fn collect_loop_items(node_id: &str, result: Dynamic) -> Result<Vec<Option<Value
 
 #[async_trait]
 impl NodeTrait for LoopNode {
-    fn id(&self) -> &str {
-        self.base.id()
-    }
-
-    fn kind(&self) -> &'static str {
-        "loop"
-    }
-
-    fn ai_description(&self) -> &str {
-        self.base.ai_description()
-    }
+    delegate_node_base!("loop");
 
     async fn execute(&self, ctx: WorkflowContext) -> Result<NodeExecution, EngineError> {
         let (scope, result) = self.base.evaluate(&ctx)?;
