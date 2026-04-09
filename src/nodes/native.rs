@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use super::helpers::{insert_connection_lease, into_payload_map, with_connection};
-use super::{NodeExecution, NodeTrait};
+use super::{impl_node_meta, NodeExecution, NodeTrait};
 use crate::{ConnectionLease, EngineError, SharedConnectionManager, WorkflowContext};
 
 /// [`NativeNode`] 的配置。
@@ -82,17 +82,7 @@ impl NativeNode {
 
 #[async_trait]
 impl NodeTrait for NativeNode {
-    fn id(&self) -> &str {
-        &self.id
-    }
-
-    fn kind(&self) -> &'static str {
-        "native"
-    }
-
-    fn ai_description(&self) -> &str {
-        &self.ai_description
-    }
+    impl_node_meta!("native");
 
     async fn execute(&self, ctx: WorkflowContext) -> Result<NodeExecution, EngineError> {
         let result = with_connection(

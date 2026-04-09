@@ -7,10 +7,10 @@
 use async_trait::async_trait;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
+use serde_json::{json, Value};
 
 use super::helpers::{insert_connection_lease, into_payload_map, with_connection};
-use super::{NodeExecution, NodeTrait};
+use super::{impl_node_meta, NodeExecution, NodeTrait};
 use crate::{ConnectionLease, EngineError, SharedConnectionManager, WorkflowContext};
 
 fn default_modbus_unit_id() -> u16 {
@@ -107,16 +107,13 @@ impl ModbusReadNode {
             payload_map.insert("values".to_owned(), Value::Array(values));
         }
 
-        let mut modbus_meta = Map::new();
-        modbus_meta.insert("simulated".to_owned(), Value::Bool(true));
-        modbus_meta.insert("unit_id".to_owned(), Value::from(self.config.unit_id));
-        modbus_meta.insert("register".to_owned(), Value::from(self.config.register));
-        modbus_meta.insert("quantity".to_owned(), Value::from(quantity));
-        modbus_meta.insert(
-            "sampled_at".to_owned(),
-            Value::String(Utc::now().to_rfc3339()),
-        );
-        payload_map.insert("_modbus".to_owned(), Value::Object(modbus_meta));
+        payload_map.insert("_modbus".to_owned(), json!({
+            "simulated": true,
+            "unit_id": self.config.unit_id,
+            "register": self.config.register,
+            "quantity": quantity,
+            "sampled_at": Utc::now().to_rfc3339(),
+        }));
 
         if let Some(lease) = lease {
             insert_connection_lease(&self.id, &mut payload_map, lease)?;
@@ -132,17 +129,7 @@ impl ModbusReadNode {
 
 #[async_trait]
 impl NodeTrait for ModbusReadNode {
-    fn id(&self) -> &str {
-        &self.id
-    }
-
-    fn kind(&self) -> &'static str {
-        "modbusRead"
-    }
-
-    fn ai_description(&self) -> &str {
-        &self.ai_description
-    }
+    impl_node_meta!("modbusRead");
 
     async fn execute(&self, ctx: WorkflowContext) -> Result<NodeExecution, EngineError> {
         let result = with_connection(

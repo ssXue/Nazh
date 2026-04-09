@@ -3,10 +3,10 @@
 use async_trait::async_trait;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
+use serde_json::{json, Map, Value};
 
 use super::helpers::into_payload_map;
-use super::{NodeExecution, NodeTrait};
+use super::{impl_node_meta, NodeExecution, NodeTrait};
 use crate::{EngineError, WorkflowContext};
 
 fn default_timer_interval_ms() -> u64 {
@@ -46,17 +46,7 @@ impl TimerNode {
 
 #[async_trait]
 impl NodeTrait for TimerNode {
-    fn id(&self) -> &str {
-        &self.id
-    }
-
-    fn kind(&self) -> &'static str {
-        "timer"
-    }
-
-    fn ai_description(&self) -> &str {
-        &self.ai_description
-    }
+    impl_node_meta!("timer");
 
     async fn execute(&self, ctx: WorkflowContext) -> Result<NodeExecution, EngineError> {
         let mut payload_map = into_payload_map(ctx.payload);
@@ -73,16 +63,10 @@ impl NodeTrait for TimerNode {
             })
             .unwrap_or_default();
         let mut timer_meta = existing_timer;
-        timer_meta.insert("node_id".to_owned(), Value::String(self.id.clone()));
-        timer_meta.insert(
-            "interval_ms".to_owned(),
-            Value::from(self.config.interval_ms.max(1)),
-        );
-        timer_meta.insert("immediate".to_owned(), Value::Bool(self.config.immediate));
-        timer_meta.insert(
-            "triggered_at".to_owned(),
-            Value::String(Utc::now().to_rfc3339()),
-        );
+        timer_meta.insert("node_id".to_owned(), json!(self.id));
+        timer_meta.insert("interval_ms".to_owned(), json!(self.config.interval_ms.max(1)));
+        timer_meta.insert("immediate".to_owned(), json!(self.config.immediate));
+        timer_meta.insert("triggered_at".to_owned(), json!(Utc::now().to_rfc3339()));
         payload_map.insert("_timer".to_owned(), Value::Object(timer_meta));
 
         Ok(NodeExecution::broadcast(WorkflowContext::from_parts(

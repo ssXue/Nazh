@@ -95,14 +95,13 @@ impl WorkflowGraph {
             .collect::<Vec<_>>();
 
         let mut queue = VecDeque::from(root_nodes.clone());
-        let mut remaining_incoming = incoming.clone();
         let mut processed = 0_usize;
 
         while let Some(node_id) = queue.pop_front() {
             processed += 1;
             if let Some(neighbors) = downstream.get(&node_id) {
                 for neighbor in neighbors {
-                    if let Some(count) = remaining_incoming.get_mut(&neighbor.to) {
+                    if let Some(count) = incoming.get_mut(&neighbor.to) {
                         *count -= 1;
                         if *count == 0 {
                             queue.push_back(neighbor.to.clone());

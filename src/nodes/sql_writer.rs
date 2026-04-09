@@ -6,10 +6,10 @@
 use async_trait::async_trait;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
+use serde_json::{json, Value};
 
 use super::helpers::into_payload_map;
-use super::{NodeExecution, NodeTrait};
+use super::{impl_node_meta, NodeExecution, NodeTrait};
 use crate::{EngineError, WorkflowContext};
 
 fn default_sqlite_path() -> String {
@@ -68,17 +68,7 @@ impl SqlWriterNode {
 
 #[async_trait]
 impl NodeTrait for SqlWriterNode {
-    fn id(&self) -> &str {
-        &self.id
-    }
-
-    fn kind(&self) -> &'static str {
-        "sqlWriter"
-    }
-
-    fn ai_description(&self) -> &str {
-        &self.ai_description
-    }
+    impl_node_meta!("sqlWriter");
 
     async fn execute(&self, ctx: WorkflowContext) -> Result<NodeExecution, EngineError> {
         let database_path = self.config.database_path.trim().to_owned();
@@ -160,11 +150,11 @@ impl NodeTrait for SqlWriterNode {
 
         let trace_id = ctx.trace_id;
         let mut payload_map = into_payload_map(ctx.payload);
-        let mut sql_meta = Map::new();
-        sql_meta.insert("database_path".to_owned(), Value::String(database_path));
-        sql_meta.insert("table".to_owned(), Value::String(table));
-        sql_meta.insert("written_at".to_owned(), Value::String(timestamp));
-        payload_map.insert("_sql_writer".to_owned(), Value::Object(sql_meta));
+        payload_map.insert("_sql_writer".to_owned(), json!({
+            "database_path": database_path,
+            "table": table,
+            "written_at": timestamp,
+        }));
 
         Ok(NodeExecution::broadcast(WorkflowContext::from_parts(
             trace_id,
