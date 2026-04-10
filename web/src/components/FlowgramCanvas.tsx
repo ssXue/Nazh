@@ -590,6 +590,7 @@ function FlowgramToolButton({
   disabled,
   destructive = false,
   active = false,
+  'data-testid': dataTestId,
   onClick,
   children,
 }: {
@@ -597,6 +598,7 @@ function FlowgramToolButton({
   disabled?: boolean;
   destructive?: boolean;
   active?: boolean;
+  'data-testid'?: string;
   onClick: () => void;
   children: ReactNode;
 }) {
@@ -605,6 +607,7 @@ function FlowgramToolButton({
       type="button"
       aria-label={label}
       title={label}
+      data-testid={dataTestId}
       style={{
         ...FLOWGRAM_BUTTON_STYLE,
         cursor: disabled ? 'not-allowed' : 'pointer',
@@ -977,7 +980,7 @@ function FlowgramToolbar({
         </button>
 
         {canDispatch ? (
-          <FlowgramToolButton label="手动触发" onClick={() => onDispatch?.()}>
+          <FlowgramToolButton label="手动触发" data-testid="dispatch-button" onClick={() => onDispatch?.()}>
             <TriggerActionIcon width={16} height={16} />
           </FlowgramToolButton>
         ) : null}
@@ -989,6 +992,7 @@ function FlowgramToolbar({
               ? 'flowgram-tools__action--stop'
               : 'flowgram-tools__action--run'
           }`}
+          data-testid={canStop ? 'undeploy-button' : 'deploy-button'}
           onClick={handlePrimaryAction}
           disabled={canStop ? !onStop : !canRun}
         >

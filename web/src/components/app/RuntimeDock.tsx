@@ -276,7 +276,7 @@ export function RuntimeDock({
           </div>
 
           <div className="runtime-dock__panel-body">
-            <div ref={logViewportRef} className="runtime-log" role="log" aria-live="polite">
+            <div ref={logViewportRef} className="runtime-log" role="log" aria-live="polite" data-testid="event-feed">
               {runtimeConsoleEntries.length === 0 ? (
                 <p className="runtime-log__empty">暂无事件与异常</p>
               ) : (
@@ -306,7 +306,7 @@ export function RuntimeDock({
           </div>
 
           <div className="runtime-dock__panel-body">
-            <div className="runtime-results">
+            <div className="runtime-results" data-testid="result-list">
               {results.length === 0 ? (
                 <p className="runtime-results__empty">暂无输出</p>
               ) : (

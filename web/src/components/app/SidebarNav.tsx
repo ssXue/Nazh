@@ -90,6 +90,7 @@ export function SidebarNav({
                         : 'studio-nav__button'
                     }
                     aria-current={activeSection === section.key ? 'page' : undefined}
+                    data-testid={`sidebar-${section.key}`}
                     onClick={() => onSectionChange(section.key)}
                   >
                     <span className="studio-nav__icon" aria-hidden="true">
@@ -118,7 +119,7 @@ export function SidebarNav({
           >
             {isDarkMode ? <SunIcon /> : <MoonIcon />}
           </button>
-          <span className={`runtime-pill ${workflowStatusPillClass}`}>{workflowStatusLabel}</span>
+          <span className={`runtime-pill ${workflowStatusPillClass}`} data-testid="workflow-status">{workflowStatusLabel}</span>
         </div>
 
         <section className="studio-nav-user" aria-label="当前用户">

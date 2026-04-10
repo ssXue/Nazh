@@ -15,12 +15,13 @@ export function SourcePanel({ astText, graphError, onAstTextChange }: SourcePane
 
       <textarea
         className="code-editor code-editor--workspace"
+        data-testid="ast-editor"
         value={astText}
         onChange={(event) => onAstTextChange(event.target.value)}
         spellCheck={false}
       />
 
-      {graphError ? <p className="panel__error">{graphError}</p> : null}
+      {graphError ? <p className="panel__error" data-testid="error-display">{graphError}</p> : null}
     </>
   );
 }

@@ -49,6 +49,7 @@ export function BoardsPanel({ onOpenBoard }: BoardsPanelProps) {
             key={board.id}
             type="button"
             className="board-card"
+            data-testid="board-entry"
             onClick={() => onOpenBoard(board)}
           >
             <div className="board-card__icon">
