@@ -14,7 +14,6 @@ export type StartupPage = 'dashboard' | 'boards';
 export type SidebarSection =
   | 'dashboard'
   | 'boards'
-  | 'source'
   | 'connections'
   | 'payload'
   | 'settings'
@@ -39,12 +38,6 @@ export interface SidebarNavProps {
   workflowStatusPillClass: string;
   themeMode: ThemeMode;
   onToggleTheme: () => void;
-}
-
-export interface SourcePanelProps {
-  astText: string;
-  graphError: string | null;
-  onAstTextChange: (value: string) => void;
 }
 
 export interface PayloadPanelProps {

@@ -13,7 +13,6 @@ import { PayloadPanel } from './components/app/PayloadPanel';
 import { RuntimeDock } from './components/app/RuntimeDock';
 import { SettingsPanel } from './components/app/SettingsPanel';
 import { SidebarNav } from './components/app/SidebarNav';
-import { SourcePanel } from './components/app/SourcePanel';
 import type { SidebarSection } from './components/app/types';
 import { ConnectionStudio } from './components/ConnectionStudio';
 import { FlowgramCanvas, type FlowgramCanvasHandle } from './components/FlowgramCanvas';
@@ -73,19 +72,6 @@ function App() {
         ...nextDraft,
       },
     }));
-  }
-
-  function handleAstTextChange(nextText: string) {
-    if (!activeBoard) {
-      return;
-    }
-
-    updateProjectDraft(activeBoard.id, { astText: nextText });
-
-    const nextGraphState = parseWorkflowGraph(nextText);
-    if (!nextGraphState.error && nextGraphState.graph) {
-      flowgramCanvasRef.current?.loadWorkflowGraph(nextGraphState.graph);
-    }
   }
 
   function applyStructuredGraphChange(nextAstText: string, nextStatusMessage: string) {
@@ -288,7 +274,6 @@ function App() {
   const connectionPreview = engine.connections.slice(0, 4);
   const sidebarSections = buildSidebarSections(
     workflowStatusLabel,
-    graphState.error,
     graphConnectionCount,
     engine.deployInfo,
     activeBoard?.name ?? null,
@@ -404,22 +389,6 @@ function App() {
         );
       case 'boards':
         return renderBoardWorkspace();
-      case 'source':
-        if (!activeBoard) {
-          return renderProjectGate('流程源配置');
-        }
-
-        return (
-          <section className="studio-content studio-content--panel">
-            <div className="panel studio-content__panel studio-content__panel--editor">
-              <SourcePanel
-                astText={astText}
-                graphError={graphState.error}
-                onAstTextChange={handleAstTextChange}
-              />
-            </div>
-          </section>
-        );
       case 'connections':
         if (!activeBoard) {
           return renderProjectGate('连接资源');

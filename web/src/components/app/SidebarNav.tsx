@@ -6,7 +6,6 @@ import {
   MoonIcon,
   PayloadIcon,
   SettingsIcon,
-  SourceIcon,
   SunIcon,
   SwitchUserIcon,
 } from './AppIcons';
@@ -15,7 +14,6 @@ import type { SidebarNavProps, SidebarSection } from './types';
 const SECTION_ICONS: Record<SidebarSection, typeof DashboardIcon> = {
   dashboard: DashboardIcon,
   boards: BoardsIcon,
-  source: SourceIcon,
   connections: ConnectionsIcon,
   payload: PayloadIcon,
   settings: SettingsIcon,

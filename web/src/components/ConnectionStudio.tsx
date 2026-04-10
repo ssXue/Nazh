@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ComponentType, type SVGProps } from 'react';
 
 import { formatWorkflowGraph } from '../lib/flowgram';
 import type {
@@ -8,6 +8,14 @@ import type {
   WorkflowGraph,
   WorkflowNodeDefinition,
 } from '../types';
+import {
+  ConnectionsIcon,
+  DeleteActionIcon,
+  HttpClientNodeIcon,
+  ModbusNodeIcon,
+  SerialNodeIcon,
+  SettingsIcon,
+} from './app/AppIcons';
 
 interface ConnectionStudioProps {
   graph: WorkflowGraph | null;
@@ -23,6 +31,8 @@ interface ConnectionTemplate {
   idPrefix: string;
   definition: ConnectionDefinition;
 }
+
+type ConnectionIconComponent = ComponentType<SVGProps<SVGSVGElement>>;
 
 const CONNECTION_TEMPLATES: ConnectionTemplate[] = [
   {
@@ -154,8 +164,12 @@ function parseMetadataNumber(value: string, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function normalizedConnectionType(connectionType: string): string {
+  return connectionType.trim().toLowerCase();
+}
+
 function isSerialConnectionType(connectionType: string): boolean {
-  switch (connectionType.trim().toLowerCase()) {
+  switch (normalizedConnectionType(connectionType)) {
     case 'serial':
     case 'serialport':
     case 'serial_port':
@@ -166,6 +180,86 @@ function isSerialConnectionType(connectionType: string): boolean {
     default:
       return false;
   }
+}
+
+function connectionIconFor(connectionType: string): ConnectionIconComponent {
+  const type = normalizedConnectionType(connectionType);
+  if (isSerialConnectionType(type)) {
+    return SerialNodeIcon;
+  }
+
+  switch (type) {
+    case 'modbus':
+    case 'modbus_tcp':
+      return ModbusNodeIcon;
+    case 'http':
+    case 'http_sink':
+      return HttpClientNodeIcon;
+    default:
+      return ConnectionsIcon;
+  }
+}
+
+function compactConnectionValue(value: string, fallback: string): string {
+  const normalized = value.trim();
+  if (!normalized) {
+    return fallback;
+  }
+
+  return normalized.length > 38
+    ? `${normalized.slice(0, 22)}...${normalized.slice(-10)}`
+    : normalized;
+}
+
+function connectionParameterBrief(connection: ConnectionDefinition): string {
+  const type = normalizedConnectionType(connection.type);
+  if (isSerialConnectionType(type)) {
+    const portPath = metadataString(connection.metadata, 'port_path', '未配置端口');
+    const baudRate = metadataNumber(connection.metadata, 'baud_rate', 9600);
+    const encoding = metadataString(connection.metadata, 'encoding', 'ascii').toUpperCase();
+    return `${compactConnectionValue(portPath, '未配置端口')} · ${baudRate} · ${encoding}`;
+  }
+
+  if (type === 'modbus' || type === 'modbus_tcp') {
+    const host = metadataString(connection.metadata, 'host', '未配置主机');
+    const port = metadataNumber(connection.metadata, 'port', 502);
+    const unitId = metadataNumber(connection.metadata, 'unit_id', 1);
+    return `${compactConnectionValue(host, '未配置主机')}:${port} · Unit ${unitId}`;
+  }
+
+  if (type === 'mqtt') {
+    const host = metadataString(connection.metadata, 'host', '未配置 Broker');
+    const port = metadataNumber(connection.metadata, 'port', 1883);
+    const topic = metadataString(connection.metadata, 'topic', '未配置 Topic');
+    return `${compactConnectionValue(host, '未配置 Broker')}:${port} · ${compactConnectionValue(
+      topic,
+      '未配置 Topic',
+    )}`;
+  }
+
+  if (type === 'http' || type === 'http_sink') {
+    const method = metadataString(connection.metadata, 'method', 'POST').toUpperCase();
+    const url = metadataString(connection.metadata, 'url', '未配置 URL');
+    return `${method} · ${compactConnectionValue(url, '未配置 URL')}`;
+  }
+
+  const metadataKeys = Object.keys(metadataRecord(connection.metadata));
+  return metadataKeys.length > 0 ? `${metadataKeys.length} 个参数` : '未配置参数';
+}
+
+function connectionRuntimeState(runtimeConnection: ConnectionRecord | undefined): {
+  label: string;
+  state: 'busy' | 'local' | 'runtime';
+} {
+  if (!runtimeConnection) {
+    return { label: '等待部署', state: 'local' };
+  }
+
+  if (runtimeConnection.in_use) {
+    return { label: '运行占用', state: 'busy' };
+  }
+
+  return { label: '运行可用', state: 'runtime' };
 }
 
 function buildNodeUsageMap(graph: WorkflowGraph | null): Map<string, string[]> {
@@ -245,12 +339,14 @@ export function ConnectionStudio({
   const [idDrafts, setIdDrafts] = useState<Record<string, string>>({});
   const [metadataDrafts, setMetadataDrafts] = useState<Record<string, string>>({});
   const [metadataErrors, setMetadataErrors] = useState<Record<string, string>>({});
+  const [activeConnectionIndex, setActiveConnectionIndex] = useState<number | null>(null);
 
   useEffect(() => {
     if (!graph) {
       setIdDrafts({});
       setMetadataDrafts({});
       setMetadataErrors({});
+      setActiveConnectionIndex(null);
       return;
     }
 
@@ -269,6 +365,31 @@ export function ConnectionStudio({
     );
     setMetadataErrors({});
   }, [graph, connections]);
+
+  useEffect(() => {
+    if (!graph || activeConnectionIndex === null) {
+      return;
+    }
+
+    if (activeConnectionIndex >= connections.length) {
+      setActiveConnectionIndex(connections.length > 0 ? connections.length - 1 : null);
+    }
+  }, [activeConnectionIndex, graph, connections.length]);
+
+  useEffect(() => {
+    if (activeConnectionIndex === null) {
+      return;
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setActiveConnectionIndex(null);
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeConnectionIndex]);
 
   function buildNextConnectionId(prefix: string): string {
     const existingIds = new Set(connections.map((connection) => connection.id));
@@ -302,6 +423,7 @@ export function ConnectionStudio({
       },
       `已新增 ${template.label} 连接，并同步到 AST 文本。`,
     );
+    setActiveConnectionIndex(connections.length);
   }
 
   function handleRemoveConnection(index: number) {
@@ -334,6 +456,15 @@ export function ConnectionStudio({
         ? `已删除连接 ${target.id}，并解除 ${bindingUpdate.affectedNodes.length} 个节点的绑定。`
         : `已删除连接 ${target.id || '未命名连接'}。`,
     );
+    setActiveConnectionIndex((current) => {
+      if (current === null) {
+        return null;
+      }
+      if (current === index) {
+        return null;
+      }
+      return current > index ? current - 1 : current;
+    });
   }
 
   function handleTypeChange(index: number, value: string) {
@@ -506,6 +637,18 @@ export function ConnectionStudio({
     );
   }
 
+  const activeConnection =
+    activeConnectionIndex !== null ? connections[activeConnectionIndex] : undefined;
+  const activeDraftKey =
+    activeConnectionIndex !== null ? connectionKey(activeConnectionIndex) : '';
+  const activeUsageNodes = activeConnection?.id
+    ? usageByConnection.get(activeConnection.id) ?? []
+    : [];
+  const activeMetadataError = activeDraftKey ? metadataErrors[activeDraftKey] : undefined;
+  const ActiveConnectionIcon = activeConnection
+    ? connectionIconFor(activeConnection.type)
+    : ConnectionsIcon;
+
   return (
     <section className="connection-studio">
       <div
@@ -520,314 +663,402 @@ export function ConnectionStudio({
         </span>
       </div>
 
-      <div className="connection-toolbar">
-        {CONNECTION_TEMPLATES.map((template) => (
-          <button
-            key={template.key}
-            type="button"
-            className="connection-toolbar__button"
-            onClick={() => handleAddConnection(template)}
-          >
-            <strong>{template.label}</strong>
-            <span>{template.description}</span>
-          </button>
-        ))}
-      </div>
+      <div className="connection-layout">
+        <div className="connection-resources">
+          <div className="connection-toolbar">
+            {CONNECTION_TEMPLATES.map((template) => (
+              <button
+                key={template.key}
+                type="button"
+                className="connection-toolbar__button"
+                onClick={() => handleAddConnection(template)}
+              >
+                <strong>{template.label}</strong>
+                <span>{template.description}</span>
+              </button>
+            ))}
+          </div>
 
-      {connections.length === 0 ? (
-        <div className="connection-empty">
-          <p>暂无连接</p>
-        </div>
-      ) : (
-        <div className="connection-grid">
-          {connections.map((connection, index) => {
-            const draftKey = connectionKey(index);
-            const runtimeConnection = connection.id ? runtimeById.get(connection.id) : undefined;
-            const usageNodes = connection.id ? usageByConnection.get(connection.id) ?? [] : [];
-            const metadataError = metadataErrors[draftKey];
-            const idDraft = idDrafts[draftKey] ?? connection.id;
+          {connections.length === 0 ? (
+            <div className="connection-empty">
+              <p>暂无连接</p>
+            </div>
+          ) : (
+            <div className="connection-grid">
+              {connections.map((connection, index) => {
+                const runtimeConnection = connection.id
+                  ? runtimeById.get(connection.id)
+                  : undefined;
+                const usageNodes = connection.id
+                  ? usageByConnection.get(connection.id) ?? []
+                  : [];
+                const runtimeState = connectionRuntimeState(runtimeConnection);
+                const ConnectionIcon = connectionIconFor(connection.type);
+                const isActive = activeConnectionIndex === index;
 
-            return (
-              <article key={`${connection.id || 'connection'}-${index}`} className="connection-card">
-                <div className="connection-card__header">
-                  <div className="connection-card__identity">
-                    <strong>{connection.id || `connection_${index + 1}`}</strong>
-                    <p>
-                      {usageNodes.length > 0
-                        ? `当前被 ${usageNodes.length} 个节点引用`
-                        : '当前没有节点绑定这个连接'}
-                    </p>
-                    <div className="connection-card__meta">
-                      <span className="connection-card__tag">{connection.type || 'custom'}</span>
-                      <span className="connection-card__tag">
-                        {usageNodes.length > 0 ? `${usageNodes.length} 节点` : '未绑定'}
-                      </span>
+                return (
+                  <article
+                    key={`${connection.id || 'connection'}-${index}`}
+                    className={`connection-card ${isActive ? 'is-active' : ''}`}
+                  >
+                    <div className="connection-card__main">
+                      <div className="connection-card__icon">
+                        <ConnectionIcon />
+                      </div>
+                      <div className="connection-card__identity">
+                        <strong>{connection.id || `connection_${index + 1}`}</strong>
+                        <span className="connection-card__brief">
+                          {connectionParameterBrief(connection)}
+                        </span>
+                        <div className="connection-card__meta">
+                          <span className="connection-card__tag">
+                            {connection.type || 'custom'}
+                          </span>
+                          <span className="connection-card__tag">
+                            {usageNodes.length > 0 ? `${usageNodes.length} 节点` : '未绑定'}
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="connection-card__actions">
-                    <span
-                      className={`connection-chip ${runtimeConnection ? 'is-runtime' : 'is-local'} ${
-                        runtimeConnection?.in_use ? 'is-busy' : ''
-                      }`}
-                    >
-                      {runtimeConnection
-                        ? runtimeConnection.in_use
-                          ? 'Runtime 借出中'
-                          : 'Runtime 已注册'
-                        : '仅 AST'}
-                    </span>
-                    <button
-                      type="button"
-                      className="ghost connection-card__delete"
-                      onClick={() => handleRemoveConnection(index)}
-                    >
-                      删除
-                    </button>
-                  </div>
+                    <div className="connection-card__footer">
+                      <span className={`connection-status is-${runtimeState.state}`}>
+                        <span className="connection-status__dot" />
+                        {runtimeState.label}
+                      </span>
+                      <button
+                        type="button"
+                        className="connection-card__settings"
+                        aria-label={`设置 ${connection.id || `connection_${index + 1}`}`}
+                        onClick={() => setActiveConnectionIndex(index)}
+                      >
+                        <SettingsIcon />
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {activeConnection && activeConnectionIndex !== null ? (
+          <div
+            className="connection-settings-dialog"
+            role="presentation"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) {
+                setActiveConnectionIndex(null);
+              }
+            }}
+          >
+            <section
+              className="connection-settings-panel"
+              role="dialog"
+              aria-modal="true"
+              aria-label="连接资源设置"
+              onMouseDown={(event) => event.stopPropagation()}
+            >
+              <div className="connection-settings-panel__header">
+                <div className="connection-settings-panel__icon">
+                  <ActiveConnectionIcon />
                 </div>
+                <div>
+                  <strong>
+                    {activeConnection.id || `connection_${activeConnectionIndex + 1}`}
+                  </strong>
+                  <span>{connectionParameterBrief(activeConnection)}</span>
+                </div>
+                <button
+                  type="button"
+                  className="connection-settings-panel__close"
+                  onClick={() => setActiveConnectionIndex(null)}
+                >
+                  完成
+                </button>
+              </div>
 
-                <div className="connection-form">
-                  <label>
-                    <span>连接 ID</span>
-                    <input
-                      value={idDraft}
-                      onChange={(event) =>
-                        setIdDrafts((current) => ({
-                          ...current,
-                          [draftKey]: event.target.value,
-                        }))
+              <div className="connection-form connection-settings-panel__form">
+                <label>
+                  <span>连接 ID</span>
+                  <input
+                    value={idDrafts[activeDraftKey] ?? activeConnection.id}
+                    onChange={(event) =>
+                      setIdDrafts((current) => ({
+                        ...current,
+                        [activeDraftKey]: event.target.value,
+                      }))
+                    }
+                    onBlur={() => commitConnectionId(activeConnectionIndex)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault();
+                        commitConnectionId(activeConnectionIndex);
+                        event.currentTarget.blur();
                       }
-                      onBlur={() => commitConnectionId(index)}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter') {
-                          event.preventDefault();
-                          commitConnectionId(index);
-                          event.currentTarget.blur();
-                        }
-                      }}
-                      placeholder="例如 plc_main"
-                    />
-                  </label>
+                    }}
+                    placeholder="例如 plc_main"
+                  />
+                </label>
 
-                  <label>
-                    <span>协议类型</span>
-                    <input
-                      value={connection.type}
-                      onChange={(event) => handleTypeChange(index, event.target.value)}
-                      placeholder="例如 modbus / mqtt / http"
-                    />
-                  </label>
+                <label>
+                  <span>协议类型</span>
+                  <input
+                    value={activeConnection.type}
+                    onChange={(event) =>
+                      handleTypeChange(activeConnectionIndex, event.target.value)
+                    }
+                    placeholder="例如 modbus / mqtt / http"
+                  />
+                </label>
 
-                  {isSerialConnectionType(connection.type) ? (
-                    <>
-                      <label>
-                        <span>串口路径</span>
-                        <input
-                          value={metadataString(
-                            connection.metadata,
+                {isSerialConnectionType(activeConnection.type) ? (
+                  <>
+                    <label>
+                      <span>串口路径</span>
+                      <input
+                        value={metadataString(
+                          activeConnection.metadata,
+                          'port_path',
+                          '/dev/tty.usbserial-0001',
+                        )}
+                        onChange={(event) =>
+                          handleMetadataFieldChange(
+                            activeConnectionIndex,
                             'port_path',
-                            '/dev/tty.usbserial-0001',
-                          )}
-                          onChange={(event) =>
-                            handleMetadataFieldChange(index, 'port_path', event.target.value)
-                          }
-                          placeholder="/dev/tty.usbserial-0001 或 COM3"
-                        />
-                      </label>
-                      <label>
-                        <span>波特率</span>
-                        <input
-                          type="number"
-                          value={metadataNumber(connection.metadata, 'baud_rate', 9600)}
-                          onChange={(event) =>
-                            handleMetadataFieldChange(
-                              index,
-                              'baud_rate',
-                              parseMetadataNumber(event.target.value, 9600),
-                            )
-                          }
-                        />
-                      </label>
-                      <label>
-                        <span>数据位</span>
-                        <select
-                          value={String(metadataNumber(connection.metadata, 'data_bits', 8))}
-                          onChange={(event) =>
-                            handleMetadataFieldChange(
-                              index,
-                              'data_bits',
-                              parseMetadataNumber(event.target.value, 8),
-                            )
-                          }
-                        >
-                          <option value="8">8</option>
-                          <option value="7">7</option>
-                          <option value="6">6</option>
-                          <option value="5">5</option>
-                        </select>
-                      </label>
-                      <label>
-                        <span>校验位</span>
-                        <select
-                          value={metadataString(connection.metadata, 'parity', 'none')}
-                          onChange={(event) =>
-                            handleMetadataFieldChange(index, 'parity', event.target.value)
-                          }
-                        >
-                          <option value="none">None</option>
-                          <option value="odd">Odd</option>
-                          <option value="even">Even</option>
-                        </select>
-                      </label>
-                      <label>
-                        <span>停止位</span>
-                        <select
-                          value={String(metadataNumber(connection.metadata, 'stop_bits', 1))}
-                          onChange={(event) =>
-                            handleMetadataFieldChange(
-                              index,
-                              'stop_bits',
-                              parseMetadataNumber(event.target.value, 1),
-                            )
-                          }
-                        >
-                          <option value="1">1</option>
-                          <option value="2">2</option>
-                        </select>
-                      </label>
-                      <label>
-                        <span>流控</span>
-                        <select
-                          value={metadataString(connection.metadata, 'flow_control', 'none')}
-                          onChange={(event) =>
-                            handleMetadataFieldChange(index, 'flow_control', event.target.value)
-                          }
-                        >
-                          <option value="none">None</option>
-                          <option value="software">Software</option>
-                          <option value="hardware">Hardware</option>
-                        </select>
-                      </label>
-                      <label>
-                        <span>主数据格式</span>
-                        <select
-                          value={metadataString(connection.metadata, 'encoding', 'ascii')}
-                          onChange={(event) =>
-                            handleMetadataFieldChange(index, 'encoding', event.target.value)
-                          }
-                        >
-                          <option value="ascii">ASCII</option>
-                          <option value="hex">HEX</option>
-                        </select>
-                      </label>
-                      <label>
-                        <span>帧分隔符</span>
-                        <input
-                          value={metadataString(connection.metadata, 'delimiter', '\\n')}
-                          onChange={(event) =>
-                            handleMetadataFieldChange(index, 'delimiter', event.target.value)
-                          }
-                          placeholder="\\n、\\r\\n 或 hex:0D0A"
-                        />
-                      </label>
-                      <label>
-                        <span>读超时 ms</span>
-                        <input
-                          type="number"
-                          value={metadataNumber(connection.metadata, 'read_timeout_ms', 100)}
-                          onChange={(event) =>
-                            handleMetadataFieldChange(
-                              index,
-                              'read_timeout_ms',
-                              parseMetadataNumber(event.target.value, 100),
-                            )
-                          }
-                        />
-                      </label>
-                      <label>
-                        <span>空闲提交 ms</span>
-                        <input
-                          type="number"
-                          value={metadataNumber(connection.metadata, 'idle_gap_ms', 80)}
-                          onChange={(event) =>
-                            handleMetadataFieldChange(
-                              index,
-                              'idle_gap_ms',
-                              parseMetadataNumber(event.target.value, 80),
-                            )
-                          }
-                        />
-                      </label>
-                      <label>
-                        <span>最大帧字节</span>
-                        <input
-                          type="number"
-                          value={metadataNumber(connection.metadata, 'max_frame_bytes', 512)}
-                          onChange={(event) =>
-                            handleMetadataFieldChange(
-                              index,
-                              'max_frame_bytes',
-                              parseMetadataNumber(event.target.value, 512),
-                            )
-                          }
-                        />
-                      </label>
-                      <label>
-                        <span>裁剪空白</span>
-                        <select
-                          value={
-                            metadataBoolean(connection.metadata, 'trim', true)
-                              ? 'true'
-                              : 'false'
-                          }
-                          onChange={(event) =>
-                            handleMetadataFieldChange(index, 'trim', event.target.value === 'true')
-                          }
-                        >
-                          <option value="true">是</option>
-                          <option value="false">否</option>
-                        </select>
-                      </label>
-                    </>
-                  ) : null}
-
-                  <label className="connection-form__metadata">
-                    <span>
-                      {isSerialConnectionType(connection.type)
-                        ? '高级 Metadata JSON'
-                        : 'Metadata JSON'}
-                    </span>
-                    <textarea
-                      value={metadataDrafts[draftKey] ?? formatMetadata(connection.metadata)}
-                      onChange={(event) => handleMetadataChange(index, event.target.value)}
-                      spellCheck={false}
-                    />
-                  </label>
-                </div>
-
-                {duplicateConnectionIds.has(connection.id.trim()) ? (
-                  <p className="connection-card__error">
-                    当前连接 ID 与其他连接重复，部署前建议修正为唯一值。
-                  </p>
+                            event.target.value,
+                          )
+                        }
+                        placeholder="/dev/tty.usbserial-0001 或 COM3"
+                      />
+                    </label>
+                    <label>
+                      <span>波特率</span>
+                      <input
+                        type="number"
+                        value={metadataNumber(activeConnection.metadata, 'baud_rate', 9600)}
+                        onChange={(event) =>
+                          handleMetadataFieldChange(
+                            activeConnectionIndex,
+                            'baud_rate',
+                            parseMetadataNumber(event.target.value, 9600),
+                          )
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>数据位</span>
+                      <select
+                        value={String(metadataNumber(activeConnection.metadata, 'data_bits', 8))}
+                        onChange={(event) =>
+                          handleMetadataFieldChange(
+                            activeConnectionIndex,
+                            'data_bits',
+                            parseMetadataNumber(event.target.value, 8),
+                          )
+                        }
+                      >
+                        <option value="8">8</option>
+                        <option value="7">7</option>
+                        <option value="6">6</option>
+                        <option value="5">5</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>校验位</span>
+                      <select
+                        value={metadataString(activeConnection.metadata, 'parity', 'none')}
+                        onChange={(event) =>
+                          handleMetadataFieldChange(
+                            activeConnectionIndex,
+                            'parity',
+                            event.target.value,
+                          )
+                        }
+                      >
+                        <option value="none">None</option>
+                        <option value="odd">Odd</option>
+                        <option value="even">Even</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>停止位</span>
+                      <select
+                        value={String(metadataNumber(activeConnection.metadata, 'stop_bits', 1))}
+                        onChange={(event) =>
+                          handleMetadataFieldChange(
+                            activeConnectionIndex,
+                            'stop_bits',
+                            parseMetadataNumber(event.target.value, 1),
+                          )
+                        }
+                      >
+                        <option value="1">1</option>
+                        <option value="2">2</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>流控</span>
+                      <select
+                        value={metadataString(activeConnection.metadata, 'flow_control', 'none')}
+                        onChange={(event) =>
+                          handleMetadataFieldChange(
+                            activeConnectionIndex,
+                            'flow_control',
+                            event.target.value,
+                          )
+                        }
+                      >
+                        <option value="none">None</option>
+                        <option value="software">Software</option>
+                        <option value="hardware">Hardware</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>主数据格式</span>
+                      <select
+                        value={metadataString(activeConnection.metadata, 'encoding', 'ascii')}
+                        onChange={(event) =>
+                          handleMetadataFieldChange(
+                            activeConnectionIndex,
+                            'encoding',
+                            event.target.value,
+                          )
+                        }
+                      >
+                        <option value="ascii">ASCII</option>
+                        <option value="hex">HEX</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>帧分隔符</span>
+                      <input
+                        value={metadataString(activeConnection.metadata, 'delimiter', '\\n')}
+                        onChange={(event) =>
+                          handleMetadataFieldChange(
+                            activeConnectionIndex,
+                            'delimiter',
+                            event.target.value,
+                          )
+                        }
+                        placeholder="\\n、\\r\\n 或 hex:0D0A"
+                      />
+                    </label>
+                    <label>
+                      <span>读超时 ms</span>
+                      <input
+                        type="number"
+                        value={metadataNumber(activeConnection.metadata, 'read_timeout_ms', 100)}
+                        onChange={(event) =>
+                          handleMetadataFieldChange(
+                            activeConnectionIndex,
+                            'read_timeout_ms',
+                            parseMetadataNumber(event.target.value, 100),
+                          )
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>空闲提交 ms</span>
+                      <input
+                        type="number"
+                        value={metadataNumber(activeConnection.metadata, 'idle_gap_ms', 80)}
+                        onChange={(event) =>
+                          handleMetadataFieldChange(
+                            activeConnectionIndex,
+                            'idle_gap_ms',
+                            parseMetadataNumber(event.target.value, 80),
+                          )
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>最大帧字节</span>
+                      <input
+                        type="number"
+                        value={metadataNumber(activeConnection.metadata, 'max_frame_bytes', 512)}
+                        onChange={(event) =>
+                          handleMetadataFieldChange(
+                            activeConnectionIndex,
+                            'max_frame_bytes',
+                            parseMetadataNumber(event.target.value, 512),
+                          )
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>裁剪空白</span>
+                      <select
+                        value={
+                          metadataBoolean(activeConnection.metadata, 'trim', true)
+                            ? 'true'
+                            : 'false'
+                        }
+                        onChange={(event) =>
+                          handleMetadataFieldChange(
+                            activeConnectionIndex,
+                            'trim',
+                            event.target.value === 'true',
+                          )
+                        }
+                      >
+                        <option value="true">是</option>
+                        <option value="false">否</option>
+                      </select>
+                    </label>
+                  </>
                 ) : null}
 
-                {metadataError ? (
-                  <p className="connection-card__error">
-                    Metadata JSON 暂未同步: {metadataError}
-                  </p>
-                ) : (
-                  <p className="connection-card__hint">
-                    {usageNodes.length > 0
-                      ? `引用节点: ${usageNodes.join(', ')}`
-                      : '还没有节点通过 connection_id 绑定到这个连接。'}
-                  </p>
-                )}
-              </article>
-            );
-          })}
-        </div>
-      )}
+                <label className="connection-form__metadata">
+                  <span>
+                    {isSerialConnectionType(activeConnection.type)
+                      ? '高级 Metadata JSON'
+                      : 'Metadata JSON'}
+                  </span>
+                  <textarea
+                    value={
+                      metadataDrafts[activeDraftKey] ?? formatMetadata(activeConnection.metadata)
+                    }
+                    onChange={(event) =>
+                      handleMetadataChange(activeConnectionIndex, event.target.value)
+                    }
+                    spellCheck={false}
+                  />
+                </label>
+              </div>
+
+              {duplicateConnectionIds.has(activeConnection.id.trim()) ? (
+                <p className="connection-card__error">
+                  当前连接 ID 与其他连接重复，部署前建议修正为唯一值。
+                </p>
+              ) : null}
+
+              {activeMetadataError ? (
+                <p className="connection-card__error">
+                  Metadata JSON 暂未同步: {activeMetadataError}
+                </p>
+              ) : (
+                <p className="connection-card__hint">
+                  {activeUsageNodes.length > 0
+                    ? `引用节点: ${activeUsageNodes.join(', ')}`
+                    : '还没有节点通过 connection_id 绑定到这个连接。'}
+                </p>
+              )}
+
+              <div className="connection-settings-panel__footer">
+                <button
+                  type="button"
+                  className="ghost connection-card__delete"
+                  onClick={() => handleRemoveConnection(activeConnectionIndex)}
+                >
+                  <DeleteActionIcon />
+                  删除连接
+                </button>
+              </div>
+            </section>
+          </div>
+        ) : null}
+      </div>
     </section>
   );
 }

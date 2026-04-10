@@ -58,16 +58,6 @@ export function BackIcon(props: IconProps) {
   );
 }
 
-export function SourceIcon(props: IconProps) {
-  return (
-    <BaseIcon {...props}>
-      <path d="m9 8-4 4 4 4" />
-      <path d="m15 8 4 4-4 4" />
-      <path d="m13 5-2 14" />
-    </BaseIcon>
-  );
-}
-
 export function ConnectionsIcon(props: IconProps) {
   return (
     <BaseIcon {...props}>

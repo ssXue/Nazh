@@ -8,7 +8,6 @@ import { hasTauriRuntime } from './tauri';
 /** 根据当前运行时状态构建侧栏导航区段配置列表。 */
 export function buildSidebarSections(
   workflowStatusLabel: string,
-  graphError: string | null,
   graphConnectionCount: number,
   deployInfo: DeployResponse | null,
   activeBoardName: string | null,
@@ -25,12 +24,6 @@ export function buildSidebarSections(
       group: 'top',
       label: '所有看板',
       badge: activeBoardName ?? `${BOARD_LIBRARY.length} 个工程`,
-    },
-    {
-      key: 'source',
-      group: 'main',
-      label: '流程源配置',
-      badge: activeBoardName ? (graphError ? '有错误' : '当前工程') : '未进入工程',
     },
     {
       key: 'connections',
