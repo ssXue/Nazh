@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
+import { useSettings } from './hooks/use-settings';
+
 import { AboutPanel } from './components/app/AboutPanel';
 import {
   BackIcon,
@@ -11,40 +13,14 @@ import { RuntimeDock } from './components/app/RuntimeDock';
 import { SettingsPanel } from './components/app/SettingsPanel';
 import { SidebarNav } from './components/app/SidebarNav';
 import { SourcePanel } from './components/app/SourcePanel';
-import type {
-  MotionMode,
-  SidebarSection,
-  StartupPage,
-  ThemeMode,
-  UiDensity,
-} from './components/app/types';
+import type { SidebarSection } from './components/app/types';
 import { ConnectionStudio } from './components/ConnectionStudio';
 import { FlowgramCanvas, type FlowgramCanvasHandle } from './components/FlowgramCanvas';
 import { buildInitialProjectDrafts, buildProjectAst, CURRENT_USER_NAME, DEFAULT_BOARD_ID, type ProjectDraft } from './lib/demo-data';
 import { parseWorkflowGraph } from './lib/graph';
 import { formatWorkflowGraph } from './lib/flowgram';
 import { buildSidebarSections } from './lib/sidebar';
-import {
-  getInitialAccentPreset,
-  getInitialCustomAccentHex,
-  getInitialMotionMode,
-  getInitialStartupPage,
-  getInitialThemeMode,
-  getInitialUiDensity,
-  ACCENT_PRESET_STORAGE_KEY,
-  CUSTOM_ACCENT_STORAGE_KEY,
-  MOTION_MODE_STORAGE_KEY,
-  STARTUP_PAGE_STORAGE_KEY,
-  THEME_STORAGE_KEY,
-  UI_DENSITY_STORAGE_KEY,
-} from './lib/settings';
-import {
-  ACCENT_PRESET_OPTIONS,
-  buildAccentThemeVariables,
-  getAccentHex,
-  normalizeCustomAccentHex,
-  type AccentPreset,
-} from './lib/theme';
+import { ACCENT_PRESET_OPTIONS } from './lib/theme';
 import {
   deployWorkflow,
   dispatchPayload,
@@ -64,7 +40,6 @@ import type {
   RuntimeLogEntry,
   WorkflowResult,
   WorkflowRuntimeState,
-  WorkflowWindowStatus,
 } from './types';
 import { SAMPLE_AST, SAMPLE_PAYLOAD } from './types';
 import {
@@ -74,7 +49,6 @@ import {
   EMPTY_RUNTIME_STATE,
   parseWorkflowEventPayload,
   reduceRuntimeState,
-  type ParsedWorkflowEvent,
 } from './lib/workflow-events';
 import {
   deriveWorkflowStatus,
@@ -83,17 +57,14 @@ import {
 } from './lib/workflow-status';
 
 function App() {
-  const [startupPage, setStartupPage] = useState<StartupPage>(getInitialStartupPage);
+  // 偏好设置状态（主题、强调色、密度、动效、启动页）由 useSettings 统一管理。
+  const settings = useSettings();
+
   const [projectDrafts, setProjectDrafts] = useState<Record<string, ProjectDraft>>(
     buildInitialProjectDrafts,
   );
   const [activeBoard, setActiveBoard] = useState<BoardItem | null>(null);
-  const [sidebarSection, setSidebarSection] = useState<SidebarSection>(getInitialStartupPage);
-  const [themeMode, setThemeMode] = useState<ThemeMode>(getInitialThemeMode);
-  const [accentPreset, setAccentPreset] = useState<AccentPreset>(getInitialAccentPreset);
-  const [customAccentHex, setCustomAccentHex] = useState<string>(getInitialCustomAccentHex);
-  const [densityMode, setDensityMode] = useState<UiDensity>(getInitialUiDensity);
-  const [motionMode, setMotionMode] = useState<MotionMode>(getInitialMotionMode);
+  const [sidebarSection, setSidebarSection] = useState<SidebarSection>(settings.startupPage);
   const [statusMessage, setStatusMessage] = useState(
     hasTauriRuntime()
       ? '等待进入工程。'
@@ -116,14 +87,6 @@ function App() {
   const astText = currentProject.astText;
   const payloadText = currentProject.payloadText;
   const graphState = useMemo(() => parseWorkflowGraph(astText), [astText]);
-  const accentHex = useMemo(
-    () => getAccentHex(accentPreset, customAccentHex),
-    [accentPreset, customAccentHex],
-  );
-  const accentThemeVariables = useMemo(
-    () => buildAccentThemeVariables(accentHex, themeMode),
-    [accentHex, themeMode],
-  );
 
   function appendRuntimeLog(
     source: string,
@@ -151,49 +114,6 @@ function App() {
   }
 
   useEffect(() => {
-    document.documentElement.dataset.theme = themeMode;
-
-    try {
-      window.localStorage.setItem(THEME_STORAGE_KEY, themeMode);
-    } catch {
-      // Ignore storage failures in restricted runtimes.
-    }
-  }, [themeMode]);
-
-  useEffect(() => {
-    Object.entries(accentThemeVariables).forEach(([key, value]) => {
-      document.documentElement.style.setProperty(key, value);
-    });
-
-    try {
-      window.localStorage.setItem(ACCENT_PRESET_STORAGE_KEY, accentPreset);
-      window.localStorage.setItem(CUSTOM_ACCENT_STORAGE_KEY, customAccentHex);
-    } catch {
-      // Ignore storage failures in restricted runtimes.
-    }
-  }, [accentPreset, accentThemeVariables, customAccentHex]);
-
-  useEffect(() => {
-    document.documentElement.dataset.uiDensity = densityMode;
-
-    try {
-      window.localStorage.setItem(UI_DENSITY_STORAGE_KEY, densityMode);
-    } catch {
-      // Ignore storage failures in restricted runtimes.
-    }
-  }, [densityMode]);
-
-  useEffect(() => {
-    document.documentElement.dataset.motionMode = motionMode;
-
-    try {
-      window.localStorage.setItem(MOTION_MODE_STORAGE_KEY, motionMode);
-    } catch {
-      // Ignore storage failures in restricted runtimes.
-    }
-  }, [motionMode]);
-
-  useEffect(() => {
     setIsRuntimeDockCollapsed(false);
   }, [activeBoard?.id]);
 
@@ -208,14 +128,6 @@ function App() {
 
     void refreshConnections();
   }, [activeBoard?.id, deployInfo, sidebarSection]);
-
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(STARTUP_PAGE_STORAGE_KEY, startupPage);
-    } catch {
-      // Ignore storage failures in restricted runtimes.
-    }
-  }, [startupPage]);
 
   useEffect(() => {
     if (!hasTauriRuntime()) {
@@ -436,10 +348,6 @@ function App() {
     }
 
     updateProjectDraft(activeBoard.id, { payloadText: nextText });
-  }
-
-  function handleToggleTheme() {
-    setThemeMode((current) => (current === 'dark' ? 'light' : 'dark'));
   }
 
   function handleOpenBoard(board: BoardItem) {
@@ -699,8 +607,8 @@ function App() {
             graph={graphState.graph}
             runtimeState={runtimeState}
             workflowStatus={workflowStatus}
-            accentHex={accentHex}
-            nodeRhaiColor={accentThemeVariables['--node-rhai']}
+            accentHex={settings.accentHex}
+            nodeRhaiColor={settings.accentThemeVariables['--node-rhai']}
             onRunRequested={handleDeploy}
             onStopRequested={handleUndeploy}
             onDispatchRequested={handleDispatchPayload}
@@ -714,7 +622,7 @@ function App() {
             appErrors={appErrors}
             results={results}
             connectionPreview={connectionPreview}
-            themeMode={themeMode}
+            themeMode={settings.themeMode}
             isCollapsed={isRuntimeDockCollapsed}
             onToggleCollapsed={() => setIsRuntimeDockCollapsed((current) => !current)}
           />
@@ -809,22 +717,19 @@ function App() {
                 runtimeModeLabel={runtimeModeLabel}
                 workflowStatusLabel={workflowStatusLabel}
                 statusMessage={statusMessage}
-                themeMode={themeMode}
-                onThemeModeChange={setThemeMode}
-                accentPreset={accentPreset}
+                themeMode={settings.themeMode}
+                onThemeModeChange={settings.setThemeMode}
+                accentPreset={settings.accentPreset}
                 accentOptions={ACCENT_PRESET_OPTIONS}
-                customAccentHex={customAccentHex}
-                onAccentPresetChange={setAccentPreset}
-                onCustomAccentChange={(hex) => {
-                  setAccentPreset('custom');
-                  setCustomAccentHex(normalizeCustomAccentHex(hex));
-                }}
-                densityMode={densityMode}
-                onDensityModeChange={setDensityMode}
-                motionMode={motionMode}
-                onMotionModeChange={setMotionMode}
-                startupPage={startupPage}
-                onStartupPageChange={setStartupPage}
+                customAccentHex={settings.customAccentHex}
+                onAccentPresetChange={settings.setAccentPreset}
+                onCustomAccentChange={settings.setCustomAccentHex}
+                densityMode={settings.densityMode}
+                onDensityModeChange={settings.setDensityMode}
+                motionMode={settings.motionMode}
+                onMotionModeChange={settings.setMotionMode}
+                startupPage={settings.startupPage}
+                onStartupPageChange={settings.setStartupPage}
               />
             </div>
           </section>
@@ -853,8 +758,8 @@ function App() {
             onUserSwitch={() => setSidebarSection('settings')}
             workflowStatusLabel={workflowStatusLabel}
             workflowStatusPillClass={workflowStatusPillClass}
-            themeMode={themeMode}
-            onToggleTheme={handleToggleTheme}
+            themeMode={settings.themeMode}
+            onToggleTheme={settings.toggleTheme}
           />
         </aside>
 
