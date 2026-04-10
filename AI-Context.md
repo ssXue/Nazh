@@ -12,6 +12,7 @@ Nazh 是一款专为工业自动化边缘计算场景设计的数据流转与逻
 * **前端画布 (UI)**: React + TypeScript + `FlowGram.AI` (字节跳动开源节点编辑器)。
 * **脚本引擎 (Scripting)**: `Rhai` (纯 Rust 编写的嵌入式脚本引擎，用于动态业务逻辑)。
 * **通信机制**: 前后端通信严格使用 Tauri `invoke` IPC (不用 HTTP/gRPC)；引擎内部调度使用 `tokio::sync::mpsc` 或 `async-channel`。
+* **前后端类型契约 (IPC Type Safety)**: `ts-rs`（从 Rust struct 自动生成 TypeScript 类型定义，Rust 是 IPC 类型的唯一真相源）。
 
 ## 3. 核心领域模型 (Domain Models)
 开发时请严格遵循以下 Rust 数据结构抽象：
@@ -34,6 +35,7 @@ Nazh 是一款专为工业自动化边缘计算场景设计的数据流转与逻
 * **通信机制**：通过 Tauri `#[tauri::command]` 暴露 Rust 函数。
   * `deploy_workflow(ast: String)`: 接收前端 JSON，在后端反序列化并构建 Tokio 流水线。
   * 状态同步：利用 Tauri 的 `Window::emit` 向前端主动推送节点执行状态（如当前执行节点 ID、高亮日志），触发 FlowGram 画布的连线动画。
+* **类型同步**：所有 IPC 边界类型（`ExecutionEvent`、`WorkflowGraph`、`WorkflowContext`、`DeployResponse` 等）在 Rust 侧标注 `#[derive(TS)]`，由 ts-rs 自动生成 TypeScript 定义到 `web/src/generated/`，前端通过 `types.ts` 导入。改 Rust 字段 → 重新生成 → `tsc` 编译报错。
 
 ## 7. AI Copilot 原生接口 (AI-Native)
 系统从底层支持 LLM 调用，提供真正的“一句话开发”体验：
@@ -47,6 +49,7 @@ Nazh 是一款专为工业自动化边缘计算场景设计的数据流转与逻
 * **Phase 3: 图结构反序列化 (AST Parsing)** -> 定义可序列化的 DAG 结构体，实现从 JSON 转换为实际 Tokio 执行流的过程。
 * **Phase 4: 全局资源管理 (ConnMgr)** -> 实现跨任务共享的硬件连接池骨架。
 * **Phase 5: Tauri 桥接与前端** -> 编写 Tauri `invoke` 接口，用 React 搭建带有 FlowGram.AI 的画板，跑通全链路。
+* **Phase 5.5: 前后端类型契约 (IPC Type Safety)** -> 引入 ts-rs 从 Rust struct 自动生成 TypeScript 类型定义，消除手动维护两份类型的风险。（已完成）
 
 ## 9. Rust 编码规范提醒 (Rust Coding Standards)
 * 彻底杜绝使用 `unwrap()` 或 `expect()`。所有错误必须通过自定义 `Error` 枚举（推荐使用 `thiserror` 库）向上传递，确保运行时绝不 Panic。

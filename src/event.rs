@@ -5,6 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
+use ts_rs::TS;
 use uuid::Uuid;
 
 use crate::EngineError;
@@ -13,7 +14,8 @@ use crate::EngineError;
 ///
 /// DAG 工作流和线性流水线共享同一事件类型，
 /// 前端只需注册一个事件监听器即可处理所有执行模式。
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[ts(export)]
 pub enum ExecutionEvent {
     /// 阶段/节点开始执行。
     Started { stage: String, trace_id: Uuid },

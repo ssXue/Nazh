@@ -14,6 +14,8 @@
 //! | [`pipeline`] | 线性流水线抽象（顺序阶段执行） |
 //! | [`connection`] | 全局连接资源池（借出/归还语义） |
 //! | [`context`] | 在节点间流转的数据信封 |
+//! | [`event`] | 统一执行生命周期事件 |
+//! | [`ipc`] | Tauri IPC 响应类型（ts-rs 自动导出至前端） |
 //! | [`error`] | 引擎统一错误类型 |
 //!
 //! 所有硬件访问通过全局 [`ConnectionManager`] 中介，
@@ -25,6 +27,7 @@ pub mod error;
 pub mod event;
 pub mod graph;
 mod guard;
+pub mod ipc;
 pub mod nodes;
 pub mod pipeline;
 
@@ -39,6 +42,7 @@ pub use graph::{
     deploy_workflow, WorkflowDeployment, WorkflowGraph, WorkflowIngress, WorkflowNodeDefinition,
     WorkflowStreams,
 };
+pub use ipc::{DeployResponse, DispatchResponse, UndeployResponse};
 pub use nodes::{
     DebugConsoleNode, DebugConsoleNodeConfig, HttpClientNode, HttpClientNodeConfig, IfNode,
     IfNodeConfig, LoopNode, LoopNodeConfig, ModbusReadNode, ModbusReadNodeConfig, NativeNode,

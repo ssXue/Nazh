@@ -10,6 +10,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::{Mutex, RwLock};
+use ts_rs::TS;
 
 use crate::EngineError;
 
@@ -17,10 +18,12 @@ use crate::EngineError;
 pub type SharedConnectionManager = Arc<ConnectionManager>;
 
 /// 连接资源的声明式定义（用于工作流 AST）。
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[ts(export)]
 pub struct ConnectionDefinition {
     pub id: String,
-    #[serde(rename = "type", alias = "kind")]
+    #[serde(rename = "type")]
+    #[serde(alias = "kind")]
     pub kind: String,
     #[serde(default)]
     pub metadata: Value,
@@ -36,12 +39,14 @@ pub struct ConnectionLease {
 }
 
 /// 已注册连接的内部记录，追踪其借出状态。
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[ts(export)]
 pub struct ConnectionRecord {
     pub id: String,
     pub kind: String,
     pub metadata: Value,
     pub in_use: bool,
+    #[ts(optional)]
     pub last_borrowed_at: Option<DateTime<Utc>>,
 }
 

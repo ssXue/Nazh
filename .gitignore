@@ -4,6 +4,7 @@
 # Rust
 /target
 /src-tauri/target
+/bindings
 *.d
 *.rlib
 *.rmeta

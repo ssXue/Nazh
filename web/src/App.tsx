@@ -498,7 +498,7 @@ function parseWorkflowEventPayload(payload: unknown): ParsedWorkflowEvent | null
 
   const event = payload as ExecutionEvent;
 
-  if (event.Started) {
+  if ('Started' in event) {
     return {
       kind: 'started',
       nodeId: event.Started.stage,
@@ -506,7 +506,7 @@ function parseWorkflowEventPayload(payload: unknown): ParsedWorkflowEvent | null
     };
   }
 
-  if (event.Completed) {
+  if ('Completed' in event) {
     return {
       kind: 'completed',
       nodeId: event.Completed.stage,
@@ -514,7 +514,7 @@ function parseWorkflowEventPayload(payload: unknown): ParsedWorkflowEvent | null
     };
   }
 
-  if (event.Failed) {
+  if ('Failed' in event) {
     return {
       kind: 'failed',
       nodeId: event.Failed.stage,
@@ -523,7 +523,7 @@ function parseWorkflowEventPayload(payload: unknown): ParsedWorkflowEvent | null
     };
   }
 
-  if (event.Output) {
+  if ('Output' in event) {
     return {
       kind: 'output',
       nodeId: event.Output.stage,

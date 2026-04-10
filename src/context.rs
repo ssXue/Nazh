@@ -3,13 +3,15 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use ts_rs::TS;
 use uuid::Uuid;
 
 /// 通过 Tokio MPSC 通道在节点之间传递的不可变数据载体。
 ///
 /// 每个上下文携带唯一的 `trace_id` 用于全链路追踪，
 /// `timestamp` 在每次变换时刷新，`payload` 承载动态 JSON 数据。
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[ts(export)]
 pub struct WorkflowContext {
     pub trace_id: Uuid,
     pub timestamp: DateTime<Utc>,

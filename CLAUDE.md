@@ -21,6 +21,9 @@ cargo test
 # Check Tauri shell compiles
 cargo check --manifest-path src-tauri/Cargo.toml
 
+# Regenerate TypeScript types from Rust (ts-rs)
+TS_RS_EXPORT_DIR=web/src/generated cargo test --lib export_bindings
+
 # Build frontend
 npm --prefix web run build
 
@@ -46,7 +49,7 @@ cargo deny check
 ### Three-Layer Stack
 
 1. **Rust Engine** (`src/`) — Core library crate `nazh_engine`. Defines the workflow DAG, node execution, pipeline abstraction, and connection pool.
-2. **Tauri Shell** (`src-tauri/`) — Desktop app binary `nazh-desktop`. Depends on `nazh-engine` via local path. Exposes three IPC commands to the frontend and bridges engine events to the UI.
+2. **Tauri Shell** (`src-tauri/`) — Desktop app binary `nazh-desktop`. Depends on `nazh-engine` via local path. Exposes four IPC commands to the frontend and bridges engine events to the UI.
 3. **React Frontend** (`web/`) — Vite + React 18 + TypeScript. Uses FlowGram.AI for the visual node/edge canvas editor. Communicates exclusively via Tauri `invoke` / `Window::emit` (no HTTP/gRPC).
 
 ### Data Flow
@@ -59,27 +62,40 @@ React/FlowGram canvas → Export JSON AST → Tauri invoke("deploy_workflow")
   → Frontend updates canvas highlights and RuntimeDock
 ```
 
+### Type Contract (ts-rs)
+
+IPC boundary types are defined once in Rust and auto-generated to TypeScript via **ts-rs**, ensuring frontend/backend type safety at compile time.
+
+- Rust structs annotated with `#[derive(TS)]` + `#[ts(export)]` generate `.ts` files to `web/src/generated/`.
+- `web/src/types.ts` re-exports generated types and extends them with frontend-only fields (`meta.position`, `editor_graph`).
+- `tsc` will error if Rust types change without regenerating (see Build Commands above).
+- Response types (`DeployResponse`, `DispatchResponse`, `UndeployResponse`) live in `src/ipc.rs` (engine crate), not in src-tauri.
+
 ### Engine Core Modules (`src/`)
 
 - **`context.rs`** — `WorkflowContext`: the immutable data envelope (trace_id, timestamp, JSON payload) that flows through the DAG. Must be `Clone + Send`.
+- **`event.rs`** — `ExecutionEvent`: unified lifecycle events (Started, Completed, Failed, Output, Finished) shared by both DAG and pipeline execution modes.
 - **`graph.rs`** — `WorkflowGraph` + `deploy_workflow()`: DAG parsing from JSON AST, topological sort (Kahn's algorithm), cycle detection, and async deployment. Each node gets its own Tokio task connected by MPSC channels.
 - **`nodes.rs`** — `NodeTrait` (async interface) with two implementations:
   - `NativeNode`: Rust-native logic (protocol I/O, data injection, connection borrowing).
   - `RhaiNode`: Sandboxed scripting via embedded Rhai engine with configurable step limit (`max_operations`, default 50k).
 - **`pipeline.rs`** — `build_linear_pipeline()`: sequential stage execution with per-stage timeouts, panic isolation (`catch_unwind`), and event channels.
 - **`connection.rs`** — `ConnectionManager`: global `Arc<RwLock<...>>` resource pool. Nodes borrow/release connections; never access hardware directly. Currently a skeleton (no Modbus/MQTT/HTTP drivers yet).
+- **`ipc.rs`** — IPC response types (`DeployResponse`, `DispatchResponse`, `UndeployResponse`) shared with the Tauri shell and auto-exported to TypeScript via ts-rs.
 - **`error.rs`** — `EngineError` enum via `thiserror`. All errors propagate structured context (node_id, trace_id, stage name).
 
 ### Tauri Commands (`src-tauri/src/lib.rs`)
 
-Three commands exposed to the frontend:
-- `deploy_workflow(ast: String)` — Deserialize + validate + deploy DAG, spawn event/result forwarding tasks.
-- `dispatch_payload(payload: Value)` — Submit a `WorkflowContext` to all root nodes of the active workflow.
-- `list_connections()` — Snapshot of the connection pool.
+Four commands exposed to the frontend (response types defined in `src/ipc.rs`):
+- `deploy_workflow(ast: String)` → `DeployResponse` — Deserialize + validate + deploy DAG, spawn event/result forwarding tasks.
+- `dispatch_payload(payload: Value)` → `DispatchResponse` — Submit a `WorkflowContext` to all root nodes of the active workflow.
+- `undeploy_workflow()` → `UndeployResponse` — Tear down the active workflow and abort timer tasks.
+- `list_connections()` → `Vec<ConnectionRecord>` — Snapshot of the connection pool.
 
 ### Frontend Key Files (`web/src/`)
 
-- `types.ts` — All TypeScript interfaces mirroring Rust structs, plus `SAMPLE_AST` and `SAMPLE_PAYLOAD` for testing.
+- `generated/` — Auto-generated TypeScript type definitions from Rust via ts-rs. Do NOT edit manually.
+- `types.ts` — Re-exports IPC contract types from `generated/`, extends them with frontend-only fields (`meta`, `editor_graph`), plus `SAMPLE_AST`, `SAMPLE_PAYLOAD`, and pure-frontend types.
 - `lib/tauri.ts` — Tauri IPC wrappers and event listeners.
 - `lib/flowgram.ts` — Bidirectional conversion between Nazh AST and FlowGram WorkflowJSON.
 - `lib/graph.ts` — Client-side topological sort for layout positioning.

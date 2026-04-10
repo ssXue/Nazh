@@ -1,17 +1,18 @@
 //! Nazh 的 Tauri 桌面壳层。
 //!
-//! 向 React 前端暴露三个 IPC 命令：
+//! 向 React 前端暴露四个 IPC 命令：
 //! - [`deploy_workflow`] — 解析并部署工作流 DAG。
 //! - [`dispatch_payload`] — 向运行中的工作流提交测试载荷。
+//! - [`undeploy_workflow`] — 停止当前工作流并中止定时任务。
 //! - [`list_connections`] — 获取连接池快照。
 //!
 //! 引擎事件通过 `Window::emit` 转发给前端。
 
 use nazh_engine::{
     deploy_workflow as deploy_workflow_graph, shared_connection_manager, ConnectionRecord,
-    EngineError, TimerNodeConfig, WorkflowContext, WorkflowGraph, WorkflowIngress,
+    DeployResponse, DispatchResponse, EngineError, TimerNodeConfig, UndeployResponse,
+    WorkflowContext, WorkflowGraph, WorkflowIngress,
 };
-use serde::Serialize;
 use serde_json::Value;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::Mutex;
@@ -48,27 +49,6 @@ impl Default for DesktopState {
             workflow: Mutex::new(None),
         }
     }
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct DeployResponse {
-    node_count: usize,
-    edge_count: usize,
-    root_nodes: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct DispatchResponse {
-    trace_id: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct UndeployResponse {
-    had_workflow: bool,
-    aborted_timer_count: usize,
 }
 
 #[derive(Debug, Clone)]

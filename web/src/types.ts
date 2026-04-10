@@ -1,61 +1,67 @@
 import type { WorkflowJSON as FlowgramWorkflowJSON } from '@flowgram.ai/free-layout-editor';
 
-export type JsonValue =
-  | string
-  | number
-  | boolean
-  | null
-  | JsonValue[]
-  | { [key: string]: JsonValue };
+// ── 从 Rust 引擎自动生成的 IPC 契约类型（ts-rs） ────────────
 
-export interface WorkflowGraph {
-  name?: string;
-  connections?: ConnectionDefinition[];
-  editor_graph?: FlowgramWorkflowJSON;
-  nodes: Record<string, WorkflowNodeDefinition>;
-  edges: WorkflowEdge[];
-}
+export type {
+  ConnectionDefinition,
+  ConnectionRecord,
+  DeployResponse,
+  DispatchResponse,
+  ExecutionEvent,
+  JsonValue,
+  UndeployResponse,
+  WorkflowContext,
+  WorkflowEdge,
+} from './generated';
 
-export interface ConnectionDefinition {
-  id: string;
-  type: string;
-  metadata?: JsonValue;
-}
+export type { WorkflowContext as WorkflowResult } from './generated';
 
-export interface WorkflowNodeDefinition {
-  id?: string;
-  type: string;
-  connection_id?: string;
-  config?: JsonValue;
-  ai_description?: string;
-  timeout_ms?: number;
-  buffer?: number;
-  meta?: {
-    position?: {
-      x: number;
-      y: number;
+// ── 前端扩展类型（补充 Rust 侧不需要的画布/UI 字段） ───────
+
+import type {
+  JsonValue,
+  WorkflowGraph as WorkflowGraphBase,
+  WorkflowNodeDefinition as WorkflowNodeDefinitionBase,
+} from './generated';
+
+/**
+ * 带有画布布局元数据的节点定义。
+ *
+ * 在 Rust 生成的基础类型上：
+ * - `id` / `config` / `buffer` 改为可选（Rust 侧 `#[serde(default)]`，前端构造时可省略）
+ * - 追加前端独有的 `meta.position` 画布坐标
+ */
+export type WorkflowNodeDefinition =
+  Omit<WorkflowNodeDefinitionBase, 'id' | 'config' | 'buffer'> & {
+    id?: string;
+    config?: JsonValue;
+    buffer?: number;
+    meta?: {
+      position?: {
+        x: number;
+        y: number;
+      };
     };
   };
-}
+
+/**
+ * 带有前端画布编辑器状态的工作流图。
+ *
+ * - `connections` 改为可选（Rust 侧 `#[serde(default)]`）
+ * - `nodes` 使用扩展后的 `WorkflowNodeDefinition`
+ * - 追加前端独有的 `editor_graph`（FlowGram 画布状态）
+ */
+export type WorkflowGraph = Omit<WorkflowGraphBase, 'connections' | 'nodes'> & {
+  connections?: WorkflowGraphBase['connections'];
+  nodes: Record<string, WorkflowNodeDefinition>;
+  editor_graph?: FlowgramWorkflowJSON;
+};
+
+// ── 纯前端类型（不跨 IPC 边界） ────────────────────────────
 
 export interface WorkflowLogicBranch {
   key: string;
   label?: string;
-}
-
-export interface WorkflowEdge {
-  from: string;
-  to: string;
-  source_port_id?: string;
-  target_port_id?: string;
-}
-
-export interface ExecutionEvent {
-  Started?: { stage: string; trace_id: string };
-  Completed?: { stage: string; trace_id: string };
-  Failed?: { stage: string; trace_id: string; error: string };
-  Output?: { stage: string; trace_id: string };
-  Finished?: { trace_id: string };
 }
 
 export interface WorkflowRuntimeState {
@@ -78,12 +84,6 @@ export type WorkflowWindowStatus =
   | 'failed'
   | 'preview';
 
-export interface WorkflowResult {
-  trace_id: string;
-  timestamp: string;
-  payload: JsonValue;
-}
-
 export interface RuntimeLogEntry {
   id: string;
   timestamp: number;
@@ -99,29 +99,6 @@ export interface AppErrorRecord {
   scope: 'workflow' | 'command' | 'frontend' | 'runtime';
   title: string;
   detail?: string | null;
-}
-
-export interface DeployResponse {
-  nodeCount: number;
-  edgeCount: number;
-  rootNodes: string[];
-}
-
-export interface UndeployResponse {
-  hadWorkflow: boolean;
-  abortedTimerCount: number;
-}
-
-export interface DispatchResponse {
-  traceId: string;
-}
-
-export interface ConnectionRecord {
-  id: string;
-  kind: string;
-  metadata: JsonValue;
-  in_use: boolean;
-  last_borrowed_at?: string | null;
 }
 
 export const SAMPLE_AST = JSON.stringify(

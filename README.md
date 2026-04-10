@@ -13,6 +13,7 @@ Nazh 是一个面向工业边缘场景的工作流编排原型，目标是把设
 - 已完成 Tauri IPC：`deploy_workflow`、`dispatch_payload`、`undeploy_workflow`、`list_connections`。
 - 已完成 React + FlowGram 的桌面工作台，包括 Dashboard、工程看板、项目画布、流程源配置、连接资源、Payload 调试、运行观测、设置与关于页面。
 - 已补充基础自动化验证：`cargo test`、Web 构建、Tauri 桌面编译检查。
+- 已引入 ts-rs 自动从 Rust IPC 边界类型生成 TypeScript 定义，改 Rust 字段 → `tsc` 编译报错。
 
 ## 界面导览
 
@@ -41,6 +42,7 @@ Nazh 是一个面向工业边缘场景的工作流编排原型，目标是把设
 - 前端：React 18、TypeScript、Vite
 - 画布编辑器：FlowGram.AI
 - 前后端通信：Tauri `invoke` + `Window::emit`
+- 前后端类型契约：ts-rs（从 Rust struct 自动生成 TypeScript 类型定义）
 
 ## 核心架构
 
@@ -89,15 +91,20 @@ flowchart LR
 
 ```text
 .
-├── src/                    # Rust 引擎核心
+├── src/                    # Rust 引擎核心 (nazh-engine crate)
 │   ├── context.rs          # WorkflowContext
-│   ├── pipeline.rs         # 线性 Pipeline 与事件
-│   ├── graph.rs            # DAG 解析、部署、运行事件
-│   ├── nodes.rs            # Native / Rhai 节点
-│   └── connection.rs       # 连接资源池骨架
+│   ├── event.rs            # ExecutionEvent 统一事件
+│   ├── graph/              # DAG 解析、校验、部署、节点工厂
+│   ├── nodes/              # 节点 Trait 与全部节点实现
+│   ├── pipeline/           # 线性 Pipeline 与事件
+│   ├── connection.rs       # 连接资源池
+│   ├── ipc.rs              # IPC 响应类型 (DeployResponse 等)
+│   └── error.rs            # 统一错误类型
 ├── src-tauri/              # Tauri 桌面壳与命令入口
 ├── web/                    # React + FlowGram 前端
+│   └── src/generated/      # ts-rs 自动生成的 TypeScript 类型（勿手动编辑）
 ├── tests/                  # Rust 集成测试
+├── docs/adr/               # 架构决策记录
 └── examples/               # 早期示例与参考材料
 ```
 
@@ -148,6 +155,16 @@ npm --prefix web run build
 - `dispatch_payload(payload: Value)`：向当前工作流入口发送测试数据。
 - `undeploy_workflow()`：停止当前部署并中止活跃定时任务。
 - `list_connections()`：读取运行时连接池快照。
+
+### 前后端类型同步 (ts-rs)
+
+IPC 边界类型由 Rust 侧自动生成到 `web/src/generated/`，前端通过 `types.ts` 导入。改 Rust struct 字段后执行：
+
+```bash
+TS_RS_EXPORT_DIR=web/src/generated cargo test --lib export_bindings
+```
+
+再运行 `npm --prefix web run build`，`tsc` 会在类型不匹配时报错。
 
 ### 前端示例数据
 

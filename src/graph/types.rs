@@ -10,11 +10,14 @@ use crate::{EngineError, ExecutionEvent, WorkflowContext};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::mpsc;
+use ts_rs::TS;
 
 /// 从前端 AST 反序列化得到的顶层工作流定义。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct WorkflowGraph {
     #[serde(default)]
+    #[ts(optional)]
     pub name: Option<String>,
     #[serde(default)]
     pub connections: Vec<crate::ConnectionDefinition>,
@@ -25,34 +28,44 @@ pub struct WorkflowGraph {
 }
 
 /// [`WorkflowGraph`] 中的单节点配置。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct WorkflowNodeDefinition {
     #[serde(default)]
     pub id: String,
-    #[serde(rename = "type", alias = "kind")]
+    #[serde(rename = "type")]
+    #[serde(alias = "kind")]
     pub node_type: String,
     #[serde(default)]
+    #[ts(optional)]
     pub connection_id: Option<String>,
     #[serde(default)]
     pub config: Value,
     #[serde(default)]
+    #[ts(optional)]
     pub ai_description: Option<String>,
     #[serde(default)]
+    #[ts(optional, type = "number")]
     pub timeout_ms: Option<u64>,
     #[serde(default = "default_node_buffer")]
     pub buffer: usize,
 }
 
 /// 工作流 DAG 中连接两个节点的有向边。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct WorkflowEdge {
     #[serde(alias = "source")]
     pub from: String,
     #[serde(alias = "target")]
     pub to: String,
-    #[serde(default, alias = "sourcePortID")]
+    #[serde(default)]
+    #[serde(alias = "sourcePortID")]
+    #[ts(optional)]
     pub source_port_id: Option<String>,
-    #[serde(default, alias = "targetPortID")]
+    #[serde(default)]
+    #[serde(alias = "targetPortID")]
+    #[ts(optional)]
     pub target_port_id: Option<String>,
 }
 
