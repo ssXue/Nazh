@@ -50,6 +50,7 @@ Nazh 是一款专为工业自动化边缘计算场景设计的数据流转与逻
 * **Phase 4: 全局资源管理 (ConnMgr)** -> 实现跨任务共享的硬件连接池骨架。
 * **Phase 5: Tauri 桥接与前端** -> 编写 Tauri `invoke` 接口，用 React 搭建带有 FlowGram.AI 的画板，跑通全链路。
 * **Phase 5.5: 前后端类型契约 (IPC Type Safety)** -> 引入 ts-rs 从 Rust struct 自动生成 TypeScript 类型定义，消除手动维护两份类型的风险。（已完成）
+* **Phase 5.7: 前端测试体系 + App 重构** -> Vitest 单元测试 + Playwright E2E 测试，App.tsx 拆分为 5 个纯函数模块 + 2 个自定义 hooks。（已完成）
 
 ## 9. Rust 编码规范提醒 (Rust Coding Standards)
 * 彻底杜绝使用 `unwrap()` 或 `expect()`。所有错误必须通过自定义 `Error` 枚举（推荐使用 `thiserror` 库）向上传递，确保运行时绝不 Panic。

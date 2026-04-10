@@ -14,6 +14,7 @@ Nazh 是一个面向工业边缘场景的工作流编排原型，目标是把设
 - 已完成 React + FlowGram 的桌面工作台，包括 Dashboard、工程看板、项目画布、流程源配置、连接资源、Payload 调试、运行观测、设置与关于页面。
 - 已补充基础自动化验证：`cargo test`、Web 构建、Tauri 桌面编译检查。
 - 已引入 ts-rs 自动从 Rust IPC 边界类型生成 TypeScript 定义，改 Rust 字段 → `tsc` 编译报错。
+- 已建立前端 Vitest 单元测试（73 个用例）+ Playwright E2E 测试体系，App.tsx 从 1436 行重构至 517 行。
 
 ## 界面导览
 
@@ -145,6 +146,7 @@ npm --prefix web run build
 - `cargo test` 通过，包含 Pipeline 与 Workflow 端到端用例。
 - `cargo check --manifest-path src-tauri/Cargo.toml` 通过。
 - `npm --prefix web run build` 通过。
+- `npm --prefix web run test` 通过（Vitest 73 个前端单元测试）。
 - Web 打包阶段存在大体积 chunk warning，当前不阻塞运行，但值得后续做分包优化。
 
 ## 关键命令与数据流

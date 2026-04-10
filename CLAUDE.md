@@ -24,6 +24,12 @@ cargo check --manifest-path src-tauri/Cargo.toml
 # Regenerate TypeScript types from Rust (ts-rs)
 TS_RS_EXPORT_DIR=web/src/generated cargo test --lib export_bindings
 
+# Run frontend unit tests (Vitest)
+npm --prefix web run test
+
+# Run frontend E2E tests (requires compiled Tauri app)
+npm --prefix web run test:e2e
+
 # Build frontend
 npm --prefix web run build
 
@@ -99,6 +105,13 @@ Four commands exposed to the frontend (response types defined in `src/ipc.rs`):
 - `lib/tauri.ts` — Tauri IPC wrappers and event listeners.
 - `lib/flowgram.ts` — Bidirectional conversion between Nazh AST and FlowGram WorkflowJSON.
 - `lib/graph.ts` — Client-side topological sort for layout positioning.
+- `hooks/use-settings.ts` — Custom hook for theme/accent/density/motion/startup preferences with localStorage sync.
+- `hooks/use-workflow-engine.ts` — Custom hook for deploy/dispatch/undeploy lifecycle, Tauri event listeners, runtime state machine.
+- `lib/workflow-events.ts` — Event parsing (`parseWorkflowEventPayload`), runtime state reducer, log/error builders.
+- `lib/workflow-status.ts` — Workflow status derivation and display labels.
+- `lib/settings.ts` — localStorage preference readers.
+- `lib/demo-data.ts` — Sample workflow AST and project draft builders.
+- `lib/sidebar.ts` — Sidebar navigation configuration.
 - `App.tsx` — Main orchestrator: state management, panel routing, workflow deployment lifecycle.
 
 ## Git Conventions
@@ -130,7 +143,7 @@ Integration tests live in `tests/`:
 - `tests/pipeline.rs` — Linear pipeline transformations and error resilience.
 - `tests/workflow.rs` — End-to-end DAG execution with Rhai integration and connection pool.
 
-All tests run with `cargo test`. There are no frontend tests currently.
+All tests run with `cargo test`. Frontend unit tests live in `web/src/lib/__tests__/` (Vitest, 73 tests covering event parsing, state reduction, workflow status, settings, graph parsing, layout, and flowgram conversion). E2E tests live in `web/e2e/` (Playwright, full Tauri desktop window).
 
 ## Development Phases (from AI-Context.md)
 
