@@ -63,6 +63,11 @@ import {
   reduceRuntimeState,
   type ParsedWorkflowEvent,
 } from './lib/workflow-events';
+import {
+  deriveWorkflowStatus,
+  getWorkflowStatusLabel,
+  getWorkflowStatusPillClass,
+} from './lib/workflow-status';
 
 interface ProjectDraft {
   astText: string;
@@ -409,74 +414,6 @@ function buildSidebarSections(
       badge: 'Nazh',
     },
   ];
-}
-
-function deriveWorkflowStatus(
-  tauriRuntime: boolean,
-  hasActiveBoard: boolean,
-  deployInfo: DeployResponse | null,
-  runtimeState: WorkflowRuntimeState,
-): WorkflowWindowStatus {
-  if (!tauriRuntime) {
-    return 'preview';
-  }
-
-  if (!hasActiveBoard || !deployInfo) {
-    return 'idle';
-  }
-
-  if (runtimeState.lastEventType === 'failed' || runtimeState.failedNodeIds.length > 0) {
-    return 'failed';
-  }
-
-  if (runtimeState.lastEventType === 'started' || runtimeState.activeNodeIds.length > 0) {
-    return 'running';
-  }
-
-  if (
-    runtimeState.traceId &&
-    (runtimeState.lastEventType === 'output' ||
-      runtimeState.outputNodeIds.length > 0 ||
-      (runtimeState.lastEventType === 'completed' &&
-        runtimeState.completedNodeIds.length > 0 &&
-        runtimeState.activeNodeIds.length === 0))
-  ) {
-    return 'completed';
-  }
-
-  return 'deployed';
-}
-
-function getWorkflowStatusLabel(status: WorkflowWindowStatus): string {
-  switch (status) {
-    case 'preview':
-      return '浏览器预览';
-    case 'idle':
-      return '未部署';
-    case 'deployed':
-      return '已部署待运行';
-    case 'running':
-      return '运行中';
-    case 'completed':
-      return '执行完成';
-    case 'failed':
-      return '执行失败';
-  }
-}
-
-function getWorkflowStatusPillClass(status: WorkflowWindowStatus): string {
-  switch (status) {
-    case 'running':
-      return 'runtime-pill--running';
-    case 'failed':
-      return 'runtime-pill--failed';
-    case 'completed':
-    case 'deployed':
-      return 'runtime-pill--ready';
-    case 'idle':
-    case 'preview':
-      return 'runtime-pill--idle';
-  }
 }
 
 function App() {
