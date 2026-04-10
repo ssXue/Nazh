@@ -14,9 +14,9 @@ use super::types::WorkflowNodeDefinition;
 use crate::{
     DebugConsoleNode, DebugConsoleNodeConfig, EngineError, HttpClientNode, HttpClientNodeConfig,
     IfNode, IfNodeConfig, LoopNode, LoopNodeConfig, ModbusReadNode, ModbusReadNodeConfig,
-    NativeNode, NativeNodeConfig, NodeTrait, RhaiNode, RhaiNodeConfig, SharedConnectionManager,
-    SqlWriterNode, SqlWriterNodeConfig, SwitchNode, SwitchNodeConfig, TimerNode, TimerNodeConfig,
-    TryCatchNode, TryCatchNodeConfig,
+    NativeNode, NativeNodeConfig, NodeTrait, RhaiNode, RhaiNodeConfig, SerialTriggerNode,
+    SerialTriggerNodeConfig, SharedConnectionManager, SqlWriterNode, SqlWriterNodeConfig,
+    SwitchNode, SwitchNodeConfig, TimerNode, TimerNodeConfig, TryCatchNode, TryCatchNodeConfig,
 };
 
 /// 从节点定义中反序列化配置。
@@ -74,6 +74,18 @@ pub(crate) fn instantiate_node(
             let description =
                 resolve_description(definition, "按固定间隔触发工作流并注入计时元数据");
             Ok(Arc::new(TimerNode::new(
+                definition.id.clone(),
+                config,
+                description,
+            )))
+        }
+        "serialTrigger" | "serial/trigger" | "serial" => {
+            let config: SerialTriggerNodeConfig = parse_config(definition)?;
+            let description = resolve_description(
+                definition,
+                "接收串口外设主动上报的 ASCII/HEX 数据流并触发工作流",
+            );
+            Ok(Arc::new(SerialTriggerNode::new(
                 definition.id.clone(),
                 config,
                 description,

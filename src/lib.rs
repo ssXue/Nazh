@@ -47,7 +47,8 @@ pub use nodes::{
     DebugConsoleNode, DebugConsoleNodeConfig, HttpClientNode, HttpClientNodeConfig, IfNode,
     IfNodeConfig, LoopNode, LoopNodeConfig, ModbusReadNode, ModbusReadNodeConfig, NativeNode,
     NativeNodeConfig, NodeDispatch, NodeExecution, NodeTrait, RhaiNode, RhaiNodeConfig,
-    SqlWriterNode, SqlWriterNodeConfig, SwitchBranchConfig, SwitchNode, SwitchNodeConfig,
-    TimerNode, TimerNodeConfig, TryCatchNode, TryCatchNodeConfig,
+    SerialTriggerNode, SerialTriggerNodeConfig, SqlWriterNode, SqlWriterNodeConfig,
+    SwitchBranchConfig, SwitchNode, SwitchNodeConfig, TimerNode, TimerNodeConfig, TryCatchNode,
+    TryCatchNodeConfig,
 };
 pub use pipeline::{build_linear_pipeline, PipelineHandle, PipelineStage, StageFuture};

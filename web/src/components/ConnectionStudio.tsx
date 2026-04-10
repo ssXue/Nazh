@@ -41,6 +41,30 @@ const CONNECTION_TEMPLATES: ConnectionTemplate[] = [
     },
   },
   {
+    key: 'serial',
+    label: '串口设备',
+    description: '适合扫码枪、RFID 读卡器等主动上报 ASCII/HEX 的外设。',
+    idPrefix: 'serial',
+    definition: {
+      id: 'serial',
+      type: 'serial',
+      metadata: {
+        port_path: '/dev/tty.usbserial-0001',
+        baud_rate: 9600,
+        data_bits: 8,
+        parity: 'none',
+        stop_bits: 1,
+        flow_control: 'none',
+        encoding: 'ascii',
+        delimiter: '\\n',
+        read_timeout_ms: 100,
+        idle_gap_ms: 80,
+        max_frame_bytes: 512,
+        trim: true,
+      },
+    },
+  },
+  {
     key: 'mqtt',
     label: 'MQTT Broker',
     description: '适合边缘网关上报、告警推送和云侧订阅。',
@@ -88,6 +112,60 @@ function connectionKey(index: number): string {
 
 function formatMetadata(metadata: JsonValue | undefined): string {
   return JSON.stringify(metadata ?? {}, null, 2);
+}
+
+function isRecord(value: unknown): value is Record<string, JsonValue> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function metadataRecord(metadata: JsonValue | undefined): Record<string, JsonValue> {
+  return isRecord(metadata) ? metadata : {};
+}
+
+function metadataString(
+  metadata: JsonValue | undefined,
+  key: string,
+  fallback: string,
+): string {
+  const value = metadataRecord(metadata)[key];
+  return typeof value === 'string' ? value : fallback;
+}
+
+function metadataNumber(
+  metadata: JsonValue | undefined,
+  key: string,
+  fallback: number,
+): number {
+  const value = metadataRecord(metadata)[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function metadataBoolean(
+  metadata: JsonValue | undefined,
+  key: string,
+  fallback: boolean,
+): boolean {
+  const value = metadataRecord(metadata)[key];
+  return typeof value === 'boolean' ? value : fallback;
+}
+
+function parseMetadataNumber(value: string, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function isSerialConnectionType(connectionType: string): boolean {
+  switch (connectionType.trim().toLowerCase()) {
+    case 'serial':
+    case 'serialport':
+    case 'serial_port':
+    case 'uart':
+    case 'rs232':
+    case 'rs485':
+      return true;
+    default:
+      return false;
+  }
 }
 
 function buildNodeUsageMap(graph: WorkflowGraph | null): Map<string, string[]> {
@@ -369,6 +447,49 @@ export function ConnectionStudio({
     }
   }
 
+  function handleMetadataFieldChange(index: number, key: string, value: JsonValue) {
+    if (!graph) {
+      return;
+    }
+
+    const currentConnection = connections[index];
+    if (!currentConnection) {
+      return;
+    }
+
+    const draftKey = connectionKey(index);
+    const nextMetadata = {
+      ...metadataRecord(currentConnection.metadata),
+      [key]: value,
+    };
+    const nextConnections = connections.map((connection, connectionIndex) =>
+      connectionIndex === index
+        ? {
+            ...connection,
+            metadata: nextMetadata,
+          }
+        : connection,
+    );
+
+    setMetadataDrafts((current) => ({
+      ...current,
+      [draftKey]: formatMetadata(nextMetadata),
+    }));
+    setMetadataErrors((current) => {
+      const nextErrors = { ...current };
+      delete nextErrors[draftKey];
+      return nextErrors;
+    });
+
+    emitGraphUpdate(
+      {
+        ...graph,
+        connections: nextConnections,
+      },
+      '连接参数已同步回 AST 文本。',
+    );
+  }
+
   if (!graph) {
     return (
       <section className="connection-studio">
@@ -498,8 +619,185 @@ export function ConnectionStudio({
                     />
                   </label>
 
+                  {isSerialConnectionType(connection.type) ? (
+                    <>
+                      <label>
+                        <span>串口路径</span>
+                        <input
+                          value={metadataString(
+                            connection.metadata,
+                            'port_path',
+                            '/dev/tty.usbserial-0001',
+                          )}
+                          onChange={(event) =>
+                            handleMetadataFieldChange(index, 'port_path', event.target.value)
+                          }
+                          placeholder="/dev/tty.usbserial-0001 或 COM3"
+                        />
+                      </label>
+                      <label>
+                        <span>波特率</span>
+                        <input
+                          type="number"
+                          value={metadataNumber(connection.metadata, 'baud_rate', 9600)}
+                          onChange={(event) =>
+                            handleMetadataFieldChange(
+                              index,
+                              'baud_rate',
+                              parseMetadataNumber(event.target.value, 9600),
+                            )
+                          }
+                        />
+                      </label>
+                      <label>
+                        <span>数据位</span>
+                        <select
+                          value={String(metadataNumber(connection.metadata, 'data_bits', 8))}
+                          onChange={(event) =>
+                            handleMetadataFieldChange(
+                              index,
+                              'data_bits',
+                              parseMetadataNumber(event.target.value, 8),
+                            )
+                          }
+                        >
+                          <option value="8">8</option>
+                          <option value="7">7</option>
+                          <option value="6">6</option>
+                          <option value="5">5</option>
+                        </select>
+                      </label>
+                      <label>
+                        <span>校验位</span>
+                        <select
+                          value={metadataString(connection.metadata, 'parity', 'none')}
+                          onChange={(event) =>
+                            handleMetadataFieldChange(index, 'parity', event.target.value)
+                          }
+                        >
+                          <option value="none">None</option>
+                          <option value="odd">Odd</option>
+                          <option value="even">Even</option>
+                        </select>
+                      </label>
+                      <label>
+                        <span>停止位</span>
+                        <select
+                          value={String(metadataNumber(connection.metadata, 'stop_bits', 1))}
+                          onChange={(event) =>
+                            handleMetadataFieldChange(
+                              index,
+                              'stop_bits',
+                              parseMetadataNumber(event.target.value, 1),
+                            )
+                          }
+                        >
+                          <option value="1">1</option>
+                          <option value="2">2</option>
+                        </select>
+                      </label>
+                      <label>
+                        <span>流控</span>
+                        <select
+                          value={metadataString(connection.metadata, 'flow_control', 'none')}
+                          onChange={(event) =>
+                            handleMetadataFieldChange(index, 'flow_control', event.target.value)
+                          }
+                        >
+                          <option value="none">None</option>
+                          <option value="software">Software</option>
+                          <option value="hardware">Hardware</option>
+                        </select>
+                      </label>
+                      <label>
+                        <span>主数据格式</span>
+                        <select
+                          value={metadataString(connection.metadata, 'encoding', 'ascii')}
+                          onChange={(event) =>
+                            handleMetadataFieldChange(index, 'encoding', event.target.value)
+                          }
+                        >
+                          <option value="ascii">ASCII</option>
+                          <option value="hex">HEX</option>
+                        </select>
+                      </label>
+                      <label>
+                        <span>帧分隔符</span>
+                        <input
+                          value={metadataString(connection.metadata, 'delimiter', '\\n')}
+                          onChange={(event) =>
+                            handleMetadataFieldChange(index, 'delimiter', event.target.value)
+                          }
+                          placeholder="\\n、\\r\\n 或 hex:0D0A"
+                        />
+                      </label>
+                      <label>
+                        <span>读超时 ms</span>
+                        <input
+                          type="number"
+                          value={metadataNumber(connection.metadata, 'read_timeout_ms', 100)}
+                          onChange={(event) =>
+                            handleMetadataFieldChange(
+                              index,
+                              'read_timeout_ms',
+                              parseMetadataNumber(event.target.value, 100),
+                            )
+                          }
+                        />
+                      </label>
+                      <label>
+                        <span>空闲提交 ms</span>
+                        <input
+                          type="number"
+                          value={metadataNumber(connection.metadata, 'idle_gap_ms', 80)}
+                          onChange={(event) =>
+                            handleMetadataFieldChange(
+                              index,
+                              'idle_gap_ms',
+                              parseMetadataNumber(event.target.value, 80),
+                            )
+                          }
+                        />
+                      </label>
+                      <label>
+                        <span>最大帧字节</span>
+                        <input
+                          type="number"
+                          value={metadataNumber(connection.metadata, 'max_frame_bytes', 512)}
+                          onChange={(event) =>
+                            handleMetadataFieldChange(
+                              index,
+                              'max_frame_bytes',
+                              parseMetadataNumber(event.target.value, 512),
+                            )
+                          }
+                        />
+                      </label>
+                      <label>
+                        <span>裁剪空白</span>
+                        <select
+                          value={
+                            metadataBoolean(connection.metadata, 'trim', true)
+                              ? 'true'
+                              : 'false'
+                          }
+                          onChange={(event) =>
+                            handleMetadataFieldChange(index, 'trim', event.target.value === 'true')
+                          }
+                        >
+                          <option value="true">是</option>
+                          <option value="false">否</option>
+                        </select>
+                      </label>
+                    </>
+                  ) : null}
+
                   <label className="connection-form__metadata">
-                    <span>Metadata JSON</span>
+                    <span>
+                      {isSerialConnectionType(connection.type)
+                        ? '高级 Metadata JSON'
+                        : 'Metadata JSON'}
+                    </span>
                     <textarea
                       value={metadataDrafts[draftKey] ?? formatMetadata(connection.metadata)}
                       onChange={(event) => handleMetadataChange(index, event.target.value)}

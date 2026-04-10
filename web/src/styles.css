@@ -1090,6 +1090,7 @@ h3 {
 }
 
 .connection-form input,
+.connection-form select,
 .connection-form textarea {
   width: 100%;
   border: 1px solid var(--line-strong);
@@ -1634,6 +1635,13 @@ h3 {
   color: var(--warning-ink);
 }
 
+.flowgram-add-card--serialTrigger .flowgram-add-card__icon,
+.flowgram-node-panel__item--serialTrigger .flowgram-node-panel__glyph,
+.flowgram-card--display-serialTrigger .flowgram-card__icon {
+  background: color-mix(in srgb, var(--accent) 13%, var(--success) 9%);
+  color: color-mix(in srgb, var(--accent-ink) 62%, var(--success-ink) 38%);
+}
+
 .flowgram-add-card--modbusRead .flowgram-add-card__icon,
 .flowgram-node-panel__item--modbusRead .flowgram-node-panel__glyph,
 .flowgram-card--display-modbusRead .flowgram-card__icon {
@@ -2136,6 +2144,11 @@ h3 {
 .flowgram-card--display-timer .flowgram-card__type {
   background: color-mix(in srgb, var(--warning) 16%, transparent);
   color: var(--warning-ink);
+}
+
+.flowgram-card--display-serialTrigger .flowgram-card__type {
+  background: color-mix(in srgb, var(--accent) 13%, var(--success) 9%);
+  color: color-mix(in srgb, var(--accent-ink) 62%, var(--success-ink) 38%);
 }
 
 .flowgram-card--display-modbusRead .flowgram-card__type {

@@ -20,6 +20,7 @@ const FLOWGRAM_BUSINESS_NODE_TYPES = new Set([
   'rhai',
   'code',
   'timer',
+  'serialTrigger',
   'modbusRead',
   'if',
   'switch',

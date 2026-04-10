@@ -926,11 +926,11 @@ function App() {
         'system',
         payload.hadWorkflow ? 'warn' : 'info',
         payload.hadWorkflow ? '工作流已反部署' : '当前没有已部署工作流',
-        payload.hadWorkflow ? `已停止 ${payload.abortedTimerCount} 个定时任务` : null,
+        payload.hadWorkflow ? `已停止 ${payload.abortedTimerCount} 个触发任务` : null,
       );
       setStatusMessage(
         payload.hadWorkflow
-          ? `工作流已反部署，已停止 ${payload.abortedTimerCount} 个定时任务。`
+          ? `工作流已反部署，已停止 ${payload.abortedTimerCount} 个触发任务。`
           : '当前没有已部署工作流。',
       );
     }).then((cleanup) => {

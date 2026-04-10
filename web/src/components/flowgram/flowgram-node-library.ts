@@ -9,6 +9,7 @@ export type NazhNodeKind =
   | 'rhai'
   | 'code'
   | 'timer'
+  | 'serialTrigger'
   | 'modbusRead'
   | 'if'
   | 'switch'
@@ -168,6 +169,25 @@ const NODE_TEMPLATES: FlowgramPaletteItem[] = [
     },
   },
   {
+    key: 'serial-trigger',
+    title: '串口触发',
+    description: '监听扫码枪、RFID 等串口外设主动上报。',
+    badge: 'Serial',
+    seed: {
+      idPrefix: 'serial_trigger',
+      kind: 'serialTrigger',
+      displayType: 'serialTrigger',
+      label: 'Serial Trigger',
+      aiDescription: 'Passively receive ASCII or HEX frames from serial devices.',
+      timeoutMs: null,
+      config: {
+        inject: {
+          source: 'serial',
+        },
+      },
+    },
+  },
+  {
     key: 'modbus-temperature',
     title: 'Modbus 采集',
     description: '模拟读取物理寄存器。',
@@ -303,6 +323,7 @@ function normalizeNodeKind(value: unknown): NazhNodeKind {
   switch (value) {
     case 'code':
     case 'timer':
+    case 'serialTrigger':
     case 'modbusRead':
     case 'httpClient':
     case 'sqlWriter':
@@ -425,6 +446,12 @@ function normalizeNodeConfig(
           ? Math.max(1, Math.round(rawConfig.interval_ms))
           : 5000,
       immediate: rawConfig.immediate !== false,
+      inject: isRecord(rawConfig.inject) ? rawConfig.inject : {},
+    };
+  }
+
+  if (nodeType === 'serialTrigger') {
+    return {
       inject: isRecord(rawConfig.inject) ? rawConfig.inject : {},
     };
   }
@@ -644,6 +671,18 @@ export function buildDefaultNodeSeed(kind: NazhNodeKind): NodeSeed {
           inject: {},
         },
       };
+    case 'serialTrigger':
+      return {
+        idPrefix: 'serial_trigger',
+        kind: 'serialTrigger',
+        displayType: 'serialTrigger',
+        label: '',
+        aiDescription: 'Passively receive ASCII or HEX frames from serial devices.',
+        timeoutMs: null,
+        config: {
+          inject: {},
+        },
+      };
     case 'modbusRead':
       return {
         idPrefix: 'modbus_read',
@@ -767,6 +806,8 @@ function getFallbackNodeLabel(nodeType: NazhNodeKind): string {
   switch (nodeType) {
     case 'timer':
       return 'Timer Node';
+    case 'serialTrigger':
+      return 'Serial Trigger';
     case 'modbusRead':
       return 'Modbus Read';
     case 'rhai':
@@ -882,6 +923,7 @@ export function createFlowgramNodeRegistries(
     'rhai',
     'code',
     'timer',
+    'serialTrigger',
     'modbusRead',
     'if',
     'switch',
@@ -920,6 +962,13 @@ export function getFlowgramPaletteSections(): FlowgramPaletteSection[] {
           description: '定时触发根节点。',
           badge: 'Timer',
           seed: buildDefaultNodeSeed('timer'),
+        },
+        {
+          key: 'blank-serial',
+          title: 'Serial Trigger',
+          description: '被动接收扫码枪/RFID 串口数据。',
+          badge: 'Serial',
+          seed: buildDefaultNodeSeed('serialTrigger'),
         },
         {
           key: 'blank-modbus',

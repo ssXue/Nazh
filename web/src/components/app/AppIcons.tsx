@@ -313,6 +313,20 @@ export function TimerNodeIcon(props: IconProps) {
   );
 }
 
+export function SerialNodeIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="M6 7h6" />
+      <path d="M6 12h12" />
+      <path d="M12 17h6" />
+      <circle cx="4.8" cy="7" r="1.4" />
+      <circle cx="19.2" cy="17" r="1.4" />
+      <path d="M14.5 7h2.5a2 2 0 0 1 2 2v1" />
+      <path d="M9.5 17H7a2 2 0 0 1-2-2v-1" />
+    </BaseIcon>
+  );
+}
+
 export function ModbusNodeIcon(props: IconProps) {
   return (
     <BaseIcon {...props}>

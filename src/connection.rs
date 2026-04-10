@@ -7,7 +7,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use tokio::sync::{Mutex, RwLock};
 use ts_rs::TS;
@@ -18,15 +18,37 @@ use crate::EngineError;
 pub type SharedConnectionManager = Arc<ConnectionManager>;
 
 /// 连接资源的声明式定义（用于工作流 AST）。
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[derive(Debug, Clone, Serialize, PartialEq, TS)]
 #[ts(export)]
 pub struct ConnectionDefinition {
     pub id: String,
     #[serde(rename = "type")]
-    #[serde(alias = "kind")]
     pub kind: String,
     #[serde(default)]
     pub metadata: Value,
+}
+
+impl<'de> Deserialize<'de> for ConnectionDefinition {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct ConnectionDefinitionInput {
+            id: String,
+            #[serde(rename = "type", alias = "kind")]
+            kind: String,
+            #[serde(default)]
+            metadata: Value,
+        }
+
+        let input = ConnectionDefinitionInput::deserialize(deserializer)?;
+        Ok(Self {
+            id: input.id,
+            kind: input.kind,
+            metadata: input.metadata,
+        })
+    }
 }
 
 /// 由 [`ConnectionManager::borrow`] 返回的临时借出连接句柄。

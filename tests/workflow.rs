@@ -8,7 +8,8 @@ use nazh_engine::{
     deploy_workflow, shared_connection_manager, ConnectionDefinition, ConnectionManager,
     DebugConsoleNode, DebugConsoleNodeConfig, EngineError, HttpClientNode, HttpClientNodeConfig,
     ModbusReadNode, ModbusReadNodeConfig, NodeDispatch, NodeTrait, RhaiNode, RhaiNodeConfig,
-    SqlWriterNode, SqlWriterNodeConfig, TimerNode, TimerNodeConfig, WorkflowContext, WorkflowGraph,
+    SerialTriggerNode, SerialTriggerNodeConfig, SqlWriterNode, SqlWriterNodeConfig, TimerNode,
+    TimerNodeConfig, WorkflowContext, WorkflowGraph,
 };
 use serde_json::json;
 use tokio::time::timeout;
@@ -535,6 +536,74 @@ async fn timer_node_injects_trigger_metadata() {
             None => panic!("timer node should produce one output"),
         },
         Err(error) => panic!("timer node should execute successfully: {error}"),
+    }
+}
+
+#[tokio::test]
+async fn serial_trigger_node_normalizes_ascii_and_hex_frames() {
+    let mut inject = serde_json::Map::new();
+    inject.insert("source".to_owned(), json!("serial"));
+
+    let node = SerialTriggerNode::new(
+        "scan_input",
+        SerialTriggerNodeConfig {
+            port_path: "/dev/tty.mock".to_owned(),
+            baud_rate: 9_600,
+            data_bits: 8,
+            parity: "none".to_owned(),
+            stop_bits: 1,
+            flow_control: "none".to_owned(),
+            encoding: "hex".to_owned(),
+            delimiter: "\\n".to_owned(),
+            read_timeout_ms: 100,
+            idle_gap_ms: 80,
+            max_frame_bytes: 512,
+            trim: true,
+            inject,
+        },
+        "serial trigger",
+    );
+
+    let result = node
+        .execute(WorkflowContext::new(json!({
+            "_serial_frame": {
+                "ascii": " RFID-42\r\n",
+                "hex": "52 46 49 44 2D 34 32",
+                "byte_len": 9,
+                "port_path": "/dev/tty.mock"
+            }
+        })))
+        .await;
+
+    match result {
+        Ok(execution) => match execution.first() {
+            Some(first_output) => {
+                assert_eq!(first_output.ctx.payload["source"], json!("serial"));
+                assert_eq!(first_output.ctx.payload["serial_ascii"], json!("RFID-42"));
+                assert_eq!(
+                    first_output.ctx.payload["serial_hex"],
+                    json!("52 46 49 44 2D 34 32")
+                );
+                assert_eq!(
+                    first_output.ctx.payload["serial_data"],
+                    json!("52 46 49 44 2D 34 32")
+                );
+                assert_eq!(
+                    first_output.ctx.payload["_serial"]["node_id"],
+                    json!("scan_input")
+                );
+                assert_eq!(
+                    first_output.ctx.payload["_serial"]["port_path"],
+                    json!("/dev/tty.mock")
+                );
+                assert_eq!(
+                    first_output.ctx.payload["_serial"]["encoding"],
+                    json!("hex")
+                );
+            }
+            None => panic!("serial trigger node should produce one output"),
+        },
+        Err(error) => panic!("serial trigger node should execute successfully: {error}"),
     }
 }
 

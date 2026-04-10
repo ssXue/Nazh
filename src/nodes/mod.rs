@@ -8,6 +8,7 @@
 //! | [`native`] | `NativeNode` | 纯 Rust 原生逻辑，负责 I/O 与数据注入 |
 //! | [`rhai`] | `RhaiNode` | 沙箱化 Rhai 脚本执行 |
 //! | [`timer`] | `TimerNode` | 定时触发，注入计时元数据 |
+//! | [`serial_trigger`] | `SerialTriggerNode` | 串口被动触发，接收 ASCII/HEX 数据帧 |
 //! | [`modbus_read`] | `ModbusReadNode` | Modbus 寄存器读取（当前为模拟） |
 //! | [`if_node`] | `IfNode` | 布尔条件分支路由 |
 //! | [`switch_node`] | `SwitchNode` | 多路分支路由 |
@@ -70,6 +71,7 @@ mod loop_node;
 mod modbus_read;
 mod native;
 mod rhai;
+mod serial_trigger;
 mod sql_writer;
 mod switch_node;
 mod timer;
@@ -86,6 +88,7 @@ pub use loop_node::{LoopNode, LoopNodeConfig};
 pub use modbus_read::{ModbusReadNode, ModbusReadNodeConfig};
 pub use native::{NativeNode, NativeNodeConfig};
 pub use rhai::{RhaiNode, RhaiNodeConfig};
+pub use serial_trigger::{SerialTriggerNode, SerialTriggerNodeConfig};
 pub use sql_writer::{SqlWriterNode, SqlWriterNodeConfig};
 pub use switch_node::{SwitchBranchConfig, SwitchNode, SwitchNodeConfig};
 pub use timer::{TimerNode, TimerNodeConfig};

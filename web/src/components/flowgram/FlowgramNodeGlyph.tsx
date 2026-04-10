@@ -8,6 +8,7 @@ import {
   ModbusNodeIcon,
   NativeNodeIcon,
   ScriptNodeIcon,
+  SerialNodeIcon,
   SqlWriterNodeIcon,
   SwitchNodeIcon,
   TimerNodeIcon,
@@ -23,6 +24,7 @@ export function normalizeFlowgramDisplayType(value: unknown): NazhNodeDisplayTyp
     value === 'rhai' ||
     value === 'code' ||
     value === 'timer' ||
+    value === 'serialTrigger' ||
     value === 'modbusRead' ||
     value === 'if' ||
     value === 'switch' ||
@@ -42,6 +44,8 @@ export function getFlowgramDisplayLabel(displayType: NazhNodeDisplayType): strin
   switch (displayType) {
     case 'timer':
       return 'Timer';
+    case 'serialTrigger':
+      return 'Serial';
     case 'modbusRead':
       return 'Modbus';
     case 'if':
@@ -73,6 +77,8 @@ export function FlowgramNodeGlyph({
   switch (displayType) {
     case 'timer':
       return <TimerNodeIcon {...props} />;
+    case 'serialTrigger':
+      return <SerialNodeIcon {...props} />;
     case 'modbusRead':
       return <ModbusNodeIcon {...props} />;
     case 'if':

@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 
 use crate::{EngineError, ExecutionEvent, WorkflowContext};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use tokio::sync::mpsc;
 use ts_rs::TS;
@@ -28,13 +28,12 @@ pub struct WorkflowGraph {
 }
 
 /// [`WorkflowGraph`] 中的单节点配置。
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct WorkflowNodeDefinition {
     #[serde(default)]
     pub id: String,
     #[serde(rename = "type")]
-    #[serde(alias = "kind")]
     pub node_type: String,
     #[serde(default)]
     #[ts(optional)]
@@ -51,22 +50,81 @@ pub struct WorkflowNodeDefinition {
     pub buffer: usize,
 }
 
+impl<'de> Deserialize<'de> for WorkflowNodeDefinition {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WorkflowNodeDefinitionInput {
+            #[serde(default)]
+            id: String,
+            #[serde(rename = "type", alias = "kind")]
+            node_type: String,
+            #[serde(default)]
+            connection_id: Option<String>,
+            #[serde(default)]
+            config: Value,
+            #[serde(default)]
+            ai_description: Option<String>,
+            #[serde(default)]
+            timeout_ms: Option<u64>,
+            #[serde(default = "default_node_buffer")]
+            buffer: usize,
+        }
+
+        let input = WorkflowNodeDefinitionInput::deserialize(deserializer)?;
+        Ok(Self {
+            id: input.id,
+            node_type: input.node_type,
+            connection_id: input.connection_id,
+            config: input.config,
+            ai_description: input.ai_description,
+            timeout_ms: input.timeout_ms,
+            buffer: input.buffer,
+        })
+    }
+}
+
 /// 工作流 DAG 中连接两个节点的有向边。
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct WorkflowEdge {
-    #[serde(alias = "source")]
     pub from: String,
-    #[serde(alias = "target")]
     pub to: String,
     #[serde(default)]
-    #[serde(alias = "sourcePortID")]
     #[ts(optional)]
     pub source_port_id: Option<String>,
     #[serde(default)]
-    #[serde(alias = "targetPortID")]
     #[ts(optional)]
     pub target_port_id: Option<String>,
+}
+
+impl<'de> Deserialize<'de> for WorkflowEdge {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WorkflowEdgeInput {
+            #[serde(alias = "source")]
+            from: String,
+            #[serde(alias = "target")]
+            to: String,
+            #[serde(default, alias = "sourcePortID")]
+            source_port_id: Option<String>,
+            #[serde(default, alias = "targetPortID")]
+            target_port_id: Option<String>,
+        }
+
+        let input = WorkflowEdgeInput::deserialize(deserializer)?;
+        Ok(Self {
+            from: input.from,
+            to: input.to,
+            source_port_id: input.source_port_id,
+            target_port_id: input.target_port_id,
+        })
+    }
 }
 
 /// 入口句柄，用于向已部署工作流的根节点提交数据。
@@ -138,6 +196,24 @@ impl WorkflowIngress {
         sender
             .send(ctx)
             .await
+            .map_err(|_| EngineError::ChannelClosed {
+                stage: "workflow-ingress".to_owned(),
+            })
+    }
+
+    /// # Errors
+    ///
+    /// 指定节点不存在或通道已关闭时返回错误。用于阻塞式硬件监听线程。
+    pub fn blocking_submit_to(
+        &self,
+        node_id: &str,
+        ctx: WorkflowContext,
+    ) -> Result<(), EngineError> {
+        let sender = self.root_senders.get(node_id).ok_or_else(|| {
+            EngineError::invalid_graph(format!("根节点发送端 `{node_id}` 在已部署的工作流中不可用"))
+        })?;
+        sender
+            .blocking_send(ctx)
             .map_err(|_| EngineError::ChannelClosed {
                 stage: "workflow-ingress".to_owned(),
             })

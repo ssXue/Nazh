@@ -360,6 +360,7 @@ function isBusinessFlowNode(node: FlowNodeEntity | null): node is FlowNodeEntity
 
   return (
     rawData.nodeType === 'timer' ||
+    rawData.nodeType === 'serialTrigger' ||
     rawData.nodeType === 'modbusRead' ||
     rawData.nodeType === 'code' ||
     rawData.nodeType === 'native' ||
@@ -372,6 +373,7 @@ function isBusinessFlowNode(node: FlowNodeEntity | null): node is FlowNodeEntity
     rawData.nodeType === 'sqlWriter' ||
     rawData.nodeType === 'debugConsole' ||
     node.flowNodeType === 'timer' ||
+    node.flowNodeType === 'serialTrigger' ||
     node.flowNodeType === 'modbusRead' ||
     node.flowNodeType === 'code' ||
     node.flowNodeType === 'native' ||
@@ -410,6 +412,8 @@ function resolveNodePortColor(
   switch (displayType) {
     case 'timer':
       return 'color-mix(in srgb, var(--accent) 55%, var(--warning) 45%)';
+    case 'serialTrigger':
+      return 'color-mix(in srgb, var(--accent) 64%, var(--success) 36%)';
     case 'modbusRead':
       return 'color-mix(in srgb, var(--accent) 58%, var(--success) 42%)';
     case 'if':
@@ -504,6 +508,10 @@ function FlowgramNodeCard(props: FlowgramNodeMaterialProps) {
   const preview =
     nodeType === 'timer'
       ? `${rawData?.config?.interval_ms ?? 5000} ms`
+      : nodeType === 'serialTrigger'
+        ? rawData?.connectionId
+          ? `串口连接 · ${rawData.connectionId}`
+          : '未绑定串口连接'
       : nodeType === 'modbusRead'
         ? `寄存器 ${rawData?.config?.register ?? 40001} · ${rawData?.config?.quantity ?? 1} 点`
       : nodeType === 'native'

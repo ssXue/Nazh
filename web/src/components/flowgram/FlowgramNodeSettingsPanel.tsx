@@ -134,7 +134,21 @@ function parseStringList(value: string): string[] {
 }
 
 function isConnectionNode(nodeType: string): boolean {
-  return nodeType === 'native' || nodeType === 'modbusRead';
+  return nodeType === 'native' || nodeType === 'modbusRead' || nodeType === 'serialTrigger';
+}
+
+function isSerialConnectionType(connectionType: string): boolean {
+  switch (connectionType.trim().toLowerCase()) {
+    case 'serial':
+    case 'serialport':
+    case 'serial_port':
+    case 'uart':
+    case 'rs232':
+    case 'rs485':
+      return true;
+    default:
+      return false;
+  }
 }
 
 function isScriptNode(nodeType: string): boolean {
@@ -251,6 +265,12 @@ function buildNodeConfig(draft: SelectedNodeDraft, currentConfig: NodeConfigMap)
       ...currentConfig,
       interval_ms: parsePositiveInteger(draft.timerIntervalMs) ?? 5000,
       immediate: draft.timerImmediate,
+      inject: isRecord(currentConfig.inject) ? currentConfig.inject : {},
+    };
+  }
+
+  if (draft.nodeType === 'serialTrigger') {
+    return {
       inject: isRecord(currentConfig.inject) ? currentConfig.inject : {},
     };
   }
@@ -442,8 +462,19 @@ function FlowgramNodeSettingsPanel({
         });
       } else if (selectedConnection) {
         nextDiagnostics.push({
-          tone: 'info',
-          message: `已绑定 ${selectedConnection.id} · ${selectedConnection.type}`,
+          tone:
+            draft.nodeType === 'serialTrigger' && !isSerialConnectionType(selectedConnection.type)
+              ? 'danger'
+              : 'info',
+          message:
+            draft.nodeType === 'serialTrigger' && !isSerialConnectionType(selectedConnection.type)
+              ? `串口触发节点需要绑定 serial / uart 类型连接，当前为 ${selectedConnection.type}。`
+              : `已绑定 ${selectedConnection.id} · ${selectedConnection.type}`,
+        });
+      } else if (draft.nodeType === 'serialTrigger') {
+        nextDiagnostics.push({
+          tone: 'danger',
+          message: '串口触发节点需要在连接资源中绑定一个串口连接。',
         });
       } else if (connections.length > 0) {
         nextDiagnostics.push({

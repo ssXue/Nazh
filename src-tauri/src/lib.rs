@@ -10,28 +10,49 @@
 
 use nazh_engine::{
     deploy_workflow as deploy_workflow_graph, shared_connection_manager, ConnectionRecord,
-    DeployResponse, DispatchResponse, EngineError, TimerNodeConfig, UndeployResponse,
-    WorkflowContext, WorkflowGraph, WorkflowIngress,
+    DeployResponse, DispatchResponse, EngineError, ExecutionEvent, SerialTriggerNodeConfig,
+    TimerNodeConfig, UndeployResponse, WorkflowContext, WorkflowGraph, WorkflowIngress,
 };
-use serde_json::Value;
+use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::Mutex;
 
-use std::path::{Component, Path, PathBuf};
+use std::{
+    io::Read,
+    path::{Component, Path, PathBuf},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    time::{Duration, Instant},
+};
 
-/// 已部署工作流的运行时包装，包含入口句柄和定时器任务。
+/// 已部署工作流的运行时包装，包含入口句柄和根触发任务。
 struct DesktopWorkflow {
     ingress: WorkflowIngress,
-    timer_tasks: Vec<tauri::async_runtime::JoinHandle<()>>,
+    trigger_tasks: Vec<DesktopTriggerTask>,
+}
+
+struct DesktopTriggerTask {
+    cancel: Arc<AtomicBool>,
+    join: tauri::async_runtime::JoinHandle<()>,
 }
 
 impl DesktopWorkflow {
-    /// 中止所有定时器任务，返回中止数量。
-    fn abort_timers(&mut self) -> usize {
-        let aborted = self.timer_tasks.len();
-        for task in self.timer_tasks.drain(..) {
-            task.abort();
+    /// 中止所有根触发任务，返回中止数量。
+    async fn abort_triggers(&mut self) -> usize {
+        let tasks = self.trigger_tasks.drain(..).collect::<Vec<_>>();
+        let aborted = tasks.len();
+
+        for task in &tasks {
+            task.cancel.store(true, Ordering::Relaxed);
+            task.join.abort();
         }
+
+        for task in tasks {
+            let _ = task.join.await;
+        }
+
         aborted
     }
 }
@@ -58,6 +79,13 @@ struct TimerRootSpec {
     immediate: bool,
 }
 
+#[derive(Debug, Clone)]
+struct SerialRootSpec {
+    node_id: String,
+    connection_id: String,
+    config: SerialTriggerNodeConfig,
+}
+
 #[tauri::command]
 async fn deploy_workflow(
     app: AppHandle,
@@ -67,6 +95,7 @@ async fn deploy_workflow(
     let mut graph = WorkflowGraph::from_json(&ast).map_err(stringify_error)?;
     normalize_sql_writer_paths(&app, &mut graph).map_err(stringify_error)?;
     let timer_roots = collect_timer_root_specs(&graph).map_err(stringify_error)?;
+    let serial_roots = collect_serial_root_specs(&graph).map_err(stringify_error)?;
     let node_count = graph.nodes.len();
     let edge_count = graph.edges.len();
     let deployment = deploy_workflow_graph(graph, state.connection_manager.clone())
@@ -75,16 +104,28 @@ async fn deploy_workflow(
     let (ingress, streams) = deployment.into_parts();
     let root_nodes = ingress.root_nodes().to_vec();
     let (mut event_rx, mut result_rx) = streams.into_receivers();
-    let timer_tasks = spawn_timer_root_tasks(ingress.clone(), timer_roots);
+
+    let existing_workflow = {
+        let mut workflow_guard = state.workflow.lock().await;
+        workflow_guard.take()
+    };
+
+    if let Some(mut existing) = existing_workflow {
+        existing.abort_triggers().await;
+    }
+
+    let mut trigger_tasks = spawn_timer_root_tasks(ingress.clone(), timer_roots);
+    trigger_tasks.extend(spawn_serial_root_tasks(
+        app.clone(),
+        ingress.clone(),
+        serial_roots,
+    ));
 
     {
         let mut workflow_guard = state.workflow.lock().await;
-        if let Some(existing) = workflow_guard.as_mut() {
-            existing.abort_timers();
-        }
         *workflow_guard = Some(DesktopWorkflow {
             ingress,
-            timer_tasks,
+            trigger_tasks,
         });
     }
 
@@ -135,19 +176,20 @@ async fn undeploy_workflow(
     app: AppHandle,
     state: State<'_, DesktopState>,
 ) -> Result<UndeployResponse, String> {
-    let response = {
+    let existing_workflow = {
         let mut workflow_guard = state.workflow.lock().await;
+        workflow_guard.take()
+    };
 
-        if let Some(mut workflow) = workflow_guard.take() {
-            UndeployResponse {
-                had_workflow: true,
-                aborted_timer_count: workflow.abort_timers(),
-            }
-        } else {
-            UndeployResponse {
-                had_workflow: false,
-                aborted_timer_count: 0,
-            }
+    let response = if let Some(mut workflow) = existing_workflow {
+        UndeployResponse {
+            had_workflow: true,
+            aborted_timer_count: workflow.abort_triggers().await,
+        }
+    } else {
+        UndeployResponse {
+            had_workflow: false,
+            aborted_timer_count: 0,
         }
     };
 
@@ -165,7 +207,9 @@ fn stringify_error(error: EngineError) -> String {
     error.to_string()
 }
 
-fn collect_timer_root_specs(graph: &WorkflowGraph) -> Result<Vec<TimerRootSpec>, EngineError> {
+fn count_incoming_edges(
+    graph: &WorkflowGraph,
+) -> std::collections::HashMap<String, usize> {
     let mut incoming_counts = graph
         .nodes
         .keys()
@@ -178,6 +222,11 @@ fn collect_timer_root_specs(graph: &WorkflowGraph) -> Result<Vec<TimerRootSpec>,
         }
     }
 
+    incoming_counts
+}
+
+fn collect_timer_root_specs(graph: &WorkflowGraph) -> Result<Vec<TimerRootSpec>, EngineError> {
+    let incoming_counts = count_incoming_edges(graph);
     let mut timer_roots = Vec::new();
 
     for (node_id, node_definition) in &graph.nodes {
@@ -204,16 +253,94 @@ fn collect_timer_root_specs(graph: &WorkflowGraph) -> Result<Vec<TimerRootSpec>,
     Ok(timer_roots)
 }
 
+fn is_serial_trigger_type(node_type: &str) -> bool {
+    matches!(node_type, "serialTrigger" | "serial/trigger" | "serial")
+}
+
+fn is_serial_connection_type(connection_type: &str) -> bool {
+    matches!(
+        connection_type.trim().to_ascii_lowercase().as_str(),
+        "serial" | "serialport" | "serial_port" | "uart" | "rs232" | "rs485"
+    )
+}
+
+fn collect_serial_root_specs(graph: &WorkflowGraph) -> Result<Vec<SerialRootSpec>, EngineError> {
+    let incoming_counts = count_incoming_edges(graph);
+    let mut serial_roots = Vec::new();
+
+    for (node_id, node_definition) in &graph.nodes {
+        if incoming_counts.get(node_id).copied().unwrap_or_default() != 0 {
+            continue;
+        }
+
+        if !is_serial_trigger_type(&node_definition.node_type) {
+            continue;
+        }
+
+        let connection_id = node_definition
+            .connection_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| {
+                EngineError::node_config(node_id.clone(), "串口触发节点需要绑定串口连接资源")
+            })?;
+        let connection = graph
+            .connections
+            .iter()
+            .find(|connection| connection.id == connection_id)
+            .ok_or_else(|| {
+                EngineError::node_config(
+                    node_id.clone(),
+                    format!("串口连接资源 `{connection_id}` 未注册"),
+                )
+            })?;
+
+        if !is_serial_connection_type(&connection.kind) {
+            return Err(EngineError::node_config(
+                node_id.clone(),
+                format!("连接资源 `{connection_id}` 不是串口类型"),
+            ));
+        }
+
+        let mut config: SerialTriggerNodeConfig =
+            serde_json::from_value(connection.metadata.clone()).map_err(|error| {
+                EngineError::node_config(node_definition.id.clone(), error.to_string())
+            })?;
+        if let Some(inject) = node_definition.config.get("inject").and_then(Value::as_object) {
+            config.inject.clone_from(inject);
+        }
+        config.port_path = config.port_path.trim().to_owned();
+
+        if config.port_path.is_empty() {
+            return Err(EngineError::node_config(
+                node_id.clone(),
+                format!("串口连接资源 `{connection_id}` 需要配置 port_path"),
+            ));
+        }
+
+        serial_roots.push(SerialRootSpec {
+            node_id: node_id.clone(),
+            connection_id: connection_id.to_owned(),
+            config,
+        });
+    }
+
+    Ok(serial_roots)
+}
+
 fn spawn_timer_root_tasks(
     ingress: WorkflowIngress,
     timer_roots: Vec<TimerRootSpec>,
-) -> Vec<tauri::async_runtime::JoinHandle<()>> {
+) -> Vec<DesktopTriggerTask> {
     timer_roots
         .into_iter()
         .map(|timer_root| {
             let ingress = ingress.clone();
-            tauri::async_runtime::spawn(async move {
-                if timer_root.immediate {
+            let cancel = Arc::new(AtomicBool::new(false));
+            let task_cancel = Arc::clone(&cancel);
+            let join = tauri::async_runtime::spawn(async move {
+                if timer_root.immediate && !task_cancel.load(Ordering::Relaxed) {
                     let _ = ingress
                         .submit_to(
                             &timer_root.node_id,
@@ -228,6 +355,9 @@ fn spawn_timer_root_tasks(
 
                 loop {
                     let _ = interval.tick().await;
+                    if task_cancel.load(Ordering::Relaxed) {
+                        break;
+                    }
                     let _ = ingress
                         .submit_to(
                             &timer_root.node_id,
@@ -235,9 +365,298 @@ fn spawn_timer_root_tasks(
                         )
                         .await;
                 }
-            })
+            });
+
+            DesktopTriggerTask { cancel, join }
         })
         .collect()
+}
+
+fn spawn_serial_root_tasks(
+    app: AppHandle,
+    ingress: WorkflowIngress,
+    serial_roots: Vec<SerialRootSpec>,
+) -> Vec<DesktopTriggerTask> {
+    serial_roots
+        .into_iter()
+        .map(|serial_root| {
+            let app = app.clone();
+            let ingress = ingress.clone();
+            let cancel = Arc::new(AtomicBool::new(false));
+            let task_cancel = Arc::clone(&cancel);
+            let join = tauri::async_runtime::spawn_blocking(move || {
+                run_serial_root_reader(app, ingress, serial_root, task_cancel);
+            });
+
+            DesktopTriggerTask { cancel, join }
+        })
+        .collect()
+}
+
+fn run_serial_root_reader(
+    app: AppHandle,
+    ingress: WorkflowIngress,
+    serial_root: SerialRootSpec,
+    cancel: Arc<AtomicBool>,
+) {
+    let config = serial_root.config.clone();
+    let read_timeout = Duration::from_millis(config.read_timeout_ms.clamp(10, 2_000));
+    let idle_gap = Duration::from_millis(config.idle_gap_ms.clamp(1, 10_000));
+    let max_frame_bytes = config.max_frame_bytes.clamp(1, 8_192);
+    let delimiter = decode_serial_delimiter(&config.delimiter);
+    let port_result = serialport::new(config.port_path.clone(), config.baud_rate.max(1))
+        .timeout(read_timeout)
+        .data_bits(serial_data_bits(config.data_bits))
+        .parity(serial_parity(&config.parity))
+        .stop_bits(serial_stop_bits(config.stop_bits))
+        .flow_control(serial_flow_control(&config.flow_control))
+        .open();
+    let mut port = match port_result {
+        Ok(port) => port,
+        Err(error) => {
+            emit_serial_trigger_failure(
+                &app,
+                &serial_root.node_id,
+                format!("串口打开失败: {error}"),
+            );
+            return;
+        }
+    };
+
+    let mut buffer = Vec::with_capacity(max_frame_bytes.min(512));
+    let mut scratch = [0_u8; 64];
+    let mut last_byte_at: Option<Instant> = None;
+
+    while !cancel.load(Ordering::Relaxed) {
+        match port.read(&mut scratch) {
+            Ok(0) => flush_idle_serial_frame(
+                &app,
+                &ingress,
+                &serial_root,
+                &mut buffer,
+                last_byte_at,
+                idle_gap,
+            ),
+            Ok(bytes_read) => {
+                buffer.extend_from_slice(&scratch[..bytes_read]);
+                last_byte_at = Some(Instant::now());
+
+                while let Some(frame) = drain_serial_delimited_frame(&mut buffer, &delimiter) {
+                    submit_serial_frame(&app, &ingress, &serial_root, &frame);
+                }
+
+                if buffer.len() >= max_frame_bytes {
+                    let frame = buffer.drain(..max_frame_bytes).collect::<Vec<_>>();
+                    submit_serial_frame(&app, &ingress, &serial_root, &frame);
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::TimedOut => flush_idle_serial_frame(
+                &app,
+                &ingress,
+                &serial_root,
+                &mut buffer,
+                last_byte_at,
+                idle_gap,
+            ),
+            Err(error) => {
+                emit_serial_trigger_failure(
+                    &app,
+                    &serial_root.node_id,
+                    format!("串口读取失败: {error}"),
+                );
+                break;
+            }
+        }
+    }
+
+    if !cancel.load(Ordering::Relaxed) && !buffer.is_empty() {
+        submit_serial_frame(&app, &ingress, &serial_root, &buffer);
+    }
+}
+
+fn flush_idle_serial_frame(
+    app: &AppHandle,
+    ingress: &WorkflowIngress,
+    serial_root: &SerialRootSpec,
+    buffer: &mut Vec<u8>,
+    last_byte_at: Option<Instant>,
+    idle_gap: Duration,
+) {
+    if buffer.is_empty() {
+        return;
+    }
+
+    if last_byte_at.is_some_and(|instant| instant.elapsed() >= idle_gap) {
+        let frame = std::mem::take(buffer);
+        submit_serial_frame(app, ingress, serial_root, &frame);
+    }
+}
+
+fn drain_serial_delimited_frame(buffer: &mut Vec<u8>, delimiter: &[u8]) -> Option<Vec<u8>> {
+    if delimiter.is_empty() || buffer.len() < delimiter.len() {
+        return None;
+    }
+
+    let delimiter_index = buffer
+        .windows(delimiter.len())
+        .position(|window| window == delimiter)?;
+    let frame = buffer.drain(..delimiter_index).collect::<Vec<_>>();
+    let _ = buffer.drain(..delimiter.len()).count();
+    Some(frame)
+}
+
+fn submit_serial_frame(
+    app: &AppHandle,
+    ingress: &WorkflowIngress,
+    serial_root: &SerialRootSpec,
+    frame: &[u8],
+) {
+    if frame.is_empty() {
+        return;
+    }
+
+    let payload = json!({
+        "_serial_frame": {
+            "ascii": String::from_utf8_lossy(frame).to_string(),
+            "hex": bytes_to_hex(frame),
+            "byte_len": frame.len(),
+            "port_path": serial_root.config.port_path.as_str(),
+            "connection_id": serial_root.connection_id.as_str(),
+            "baud_rate": serial_root.config.baud_rate,
+            "data_bits": serial_root.config.data_bits,
+            "parity": serial_root.config.parity.as_str(),
+            "stop_bits": serial_root.config.stop_bits,
+            "flow_control": serial_root.config.flow_control.as_str(),
+            "encoding": serial_root.config.encoding.as_str(),
+        }
+    });
+
+    if let Err(error) =
+        ingress.blocking_submit_to(&serial_root.node_id, WorkflowContext::new(payload))
+    {
+        emit_serial_trigger_failure(app, &serial_root.node_id, error.to_string());
+    }
+}
+
+fn emit_serial_trigger_failure(app: &AppHandle, node_id: &str, message: String) {
+    let context = WorkflowContext::new(Value::Object(Default::default()));
+    let _ = app.emit(
+        "workflow://node-status",
+        ExecutionEvent::Failed {
+            stage: node_id.to_owned(),
+            trace_id: context.trace_id,
+            error: message,
+        },
+    );
+}
+
+fn serial_data_bits(value: u8) -> serialport::DataBits {
+    match value {
+        5 => serialport::DataBits::Five,
+        6 => serialport::DataBits::Six,
+        7 => serialport::DataBits::Seven,
+        _ => serialport::DataBits::Eight,
+    }
+}
+
+fn serial_parity(value: &str) -> serialport::Parity {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "odd" | "o" => serialport::Parity::Odd,
+        "even" | "e" => serialport::Parity::Even,
+        _ => serialport::Parity::None,
+    }
+}
+
+fn serial_stop_bits(value: u8) -> serialport::StopBits {
+    if value == 2 {
+        serialport::StopBits::Two
+    } else {
+        serialport::StopBits::One
+    }
+}
+
+fn serial_flow_control(value: &str) -> serialport::FlowControl {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "software" | "xonxoff" => serialport::FlowControl::Software,
+        "hardware" | "rtscts" => serialport::FlowControl::Hardware,
+        _ => serialport::FlowControl::None,
+    }
+}
+
+fn decode_serial_delimiter(value: &str) -> Vec<u8> {
+    if value.is_empty() {
+        return Vec::new();
+    }
+
+    let trimmed = value.trim();
+    if let Some(hex) = trimmed.strip_prefix("hex:").or_else(|| trimmed.strip_prefix("0x")) {
+        return parse_hex_bytes(hex);
+    }
+
+    let mut bytes = Vec::new();
+    let mut chars = value.chars();
+
+    while let Some(ch) = chars.next() {
+        if ch != '\\' {
+            let mut encoded = [0_u8; 4];
+            bytes.extend_from_slice(ch.encode_utf8(&mut encoded).as_bytes());
+            continue;
+        }
+
+        match chars.next() {
+            Some('n') => bytes.push(b'\n'),
+            Some('r') => bytes.push(b'\r'),
+            Some('t') => bytes.push(b'\t'),
+            Some('\\') => bytes.push(b'\\'),
+            Some(other) => {
+                let mut encoded = [0_u8; 4];
+                bytes.extend_from_slice(other.encode_utf8(&mut encoded).as_bytes());
+            }
+            None => bytes.push(b'\\'),
+        }
+    }
+
+    bytes
+}
+
+fn parse_hex_bytes(value: &str) -> Vec<u8> {
+    let nibbles = value
+        .bytes()
+        .filter_map(hex_nibble)
+        .collect::<Vec<_>>();
+    let mut bytes = Vec::with_capacity(nibbles.len() / 2);
+
+    for pair in nibbles.chunks(2) {
+        if pair.len() == 2 {
+            bytes.push((pair[0] << 4) | pair[1]);
+        }
+    }
+
+    bytes
+}
+
+fn hex_nibble(value: u8) -> Option<u8> {
+    match value {
+        b'0'..=b'9' => Some(value - b'0'),
+        b'a'..=b'f' => Some(value - b'a' + 10),
+        b'A'..=b'F' => Some(value - b'A' + 10),
+        _ => None,
+    }
+}
+
+fn bytes_to_hex(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    let mut output = String::with_capacity(bytes.len().saturating_mul(3).saturating_sub(1));
+
+    for (index, byte) in bytes.iter().enumerate() {
+        if index > 0 {
+            output.push(' ');
+        }
+        output.push(HEX[(byte >> 4) as usize] as char);
+        output.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+
+    output
 }
 
 fn normalize_sql_writer_paths(
