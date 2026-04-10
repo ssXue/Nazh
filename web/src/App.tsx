@@ -14,15 +14,16 @@ import { SourcePanel } from './components/app/SourcePanel';
 import type {
   MotionMode,
   SidebarSection,
-  SidebarSectionConfig,
   StartupPage,
   ThemeMode,
   UiDensity,
 } from './components/app/types';
 import { ConnectionStudio } from './components/ConnectionStudio';
 import { FlowgramCanvas, type FlowgramCanvasHandle } from './components/FlowgramCanvas';
+import { buildInitialProjectDrafts, buildProjectAst, CURRENT_USER_NAME, DEFAULT_BOARD_ID, type ProjectDraft } from './lib/demo-data';
 import { parseWorkflowGraph } from './lib/graph';
 import { formatWorkflowGraph } from './lib/flowgram';
+import { buildSidebarSections } from './lib/sidebar';
 import {
   getInitialAccentPreset,
   getInitialCustomAccentHex,
@@ -60,9 +61,7 @@ import type {
   AppErrorRecord,
   ConnectionRecord,
   DeployResponse,
-  JsonValue,
   RuntimeLogEntry,
-  WorkflowGraph,
   WorkflowResult,
   WorkflowRuntimeState,
   WorkflowWindowStatus,
@@ -82,242 +81,6 @@ import {
   getWorkflowStatusLabel,
   getWorkflowStatusPillClass,
 } from './lib/workflow-status';
-
-interface ProjectDraft {
-  astText: string;
-  payloadText: string;
-}
-
-const CURRENT_USER_NAME = 'ssxue';
-const DEFAULT_BOARD_ID = BOARD_LIBRARY[0]?.id ?? 'default';
-
-function buildIndustrialAlarmExample(boardName: string): WorkflowGraph {
-  return {
-    name: boardName,
-    connections: [
-      {
-        id: 'plc-main',
-        type: 'modbus',
-        metadata: {
-          host: '192.168.10.11',
-          port: 502,
-          unit_id: 1,
-          register: 40001,
-        },
-      },
-    ],
-    nodes: {
-      timer_trigger: {
-        type: 'timer',
-        ai_description: 'Poll the PLC on a steady interval and seed runtime metadata.',
-        config: {
-          interval_ms: 5000,
-          immediate: true,
-          inject: {
-            gateway: 'edge-a',
-            scene: boardName,
-          },
-        },
-        meta: {
-          position: { x: 48, y: 88 },
-        },
-      },
-      modbus_read: {
-        type: 'modbusRead',
-        connection_id: 'plc-main',
-        ai_description: 'Read a simulated Modbus register from the main PLC.',
-        timeout_ms: 1000,
-        config: {
-          unit_id: 1,
-          register: 40001,
-          quantity: 1,
-          base_value: 68,
-          amplitude: 6,
-        },
-        meta: {
-          position: { x: 348, y: 88 },
-        },
-      },
-      code_clean: {
-        type: 'code',
-        ai_description: 'Normalize the PLC value and derive route-ready severity fields.',
-        timeout_ms: 1000,
-        config: {
-          script:
-            'let value = payload["value"]; payload["temperature_c"] = value; payload["temperature_f"] = (value * 1.8) + 32.0; payload["severity"] = value > 120 ? "alert" : "nominal"; payload["route"] = payload["severity"]; payload["tag"] = `${payload["gateway"]}:boiler-a`; payload',
-        },
-        meta: {
-          position: { x: 648, y: 88 },
-        },
-      },
-      route_switch: {
-        type: 'switch',
-        ai_description: 'Route nominal telemetry into SQLite and alert telemetry into DingTalk.',
-        timeout_ms: 1000,
-        config: {
-          script: 'payload["route"]',
-          branches: [
-            { key: 'nominal', label: 'Nominal' },
-            { key: 'alert', label: 'Alert' },
-          ],
-        },
-        meta: {
-          position: { x: 968, y: 72 },
-        },
-      },
-      sql_writer: {
-        type: 'sqlWriter',
-        ai_description: 'Persist nominal telemetry into a local SQLite audit table.',
-        timeout_ms: 1500,
-        config: {
-          database_path: './data/edge-runtime.sqlite3',
-          table: 'temperature_audit',
-        },
-        meta: {
-          position: { x: 1288, y: 176 },
-        },
-      },
-      http_alarm: {
-        type: 'httpClient',
-        ai_description: 'Send high severity telemetry to a DingTalk robot webhook with a rendered markdown alarm body.',
-        timeout_ms: 1500,
-        config: {
-          method: 'POST',
-          url: 'https://oapi.dingtalk.com/robot/send?access_token=replace_me',
-          webhook_kind: 'dingtalk',
-          body_mode: 'dingtalk_markdown',
-          content_type: 'application/json',
-          request_timeout_ms: 4000,
-          title_template: 'Nazh 工业告警 · {{payload.tag}} · {{payload.severity}}',
-          body_template:
-            '### Nazh 工业告警\n- 设备：{{payload.tag}}\n- 场景：{{payload.scene}}\n- 温度：{{payload.temperature_c}} °C / {{payload.temperature_f}} °F\n- 严重级别：{{payload.severity}}\n- Trace：{{trace_id}}\n- 时间：{{timestamp}}',
-          at_mobiles: [],
-          at_all: false,
-          headers: {
-            'X-Alarm-Source': 'nazh',
-          },
-        },
-        meta: {
-          position: { x: 1288, y: -8 },
-        },
-      },
-      debug_console: {
-        type: 'debugConsole',
-        ai_description: 'Mirror the final branch payload into the desktop debug console.',
-        timeout_ms: 500,
-        config: {
-          label: 'final-output',
-          pretty: true,
-        },
-        meta: {
-          position: { x: 1608, y: 88 },
-        },
-      },
-    },
-    edges: [
-      { from: 'timer_trigger', to: 'modbus_read' },
-      { from: 'modbus_read', to: 'code_clean' },
-      { from: 'code_clean', to: 'route_switch' },
-      { from: 'route_switch', to: 'sql_writer', source_port_id: 'nominal' },
-      { from: 'route_switch', to: 'http_alarm', source_port_id: 'alert' },
-      { from: 'sql_writer', to: 'debug_console' },
-      { from: 'http_alarm', to: 'debug_console' },
-    ],
-  };
-}
-
-function buildProjectAst(boardId: string, boardName: string): string {
-  if (boardId === 'default') {
-    return JSON.stringify(buildIndustrialAlarmExample(boardName), null, 2);
-  }
-
-  const base = JSON.parse(SAMPLE_AST) as {
-    name?: string;
-    nodes?: Record<string, { config?: Record<string, JsonValue> }>;
-  };
-
-  base.name = boardName;
-
-  if (base.nodes?.ingress?.config) {
-    base.nodes.ingress.config.message = `${boardName} 已接收边缘输入`;
-  }
-
-  return JSON.stringify(base, null, 2);
-}
-
-function buildInitialProjectDrafts(): Record<string, ProjectDraft> {
-  return BOARD_LIBRARY.reduce<Record<string, ProjectDraft>>((drafts, board) => {
-    drafts[board.id] = {
-      astText: buildProjectAst(board.id, board.name),
-      payloadText:
-        board.id === 'default'
-          ? JSON.stringify(
-              {
-                manual: true,
-                operator: CURRENT_USER_NAME,
-                reason: 'manual override',
-              },
-              null,
-              2,
-            )
-          : SAMPLE_PAYLOAD,
-    };
-    return drafts;
-  }, {});
-}
-
-function buildSidebarSections(
-  workflowStatusLabel: string,
-  graphError: string | null,
-  graphConnectionCount: number,
-  deployInfo: DeployResponse | null,
-  activeBoardName: string | null,
-): SidebarSectionConfig[] {
-  return [
-    {
-      key: 'dashboard',
-      group: 'top',
-      label: 'Dashboard',
-      badge: workflowStatusLabel,
-    },
-    {
-      key: 'boards',
-      group: 'top',
-      label: '所有看板',
-      badge: activeBoardName ?? `${BOARD_LIBRARY.length} 个工程`,
-    },
-    {
-      key: 'source',
-      group: 'main',
-      label: '流程源配置',
-      badge: activeBoardName ? (graphError ? '有错误' : '当前工程') : '未进入工程',
-    },
-    {
-      key: 'connections',
-      group: 'main',
-      label: '连接资源',
-      badge: activeBoardName ? `${graphConnectionCount} 个` : '未进入工程',
-    },
-    {
-      key: 'payload',
-      group: 'main',
-      label: '测试载荷',
-      badge: activeBoardName ? (deployInfo ? '可发送' : '待部署') : '未进入工程',
-    },
-    {
-      key: 'settings',
-      group: 'settings',
-      label: '设置',
-      badge: hasTauriRuntime() ? '桌面态' : '预览态',
-    },
-    {
-      key: 'about',
-      group: 'settings',
-      label: '关于',
-      badge: 'Nazh',
-    },
-  ];
-}
 
 function App() {
   const [startupPage, setStartupPage] = useState<StartupPage>(getInitialStartupPage);
