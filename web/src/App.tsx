@@ -24,6 +24,20 @@ import { FlowgramCanvas, type FlowgramCanvasHandle } from './components/Flowgram
 import { parseWorkflowGraph } from './lib/graph';
 import { formatWorkflowGraph } from './lib/flowgram';
 import {
+  getInitialAccentPreset,
+  getInitialCustomAccentHex,
+  getInitialMotionMode,
+  getInitialStartupPage,
+  getInitialThemeMode,
+  getInitialUiDensity,
+  ACCENT_PRESET_STORAGE_KEY,
+  CUSTOM_ACCENT_STORAGE_KEY,
+  MOTION_MODE_STORAGE_KEY,
+  STARTUP_PAGE_STORAGE_KEY,
+  THEME_STORAGE_KEY,
+  UI_DENSITY_STORAGE_KEY,
+} from './lib/settings';
+import {
   ACCENT_PRESET_OPTIONS,
   buildAccentThemeVariables,
   getAccentHex,
@@ -74,119 +88,8 @@ interface ProjectDraft {
   payloadText: string;
 }
 
-const THEME_STORAGE_KEY = 'nazh.theme';
-const ACCENT_PRESET_STORAGE_KEY = 'nazh.accent-preset';
-const CUSTOM_ACCENT_STORAGE_KEY = 'nazh.custom-accent';
-const UI_DENSITY_STORAGE_KEY = 'nazh.ui-density';
-const MOTION_MODE_STORAGE_KEY = 'nazh.motion-mode';
-const STARTUP_PAGE_STORAGE_KEY = 'nazh.startup-page';
 const CURRENT_USER_NAME = 'ssxue';
 const DEFAULT_BOARD_ID = BOARD_LIBRARY[0]?.id ?? 'default';
-
-function getInitialThemeMode(): ThemeMode {
-  if (typeof window === 'undefined') {
-    return 'light';
-  }
-
-  try {
-    const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
-    if (storedTheme === 'light' || storedTheme === 'dark') {
-      return storedTheme;
-    }
-  } catch {
-    // Ignore storage access failures and fall back to system preference.
-  }
-
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-}
-
-function getInitialAccentPreset(): AccentPreset {
-  if (typeof window === 'undefined') {
-    return ACCENT_PRESET_OPTIONS[0].key;
-  }
-
-  try {
-    const storedPreset = window.localStorage.getItem(ACCENT_PRESET_STORAGE_KEY);
-    if (
-      storedPreset === 'custom' ||
-      ACCENT_PRESET_OPTIONS.some((option) => option.key === storedPreset)
-    ) {
-      return storedPreset as AccentPreset;
-    }
-  } catch {
-    // Ignore storage access failures and fall back to defaults.
-  }
-
-  return ACCENT_PRESET_OPTIONS[0].key;
-}
-
-function getInitialCustomAccentHex(): string {
-  if (typeof window === 'undefined') {
-    return normalizeCustomAccentHex(ACCENT_PRESET_OPTIONS[0].hex);
-  }
-
-  try {
-    const storedHex = window.localStorage.getItem(CUSTOM_ACCENT_STORAGE_KEY);
-    if (storedHex) {
-      return normalizeCustomAccentHex(storedHex);
-    }
-  } catch {
-    // Ignore storage access failures and fall back to defaults.
-  }
-
-  return normalizeCustomAccentHex(ACCENT_PRESET_OPTIONS[0].hex);
-}
-
-function getInitialUiDensity(): UiDensity {
-  if (typeof window === 'undefined') {
-    return 'comfortable';
-  }
-
-  try {
-    const storedDensity = window.localStorage.getItem(UI_DENSITY_STORAGE_KEY);
-    if (storedDensity === 'comfortable' || storedDensity === 'compact') {
-      return storedDensity;
-    }
-  } catch {
-    // Ignore storage access failures and fall back to defaults.
-  }
-
-  return 'comfortable';
-}
-
-function getInitialMotionMode(): MotionMode {
-  if (typeof window === 'undefined') {
-    return 'full';
-  }
-
-  try {
-    const storedMotionMode = window.localStorage.getItem(MOTION_MODE_STORAGE_KEY);
-    if (storedMotionMode === 'full' || storedMotionMode === 'reduced') {
-      return storedMotionMode;
-    }
-  } catch {
-    // Ignore storage access failures and fall back to system preference.
-  }
-
-  return window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'reduced' : 'full';
-}
-
-function getInitialStartupPage(): StartupPage {
-  if (typeof window === 'undefined') {
-    return 'dashboard';
-  }
-
-  try {
-    const storedPage = window.localStorage.getItem(STARTUP_PAGE_STORAGE_KEY);
-    if (storedPage === 'dashboard' || storedPage === 'boards') {
-      return storedPage;
-    }
-  } catch {
-    // Ignore storage access failures and fall back to defaults.
-  }
-
-  return 'dashboard';
-}
 
 function buildIndustrialAlarmExample(boardName: string): WorkflowGraph {
   return {
