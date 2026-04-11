@@ -9,6 +9,7 @@ import { hasTauriRuntime } from './tauri';
 export function buildSidebarSections(
   workflowStatusLabel: string,
   graphConnectionCount: number,
+  logCount: number,
   deployInfo: DeployResponse | null,
   activeBoardName: string | null,
 ): SidebarSectionConfig[] {
@@ -36,6 +37,12 @@ export function buildSidebarSections(
       group: 'main',
       label: '测试载荷',
       badge: activeBoardName ? (deployInfo ? '可发送' : '待部署') : '未进入工程',
+    },
+    {
+      key: 'logs',
+      group: 'main',
+      label: '结构化日志',
+      badge: logCount > 0 ? `${logCount} 条` : activeBoardName ? '等待事件' : '全局会话',
     },
     {
       key: 'settings',

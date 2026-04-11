@@ -4,11 +4,10 @@ import { useSettings } from './hooks/use-settings';
 import { useWorkflowEngine } from './hooks/use-workflow-engine';
 
 import { AboutPanel } from './components/app/AboutPanel';
-import {
-  BackIcon,
-} from './components/app/AppIcons';
+import { BackIcon } from './components/app/AppIcons';
 import { BOARD_LIBRARY, BoardsPanel, type BoardItem } from './components/app/BoardsPanel';
 import { DashboardPanel } from './components/app/DashboardPanel';
+import { LogsPanel } from './components/app/LogsPanel';
 import { PayloadPanel } from './components/app/PayloadPanel';
 import { RuntimeDock } from './components/app/RuntimeDock';
 import { SettingsPanel } from './components/app/SettingsPanel';
@@ -29,9 +28,7 @@ import {
 } from './lib/tauri';
 import { SAMPLE_AST, SAMPLE_PAYLOAD } from './types';
 import type { WorkflowResult } from './types';
-import {
-  describeUnknownError,
-} from './lib/workflow-events';
+import { describeUnknownError } from './lib/workflow-events';
 import {
   deriveWorkflowStatus,
   getWorkflowStatusLabel,
@@ -275,6 +272,7 @@ function App() {
   const sidebarSections = buildSidebarSections(
     workflowStatusLabel,
     graphConnectionCount,
+    engine.eventFeed.length + engine.appErrors.length,
     engine.deployInfo,
     activeBoard?.name ?? null,
   );
@@ -418,6 +416,21 @@ function App() {
                 payloadText={payloadText}
                 deployInfo={engine.deployInfo}
                 onPayloadTextChange={handlePayloadTextChange}
+              />
+            </div>
+          </section>
+        );
+      case 'logs':
+        return (
+          <section className="studio-content studio-content--panel">
+            <div className="panel studio-content__panel studio-content__panel--scroll">
+              <LogsPanel
+                eventFeed={engine.eventFeed}
+                appErrors={engine.appErrors}
+                resultCount={engine.results.length}
+                themeMode={settings.themeMode}
+                activeBoardName={activeBoard?.name ?? null}
+                workflowStatusLabel={workflowStatusLabel}
               />
             </div>
           </section>

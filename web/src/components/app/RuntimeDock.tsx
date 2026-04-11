@@ -3,25 +3,12 @@ import { JsonView, collapseAllNested, darkStyles, defaultStyles } from 'react-js
 import 'react-json-view-lite/dist/index.css';
 
 import { CopyIcon, DockToggleIcon } from './AppIcons';
+import {
+  buildEventFeedPlainText,
+  buildRuntimeConsoleEntries,
+  formatLogTimestamp,
+} from './runtime-console';
 import type { RuntimeDockProps } from './types';
-
-type RuntimeConsoleEntry = {
-  id: string;
-  timestamp: number;
-  level: 'info' | 'success' | 'warn' | 'error';
-  source: string;
-  message: string;
-  detail?: string | null;
-  tag?: string | null;
-};
-
-function formatLogTimestamp(timestamp: number): string {
-  return new Intl.DateTimeFormat('zh-CN', {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  }).format(timestamp);
-}
 
 function normalizeResultPayload(payload: unknown): Record<string, unknown> | unknown[] {
   if (Array.isArray(payload)) {
@@ -35,112 +22,6 @@ function normalizeResultPayload(payload: unknown): Record<string, unknown> | unk
   return { value: payload };
 }
 
-function getErrorScopeLabel(scope: RuntimeDockProps['appErrors'][number]['scope']): string {
-  switch (scope) {
-    case 'workflow':
-      return '工作流';
-    case 'command':
-      return '命令';
-    case 'frontend':
-      return '前端';
-    case 'runtime':
-      return '运行时';
-  }
-}
-
-function normalizeConsoleSignatureText(value: string): string {
-  return value.replace(/\s+/g, ' ').trim();
-}
-
-function isMirroredWorkflowFailure(
-  error: RuntimeDockProps['appErrors'][number],
-  eventFeed: RuntimeDockProps['eventFeed'],
-): boolean {
-  const matchedNode = error.title.match(/^节点\s+(.+?)\s+执行失败$/);
-  if (!matchedNode) {
-    return false;
-  }
-
-  const nodeId = matchedNode[1];
-  const normalizedDetail = normalizeConsoleSignatureText(error.detail ?? '');
-
-  return eventFeed.some(
-    (entry) =>
-      entry.level === 'error' &&
-      entry.source === nodeId &&
-      entry.message === '节点执行失败' &&
-      normalizeConsoleSignatureText(entry.detail ?? '') === normalizedDetail,
-  );
-}
-
-function isMirroredFlowgramError(
-  error: RuntimeDockProps['appErrors'][number],
-  eventFeed: RuntimeDockProps['eventFeed'],
-): boolean {
-  return eventFeed.some(
-    (entry) =>
-      entry.level === 'error' &&
-      entry.source === 'flowgram' &&
-      normalizeConsoleSignatureText(entry.message) === normalizeConsoleSignatureText(error.title) &&
-      normalizeConsoleSignatureText(entry.detail ?? '') ===
-        normalizeConsoleSignatureText(error.detail ?? ''),
-  );
-}
-
-function buildRuntimeConsoleEntries(
-  eventFeed: RuntimeDockProps['eventFeed'],
-  appErrors: RuntimeDockProps['appErrors'],
-): RuntimeConsoleEntry[] {
-  const eventEntries: RuntimeConsoleEntry[] = eventFeed.map((entry) => ({
-    id: entry.id,
-    timestamp: entry.timestamp,
-    level: entry.level,
-    source: entry.source,
-    message: entry.message,
-    detail: entry.detail,
-    tag: null,
-  }));
-
-  const capturedErrorEntries: RuntimeConsoleEntry[] = appErrors
-    .filter((error) => {
-      if (error.scope === 'workflow') {
-        return !isMirroredWorkflowFailure(error, eventFeed);
-      }
-
-      if (error.scope === 'frontend') {
-        return !isMirroredFlowgramError(error, eventFeed);
-      }
-
-      return true;
-    })
-    .map((error) => ({
-      id: error.id,
-      timestamp: error.timestamp,
-      level: 'error',
-      source: getErrorScopeLabel(error.scope),
-      message: error.title,
-      detail: error.detail,
-      tag: '异常',
-    }));
-
-  return [...eventEntries, ...capturedErrorEntries].sort((left, right) => {
-    if (left.timestamp === right.timestamp) {
-      return left.id.localeCompare(right.id);
-    }
-
-    return left.timestamp - right.timestamp;
-  });
-}
-
-function buildEventFeedPlainText(entries: RuntimeConsoleEntry[]): string {
-  return entries
-    .map((entry) => {
-      const prefix = entry.tag ? `[${entry.tag}] ` : '';
-      const baseLine = `[${formatLogTimestamp(entry.timestamp)}] ${prefix}[${entry.source}] ${entry.message}`;
-      return entry.detail ? `${baseLine}\n${entry.detail}` : baseLine;
-    })
-    .join('\n\n');
-}
 
 export function RuntimeDock({
   eventFeed,

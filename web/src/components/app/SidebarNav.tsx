@@ -3,6 +3,7 @@ import {
   BoardsIcon,
   ConnectionsIcon,
   DashboardIcon,
+  LogsIcon,
   MoonIcon,
   PayloadIcon,
   SettingsIcon,
@@ -16,6 +17,7 @@ const SECTION_ICONS: Record<SidebarSection, typeof DashboardIcon> = {
   boards: BoardsIcon,
   connections: ConnectionsIcon,
   payload: PayloadIcon,
+  logs: LogsIcon,
   settings: SettingsIcon,
   about: AboutIcon,
 };

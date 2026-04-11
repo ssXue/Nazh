@@ -79,6 +79,18 @@ export function PayloadIcon(props: IconProps) {
   );
 }
 
+export function LogsIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="M5 7h14" />
+      <path d="M5 12h10" />
+      <path d="M5 17h8" />
+      <circle cx="18" cy="12" r="1.6" />
+      <circle cx="16" cy="17" r="1.6" />
+    </BaseIcon>
+  );
+}
+
 export function RunActionIcon(props: IconProps) {
   return (
     <BaseIcon {...props}>

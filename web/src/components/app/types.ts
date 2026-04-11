@@ -16,6 +16,7 @@ export type SidebarSection =
   | 'boards'
   | 'connections'
   | 'payload'
+  | 'logs'
   | 'settings'
   | 'about';
 export type SidebarGroup = 'top' | 'main' | 'settings';
@@ -44,6 +45,15 @@ export interface PayloadPanelProps {
   payloadText: string;
   deployInfo: DeployResponse | null;
   onPayloadTextChange: (value: string) => void;
+}
+
+export interface LogsPanelProps {
+  eventFeed: RuntimeLogEntry[];
+  appErrors: AppErrorRecord[];
+  resultCount: number;
+  themeMode: ThemeMode;
+  activeBoardName: string | null;
+  workflowStatusLabel: string;
 }
 
 export interface RuntimeDockProps {
