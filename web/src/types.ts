@@ -4,7 +4,6 @@ import type { WorkflowJSON as FlowgramWorkflowJSON } from '@flowgram.ai/free-lay
 
 export type {
   ConnectionDefinition,
-  ConnectionRecord,
   DeployResponse,
   DispatchResponse,
   ExecutionEvent,
@@ -19,10 +18,49 @@ export type { WorkflowContext as WorkflowResult } from './generated';
 // ── 前端扩展类型（补充 Rust 侧不需要的画布/UI 字段） ───────
 
 import type {
+  ConnectionRecord as GeneratedConnectionRecord,
   JsonValue,
   WorkflowGraph as WorkflowGraphBase,
   WorkflowNodeDefinition as WorkflowNodeDefinitionBase,
 } from './generated';
+
+export type ConnectionHealthState =
+  | 'idle'
+  | 'connecting'
+  | 'healthy'
+  | 'degraded'
+  | 'invalid'
+  | 'reconnecting'
+  | 'rateLimited'
+  | 'circuitOpen'
+  | 'timeout'
+  | 'disconnected';
+
+export interface ConnectionHealthSnapshot {
+  phase: ConnectionHealthState;
+  diagnosis?: string | null;
+  recommendedAction?: string | null;
+  lastStateChangedAt?: string | null;
+  lastConnectedAt?: string | null;
+  lastHeartbeatAt?: string | null;
+  lastCheckedAt?: string | null;
+  lastReleasedAt?: string | null;
+  lastFailureAt?: string | null;
+  lastFailureReason?: string | null;
+  nextRetryAt?: string | null;
+  circuitOpenUntil?: string | null;
+  rateLimitedUntil?: string | null;
+  consecutiveFailures: number;
+  totalFailures: number;
+  timeoutCount: number;
+  rateLimitHits: number;
+  reconnectAttempts: number;
+  lastLatencyMs?: number | null;
+}
+
+export type ConnectionRecord = GeneratedConnectionRecord & {
+  health?: ConnectionHealthSnapshot;
+};
 
 /**
  * 带有画布布局元数据的节点定义。

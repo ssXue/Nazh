@@ -64,6 +64,25 @@ pub enum EngineError {
     #[error("连接 `{0}` 已被借出")]
     ConnectionBusy(String),
 
+    #[error("连接 `{connection_id}` 配置无效: {reason}")]
+    ConnectionInvalidConfiguration {
+        connection_id: String,
+        reason: String,
+    },
+
+    #[error("连接 `{connection_id}` 已被限流，请在 {retry_after_ms} ms 后重试")]
+    ConnectionRateLimited {
+        connection_id: String,
+        retry_after_ms: u64,
+    },
+
+    #[error("连接 `{connection_id}` 已熔断，请在 {retry_after_ms} ms 后重试: {reason}")]
+    ConnectionCircuitOpen {
+        connection_id: String,
+        retry_after_ms: u64,
+        reason: String,
+    },
+
     #[error("尚未部署任何工作流")]
     WorkflowUnavailable,
 }

@@ -1796,14 +1796,26 @@ h3 {
   animation: connection-status-pulse 2.6s ease-in-out infinite;
 }
 
-.connection-status.is-runtime {
+.connection-status.is-healthy {
   color: var(--success-ink);
 }
 
-.connection-status.is-runtime .connection-status__dot {
+.connection-status.is-healthy .connection-status__dot {
   background: var(--success);
   box-shadow: 0 0 0 4px var(--success-soft);
   animation: connection-status-pulse 1.8s ease-in-out infinite;
+}
+
+.connection-status.is-connecting,
+.connection-status.is-reconnecting {
+  color: var(--accent-ink);
+}
+
+.connection-status.is-connecting .connection-status__dot,
+.connection-status.is-reconnecting .connection-status__dot {
+  background: var(--accent);
+  box-shadow: 0 0 0 4px rgba(var(--accent-rgb) / 0.16);
+  animation: connection-status-pulse 1.2s ease-in-out infinite;
 }
 
 .connection-status.is-busy {
@@ -1814,6 +1826,26 @@ h3 {
   background: var(--warning);
   box-shadow: 0 0 0 4px var(--warning-soft);
   animation: connection-status-pulse 1.1s ease-in-out infinite;
+}
+
+.connection-status.is-warning {
+  color: var(--warning-ink);
+}
+
+.connection-status.is-warning .connection-status__dot {
+  background: var(--warning);
+  box-shadow: 0 0 0 4px var(--warning-soft);
+  animation: connection-status-pulse 1.6s ease-in-out infinite;
+}
+
+.connection-status.is-danger {
+  color: var(--danger-ink);
+}
+
+.connection-status.is-danger .connection-status__dot {
+  background: var(--danger);
+  box-shadow: 0 0 0 4px var(--danger-soft);
+  animation: connection-status-pulse 1.3s ease-in-out infinite;
 }
 
 .connection-card__settings {
@@ -1939,6 +1971,42 @@ h3 {
   font-size: var(--font-callout);
 }
 
+.connection-health-panel {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line-faint);
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at top right, rgba(var(--accent-rgb) / 0.08), transparent 42%),
+    var(--surface-muted);
+}
+
+.connection-health-panel__headline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.connection-health-panel__summary,
+.connection-health-panel__action {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: var(--font-callout);
+  line-height: 1.45;
+}
+
+.connection-health-panel__action {
+  color: var(--muted);
+}
+
+.connection-health-panel__metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .connection-settings-panel__close {
   min-height: 30px;
   border: 1px solid var(--line-soft);
@@ -1981,6 +2049,23 @@ h3 {
 .connection-form span {
   color: var(--muted);
   font-size: var(--font-subheadline);
+  line-height: 1.2;
+}
+
+.connection-form__section {
+  display: grid;
+  gap: 4px;
+  align-content: start;
+}
+
+.connection-form__section--full {
+  grid-column: 1 / -1;
+  padding: 2px 2px 0;
+}
+
+.connection-form__section-title {
+  color: var(--text);
+  font-size: var(--font-callout);
   line-height: 1.2;
 }
 

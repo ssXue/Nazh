@@ -67,12 +67,18 @@ where
     };
 
     let result = operation(lease.as_ref());
+    let operation_error = result
+        .as_ref()
+        .err()
+        .map(std::string::ToString::to_string);
 
-    if let Some(conn_id) = connection_id {
-        let release_result = connection_manager.release(conn_id).await;
-        if let Err(e) = release_result {
+    if let Some(lease) = lease.as_ref() {
+        let release_result = connection_manager
+            .release_lease(lease, result.is_ok(), operation_error.as_deref())
+            .await;
+        if let Err(error) = release_result {
             if result.is_ok() {
-                return Err(e);
+                return Err(error);
             }
         }
     }

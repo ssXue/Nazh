@@ -213,6 +213,7 @@ async fn deploy_workflow(
     trigger_tasks.extend(spawn_serial_root_tasks(
         app.clone(),
         ingress.clone(),
+        state.connection_manager.clone(),
         serial_roots,
     ));
 
@@ -287,6 +288,11 @@ async fn undeploy_workflow(
             aborted_timer_count: 0,
         }
     };
+
+    state
+        .connection_manager
+        .mark_all_idle("运行已停止，连接会话已回收到空闲态")
+        .await;
 
     let _ = app.emit("workflow://undeployed", response.clone());
     Ok(response)
@@ -690,6 +696,12 @@ async fn collect_serial_root_specs(
             })?;
 
         if !is_serial_connection_type(&connection.kind) {
+            let _ = connection_manager
+                .mark_invalid_configuration(
+                    connection_id,
+                    format!("连接资源 `{connection_id}` 不是串口类型"),
+                )
+                .await;
             return Err(EngineError::node_config(
                 node_id.clone(),
                 format!("连接资源 `{connection_id}` 不是串口类型"),
@@ -706,6 +718,12 @@ async fn collect_serial_root_specs(
         config.port_path = config.port_path.trim().to_owned();
 
         if config.port_path.is_empty() {
+            let _ = connection_manager
+                .mark_invalid_configuration(
+                    connection_id,
+                    format!("串口连接资源 `{connection_id}` 需要配置 port_path"),
+                )
+                .await;
             return Err(EngineError::node_config(
                 node_id.clone(),
                 format!("串口连接资源 `{connection_id}` 需要配置 port_path"),
@@ -766,6 +784,7 @@ fn spawn_timer_root_tasks(
 fn spawn_serial_root_tasks(
     app: AppHandle,
     ingress: WorkflowIngress,
+    connection_manager: nazh_engine::SharedConnectionManager,
     serial_roots: Vec<SerialRootSpec>,
 ) -> Vec<DesktopTriggerTask> {
     serial_roots
@@ -773,10 +792,11 @@ fn spawn_serial_root_tasks(
         .map(|serial_root| {
             let app = app.clone();
             let ingress = ingress.clone();
+            let connection_manager = connection_manager.clone();
             let cancel = Arc::new(AtomicBool::new(false));
             let task_cancel = Arc::clone(&cancel);
             let join = tauri::async_runtime::spawn_blocking(move || {
-                run_serial_root_reader(app, ingress, serial_root, task_cancel);
+                run_serial_root_reader(app, ingress, connection_manager, serial_root, task_cancel);
             });
 
             DesktopTriggerTask { cancel, join }
@@ -787,6 +807,7 @@ fn spawn_serial_root_tasks(
 fn run_serial_root_reader(
     app: AppHandle,
     ingress: WorkflowIngress,
+    connection_manager: nazh_engine::SharedConnectionManager,
     serial_root: SerialRootSpec,
     cancel: Arc<AtomicBool>,
 ) {
@@ -795,84 +816,174 @@ fn run_serial_root_reader(
     let idle_gap = Duration::from_millis(config.idle_gap_ms.clamp(1, 10_000));
     let max_frame_bytes = config.max_frame_bytes.clamp(1, 8_192);
     let delimiter = decode_serial_delimiter(&config.delimiter);
-    let port_result = serialport::new(config.port_path.clone(), config.baud_rate.max(1))
-        .timeout(read_timeout)
-        .data_bits(serial_data_bits(config.data_bits))
-        .parity(serial_parity(&config.parity))
-        .stop_bits(serial_stop_bits(config.stop_bits))
-        .flow_control(serial_flow_control(&config.flow_control))
-        .open();
-    let mut port = match port_result {
-        Ok(port) => port,
-        Err(error) => {
-            emit_serial_trigger_failure(
-                &app,
-                &serial_root.node_id,
-                format!("串口打开失败: {error}"),
-            );
-            return;
-        }
-    };
-
-    let mut buffer = Vec::with_capacity(max_frame_bytes.min(512));
-    let mut scratch = [0_u8; 64];
-    let mut last_byte_at: Option<Instant> = None;
 
     while !cancel.load(Ordering::Relaxed) {
-        match port.read(&mut scratch) {
-            Ok(0) => flush_idle_serial_frame(
-                &app,
-                &ingress,
-                &serial_root,
-                &mut buffer,
-                last_byte_at,
-                idle_gap,
-            ),
-            Ok(bytes_read) => {
-                buffer.extend_from_slice(&scratch[..bytes_read]);
-                last_byte_at = Some(Instant::now());
-
-                while let Some(frame) = drain_serial_delimited_frame(&mut buffer, &delimiter) {
-                    submit_serial_frame(&app, &ingress, &serial_root, &frame);
-                }
-
-                if buffer.len() >= max_frame_bytes {
-                    let frame = buffer.drain(..max_frame_bytes).collect::<Vec<_>>();
-                    submit_serial_frame(&app, &ingress, &serial_root, &frame);
-                }
+        let lease = match tauri::async_runtime::block_on(
+            connection_manager.borrow(&serial_root.connection_id),
+        ) {
+            Ok(lease) => lease,
+            Err(error) => {
+                let retry_after_ms = retry_delay_from_error(&error).unwrap_or(800);
+                emit_serial_trigger_failure(&app, &serial_root.node_id, error.to_string());
+                sleep_with_cancel(&cancel, Duration::from_millis(retry_after_ms));
+                continue;
             }
-            Err(error) if error.kind() == std::io::ErrorKind::TimedOut => {
-                if buffer.is_empty() {
-                    continue;
-                }
-                let Some(last_byte_at_instant) = last_byte_at else {
-                    continue;
-                };
-                if last_byte_at_instant.elapsed() < idle_gap {
-                    continue;
-                }
-                flush_idle_serial_frame(
-                    &app,
-                    &ingress,
-                    &serial_root,
-                    &mut buffer,
-                    last_byte_at,
-                    idle_gap,
-                );
+        };
+        let heartbeat_interval = Duration::from_millis(
+            governance_u64(&lease.metadata, "heartbeat_interval_ms")
+                .unwrap_or(3_000)
+                .clamp(250, 30_000),
+        );
+
+        let connect_started_at = Instant::now();
+        let port_result = serialport::new(config.port_path.clone(), config.baud_rate.max(1))
+            .timeout(read_timeout)
+            .data_bits(serial_data_bits(config.data_bits))
+            .parity(serial_parity(&config.parity))
+            .stop_bits(serial_stop_bits(config.stop_bits))
+            .flow_control(serial_flow_control(&config.flow_control))
+            .open();
+        let mut port = match port_result {
+            Ok(port) => {
+                let connect_latency_ms = connect_started_at.elapsed().as_millis() as u64;
+                let _ = tauri::async_runtime::block_on(connection_manager.record_connect_success(
+                    &serial_root.connection_id,
+                    format!(
+                        "串口 {} 已建立监听，等待外设上报数据",
+                        config.port_path
+                    ),
+                    Some(connect_latency_ms),
+                ));
+                port
             }
             Err(error) => {
-                emit_serial_trigger_failure(
-                    &app,
-                    &serial_root.node_id,
-                    format!("串口读取失败: {error}"),
+                let reason = format!("串口打开失败: {error}");
+                let retry_after_ms = tauri::async_runtime::block_on(
+                    connection_manager.record_connect_failure(
+                        &serial_root.connection_id,
+                        reason.clone(),
+                    ),
+                )
+                .unwrap_or(800);
+                let _ = tauri::async_runtime::block_on(
+                    connection_manager.release(&serial_root.connection_id),
                 );
-                break;
+                emit_serial_trigger_failure(&app, &serial_root.node_id, reason);
+                sleep_with_cancel(&cancel, Duration::from_millis(retry_after_ms));
+                continue;
+            }
+        };
+        let mut last_heartbeat_sent_at = Instant::now();
+
+        let mut buffer = Vec::with_capacity(max_frame_bytes.min(512));
+        let mut scratch = [0_u8; 64];
+        let mut last_byte_at: Option<Instant> = None;
+        let mut disconnected_reason: Option<String> = None;
+
+        while !cancel.load(Ordering::Relaxed) {
+            match port.read(&mut scratch) {
+                Ok(0) => {
+                    flush_idle_serial_frame(
+                        &app,
+                        &ingress,
+                        &serial_root,
+                        &mut buffer,
+                        last_byte_at,
+                        idle_gap,
+                    );
+
+                    if last_heartbeat_sent_at.elapsed() >= heartbeat_interval {
+                        let _ = tauri::async_runtime::block_on(connection_manager.record_heartbeat(
+                            &serial_root.connection_id,
+                            format!("串口 {} 心跳正常，监听仍在进行中", config.port_path),
+                        ));
+                        last_heartbeat_sent_at = Instant::now();
+                    }
+                }
+                Ok(bytes_read) => {
+                    buffer.extend_from_slice(&scratch[..bytes_read]);
+                    last_byte_at = Some(Instant::now());
+
+                    let _ = tauri::async_runtime::block_on(connection_manager.record_heartbeat(
+                        &serial_root.connection_id,
+                        format!("串口 {} 收到 {} 字节输入", config.port_path, bytes_read),
+                    ));
+                    last_heartbeat_sent_at = Instant::now();
+
+                    while let Some(frame) = drain_serial_delimited_frame(&mut buffer, &delimiter) {
+                        submit_serial_frame(&app, &ingress, &serial_root, &frame);
+                    }
+
+                    if buffer.len() >= max_frame_bytes {
+                        let frame = buffer.drain(..max_frame_bytes).collect::<Vec<_>>();
+                        submit_serial_frame(&app, &ingress, &serial_root, &frame);
+                    }
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::TimedOut => {
+                    if buffer.is_empty() {
+                        if last_heartbeat_sent_at.elapsed() >= heartbeat_interval {
+                            let _ = tauri::async_runtime::block_on(
+                                connection_manager.record_heartbeat(
+                                    &serial_root.connection_id,
+                                    format!("串口 {} 空闲等待中，链路仍存活", config.port_path),
+                                ),
+                            );
+                            last_heartbeat_sent_at = Instant::now();
+                        }
+                        continue;
+                    }
+
+                    let Some(last_byte_at_instant) = last_byte_at else {
+                        continue;
+                    };
+
+                    if last_byte_at_instant.elapsed() < idle_gap {
+                        continue;
+                    }
+
+                    flush_idle_serial_frame(
+                        &app,
+                        &ingress,
+                        &serial_root,
+                        &mut buffer,
+                        last_byte_at,
+                        idle_gap,
+                    );
+                }
+                Err(error) => {
+                    disconnected_reason = Some(format!("串口读取失败: {error}"));
+                    break;
+                }
             }
         }
-    }
 
-    if !cancel.load(Ordering::Relaxed) && !buffer.is_empty() {
-        submit_serial_frame(&app, &ingress, &serial_root, &buffer);
+        if !cancel.load(Ordering::Relaxed) && !buffer.is_empty() {
+            submit_serial_frame(&app, &ingress, &serial_root, &buffer);
+        }
+
+        if cancel.load(Ordering::Relaxed) {
+            let _ = tauri::async_runtime::block_on(
+                connection_manager.release(&serial_root.connection_id),
+            );
+            let _ = tauri::async_runtime::block_on(connection_manager.mark_disconnected(
+                &serial_root.connection_id,
+                format!("串口 {} 监听已停止", config.port_path),
+            ));
+            break;
+        }
+
+        let reason = disconnected_reason
+            .unwrap_or_else(|| format!("串口 {} 连接已断开", config.port_path));
+        let retry_after_ms = tauri::async_runtime::block_on(connection_manager.record_connect_failure(
+            &serial_root.connection_id,
+            reason.clone(),
+        ))
+        .unwrap_or(800);
+        let _ = tauri::async_runtime::block_on(connection_manager.release(
+            &serial_root.connection_id,
+        ));
+        emit_serial_trigger_failure(&app, &serial_root.node_id, reason);
+        sleep_with_cancel(&cancel, Duration::from_millis(retry_after_ms));
     }
 }
 
@@ -950,6 +1061,33 @@ fn emit_serial_trigger_failure(app: &AppHandle, node_id: &str, message: String) 
             error: message,
         },
     );
+}
+
+fn retry_delay_from_error(error: &EngineError) -> Option<u64> {
+    match error {
+        EngineError::ConnectionRateLimited { retry_after_ms, .. }
+        | EngineError::ConnectionCircuitOpen { retry_after_ms, .. } => Some(*retry_after_ms),
+        _ => None,
+    }
+}
+
+fn governance_u64(metadata: &Value, key: &str) -> Option<u64> {
+    metadata
+        .as_object()
+        .and_then(|value| value.get("governance"))
+        .and_then(Value::as_object)
+        .and_then(|governance| governance.get(key))
+        .and_then(Value::as_u64)
+}
+
+fn sleep_with_cancel(cancel: &AtomicBool, duration: Duration) {
+    let start = Instant::now();
+    while start.elapsed() < duration {
+        if cancel.load(Ordering::Relaxed) {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(100).min(duration.saturating_sub(start.elapsed())));
+    }
 }
 
 fn serial_data_bits(value: u8) -> serialport::DataBits {

@@ -10,6 +10,7 @@ import {
 
 import type {
   ConnectionDefinition,
+  ConnectionHealthSnapshot,
   ConnectionRecord,
   JsonValue,
 } from '../types';
@@ -53,6 +54,20 @@ interface ConnectionTemplate {
 
 type ConnectionIconComponent = ComponentType<SVGProps<SVGSVGElement>>;
 
+const DEFAULT_CONNECTION_GOVERNANCE = {
+  connect_timeout_ms: 3000,
+  operation_timeout_ms: 5000,
+  heartbeat_interval_ms: 3000,
+  heartbeat_timeout_ms: 12000,
+  rate_limit_max_attempts: 8,
+  rate_limit_window_ms: 10000,
+  rate_limit_cooldown_ms: 4000,
+  circuit_failure_threshold: 3,
+  circuit_open_ms: 15000,
+  reconnect_base_ms: 800,
+  reconnect_max_ms: 8000,
+} as const;
+
 const CONNECTION_TEMPLATES: ConnectionTemplate[] = [
   {
     key: 'modbus',
@@ -66,6 +81,7 @@ const CONNECTION_TEMPLATES: ConnectionTemplate[] = [
         host: '192.168.10.11',
         port: 502,
         unit_id: 1,
+        governance: DEFAULT_CONNECTION_GOVERNANCE,
       },
     },
   },
@@ -90,6 +106,7 @@ const CONNECTION_TEMPLATES: ConnectionTemplate[] = [
         idle_gap_ms: 80,
         max_frame_bytes: 512,
         trim: true,
+        governance: DEFAULT_CONNECTION_GOVERNANCE,
       },
     },
   },
@@ -105,6 +122,7 @@ const CONNECTION_TEMPLATES: ConnectionTemplate[] = [
         host: 'broker.local',
         port: 1883,
         topic: 'factory/line-a/events',
+        governance: DEFAULT_CONNECTION_GOVERNANCE,
       },
     },
   },
@@ -119,6 +137,7 @@ const CONNECTION_TEMPLATES: ConnectionTemplate[] = [
       metadata: {
         url: 'https://example.com/ingest',
         method: 'POST',
+        governance: DEFAULT_CONNECTION_GOVERNANCE,
       },
     },
   },
@@ -130,7 +149,9 @@ const CONNECTION_TEMPLATES: ConnectionTemplate[] = [
     definition: {
       id: 'connection',
       type: 'custom',
-      metadata: {},
+      metadata: {
+        governance: DEFAULT_CONNECTION_GOVERNANCE,
+      },
     },
   },
 ];
@@ -186,6 +207,22 @@ function metadataBoolean(
 ): boolean {
   const value = metadataRecord(metadata)[key];
   return typeof value === 'boolean' ? value : fallback;
+}
+
+function governanceRecord(metadata: JsonValue | undefined): Record<string, JsonValue> {
+  return metadataRecord(metadata).governance && isRecord(metadataRecord(metadata).governance)
+    ? (metadataRecord(metadata).governance as Record<string, JsonValue>)
+    : {};
+}
+
+function governanceNumber(
+  metadata: JsonValue | undefined,
+  key: keyof typeof DEFAULT_CONNECTION_GOVERNANCE,
+): number {
+  const value = governanceRecord(metadata)[key];
+  return typeof value === 'number' && Number.isFinite(value)
+    ? value
+    : DEFAULT_CONNECTION_GOVERNANCE[key];
 }
 
 function parseMetadataNumber(value: string, fallback: number): number {
@@ -272,23 +309,154 @@ function connectionParameterBrief(connection: ConnectionDefinition): string {
     return `${method} · ${compactConnectionValue(url, '未配置 URL')}`;
   }
 
-  const metadataKeys = Object.keys(metadataRecord(connection.metadata));
+  const metadataKeys = Object.keys(metadataRecord(connection.metadata)).filter(
+    (key) => key !== 'governance',
+  );
   return metadataKeys.length > 0 ? `${metadataKeys.length} 个参数` : '未配置参数';
 }
 
 function connectionRuntimeState(runtimeConnection: ConnectionRecord | undefined): {
   label: string;
-  state: 'busy' | 'local' | 'runtime';
+  state:
+    | 'busy'
+    | 'local'
+    | 'healthy'
+    | 'connecting'
+    | 'reconnecting'
+    | 'warning'
+    | 'danger';
+  detail: string | null;
+  failureReason: string | null;
+  health: ConnectionHealthSnapshot | undefined;
 } {
   if (!runtimeConnection) {
-    return { label: '等待部署', state: 'local' };
+    return {
+      label: '等待部署',
+      state: 'local',
+      detail: '连接配置已存在，但当前还没有运行态会话。',
+      failureReason: null,
+      health: undefined,
+    };
   }
+
+  const health = runtimeConnection.health;
+  const failureReason = health?.lastFailureReason ?? null;
 
   if (runtimeConnection.in_use) {
-    return { label: '运行占用', state: 'busy' };
+    return {
+      label:
+        health?.phase === 'reconnecting' || health?.phase === 'connecting'
+          ? '建连中'
+          : '运行占用',
+      state: 'busy',
+      detail:
+        health?.diagnosis ?? '连接已被运行态占用，结束后会自动释放回连接池。',
+      failureReason,
+      health,
+    };
   }
 
-  return { label: '运行可用', state: 'runtime' };
+  switch (health?.phase) {
+    case 'healthy':
+      return {
+        label: '连接健康',
+        state: 'healthy',
+        detail: health.diagnosis ?? '连接可用，最近一次建连与心跳均正常。',
+        failureReason,
+        health,
+      };
+    case 'connecting':
+      return {
+        label: '建连中',
+        state: 'connecting',
+        detail: health.diagnosis ?? '连接正在建立会话。',
+        failureReason,
+        health,
+      };
+    case 'reconnecting':
+      return {
+        label: '重连中',
+        state: 'reconnecting',
+        detail: health.diagnosis ?? '连接正在按退避策略重试。',
+        failureReason,
+        health,
+      };
+    case 'rateLimited':
+      return {
+        label: '已限流',
+        state: 'warning',
+        detail: health.diagnosis ?? '短时间内建连次数过多，暂时拒绝新的会话。',
+        failureReason,
+        health,
+      };
+    case 'degraded':
+      return {
+        label: '待诊断',
+        state: 'warning',
+        detail: health.diagnosis ?? '连接仍可见，但健康度已经下降。',
+        failureReason,
+        health,
+      };
+    case 'timeout':
+      return {
+        label: '已超时',
+        state: 'danger',
+        detail: health.diagnosis ?? '连接心跳或运行链路超时。',
+        failureReason,
+        health,
+      };
+    case 'circuitOpen':
+      return {
+        label: '已熔断',
+        state: 'danger',
+        detail: health.diagnosis ?? '连接连续失败，已被熔断保护。',
+        failureReason,
+        health,
+      };
+    case 'invalid':
+      return {
+        label: '配置无效',
+        state: 'danger',
+        detail: health.diagnosis ?? '连接配置缺失或格式无效。',
+        failureReason,
+        health,
+      };
+    case 'disconnected':
+      return {
+        label: '已断开',
+        state: 'warning',
+        detail: health.diagnosis ?? '连接当前未保持活动链路。',
+        failureReason,
+        health,
+      };
+    default:
+      return {
+        label: '等待建连',
+        state: 'local',
+        detail: health?.diagnosis ?? '连接配置已加载，等待第一次建连。',
+        failureReason,
+        health,
+      };
+  }
+}
+
+function formatHealthTimestamp(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const timestamp = Date.parse(value);
+  if (Number.isNaN(timestamp)) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).format(timestamp);
 }
 
 export function ConnectionStudio({
@@ -431,6 +599,34 @@ export function ConnectionStudio({
     onStatusMessage(message);
   }
 
+  function replaceConnectionMetadata(
+    index: number,
+    nextMetadata: Record<string, JsonValue>,
+    message: string,
+  ) {
+    const draftKey = connectionKey(index);
+    const nextConnections = connections.map((connection, connectionIndex) =>
+      connectionIndex === index
+        ? {
+            ...connection,
+            metadata: nextMetadata,
+          }
+        : connection,
+    );
+
+    setMetadataDrafts((current) => ({
+      ...current,
+      [draftKey]: formatMetadata(nextMetadata),
+    }));
+    setMetadataErrors((current) => {
+      const nextErrors = { ...current };
+      delete nextErrors[draftKey];
+      return nextErrors;
+    });
+
+    saveConnections(nextConnections, message);
+  }
+
   function handleAddConnection(template: ConnectionTemplate) {
     const nextConnection: ConnectionDefinition = {
       ...template.definition,
@@ -556,31 +752,32 @@ export function ConnectionStudio({
       return;
     }
 
-    const draftKey = connectionKey(index);
     const nextMetadata = {
       ...metadataRecord(currentConnection.metadata),
       [key]: value,
     };
-    const nextConnections = connections.map((connection, connectionIndex) =>
-      connectionIndex === index
-        ? {
-            ...connection,
-            metadata: nextMetadata,
-          }
-        : connection,
-    );
+    replaceConnectionMetadata(index, nextMetadata, '连接参数已更新。');
+  }
 
-    setMetadataDrafts((current) => ({
-      ...current,
-      [draftKey]: formatMetadata(nextMetadata),
-    }));
-    setMetadataErrors((current) => {
-      const nextErrors = { ...current };
-      delete nextErrors[draftKey];
-      return nextErrors;
-    });
+  function handleGovernanceFieldChange(
+    index: number,
+    key: keyof typeof DEFAULT_CONNECTION_GOVERNANCE,
+    value: number,
+  ) {
+    const currentConnection = connections[index];
+    if (!currentConnection) {
+      return;
+    }
 
-    saveConnections(nextConnections, '连接参数已更新。');
+    const nextMetadata = {
+      ...metadataRecord(currentConnection.metadata),
+      governance: {
+        ...governanceRecord(currentConnection.metadata),
+        [key]: value,
+      },
+    };
+
+    replaceConnectionMetadata(index, nextMetadata, '连接治理策略已更新。');
   }
 
   async function handleTestConnection() {
@@ -664,6 +861,10 @@ export function ConnectionStudio({
   const ActiveConnectionIcon = activeConnection
     ? connectionIconFor(activeConnection.type)
     : ConnectionsIcon;
+  const activeRuntimeConnection = activeConnection?.id
+    ? runtimeById.get(activeConnection.id)
+    : undefined;
+  const activeRuntimeState = connectionRuntimeState(activeRuntimeConnection);
 
   return (
     <section className="connection-studio">
@@ -762,6 +963,14 @@ export function ConnectionStudio({
                         <SettingsIcon />
                       </button>
                     </div>
+
+                    {runtimeState.detail ? (
+                      <p className="connection-card__hint">{runtimeState.detail}</p>
+                    ) : null}
+
+                    {runtimeState.failureReason ? (
+                      <p className="connection-card__error">{runtimeState.failureReason}</p>
+                    ) : null}
                   </article>
                 );
               })}
@@ -816,6 +1025,67 @@ export function ConnectionStudio({
                   </button>
                 </div>
               </div>
+
+              <section className="connection-health-panel">
+                <div className="connection-health-panel__headline">
+                  <span className={`connection-status is-${activeRuntimeState.state}`}>
+                    <span className="connection-status__dot" />
+                    {activeRuntimeState.label}
+                  </span>
+                  {activeRuntimeState.health?.lastLatencyMs ? (
+                    <span className="connection-card__tag">
+                      最近链路 {activeRuntimeState.health.lastLatencyMs} ms
+                    </span>
+                  ) : null}
+                  {activeRuntimeState.health?.consecutiveFailures ? (
+                    <span className="connection-card__tag">
+                      连续失败 {activeRuntimeState.health.consecutiveFailures}
+                    </span>
+                  ) : null}
+                </div>
+
+                <p className="connection-health-panel__summary">
+                  {activeRuntimeState.detail ?? '当前没有可用的连接健康诊断。'}
+                </p>
+
+                <div className="connection-health-panel__metrics">
+                  <span className="connection-card__tag">
+                    最近心跳 {formatHealthTimestamp(activeRuntimeState.health?.lastHeartbeatAt) ?? '--'}
+                  </span>
+                  <span className="connection-card__tag">
+                    最近失败 {formatHealthTimestamp(activeRuntimeState.health?.lastFailureAt) ?? '--'}
+                  </span>
+                  <span className="connection-card__tag">
+                    超时 {activeRuntimeState.health?.timeoutCount ?? 0}
+                  </span>
+                  <span className="connection-card__tag">
+                    限流 {activeRuntimeState.health?.rateLimitHits ?? 0}
+                  </span>
+                  <span className="connection-card__tag">
+                    重连 {activeRuntimeState.health?.reconnectAttempts ?? 0}
+                  </span>
+                  {activeRuntimeState.health?.nextRetryAt ? (
+                    <span className="connection-card__tag">
+                      下次重试 {formatHealthTimestamp(activeRuntimeState.health.nextRetryAt)}
+                    </span>
+                  ) : null}
+                  {activeRuntimeState.health?.circuitOpenUntil ? (
+                    <span className="connection-card__tag">
+                      熔断至 {formatHealthTimestamp(activeRuntimeState.health.circuitOpenUntil)}
+                    </span>
+                  ) : null}
+                </div>
+
+                {activeRuntimeState.health?.recommendedAction ? (
+                  <p className="connection-health-panel__action">
+                    {activeRuntimeState.health.recommendedAction}
+                  </p>
+                ) : null}
+
+                {activeRuntimeState.failureReason ? (
+                  <p className="connection-card__error">{activeRuntimeState.failureReason}</p>
+                ) : null}
+              </section>
 
               <div className="connection-form connection-settings-panel__form">
                 <label>
@@ -1075,6 +1345,198 @@ export function ConnectionStudio({
                     ) : null}
                   </>
                 ) : null}
+
+                <div className="connection-form__section connection-form__section--full">
+                  <strong className="connection-form__section-title">连接健康治理</strong>
+                </div>
+
+                <label>
+                  <span>建连超时 ms</span>
+                  <input
+                    type="number"
+                    value={governanceNumber(activeConnection.metadata, 'connect_timeout_ms')}
+                    onChange={(event) =>
+                      handleGovernanceFieldChange(
+                        activeConnectionIndex,
+                        'connect_timeout_ms',
+                        parseMetadataNumber(
+                          event.target.value,
+                          DEFAULT_CONNECTION_GOVERNANCE.connect_timeout_ms,
+                        ),
+                      )
+                    }
+                  />
+                </label>
+                <label>
+                  <span>操作超时 ms</span>
+                  <input
+                    type="number"
+                    value={governanceNumber(activeConnection.metadata, 'operation_timeout_ms')}
+                    onChange={(event) =>
+                      handleGovernanceFieldChange(
+                        activeConnectionIndex,
+                        'operation_timeout_ms',
+                        parseMetadataNumber(
+                          event.target.value,
+                          DEFAULT_CONNECTION_GOVERNANCE.operation_timeout_ms,
+                        ),
+                      )
+                    }
+                  />
+                </label>
+                <label>
+                  <span>心跳间隔 ms</span>
+                  <input
+                    type="number"
+                    value={governanceNumber(activeConnection.metadata, 'heartbeat_interval_ms')}
+                    onChange={(event) =>
+                      handleGovernanceFieldChange(
+                        activeConnectionIndex,
+                        'heartbeat_interval_ms',
+                        parseMetadataNumber(
+                          event.target.value,
+                          DEFAULT_CONNECTION_GOVERNANCE.heartbeat_interval_ms,
+                        ),
+                      )
+                    }
+                  />
+                </label>
+                <label>
+                  <span>心跳超时 ms</span>
+                  <input
+                    type="number"
+                    value={governanceNumber(activeConnection.metadata, 'heartbeat_timeout_ms')}
+                    onChange={(event) =>
+                      handleGovernanceFieldChange(
+                        activeConnectionIndex,
+                        'heartbeat_timeout_ms',
+                        parseMetadataNumber(
+                          event.target.value,
+                          DEFAULT_CONNECTION_GOVERNANCE.heartbeat_timeout_ms,
+                        ),
+                      )
+                    }
+                  />
+                </label>
+                <label>
+                  <span>限流次数</span>
+                  <input
+                    type="number"
+                    value={governanceNumber(activeConnection.metadata, 'rate_limit_max_attempts')}
+                    onChange={(event) =>
+                      handleGovernanceFieldChange(
+                        activeConnectionIndex,
+                        'rate_limit_max_attempts',
+                        parseMetadataNumber(
+                          event.target.value,
+                          DEFAULT_CONNECTION_GOVERNANCE.rate_limit_max_attempts,
+                        ),
+                      )
+                    }
+                  />
+                </label>
+                <label>
+                  <span>限流窗口 ms</span>
+                  <input
+                    type="number"
+                    value={governanceNumber(activeConnection.metadata, 'rate_limit_window_ms')}
+                    onChange={(event) =>
+                      handleGovernanceFieldChange(
+                        activeConnectionIndex,
+                        'rate_limit_window_ms',
+                        parseMetadataNumber(
+                          event.target.value,
+                          DEFAULT_CONNECTION_GOVERNANCE.rate_limit_window_ms,
+                        ),
+                      )
+                    }
+                  />
+                </label>
+                <label>
+                  <span>限流冷却 ms</span>
+                  <input
+                    type="number"
+                    value={governanceNumber(activeConnection.metadata, 'rate_limit_cooldown_ms')}
+                    onChange={(event) =>
+                      handleGovernanceFieldChange(
+                        activeConnectionIndex,
+                        'rate_limit_cooldown_ms',
+                        parseMetadataNumber(
+                          event.target.value,
+                          DEFAULT_CONNECTION_GOVERNANCE.rate_limit_cooldown_ms,
+                        ),
+                      )
+                    }
+                  />
+                </label>
+                <label>
+                  <span>熔断阈值</span>
+                  <input
+                    type="number"
+                    value={governanceNumber(activeConnection.metadata, 'circuit_failure_threshold')}
+                    onChange={(event) =>
+                      handleGovernanceFieldChange(
+                        activeConnectionIndex,
+                        'circuit_failure_threshold',
+                        parseMetadataNumber(
+                          event.target.value,
+                          DEFAULT_CONNECTION_GOVERNANCE.circuit_failure_threshold,
+                        ),
+                      )
+                    }
+                  />
+                </label>
+                <label>
+                  <span>熔断冷却 ms</span>
+                  <input
+                    type="number"
+                    value={governanceNumber(activeConnection.metadata, 'circuit_open_ms')}
+                    onChange={(event) =>
+                      handleGovernanceFieldChange(
+                        activeConnectionIndex,
+                        'circuit_open_ms',
+                        parseMetadataNumber(
+                          event.target.value,
+                          DEFAULT_CONNECTION_GOVERNANCE.circuit_open_ms,
+                        ),
+                      )
+                    }
+                  />
+                </label>
+                <label>
+                  <span>重连基准 ms</span>
+                  <input
+                    type="number"
+                    value={governanceNumber(activeConnection.metadata, 'reconnect_base_ms')}
+                    onChange={(event) =>
+                      handleGovernanceFieldChange(
+                        activeConnectionIndex,
+                        'reconnect_base_ms',
+                        parseMetadataNumber(
+                          event.target.value,
+                          DEFAULT_CONNECTION_GOVERNANCE.reconnect_base_ms,
+                        ),
+                      )
+                    }
+                  />
+                </label>
+                <label>
+                  <span>重连上限 ms</span>
+                  <input
+                    type="number"
+                    value={governanceNumber(activeConnection.metadata, 'reconnect_max_ms')}
+                    onChange={(event) =>
+                      handleGovernanceFieldChange(
+                        activeConnectionIndex,
+                        'reconnect_max_ms',
+                        parseMetadataNumber(
+                          event.target.value,
+                          DEFAULT_CONNECTION_GOVERNANCE.reconnect_max_ms,
+                        ),
+                      )
+                    }
+                  />
+                </label>
 
                 <label className="connection-form__metadata">
                   <span>

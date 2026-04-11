@@ -156,6 +156,25 @@ export function useWorkflowEngine(
     void refreshConnections();
   }, [activeBoard?.id, deployInfo, sidebarSection]);
 
+  // 连接健康状态轮询（连接页常驻可见，运行中持续刷新）。
+  useEffect(() => {
+    if (!hasTauriRuntime()) {
+      return;
+    }
+
+    if (sidebarSection !== 'connections' && !deployInfo) {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      void refreshConnections();
+    }, 2_500);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [deployInfo, sidebarSection]);
+
   // 自适应窗口大小调整。
   useEffect(() => {
     if (!hasTauriRuntime()) {
