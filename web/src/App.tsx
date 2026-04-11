@@ -17,6 +17,12 @@ import { SidebarNav } from './components/app/SidebarNav';
 import type { SidebarSection } from './components/app/types';
 import { ConnectionStudio } from './components/ConnectionStudio';
 import { FlowgramCanvas, type FlowgramCanvasHandle } from './components/FlowgramCanvas';
+import {
+  clearDeploymentSession,
+  loadDeploymentSession,
+  saveDeploymentSession,
+  type PersistedDeploymentSession,
+} from './lib/deployment-session';
 import { parseWorkflowGraph } from './lib/graph';
 import { formatWorkflowGraph } from './lib/flowgram';
 import {
@@ -33,6 +39,9 @@ import {
   deployWorkflow,
   dispatchPayload,
   hasTauriRuntime,
+  loadDeploymentSessionFile,
+  saveDeploymentSessionFile,
+  clearDeploymentSessionFile,
   undeployWorkflow,
 } from './lib/tauri';
 import type { ConnectionDefinition, WorkflowResult, WorkflowNodeDefinition } from './types';
@@ -42,6 +51,16 @@ import {
   getWorkflowStatusLabel,
   getWorkflowStatusPillClass,
 } from './lib/workflow-status';
+
+interface DeploymentSnapshot {
+  projectId: string;
+  projectName: string;
+  environmentId: string;
+  environmentName: string;
+  astText: string;
+  runtimeAstText: string;
+  runtimeConnections: ConnectionDefinition[];
+}
 
 function downloadTextFile(fileName: string, text: string) {
   const blob = new Blob([text], { type: 'application/json;charset=utf-8' });
@@ -160,7 +179,17 @@ function App() {
   const connectionLibrary = useConnectionLibrary(settings.projectWorkspacePath);
   const [activeBoardId, setActiveBoardId] = useState<string | null>(null);
   const [sidebarSection, setSidebarSection] = useState<SidebarSection>(settings.startupPage);
+  const [pendingRestoreSession, setPendingRestoreSession] =
+    useState<PersistedDeploymentSession | null>(null);
+  const [restoreCountdown, setRestoreCountdown] = useState(10);
   const flowgramCanvasRef = useRef<FlowgramCanvasHandle | null>(null);
+  const restoreLookupRef = useRef<{
+    scope: string | null;
+    status: 'idle' | 'loading' | 'prompted' | 'handled' | 'none';
+  }>({
+    scope: null,
+    status: 'idle',
+  });
 
   const boardItems = useMemo<BoardItem[]>(
     () =>
@@ -545,6 +574,7 @@ function App() {
   function buildDeploySnapshot() {
     if (!activeProject) {
       return {
+        snapshot: null,
         astText: null,
         runtimeAstText: null,
         runtimeConnections: null,
@@ -554,6 +584,7 @@ function App() {
 
     if (!connectionLibrary.storage.isReady) {
       return {
+        snapshot: null,
         astText: null,
         runtimeAstText: null,
         runtimeConnections: null,
@@ -564,6 +595,7 @@ function App() {
     const draftSnapshot = buildProjectDraftSnapshot(activeProject.id);
     if (draftSnapshot.error || !draftSnapshot.graph || !draftSnapshot.astText) {
       return {
+        snapshot: null,
         astText: null,
         runtimeAstText: null,
         runtimeConnections: null,
@@ -577,6 +609,7 @@ function App() {
     );
     if (!runtimeGraph) {
       return {
+        snapshot: null,
         astText: null,
         runtimeAstText: null,
         runtimeConnections: null,
@@ -592,6 +625,7 @@ function App() {
     const nextGraphState = parseWorkflowGraph(runtimeAstText);
     if (nextGraphState.error || !nextGraphState.graph) {
       return {
+        snapshot: null,
         astText: null,
         runtimeAstText: null,
         runtimeConnections: null,
@@ -599,12 +633,223 @@ function App() {
       };
     }
 
+    const activeEnvironment = getActiveEnvironment(activeProject);
+    const snapshot: DeploymentSnapshot = {
+      projectId: activeProject.id,
+      projectName: activeProject.name,
+      environmentId: activeEnvironment?.id ?? activeProject.activeEnvironmentId,
+      environmentName: activeEnvironment?.name ?? '默认环境',
+      astText: draftSnapshot.astText,
+      runtimeAstText,
+      runtimeConnections,
+    };
+
     return {
+      snapshot,
       astText: draftSnapshot.astText,
       runtimeAstText,
       runtimeConnections,
       error: null,
     };
+  }
+
+  async function persistDeploymentSnapshot(snapshot: Pick<
+    DeploymentSnapshot,
+    'projectId' | 'projectName' | 'environmentId' | 'environmentName' | 'runtimeAstText' | 'runtimeConnections'
+  >) {
+    const session = {
+      version: 1 as const,
+      projectId: snapshot.projectId,
+      projectName: snapshot.projectName,
+      environmentId: snapshot.environmentId,
+      environmentName: snapshot.environmentName,
+      deployedAt: new Date().toISOString(),
+      runtimeAstText: snapshot.runtimeAstText,
+      runtimeConnections: snapshot.runtimeConnections,
+    };
+
+    if (!hasTauriRuntime()) {
+      saveDeploymentSession(settings.projectWorkspacePath, session);
+      return;
+    }
+
+    try {
+      await saveDeploymentSessionFile(settings.projectWorkspacePath, session);
+      clearDeploymentSession(settings.projectWorkspacePath);
+    } catch (error) {
+      const { message, detail } = describeUnknownError(error);
+      saveDeploymentSession(settings.projectWorkspacePath, session);
+      engine.appendAppError('command', '写入部署会话失败，已降级为本地缓存', detail ?? message);
+    }
+  }
+
+  async function clearPersistedDeploymentSnapshot() {
+    clearDeploymentSession(settings.projectWorkspacePath);
+
+    if (!hasTauriRuntime()) {
+      return;
+    }
+
+    try {
+      await clearDeploymentSessionFile(settings.projectWorkspacePath);
+    } catch (error) {
+      const { message, detail } = describeUnknownError(error);
+      engine.appendAppError('command', '清理部署会话失败', detail ?? message);
+    }
+  }
+
+  async function loadPersistedDeploymentSnapshot() {
+    if (!hasTauriRuntime()) {
+      return loadDeploymentSession(settings.projectWorkspacePath);
+    }
+
+    try {
+      const session = await loadDeploymentSessionFile(settings.projectWorkspacePath);
+      if (session) {
+        clearDeploymentSession(settings.projectWorkspacePath);
+        return session;
+      }
+    } catch (error) {
+      const { message, detail } = describeUnknownError(error);
+      engine.appendAppError('command', '读取部署会话失败，尝试使用本地缓存', detail ?? message);
+    }
+
+    const legacySession = loadDeploymentSession(settings.projectWorkspacePath);
+    if (!legacySession) {
+      return null;
+    }
+
+    try {
+      await saveDeploymentSessionFile(settings.projectWorkspacePath, legacySession);
+      clearDeploymentSession(settings.projectWorkspacePath);
+    } catch (error) {
+      const { message, detail } = describeUnknownError(error);
+      engine.appendAppError('command', '迁移旧部署会话失败', detail ?? message);
+    }
+
+    return legacySession;
+  }
+
+  async function runDeploymentSnapshot(
+    snapshot: Pick<
+      DeploymentSnapshot,
+      'projectId' | 'projectName' | 'environmentId' | 'environmentName' | 'runtimeAstText' | 'runtimeConnections'
+    >,
+    source: 'manual' | 'restore',
+  ) {
+    if (!hasTauriRuntime()) {
+      const statusMessage =
+        source === 'restore'
+          ? `预览模式下已跳过 ${snapshot.projectName} 的自动恢复部署。`
+          : `预览模式下已完成 ${snapshot.environmentName} 的部署校验。`;
+      engine.setStatusMessage(statusMessage);
+      engine.appendRuntimeLog(
+        'project',
+        'info',
+        source === 'restore' ? '预览模式下跳过自动恢复部署' : '预览模式下跳过实际部署',
+        `${snapshot.projectName} · ${snapshot.environmentName}`,
+      );
+      return true;
+    }
+
+    try {
+      const response = await deployWorkflow(snapshot.runtimeAstText, snapshot.runtimeConnections);
+      await persistDeploymentSnapshot(snapshot);
+      engine.setStatusMessage(
+        source === 'restore'
+          ? `已恢复 ${snapshot.projectName} 的部署，节点数 ${response.nodeCount}，边数 ${response.edgeCount}，环境 ${snapshot.environmentName}。`
+          : `部署完成，节点数 ${response.nodeCount}，边数 ${response.edgeCount}，环境 ${snapshot.environmentName}。`,
+      );
+      if (source === 'restore') {
+        engine.appendRuntimeLog(
+          'system',
+          'success',
+          '已恢复上次部署',
+          `${snapshot.projectName} · ${snapshot.environmentName}`,
+        );
+      }
+      await engine.refreshConnections();
+      return true;
+    } catch (error) {
+      const { message, detail } = describeUnknownError(error);
+      engine.appendAppError(
+        'command',
+        source === 'restore' ? '自动恢复部署失败' : '部署工作流失败',
+        detail ?? message,
+      );
+      engine.setStatusMessage(
+        source === 'restore' ? `自动恢复部署失败: ${message}` : message,
+      );
+      return false;
+    }
+  }
+
+  async function handleSkipRestore() {
+    if (!pendingRestoreSession) {
+      return;
+    }
+
+    const skippedSession = pendingRestoreSession;
+    restoreLookupRef.current = {
+      scope: deploymentRestoreScope,
+      status: 'handled',
+    };
+    setPendingRestoreSession(null);
+    setRestoreCountdown(10);
+    await clearPersistedDeploymentSnapshot();
+    engine.setStatusMessage(`已取消恢复 ${skippedSession.projectName} 的上次部署。`);
+    engine.appendRuntimeLog(
+      'system',
+      'info',
+      '已取消自动恢复部署',
+      `${skippedSession.projectName} · ${skippedSession.environmentName}`,
+    );
+  }
+
+  async function handleConfirmRestore(session = pendingRestoreSession) {
+    if (!session) {
+      return;
+    }
+
+    const targetProject = projectLibrary.projects.find((project) => project.id === session.projectId);
+    if (!targetProject) {
+      restoreLookupRef.current = {
+        scope: deploymentRestoreScope,
+        status: 'handled',
+      };
+      setPendingRestoreSession(null);
+      setRestoreCountdown(10);
+      await clearPersistedDeploymentSnapshot();
+      engine.setStatusMessage('恢复失败：目标工程不存在，已清理部署记录。');
+      engine.appendRuntimeLog('system', 'warn', '恢复目标不存在，已清理部署记录', session.projectName);
+      return;
+    }
+
+    restoreLookupRef.current = {
+      scope: deploymentRestoreScope,
+      status: 'handled',
+    };
+    setPendingRestoreSession(null);
+    setRestoreCountdown(10);
+    setActiveBoardId(targetProject.id);
+    engine.appendRuntimeLog(
+      'system',
+      'info',
+      '正在恢复上次部署',
+      `${session.projectName} · ${session.environmentName}`,
+    );
+
+    await runDeploymentSnapshot(
+      {
+        projectId: session.projectId,
+        projectName: session.projectName,
+        environmentId: session.environmentId,
+        environmentName: session.environmentName,
+        runtimeAstText: session.runtimeAstText,
+        runtimeConnections: session.runtimeConnections,
+      },
+      'restore',
+    );
   }
 
   async function handleDeploy() {
@@ -613,44 +858,28 @@ function App() {
       return;
     }
 
-    const deploySnapshot = buildDeploySnapshot();
+    const nextDeploySnapshot = buildDeploySnapshot();
     if (
-      deploySnapshot.error ||
-      !deploySnapshot.astText ||
-      !deploySnapshot.runtimeAstText ||
-      !deploySnapshot.runtimeConnections
+      nextDeploySnapshot.error ||
+      !nextDeploySnapshot.snapshot ||
+      !nextDeploySnapshot.astText ||
+      !nextDeploySnapshot.runtimeAstText ||
+      !nextDeploySnapshot.runtimeConnections
     ) {
-      engine.appendAppError('command', '部署前 AST 校验失败', deploySnapshot.error ?? '未知错误');
-      engine.setStatusMessage(`AST 无法部署: ${deploySnapshot.error ?? '未知错误'}`);
+      engine.appendAppError(
+        'command',
+        '部署前 AST 校验失败',
+        nextDeploySnapshot.error ?? '未知错误',
+      );
+      engine.setStatusMessage(`AST 无法部署: ${nextDeploySnapshot.error ?? '未知错误'}`);
       return;
     }
 
-    if (deploySnapshot.astText !== activeProject.astText) {
-      updateProjectDraft(activeProject.id, { astText: deploySnapshot.astText });
+    if (nextDeploySnapshot.astText !== activeProject.astText) {
+      updateProjectDraft(activeProject.id, { astText: nextDeploySnapshot.astText });
     }
 
-    const environmentName = getActiveEnvironment(activeProject)?.name ?? '默认环境';
-
-    if (!hasTauriRuntime()) {
-      engine.setStatusMessage(`预览模式下已完成 ${environmentName} 的部署校验。`);
-      engine.appendRuntimeLog('project', 'info', '预览模式下跳过实际部署', environmentName);
-      return;
-    }
-
-    try {
-      const response = await deployWorkflow(
-        deploySnapshot.runtimeAstText,
-        deploySnapshot.runtimeConnections,
-      );
-      engine.setStatusMessage(
-        `部署完成，节点数 ${response.nodeCount}，边数 ${response.edgeCount}，环境 ${environmentName}。`,
-      );
-      await engine.refreshConnections();
-    } catch (error) {
-      const { message, detail } = describeUnknownError(error);
-      engine.appendAppError('command', '部署工作流失败', detail ?? message);
-      engine.setStatusMessage(message);
-    }
+    await runDeploymentSnapshot(nextDeploySnapshot.snapshot, 'manual');
   }
 
   async function handleUndeploy() {
@@ -662,11 +891,13 @@ function App() {
     if (!hasTauriRuntime()) {
       engine.resetWorkspaceRuntime('已在预览态清空部署状态。');
       engine.appendRuntimeLog('system', 'info', '预览态已清空部署状态');
+      await clearPersistedDeploymentSnapshot();
       return;
     }
 
     try {
       const response = await undeployWorkflow();
+      await clearPersistedDeploymentSnapshot();
       if (!response.hadWorkflow) {
         engine.setStatusMessage('当前没有已部署工作流。');
       }
@@ -743,6 +974,7 @@ function App() {
   const workflowStatusPillClass = getWorkflowStatusPillClass(workflowStatus);
   const canDispatchPayload = Boolean(activeBoard) && (!isTauriRuntime || Boolean(engine.deployInfo));
   const connectionPreview = engine.connections.slice(0, 4);
+  const deploymentRestoreScope = settings.projectWorkspacePath.trim() || '__default__';
   const sidebarSections = buildSidebarSections(
     workflowStatusLabel,
     engine.connections.length,
@@ -751,6 +983,202 @@ function App() {
     engine.deployInfo,
     activeBoard?.name ?? null,
   );
+
+  useEffect(() => {
+    restoreLookupRef.current = {
+      scope: deploymentRestoreScope,
+      status: 'idle',
+    };
+    setPendingRestoreSession(null);
+    setRestoreCountdown(10);
+  }, [deploymentRestoreScope]);
+
+  useEffect(() => {
+    if (!pendingRestoreSession) {
+      return;
+    }
+
+    if (restoreCountdown <= 0) {
+      void handleConfirmRestore(pendingRestoreSession);
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setRestoreCountdown((current) => current - 1);
+    }, 1000);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [pendingRestoreSession, restoreCountdown]);
+
+  useEffect(() => {
+    if (!pendingRestoreSession) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        void handleSkipRestore();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [pendingRestoreSession]);
+
+  useEffect(() => {
+    if (!engine.deployInfo || !pendingRestoreSession) {
+      return;
+    }
+
+    setPendingRestoreSession(null);
+    setRestoreCountdown(10);
+  }, [engine.deployInfo, pendingRestoreSession]);
+
+  useEffect(() => {
+    if (
+      !hasTauriRuntime() ||
+      !projectLibrary.storage.isReady ||
+      !connectionLibrary.storage.isReady ||
+      engine.deployInfo
+    ) {
+      return;
+    }
+
+    if (restoreLookupRef.current.scope !== deploymentRestoreScope) {
+      restoreLookupRef.current = {
+        scope: deploymentRestoreScope,
+        status: 'idle',
+      };
+    }
+
+    if (restoreLookupRef.current.status !== 'idle') {
+      return;
+    }
+
+    restoreLookupRef.current = {
+      scope: deploymentRestoreScope,
+      status: 'loading',
+    };
+
+    void loadPersistedDeploymentSnapshot().then((restoredSession) => {
+      if (restoreLookupRef.current.scope !== deploymentRestoreScope) {
+        return;
+      }
+
+      if (!restoredSession) {
+        restoreLookupRef.current = {
+          scope: deploymentRestoreScope,
+          status: 'none',
+        };
+        return;
+      }
+
+      const targetProject = projectLibrary.projects.find(
+        (project) => project.id === restoredSession.projectId,
+      );
+      if (!targetProject) {
+        restoreLookupRef.current = {
+          scope: deploymentRestoreScope,
+          status: 'handled',
+        };
+        void clearPersistedDeploymentSnapshot();
+        engine.appendRuntimeLog(
+          'system',
+          'warn',
+          '已清理失效部署记录',
+          restoredSession.projectName,
+        );
+        return;
+      }
+
+      engine.appendRuntimeLog(
+        'system',
+        'warn',
+        '检测到可恢复部署',
+        `${restoredSession.projectName} · ${restoredSession.environmentName}`,
+      );
+      engine.setStatusMessage(
+        `检测到 ${restoredSession.projectName} 的上次部署，10 秒后将自动恢复。`,
+      );
+      restoreLookupRef.current = {
+        scope: deploymentRestoreScope,
+        status: 'prompted',
+      };
+      setPendingRestoreSession(restoredSession);
+      setRestoreCountdown(10);
+    });
+  }, [
+    connectionLibrary.storage.isReady,
+    deploymentRestoreScope,
+    engine,
+    projectLibrary.projects,
+    projectLibrary.storage.isReady,
+    settings.projectWorkspacePath,
+  ]);
+
+  function renderRestoreDialog() {
+    if (!pendingRestoreSession) {
+      return null;
+    }
+
+    const progress = `${Math.max(0, Math.min(100, (restoreCountdown / 10) * 100))}%`;
+
+    return (
+      <div className="restore-dialog-layer" data-no-window-drag>
+        <div
+          className="restore-dialog"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="restore-dialog-title"
+          aria-describedby="restore-dialog-description"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="restore-dialog__header">
+            <div className="restore-dialog__eyebrow">
+              <span className="restore-dialog__eyebrow-dot" />
+              <span>启动恢复</span>
+            </div>
+            <span className="restore-dialog__timer">{restoreCountdown}s</span>
+          </div>
+
+          <div className="restore-dialog__body">
+            <strong id="restore-dialog-title">恢复“{pendingRestoreSession.projectName}”的上次部署？</strong>
+            <p id="restore-dialog-description">
+              将恢复环境“{pendingRestoreSession.environmentName}”下的最后一次成功部署。若不操作，{restoreCountdown}
+              秒后自动恢复。
+            </p>
+          </div>
+
+          <div className="restore-dialog__countdown" aria-hidden="true">
+            <div className="restore-dialog__countdown-bar" style={{ width: progress }} />
+          </div>
+
+          <div className="restore-dialog__actions">
+            <button
+              type="button"
+              className="restore-dialog__action"
+              onClick={() => {
+                void handleSkipRestore();
+              }}
+            >
+              不恢复
+            </button>
+            <button
+              type="button"
+              className="restore-dialog__action restore-dialog__action--primary"
+              onClick={() => {
+                void handleConfirmRestore();
+              }}
+            >
+              立即恢复
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   function renderProjectGate(title: string) {
     return (
@@ -971,6 +1399,7 @@ function App() {
 
         {renderStudioContent()}
       </section>
+      {renderRestoreDialog()}
     </main>
   );
 }

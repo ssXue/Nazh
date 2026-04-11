@@ -10,6 +10,7 @@ import type {
   UndeployResponse,
   WorkflowResult,
 } from '../types';
+import type { PersistedDeploymentSession } from './deployment-session';
 
 export interface ProjectWorkspaceStorageInfo {
   workspacePath: string;
@@ -348,6 +349,30 @@ export async function saveProjectLibraryFile(
   return invoke<ProjectWorkspaceStorageInfo>('save_project_library_file', {
     workspacePath: workspacePath.trim() || null,
     libraryText,
+  });
+}
+
+export async function loadDeploymentSessionFile(
+  workspacePath: string,
+): Promise<PersistedDeploymentSession | null> {
+  return invoke<PersistedDeploymentSession | null>('load_deployment_session_file', {
+    workspacePath: workspacePath.trim() || null,
+  });
+}
+
+export async function saveDeploymentSessionFile(
+  workspacePath: string,
+  session: PersistedDeploymentSession,
+): Promise<void> {
+  return invoke<void>('save_deployment_session_file', {
+    workspacePath: workspacePath.trim() || null,
+    session,
+  });
+}
+
+export async function clearDeploymentSessionFile(workspacePath: string): Promise<void> {
+  return invoke<void>('clear_deployment_session_file', {
+    workspacePath: workspacePath.trim() || null,
   });
 }
 

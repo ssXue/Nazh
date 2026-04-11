@@ -14,7 +14,7 @@ use nazh_engine::{
     SerialTriggerNodeConfig, TimerNodeConfig, UndeployResponse, WorkflowContext, WorkflowGraph,
     WorkflowIngress,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::Mutex;
@@ -86,6 +86,16 @@ impl DesktopState {
         Ok(workspace_dir.join("connections.json"))
     }
 
+    fn deployment_session_file_path(
+        app: &AppHandle,
+        workspace_path: Option<&str>,
+    ) -> Result<PathBuf, String> {
+        let workspace_dir = resolve_project_workspace_dir(app, workspace_path)
+            .map(|(dir, _)| dir)
+            .map_err(|e| e)?;
+        Ok(workspace_dir.join("deployment-session.json"))
+    }
+
     async fn load_connections_from_disk(
         app: &AppHandle,
         manager: nazh_engine::SharedConnectionManager,
@@ -150,6 +160,19 @@ struct ProjectWorkspaceStorageInfo {
 struct ProjectWorkspaceLoadResult {
     storage: ProjectWorkspaceStorageInfo,
     library_text: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PersistedDeploymentSession {
+    version: u8,
+    project_id: String,
+    project_name: String,
+    environment_id: String,
+    environment_name: String,
+    deployed_at: String,
+    runtime_ast_text: String,
+    runtime_connections: Vec<ConnectionDefinition>,
 }
 
 #[tauri::command]
@@ -324,6 +347,64 @@ async fn save_connection_definitions(
         .connection_manager
         .replace_connections(definitions)
         .await;
+    Ok(())
+}
+
+#[tauri::command]
+async fn load_deployment_session_file(
+    app: AppHandle,
+    workspace_path: Option<String>,
+) -> Result<Option<PersistedDeploymentSession>, String> {
+    let path =
+        DesktopState::deployment_session_file_path(&app, workspace_path.as_deref()).map_err(|e| e)?;
+
+    if !path.exists() {
+        return Ok(None);
+    }
+
+    let text = fs::read_to_string(&path)
+        .await
+        .map_err(|error| format!("读取 deployment-session.json 失败: {error}"))?;
+    let session = serde_json::from_str::<PersistedDeploymentSession>(&text)
+        .map_err(|error| format!("解析 deployment-session.json 失败: {error}"))?;
+    Ok(Some(session))
+}
+
+#[tauri::command]
+async fn save_deployment_session_file(
+    app: AppHandle,
+    workspace_path: Option<String>,
+    session: PersistedDeploymentSession,
+) -> Result<(), String> {
+    let path =
+        DesktopState::deployment_session_file_path(&app, workspace_path.as_deref()).map_err(|e| e)?;
+    let dir = path.parent().ok_or("无法确定部署会话文件目录")?;
+    fs::create_dir_all(dir)
+        .await
+        .map_err(|error| format!("创建部署会话目录失败: {error}"))?;
+    let text = serde_json::to_string_pretty(&session)
+        .map_err(|error| format!("序列化部署会话失败: {error}"))?;
+    fs::write(&path, text)
+        .await
+        .map_err(|error| format!("写入 deployment-session.json 失败: {error}"))?;
+    Ok(())
+}
+
+#[tauri::command]
+async fn clear_deployment_session_file(
+    app: AppHandle,
+    workspace_path: Option<String>,
+) -> Result<(), String> {
+    let path =
+        DesktopState::deployment_session_file_path(&app, workspace_path.as_deref()).map_err(|e| e)?;
+
+    if !path.exists() {
+        return Ok(());
+    }
+
+    fs::remove_file(&path)
+        .await
+        .map_err(|error| format!("删除 deployment-session.json 失败: {error}"))?;
     Ok(())
 }
 
@@ -1077,6 +1158,9 @@ pub fn run() {
             list_connections,
             load_connection_definitions,
             save_connection_definitions,
+            load_deployment_session_file,
+            save_deployment_session_file,
+            clear_deployment_session_file,
             list_serial_ports,
             test_serial_connection,
             load_project_library_file,

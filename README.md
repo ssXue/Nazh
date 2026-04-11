@@ -65,8 +65,9 @@ Nazh 不是面向通用 SaaS 场景的在线低代码平台，而是更偏工业
 - 已打通 `Rust 引擎 + Tauri 桌面壳 + React / FlowGram.AI 工作台` 的全链路。
 - 已完成 `WorkflowContext`、线性 `Pipeline`、DAG 解析与部署、统一事件流输出。
 - 已建立节点级超时保护、panic 隔离和失败事件回传机制。
-- 已具备 `Native`、`Rhai / Code`、`Timer`、`IF`、`Switch`、`Try/Catch`、`Loop`、`HTTP Client`、`SQL Writer`、`Debug Console` 等节点骨架。
+- 已具备 `Native`、`Rhai / Code`、`Timer`、`Serial Trigger`、`IF`、`Switch`、`Try/Catch`、`Loop`、`HTTP Client`、`SQL Writer`、`Debug Console`、`Modbus Read` 等节点骨架。
 - 已完成 Dashboard、工程看板、项目工作区、连接资源、Payload 调试、运行观测、设置与关于等桌面工作区骨架。
+- 已完成工作流持久化：工程 AST 与连接资源持久化到磁盘，支持重启恢复。
 - 已建立 `cargo test`、前端构建检查、Vitest 单元测试与 Playwright E2E 测试体系。
 
 这意味着 `Nazh` 已具备继续向协议驱动、运行观测和 AI Copilot 演进的工程基础，但连接驱动与生产级能力仍在后续路线图中。
@@ -109,7 +110,7 @@ flowchart LR
 这条主链路的职责划分相对明确：
 
 - 前端只负责可视化编排、AST 编辑和状态展示，不直接承载执行逻辑。
-- Tauri 作为本地 IPC 桥梁，暴露 `deploy_workflow`、`dispatch_payload`、`undeploy_workflow`、`list_connections` 等命令。
+- Tauri 作为本地 IPC 桥梁，暴露 `deploy_workflow`、`dispatch_payload`、`undeploy_workflow`、`list_connections`、`load_connection_definitions`、`save_connection_definitions`、`list_serial_ports`、`test_serial_connection`、`load_project_library_file`、`save_project_library_file` 等命令。
 - Rust 引擎负责 AST 反序列化、DAG 校验、任务调度、节点执行和事件回流。
 - 节点之间通过 Tokio MPSC 通道传递 `WorkflowContext`，共享硬件资源则统一经过 `ConnectionManager`。
 
@@ -128,7 +129,7 @@ flowchart LR
 - `Native Node` 用于承载原生逻辑、字段注入和连接上下文附着。
 - `Rhai Node / Code Node` 用于动态业务逻辑，支持脚本编译、执行和 JSON payload 读写。
 - 已具备 `Timer`、`IF`、`Switch`、`Try/Catch`、`Loop` 等流程控制节点骨架。
-- 已具备 `Modbus Read`、`HTTP Client`、`SQL Writer`、`Debug Console` 等工业 / 输出节点演示实现。
+- 已具备 `Serial Trigger`、`Modbus Read`、`HTTP Client`、`SQL Writer`、`Debug Console` 等工业 / 输出节点骨架。
 - 每个节点都保留 `ai_description` 字段，为后续自然语言生成脚本或节点建议预留接口。
 
 ### 桌面工作台
@@ -244,7 +245,7 @@ npm --prefix web run build
 
 - `Modbus Read` 当前仍是模拟实现，连接资源更多承担元数据与借出控制，尚未形成可直接接现场设备的稳定驱动层。
 - 串口触发、HTTP Client、SQL Writer 已能跑通桌面链路，但仍缺少重试 / 重连、健康检查、限流、失败补偿与统一配置治理。
-- 项目库、版本快照、环境差异、导入导出与工作区文件存储已经具备原型实现，但默认项目和部分示例载荷仍偏 demo，整体仍以本地 JSON / localStorage 为主，缺少文件锁、冲突处理、损坏恢复、schema migration 与团队协作治理。
+- 项目库、版本快照、环境差异、导入导出与工作区文件存储已完成，`connections.json` 与 `project-library.json` 持久化到磁盘，支持工作流重启恢复；默认项目和部分示例载荷仍偏 demo，缺少文件锁、冲突处理、schema migration 与团队协作治理。
 - 桌面端尚未提供账号体系、RBAC、凭据加密、密钥托管、审计闭环等生产级安全能力。
 - 当前交付形态仍偏开发态，`src-tauri/tauri.conf.json` 中 `bundle.active` 仍为 `false`，尚未补齐安装包、签名、公证、自动更新与运维诊断。
 - Web 产物体积偏大，后续需要结合 FlowGram / 编辑器模块继续拆包。
@@ -258,7 +259,7 @@ npm --prefix web run build
 - 真实协议驱动落地：把 `Modbus Read` 从模拟值替换为真实 Modbus TCP / RTU 读写能力，并补齐 MQTT 发布 / 订阅、串口 / RS-485、HTTP Sink 等可在现场连设备的驱动。
 - 连接健康治理：为连接资源增加建连、重连、心跳、超时、限流、熔断、状态诊断和失败原因回传，而不只是“借出 / 释放”。
 - 项目控制面工业化：在现有项目库、版本快照、环境差异和导入导出原型之上，补齐 schema migration、异常恢复、冲突处理、备份回滚、工作区一致性校验和更稳定的项目文件治理。
-- 运行时耐久性：补齐多工作流生命周期管理、重启恢复、触发器持久化、重试 / 死信 / 背压策略和更细粒度的资源隔离。
+- 运行时耐久性：已完成工作流重启恢复与触发器持久化；仍缺少多工作流生命周期管理、重试 / 死信 / 背压策略和更细粒度的资源隔离。
 - 观测闭环：增加结构化日志、节点耗时、trace 查询、告警投递记录和 SQLite 之外的审计 / 事件留存能力。
 
 ### P1：生产准备
