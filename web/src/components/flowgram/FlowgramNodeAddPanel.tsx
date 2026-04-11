@@ -11,6 +11,7 @@ import {
 import {
   buildPaletteNodeJson,
   getFlowgramPaletteSections,
+  type FlowgramConnectionDefaults,
   type NodeSeed,
 } from './flowgram-node-library';
 import {
@@ -20,14 +21,14 @@ import {
 } from './FlowgramNodeGlyph';
 
 interface FlowgramNodeAddPanelProps {
-  primaryConnectionId: string | null;
+  connectionDefaults: FlowgramConnectionDefaults;
   hasSelection: boolean;
   disabled?: boolean;
   onInsertSeed: (seed: NodeSeed, mode: 'standalone' | 'downstream') => void | Promise<void>;
 }
 
 export function FlowgramNodeAddPanel({
-  primaryConnectionId,
+  connectionDefaults,
   hasSelection,
   disabled = false,
   onInsertSeed,
@@ -57,7 +58,7 @@ export function FlowgramNodeAddPanel({
     await dragService.startDragCard(
       seed.kind,
       event,
-      buildPaletteNodeJson(seed, primaryConnectionId, baseJson),
+      buildPaletteNodeJson(seed, connectionDefaults, baseJson),
     );
   }
 

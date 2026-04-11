@@ -3,6 +3,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
+  applyEnvironmentToConnectionDefinitions,
   applyEnvironmentToGraph,
   buildDefaultProjectLibrary,
   importProjectsFromText,
@@ -41,22 +42,37 @@ describe('importProjectsFromText', () => {
 });
 
 describe('applyEnvironmentToGraph', () => {
-  it('会将环境差异合并到连接 metadata 与节点 config', () => {
+  it('会将环境差异合并到节点 config', () => {
     const library = buildDefaultProjectLibrary();
     const targetProject = library.projects[0];
     const targetEnvironment = targetProject.environments[1];
     const graph = JSON.parse(targetProject.astText);
 
     const nextGraph = applyEnvironmentToGraph(graph, targetEnvironment);
-    const modbusConnection = nextGraph.connections?.find((connection) => connection.id === 'plc-main');
     const sqlWriterConfig = nextGraph.nodes.sql_writer?.config as Record<string, unknown>;
+
+    expect(sqlWriterConfig).toMatchObject({
+      database_path: './data/test-edge-runtime.sqlite3',
+    });
+  });
+});
+
+describe('applyEnvironmentToConnectionDefinitions', () => {
+  it('会将环境差异合并到全局连接 metadata', () => {
+    const library = buildDefaultProjectLibrary();
+    const targetProject = library.projects[0];
+    const targetEnvironment = targetProject.environments[1];
+    const graph = JSON.parse(targetProject.astText);
+
+    const nextConnections = applyEnvironmentToConnectionDefinitions(
+      graph.connections ?? [],
+      targetEnvironment,
+    );
+    const modbusConnection = nextConnections.find((connection) => connection.id === 'plc-main');
 
     expect(modbusConnection?.metadata).toMatchObject({
       host: '192.168.10.99',
       port: 1502,
-    });
-    expect(sqlWriterConfig).toMatchObject({
-      database_path: './data/test-edge-runtime.sqlite3',
     });
   });
 });

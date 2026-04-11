@@ -1,6 +1,11 @@
 import { formatWorkflowGraph } from './flowgram';
 import { parseWorkflowGraph } from './graph';
-import type { JsonValue, WorkflowGraph, WorkflowNodeDefinition } from '../types';
+import type {
+  ConnectionDefinition,
+  JsonValue,
+  WorkflowGraph,
+  WorkflowNodeDefinition,
+} from '../types';
 
 export const CURRENT_USER_NAME = 'ssxue';
 export const PROJECT_LIBRARY_STORAGE_KEY = 'nazh.project-library';
@@ -245,7 +250,7 @@ function createSnapshot(
     description: description ?? project.description,
     createdAt,
     reason,
-    astText: project.astText,
+    astText: normalizeProjectAstText(project.astText),
     payloadText: project.payloadText,
     activeEnvironmentId: project.activeEnvironmentId,
     environments: cloneJson(project.environments),
@@ -816,7 +821,7 @@ function normalizeSnapshot(value: unknown, project: ProjectRecord, index: number
       source.reason === 'rollback'
         ? source.reason
         : 'manual',
-    astText: normalizeString(source.astText, project.astText),
+    astText: normalizeProjectAstText(normalizeString(source.astText, project.astText)),
     payloadText: normalizeString(source.payloadText, project.payloadText),
     activeEnvironmentId,
     environments,
@@ -966,20 +971,7 @@ export function applyEnvironmentToGraph(
   }
 
   const nextGraph = cloneJson(graph);
-  const connectionDiffs = environment.diff.connections ?? {};
   const nodeDiffs = environment.diff.nodeConfigs ?? {};
-
-  nextGraph.connections = (nextGraph.connections ?? []).map((connection) => {
-    const override = connectionDiffs[connection.id];
-    if (!override) {
-      return connection;
-    }
-
-    return {
-      ...connection,
-      metadata: deepMergeJson(connection.metadata, override),
-    };
-  });
 
   Object.entries(nodeDiffs).forEach(([nodeId, override]) => {
     const targetNode = nextGraph.nodes[nodeId];
@@ -993,10 +985,46 @@ export function applyEnvironmentToGraph(
   return nextGraph;
 }
 
+export function applyEnvironmentToConnectionDefinitions(
+  definitions: ConnectionDefinition[],
+  environment: ProjectEnvironment | null,
+): ConnectionDefinition[] {
+  if (!environment) {
+    return cloneJson(definitions);
+  }
+
+  const connectionDiffs = environment.diff.connections ?? {};
+  return definitions.map((definition) => {
+    const override = connectionDiffs[definition.id];
+    if (!override) {
+      return cloneJson(definition);
+    }
+
+    return {
+      ...cloneJson(definition),
+      metadata: deepMergeJson(definition.metadata, override),
+    };
+  });
+}
+
+function stripGraphConnectionDefinitions(graph: WorkflowGraph): WorkflowGraph {
+  return {
+    ...cloneJson(graph),
+    connections: [],
+  };
+}
+
+function normalizeProjectAstText(astText: string): string {
+  const parsed = parseWorkflowGraph(astText);
+  return parsed.graph
+    ? formatWorkflowGraph(stripGraphConnectionDefinitions(parsed.graph))
+    : astText;
+}
+
 export function createNewProjectRecord(name: string, description?: string): ProjectRecord {
   const projectName = name.trim() || '未命名工程';
   const graph = buildStarterWorkflow(projectName);
-  const astText = formatWorkflowGraph(graph);
+  const astText = formatWorkflowGraph(stripGraphConnectionDefinitions(graph));
   const createdAt = nowIso();
   const environments = [createEnvironment('生产环境', '默认环境。')];
   const project: ProjectRecord = {
@@ -1030,9 +1058,13 @@ export function renameProjectRecord(
   project: ProjectRecord,
   patch: Partial<Pick<ProjectRecord, 'name' | 'description' | 'astText' | 'payloadText'>>,
 ): ProjectRecord {
+  const normalizedAstText =
+    typeof patch.astText === 'string' ? normalizeProjectAstText(patch.astText) : patch.astText;
+
   return {
     ...project,
     ...patch,
+    ...(normalizedAstText === undefined ? {} : { astText: normalizedAstText }),
     updatedAt: nowIso(),
   };
 }

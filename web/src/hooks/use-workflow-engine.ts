@@ -145,7 +145,7 @@ export function useWorkflowEngine(
 
   // 连接列表自动刷新（进入工程 / 部署变更 / 打开连接面板时触发）。
   useEffect(() => {
-    if (!hasTauriRuntime() || !activeBoard) {
+    if (!hasTauriRuntime()) {
       return;
     }
 

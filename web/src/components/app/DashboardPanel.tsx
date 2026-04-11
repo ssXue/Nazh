@@ -41,7 +41,7 @@ export function DashboardPanel({
     { label: '看板', value: boardCount },
     { label: '节点', value: graphNodeCount },
     { label: '边', value: graphEdgeCount },
-    { label: '连接', value: graphConnectionCount },
+    { label: '绑定', value: graphConnectionCount },
   ];
   const structurePeak = Math.max(...structureMetrics.map((metric) => metric.value), 1);
 
@@ -105,7 +105,7 @@ export function DashboardPanel({
         </div>
         <div className="dashboard-stat-card">
           <span className="dashboard-stat-card__value">{graphConnectionCount}</span>
-          <span className="dashboard-stat-card__label">连接资源</span>
+          <span className="dashboard-stat-card__label">连接绑定</span>
         </div>
         <div className="dashboard-stat-card">
           <span className="dashboard-stat-card__value">{activeNodeCount}</span>

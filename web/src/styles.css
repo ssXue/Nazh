@@ -2016,6 +2016,13 @@ h3 {
   color: var(--danger-ink);
 }
 
+.connection-card__delete.is-pending {
+  border-color: var(--danger-border-strong, var(--danger-border));
+  background: var(--danger-strong, color-mix(in srgb, var(--danger-soft) 45%, var(--danger-ink) 12%));
+  color: var(--danger-ink);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--danger-border) 48%, transparent);
+}
+
 .connection-card__delete svg {
   width: 15px;
   height: 15px;

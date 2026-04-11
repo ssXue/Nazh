@@ -16,6 +16,7 @@ import { createDownloadPlugin } from '@flowgram.ai/export-plugin';
 
 import {
   createFlowgramNodeRegistries,
+  type FlowgramConnectionDefaults,
   getDefaultFlowgramNodeRegistry,
   normalizeFlowgramNodeJson,
 } from './flowgram-node-library';
@@ -34,7 +35,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 interface UseFlowgramEditorPropsParams {
   initialData: NonNullable<FreeLayoutProps['initialData']>;
   accentColor: string;
-  primaryConnectionId: string | null;
+  connectionDefaults: FlowgramConnectionDefaults;
   materials: NonNullable<FreeLayoutProps['materials']>;
   isFlowingLine: NonNullable<FreeLayoutProps['isFlowingLine']>;
   isErrorLine: NonNullable<FreeLayoutProps['isErrorLine']>;
@@ -47,7 +48,7 @@ interface UseFlowgramEditorPropsParams {
 export function useFlowgramEditorProps({
   initialData,
   accentColor,
-  primaryConnectionId,
+  connectionDefaults,
   materials,
   isFlowingLine,
   isErrorLine,
@@ -57,12 +58,12 @@ export function useFlowgramEditorProps({
   onDragLineEnd,
 }: UseFlowgramEditorPropsParams): FreeLayoutProps {
   const nodeRegistries = useMemo(
-    () => createFlowgramNodeRegistries(primaryConnectionId),
-    [primaryConnectionId],
+    () => createFlowgramNodeRegistries(connectionDefaults),
+    [connectionDefaults],
   );
   const nodePanelRenderer = useMemo(
-    () => createFlowgramQuickNodePanel(primaryConnectionId),
-    [primaryConnectionId],
+    () => createFlowgramQuickNodePanel(connectionDefaults),
+    [connectionDefaults],
   );
 
   return useMemo(
@@ -80,7 +81,7 @@ export function useFlowgramEditorProps({
             ...json,
             type: json.type ?? 'native',
           },
-          primaryConnectionId,
+          connectionDefaults,
         );
       },
       toNodeJSON(node, json) {
@@ -96,7 +97,7 @@ export function useFlowgramEditorProps({
               ...liveExtInfo,
             },
           },
-          primaryConnectionId,
+          connectionDefaults,
         );
       },
       playground: {
@@ -168,7 +169,7 @@ export function useFlowgramEditorProps({
       onAllLayersRendered,
       onContentChange,
       onDragLineEnd,
-      primaryConnectionId,
+      connectionDefaults,
       setLineClassName,
     ],
   );

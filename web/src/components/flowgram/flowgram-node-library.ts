@@ -79,6 +79,12 @@ export interface FlowgramPaletteSection {
   items: FlowgramPaletteItem[];
 }
 
+export interface FlowgramConnectionDefaults {
+  any: string | null;
+  modbus: string | null;
+  serial: string | null;
+}
+
 interface FlowgramNodeData {
   label?: string;
   nodeType?: NazhNodeKind;
@@ -833,16 +839,34 @@ function getFallbackNodeLabel(nodeType: NazhNodeKind): string {
   }
 }
 
+function normalizedConnectionType(connectionType: string): string {
+  return connectionType.trim().toLowerCase();
+}
+
+function resolveDefaultConnectionId(
+  nodeType: NazhNodeKind,
+  connectionDefaults: FlowgramConnectionDefaults,
+): string | null {
+  switch (nodeType) {
+    case 'native':
+      return connectionDefaults.any;
+    case 'modbusRead':
+      return connectionDefaults.modbus;
+    case 'serialTrigger':
+      return connectionDefaults.serial;
+    default:
+      return null;
+  }
+}
+
 export function resolveNodeData(
   seed: NodeSeed,
   fallbackLabel: string,
-  primaryConnectionId: string | null,
+  connectionDefaults: FlowgramConnectionDefaults,
 ): Required<FlowgramNodeData> {
   const connectionId =
     seed.connectionId === undefined
-      ? seed.kind === 'native' || seed.kind === 'modbusRead'
-        ? primaryConnectionId
-        : null
+      ? resolveDefaultConnectionId(seed.kind, connectionDefaults)
       : seed.connectionId;
   const label = seed.label.trim() || fallbackLabel;
 
@@ -859,12 +883,12 @@ export function resolveNodeData(
 
 export function buildPaletteNodeJson(
   seed: NodeSeed,
-  primaryConnectionId: string | null,
+  connectionDefaults: FlowgramConnectionDefaults,
   baseJson?: Partial<WorkflowNodeJSON>,
 ): Partial<WorkflowNodeJSON> {
   const fallbackLabel = seed.label.trim() || getFallbackNodeLabel(seed.kind);
   const baseData = isRecord(baseJson?.data) ? (baseJson.data as Record<string, unknown>) : {};
-  const nextData = resolveNodeData(seed, fallbackLabel, primaryConnectionId);
+  const nextData = resolveNodeData(seed, fallbackLabel, connectionDefaults);
 
   return {
     ...baseJson,
@@ -882,7 +906,7 @@ export function buildPaletteNodeJson(
 
 export function normalizeFlowgramNodeJson(
   json: FlowNodeJSON,
-  primaryConnectionId: string | null,
+  connectionDefaults: FlowgramConnectionDefaults,
 ): FlowNodeJSON {
   const rawData = isRecord(json.data) ? (json.data as FlowgramNodeData) : {};
   const nodeType = normalizeNodeKind(rawData.nodeType ?? json.type);
@@ -901,9 +925,7 @@ export function normalizeFlowgramNodeJson(
       displayType: normalizeDisplayType(rawData.displayType, nodeType),
       connectionId:
         rawData.connectionId === undefined
-          ? nodeType === 'native' || nodeType === 'modbusRead'
-            ? primaryConnectionId
-            : null
+          ? resolveDefaultConnectionId(nodeType, connectionDefaults)
           : rawData.connectionId ?? null,
       aiDescription:
         typeof rawData.aiDescription === 'string' && rawData.aiDescription.trim()
@@ -916,7 +938,7 @@ export function normalizeFlowgramNodeJson(
 }
 
 export function createFlowgramNodeRegistries(
-  primaryConnectionId: string | null,
+  connectionDefaults: FlowgramConnectionDefaults,
 ): WorkflowNodeRegistry[] {
   const nodeKinds: NazhNodeKind[] = [
     'native',
@@ -937,7 +959,7 @@ export function createFlowgramNodeRegistries(
   return nodeKinds.map((kind) => ({
     type: kind,
     meta: buildRegistryMeta(kind),
-    onAdd: () => buildPaletteNodeJson(buildDefaultNodeSeed(kind), primaryConnectionId),
+    onAdd: () => buildPaletteNodeJson(buildDefaultNodeSeed(kind), connectionDefaults),
   }));
 }
 

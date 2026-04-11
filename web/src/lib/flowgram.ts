@@ -230,7 +230,7 @@ export function toNazhWorkflowGraph(
 
   return {
     name: previousGraph.name,
-    connections: previousGraph.connections,
+    connections: [],
     editor_graph: flowgramGraph,
     nodes,
     edges: flowgramGraph.edges

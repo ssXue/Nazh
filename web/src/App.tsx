@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useProjectLibrary } from './hooks/use-project-library';
 import { useSettings } from './hooks/use-settings';
 import { useWorkflowEngine } from './hooks/use-workflow-engine';
+import { useConnectionLibrary } from './hooks/use-connection-library';
 
 import { AboutPanel } from './components/app/AboutPanel';
 import { BoardsPanel, type BoardItem } from './components/app/BoardsPanel';
@@ -19,6 +20,7 @@ import { FlowgramCanvas, type FlowgramCanvasHandle } from './components/Flowgram
 import { parseWorkflowGraph } from './lib/graph';
 import { formatWorkflowGraph } from './lib/flowgram';
 import {
+  applyEnvironmentToConnectionDefinitions,
   CURRENT_USER_NAME,
   formatRelativeTimestamp,
   getActiveEnvironment,
@@ -33,7 +35,7 @@ import {
   hasTauriRuntime,
   undeployWorkflow,
 } from './lib/tauri';
-import type { WorkflowResult } from './types';
+import type { ConnectionDefinition, WorkflowResult, WorkflowNodeDefinition } from './types';
 import { describeUnknownError } from './lib/workflow-events';
 import {
   deriveWorkflowStatus,
@@ -51,9 +53,111 @@ function downloadTextFile(fileName: string, text: string) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+interface ConnectionUsageSummary {
+  nodeIds: string[];
+  projectNames: string[];
+}
+
+function buildConnectionUsageMap(
+  projects: Array<{ name: string; astText: string }>,
+): Map<string, ConnectionUsageSummary> {
+  const usage = new Map<string, { nodeIds: Set<string>; projectNames: Set<string> }>();
+
+  for (const project of projects) {
+    const parsed = parseWorkflowGraph(project.astText);
+    if (!parsed.graph) {
+      continue;
+    }
+
+    for (const [nodeId, node] of Object.entries(parsed.graph.nodes)) {
+      const connectionId = node.connection_id?.trim();
+      if (!connectionId) {
+        continue;
+      }
+
+      const current = usage.get(connectionId) ?? {
+        nodeIds: new Set<string>(),
+        projectNames: new Set<string>(),
+      };
+      current.nodeIds.add(nodeId);
+      current.projectNames.add(project.name);
+      usage.set(connectionId, current);
+    }
+  }
+
+  return new Map(
+    [...usage.entries()].map(([connectionId, summary]) => [
+      connectionId,
+      {
+        nodeIds: [...summary.nodeIds],
+        projectNames: [...summary.projectNames],
+      },
+    ]),
+  );
+}
+
+function getReferencedConnectionCount(nodes: Record<string, WorkflowNodeDefinition> | null): number {
+  if (!nodes) {
+    return 0;
+  }
+
+  return new Set(
+    Object.values(nodes)
+      .map((node) => node.connection_id?.trim())
+      .filter((connectionId): connectionId is string => Boolean(connectionId)),
+  ).size;
+}
+
+function collectLegacyProjectConnections(
+  projects: Array<{ astText: string }>,
+  currentConnections: ConnectionDefinition[],
+): ConnectionDefinition[] {
+  const knownIds = new Set(currentConnections.map((connection) => connection.id));
+  const migratedConnections: ConnectionDefinition[] = [];
+
+  for (const project of projects) {
+    const parsed = parseWorkflowGraph(project.astText);
+    const legacyConnections = parsed.graph?.connections ?? [];
+    for (const connection of legacyConnections) {
+      if (knownIds.has(connection.id)) {
+        continue;
+      }
+
+      knownIds.add(connection.id);
+      migratedConnections.push(connection);
+    }
+  }
+
+  return migratedConnections;
+}
+
+function collectLegacyProjectAstUpdates(
+  projects: Array<{ id: string; astText: string }>,
+): Array<{ projectId: string; astText: string }> {
+  const updates: Array<{ projectId: string; astText: string }> = [];
+
+  for (const project of projects) {
+    const parsed = parseWorkflowGraph(project.astText);
+    if (!parsed.graph || (parsed.graph.connections?.length ?? 0) === 0) {
+      continue;
+    }
+
+    updates.push({
+      projectId: project.id,
+      astText: formatWorkflowGraph({
+        ...parsed.graph,
+        connections: [],
+      }),
+    });
+  }
+
+  return updates;
+}
+
 function App() {
   const settings = useSettings();
   const projectLibrary = useProjectLibrary(settings.projectWorkspacePath);
+  const connectionLibrary = useConnectionLibrary(settings.projectWorkspacePath);
   const [activeBoardId, setActiveBoardId] = useState<string | null>(null);
   const [sidebarSection, setSidebarSection] = useState<SidebarSection>(settings.startupPage);
   const flowgramCanvasRef = useRef<FlowgramCanvasHandle | null>(null);
@@ -82,6 +186,10 @@ function App() {
     [activeBoardId, projectLibrary.projects],
   );
   const currentProject = activeProject ?? projectLibrary.projects[0] ?? null;
+  const connectionUsageById = useMemo(
+    () => buildConnectionUsageMap(projectLibrary.projects),
+    [projectLibrary.projects],
+  );
   const astText = currentProject?.astText ?? '';
   const payloadText = currentProject?.payloadText ?? '{}';
   const graphState = useMemo(
@@ -109,6 +217,55 @@ function App() {
     setActiveBoardId(null);
     setSidebarSection('boards');
   }, [activeBoardId, projectLibrary.projects]);
+
+  useEffect(() => {
+    if (!connectionLibrary.storage.isReady || !projectLibrary.storage.isReady) {
+      return;
+    }
+
+    const migratedConnections = collectLegacyProjectConnections(
+      projectLibrary.projects,
+      connectionLibrary.connections,
+    );
+    const legacyAstUpdates = collectLegacyProjectAstUpdates(projectLibrary.projects);
+
+    if (migratedConnections.length === 0 && legacyAstUpdates.length === 0) {
+      return;
+    }
+
+    if (migratedConnections.length > 0) {
+      connectionLibrary.setConnections((current) => [...current, ...migratedConnections]);
+    }
+
+    legacyAstUpdates.forEach((update) => {
+      projectLibrary.updateProjectDraft(update.projectId, { astText: update.astText });
+    });
+  }, [
+    connectionLibrary.connections,
+    connectionLibrary.setConnections,
+    connectionLibrary.storage.isReady,
+    projectLibrary.projects,
+    projectLibrary.storage.isReady,
+    projectLibrary.updateProjectDraft,
+  ]);
+
+  useEffect(() => {
+    if (
+      !hasTauriRuntime() ||
+      sidebarSection !== 'connections' ||
+      !connectionLibrary.storage.isReady ||
+      connectionLibrary.storage.isSyncing
+    ) {
+      return;
+    }
+
+    void engine.refreshConnections();
+  }, [
+    connectionLibrary.connections,
+    connectionLibrary.storage.isReady,
+    connectionLibrary.storage.isSyncing,
+    sidebarSection,
+  ]);
 
   function updateProjectDraft(
     projectId: string,
@@ -176,10 +333,6 @@ function App() {
 
   function handleGraphChange(nextAstText: string) {
     applyStructuredGraphChange(nextAstText, '画布变更已同步回项目草稿。');
-  }
-
-  function handleConnectionGraphChange(nextAstText: string, nextStatusMessage: string) {
-    applyStructuredGraphChange(nextAstText, nextStatusMessage);
   }
 
   function handlePayloadTextChange(nextText: string) {
@@ -394,7 +547,17 @@ function App() {
       return {
         astText: null,
         runtimeAstText: null,
+        runtimeConnections: null,
         error: '请先从所有看板进入工程。',
+      };
+    }
+
+    if (!connectionLibrary.storage.isReady) {
+      return {
+        astText: null,
+        runtimeAstText: null,
+        runtimeConnections: null,
+        error: '连接资源仍在加载，请稍后再试。',
       };
     }
 
@@ -403,6 +566,7 @@ function App() {
       return {
         astText: null,
         runtimeAstText: null,
+        runtimeConnections: null,
         error: draftSnapshot.error ?? '当前工作流快照无效。',
       };
     }
@@ -415,16 +579,22 @@ function App() {
       return {
         astText: null,
         runtimeAstText: null,
+        runtimeConnections: null,
         error: '当前环境差异配置无法应用到工作流。',
       };
     }
 
+    const runtimeConnections = applyEnvironmentToConnectionDefinitions(
+      connectionLibrary.connections,
+      getActiveEnvironment(activeProject),
+    );
     const runtimeAstText = formatWorkflowGraph(runtimeGraph);
     const nextGraphState = parseWorkflowGraph(runtimeAstText);
     if (nextGraphState.error || !nextGraphState.graph) {
       return {
         astText: null,
         runtimeAstText: null,
+        runtimeConnections: null,
         error: nextGraphState.error ?? '环境覆盖后的工作流无法序列化。',
       };
     }
@@ -432,6 +602,7 @@ function App() {
     return {
       astText: draftSnapshot.astText,
       runtimeAstText,
+      runtimeConnections,
       error: null,
     };
   }
@@ -443,7 +614,12 @@ function App() {
     }
 
     const deploySnapshot = buildDeploySnapshot();
-    if (deploySnapshot.error || !deploySnapshot.astText || !deploySnapshot.runtimeAstText) {
+    if (
+      deploySnapshot.error ||
+      !deploySnapshot.astText ||
+      !deploySnapshot.runtimeAstText ||
+      !deploySnapshot.runtimeConnections
+    ) {
       engine.appendAppError('command', '部署前 AST 校验失败', deploySnapshot.error ?? '未知错误');
       engine.setStatusMessage(`AST 无法部署: ${deploySnapshot.error ?? '未知错误'}`);
       return;
@@ -462,7 +638,10 @@ function App() {
     }
 
     try {
-      const response = await deployWorkflow(deploySnapshot.runtimeAstText);
+      const response = await deployWorkflow(
+        deploySnapshot.runtimeAstText,
+        deploySnapshot.runtimeConnections,
+      );
       engine.setStatusMessage(
         `部署完成，节点数 ${response.nodeCount}，边数 ${response.edgeCount}，环境 ${environmentName}。`,
       );
@@ -550,7 +729,7 @@ function App() {
 
   const graphNodeCount = graphState.graph ? Object.keys(graphState.graph.nodes).length : 0;
   const graphEdgeCount = graphState.graph?.edges.length ?? 0;
-  const graphConnectionCount = graphState.graph?.connections?.length ?? 0;
+  const graphConnectionCount = getReferencedConnectionCount(graphState.graph?.nodes ?? null);
   const isTauriRuntime = hasTauriRuntime();
   const currentUserRole = isTauriRuntime ? '桌面操作员' : '预览访客';
   const runtimeModeLabel = isTauriRuntime ? '桌面会话' : '浏览器预览';
@@ -566,7 +745,7 @@ function App() {
   const connectionPreview = engine.connections.slice(0, 4);
   const sidebarSections = buildSidebarSections(
     workflowStatusLabel,
-    graphConnectionCount,
+    engine.connections.length,
     engine.eventFeed.length + engine.appErrors.length,
     boardItems.length,
     engine.deployInfo,
@@ -628,6 +807,7 @@ function App() {
           <FlowgramCanvas
             ref={flowgramCanvasRef}
             graph={graphState.graph}
+            connections={connectionLibrary.connections}
             runtimeState={engine.runtimeState}
             workflowStatus={workflowStatus}
             accentHex={settings.accentHex}
@@ -683,18 +863,17 @@ function App() {
       case 'boards':
         return renderBoardWorkspace();
       case 'connections':
-        if (!activeBoard) {
-          return renderProjectGate('连接资源');
-        }
-
         return (
           <section className="studio-content studio-content--panel">
             <div className="panel studio-content__panel studio-content__panel--scroll panel--connection-card">
               <ConnectionStudio
-                graph={graphState.graph}
-                astError={graphState.error}
+                connections={connectionLibrary.connections}
+                setConnections={connectionLibrary.setConnections}
+                usageByConnection={connectionUsageById}
                 runtimeConnections={engine.connections}
-                onGraphChange={handleConnectionGraphChange}
+                isLoading={!connectionLibrary.storage.isReady}
+                storageError={connectionLibrary.storage.error}
+                onStatusMessage={(msg) => engine.setStatusMessage(msg)}
               />
             </div>
           </section>

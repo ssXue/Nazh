@@ -49,7 +49,7 @@ describe('toNazhWorkflowGraph', () => {
     expect(result.name).toBe('测试工作流');
   });
 
-  it('从 previousGraph 继承 connections 字段', () => {
+  it('保存回 Nazh 图时清空工程内 connections 字段', () => {
     const graph: WorkflowGraph = {
       ...baseGraph(),
       connections: [
@@ -62,7 +62,7 @@ describe('toNazhWorkflowGraph', () => {
     } as WorkflowGraph;
     const flowgramJson = toFlowgramWorkflowJson(graph);
     const result = toNazhWorkflowGraph(flowgramJson, graph);
-    expect(result.connections).toEqual(graph.connections);
+    expect(result.connections).toEqual([]);
   });
 
   it('result.editor_graph 等于传入的 flowgramJson', () => {

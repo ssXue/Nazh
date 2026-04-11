@@ -3,14 +3,18 @@ import { useMemo, type MouseEvent } from 'react';
 import type { NodePanelRenderProps } from '@flowgram.ai/free-node-panel-plugin';
 import type { WorkflowNodeJSON } from '@flowgram.ai/free-layout-editor';
 
-import { buildPaletteNodeJson, getFlowgramPaletteSections } from './flowgram-node-library';
+import {
+  buildPaletteNodeJson,
+  getFlowgramPaletteSections,
+  type FlowgramConnectionDefaults,
+} from './flowgram-node-library';
 import {
   FlowgramNodeGlyph,
   getFlowgramDisplayLabel,
   normalizeFlowgramDisplayType,
 } from './FlowgramNodeGlyph';
 
-export function createFlowgramQuickNodePanel(primaryConnectionId: string | null) {
+export function createFlowgramQuickNodePanel(connectionDefaults: FlowgramConnectionDefaults) {
   return function FlowgramQuickNodePanel(props: NodePanelRenderProps) {
     const paletteSections = useMemo(() => getFlowgramPaletteSections(), []);
 
@@ -52,7 +56,7 @@ export function createFlowgramQuickNodePanel(primaryConnectionId: string | null)
                       handleSelect(
                         event,
                         item.seed.kind,
-                        buildPaletteNodeJson(item.seed, primaryConnectionId) as WorkflowNodeJSON,
+                        buildPaletteNodeJson(item.seed, connectionDefaults) as WorkflowNodeJSON,
                       )
                     }
                   >

@@ -9,9 +9,10 @@
 //! 引擎事件通过 `Window::emit` 转发给前端。
 
 use nazh_engine::{
-    deploy_workflow as deploy_workflow_graph, shared_connection_manager, ConnectionRecord,
-    DeployResponse, DispatchResponse, EngineError, ExecutionEvent, SerialTriggerNodeConfig,
-    TimerNodeConfig, UndeployResponse, WorkflowContext, WorkflowGraph, WorkflowIngress,
+    deploy_workflow as deploy_workflow_graph, shared_connection_manager, ConnectionDefinition,
+    ConnectionRecord, DeployResponse, DispatchResponse, EngineError, ExecutionEvent,
+    SerialTriggerNodeConfig, TimerNodeConfig, UndeployResponse, WorkflowContext, WorkflowGraph,
+    WorkflowIngress,
 };
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -74,6 +75,53 @@ impl Default for DesktopState {
     }
 }
 
+impl DesktopState {
+    fn connections_file_path(
+        app: &AppHandle,
+        workspace_path: Option<&str>,
+    ) -> Result<PathBuf, String> {
+        let workspace_dir = resolve_project_workspace_dir(app, workspace_path)
+            .map(|(dir, _)| dir)
+            .map_err(|e| e)?;
+        Ok(workspace_dir.join("connections.json"))
+    }
+
+    async fn load_connections_from_disk(
+        app: &AppHandle,
+        manager: nazh_engine::SharedConnectionManager,
+        workspace_path: Option<&str>,
+    ) {
+        match Self::connections_file_path(app, workspace_path) {
+            Ok(path) => {
+                if path.exists() {
+                    if let Ok(text) = fs::read_to_string(&path).await {
+                        if let Ok(defs) = serde_json::from_str::<Vec<nazh_engine::ConnectionDefinition>>(&text) {
+                            manager.replace_connections(defs).await;
+                        } else {
+                            manager
+                                .replace_connections(Vec::<ConnectionDefinition>::new())
+                                .await;
+                        }
+                    } else {
+                        manager
+                            .replace_connections(Vec::<ConnectionDefinition>::new())
+                            .await;
+                    }
+                } else {
+                    manager
+                        .replace_connections(Vec::<ConnectionDefinition>::new())
+                        .await;
+                }
+            }
+            Err(_) => {
+                manager
+                    .replace_connections(Vec::<ConnectionDefinition>::new())
+                    .await;
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 struct TimerRootSpec {
     node_id: String,
@@ -109,11 +157,17 @@ async fn deploy_workflow(
     app: AppHandle,
     state: State<'_, DesktopState>,
     ast: String,
+    connection_definitions: Option<Vec<ConnectionDefinition>>,
 ) -> Result<DeployResponse, String> {
     let mut graph = WorkflowGraph::from_json(&ast).map_err(stringify_error)?;
     normalize_sql_writer_paths(&app, &mut graph).map_err(stringify_error)?;
+    if let Some(definitions) = connection_definitions {
+        state.connection_manager.replace_connections(definitions).await;
+    }
     let timer_roots = collect_timer_root_specs(&graph).map_err(stringify_error)?;
-    let serial_roots = collect_serial_root_specs(&graph).map_err(stringify_error)?;
+    let serial_roots = collect_serial_root_specs(&graph, state.connection_manager.clone())
+        .await
+        .map_err(stringify_error)?;
     let node_count = graph.nodes.len();
     let edge_count = graph.edges.len();
     let deployment = deploy_workflow_graph(graph, state.connection_manager.clone())
@@ -219,6 +273,58 @@ async fn undeploy_workflow(
 async fn list_connections(state: State<'_, DesktopState>) -> Result<Vec<ConnectionRecord>, String> {
     let connections = state.connection_manager.list().await;
     Ok(connections)
+}
+
+#[tauri::command]
+async fn load_connection_definitions(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+    workspace_path: Option<String>,
+) -> Result<Vec<ConnectionDefinition>, String> {
+    let path =
+        DesktopState::connections_file_path(&app, workspace_path.as_deref()).map_err(|e| e)?;
+    if !path.exists() {
+        state
+            .connection_manager
+            .replace_connections(Vec::<ConnectionDefinition>::new())
+            .await;
+        return Ok(Vec::new());
+    }
+    let text = fs::read_to_string(&path)
+        .await
+        .map_err(|e| format!("读取 connections.json 失败: {e}"))?;
+    let defs = serde_json::from_str::<Vec<ConnectionDefinition>>(&text)
+        .map_err(|e| format!("解析 connections.json 失败: {e}"))?;
+    state
+        .connection_manager
+        .replace_connections(defs.clone())
+        .await;
+    Ok(defs)
+}
+
+#[tauri::command]
+async fn save_connection_definitions(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+    workspace_path: Option<String>,
+    definitions: Vec<ConnectionDefinition>,
+) -> Result<(), String> {
+    let path =
+        DesktopState::connections_file_path(&app, workspace_path.as_deref()).map_err(|e| e)?;
+    let dir = path.parent().ok_or("无法确定连接文件目录")?;
+    fs::create_dir_all(dir)
+        .await
+        .map_err(|e| format!("创建连接文件目录失败: {e}"))?;
+    let text = serde_json::to_string_pretty(&definitions)
+        .map_err(|e| format!("序列化连接定义失败: {e}"))?;
+    fs::write(&path, text)
+        .await
+        .map_err(|e| format!("写入 connections.json 失败: {e}"))?;
+    state
+        .connection_manager
+        .replace_connections(definitions)
+        .await;
+    Ok(())
 }
 
 #[tauri::command]
@@ -378,7 +484,10 @@ fn is_serial_connection_type(connection_type: &str) -> bool {
     )
 }
 
-fn collect_serial_root_specs(graph: &WorkflowGraph) -> Result<Vec<SerialRootSpec>, EngineError> {
+async fn collect_serial_root_specs(
+    graph: &WorkflowGraph,
+    connection_manager: nazh_engine::SharedConnectionManager,
+) -> Result<Vec<SerialRootSpec>, EngineError> {
     let incoming_counts = count_incoming_edges(graph);
     let mut serial_roots = Vec::new();
 
@@ -399,10 +508,9 @@ fn collect_serial_root_specs(graph: &WorkflowGraph) -> Result<Vec<SerialRootSpec
             .ok_or_else(|| {
                 EngineError::node_config(node_id.clone(), "串口触发节点需要绑定串口连接资源")
             })?;
-        let connection = graph
-            .connections
-            .iter()
-            .find(|connection| connection.id == connection_id)
+        let connection = connection_manager
+            .get(connection_id)
+            .await
             .ok_or_else(|| {
                 EngineError::node_config(
                     node_id.clone(),
@@ -418,7 +526,7 @@ fn collect_serial_root_specs(graph: &WorkflowGraph) -> Result<Vec<SerialRootSpec
         }
 
         let mut config: SerialTriggerNodeConfig =
-            serde_json::from_value(connection.metadata.clone()).map_err(|error| {
+            serde_json::from_value(connection.metadata).map_err(|error| {
                 EngineError::node_config(node_definition.id.clone(), error.to_string())
             })?;
         if let Some(inject) = node_definition.config.get("inject").and_then(Value::as_object) {
@@ -854,11 +962,22 @@ mod tests {
 pub fn run() {
     let builder = tauri::Builder::default()
         .manage(DesktopState::default())
+        .setup(|app| {
+            let app_handle = app.handle().clone();
+            let state: State<'_, DesktopState> = app.state();
+            let manager = state.connection_manager.clone();
+            tauri::async_runtime::spawn(async move {
+                DesktopState::load_connections_from_disk(&app_handle, manager, None).await;
+            });
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             deploy_workflow,
             dispatch_payload,
             undeploy_workflow,
             list_connections,
+            load_connection_definitions,
+            save_connection_definitions,
             load_project_library_file,
             save_project_library_file
         ]);

@@ -58,6 +58,7 @@ import {
 import {
   getLogicNodeBranchDefinitions,
   resolveNodeData,
+  type FlowgramConnectionDefaults,
   type NodeSeed,
 } from './flowgram/flowgram-node-library';
 import { handleFlowgramDragLineEnd } from './flowgram/flowgram-line-panel';
@@ -68,10 +69,16 @@ import {
   toNazhWorkflowGraph,
 } from '../lib/flowgram';
 import { FlowDownloadFormat, FlowDownloadService } from '@flowgram.ai/export-plugin';
-import type { WorkflowGraph, WorkflowRuntimeState, WorkflowWindowStatus } from '../types';
+import type {
+  ConnectionDefinition,
+  WorkflowGraph,
+  WorkflowRuntimeState,
+  WorkflowWindowStatus,
+} from '../types';
 
 interface FlowgramCanvasProps {
   graph: WorkflowGraph | null;
+  connections: ConnectionDefinition[];
   runtimeState: WorkflowRuntimeState;
   workflowStatus: WorkflowWindowStatus;
   accentHex: string;
@@ -114,6 +121,34 @@ interface FlowgramToolbarProps {
   onDispatch?: () => void;
   onSave: () => void;
   onDownload: (format: FlowDownloadFormat) => void | Promise<void>;
+}
+
+function normalizedConnectionType(connectionType: string): string {
+  return connectionType.trim().toLowerCase();
+}
+
+function isSerialConnectionType(connectionType: string): boolean {
+  switch (normalizedConnectionType(connectionType)) {
+    case 'serial':
+    case 'serialport':
+    case 'serial_port':
+    case 'uart':
+    case 'rs232':
+    case 'rs485':
+      return true;
+    default:
+      return false;
+  }
+}
+
+function isModbusConnectionType(connectionType: string): boolean {
+  switch (normalizedConnectionType(connectionType)) {
+    case 'modbus':
+    case 'modbus_tcp':
+      return true;
+    default:
+      return false;
+  }
 }
 
 const FLOWGRAM_BUTTON_STYLE: CSSProperties = {
@@ -1006,6 +1041,7 @@ function FlowgramToolbar({
 
 export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasProps>(function FlowgramCanvas({
   graph,
+  connections,
   runtimeState,
   workflowStatus,
   accentHex,
@@ -1064,8 +1100,20 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
 
   const resolvedGraph = graph ?? latestGraphRef.current;
   const resolvedFlowgramData = flowgramData ?? latestFlowgramDataRef.current;
-  const connectionOptions = resolvedGraph?.connections ?? [];
-  const primaryConnectionId = resolvedGraph?.connections?.[0]?.id ?? null;
+  const connectionOptions = connections;
+  const connectionDefaults = useMemo<FlowgramConnectionDefaults>(() => {
+    const anyConnectionId = connections[0]?.id ?? null;
+    const modbusConnectionId =
+      connections.find((connection) => isModbusConnectionType(connection.type))?.id ?? null;
+    const serialConnectionId =
+      connections.find((connection) => isSerialConnectionType(connection.type))?.id ?? null;
+
+    return {
+      any: anyConnectionId,
+      modbus: modbusConnectionId,
+      serial: serialConnectionId,
+    };
+  }, [connections]);
 
   useEffect(() => {
     if (!editorCtx && resolvedFlowgramData) {
@@ -1537,7 +1585,7 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
         {
           id: nextId,
           type: seed.kind,
-          data: resolveNodeData(seed, nextId, primaryConnectionId),
+          data: resolveNodeData(seed, nextId, connectionDefaults),
         },
       );
 
@@ -1565,7 +1613,7 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
         edges: [],
       },
     accentColor: accentHex,
-    primaryConnectionId,
+    connectionDefaults,
     materials,
     isFlowingLine,
     isErrorLine,
@@ -1584,7 +1632,7 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
           <div className="flowgram-host">
             <div className="flowgram-workspace">
               <FlowgramNodeAddPanel
-                primaryConnectionId={primaryConnectionId}
+                connectionDefaults={connectionDefaults}
                 hasSelection={hasSelection}
                 disabled={isReadonlyMode}
                 onInsertSeed={handleInsertNode}

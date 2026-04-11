@@ -17,7 +17,7 @@ use crate::EngineError;
 /// 全局连接池的线程安全句柄。
 pub type SharedConnectionManager = Arc<ConnectionManager>;
 
-/// 连接资源的声明式定义（用于工作流 AST）。
+/// 连接资源的声明式定义（用于全局连接资源库）。
 #[derive(Debug, Clone, Serialize, PartialEq, TS)]
 #[ts(export)]
 pub struct ConnectionDefinition {
@@ -142,6 +142,27 @@ impl ConnectionManager {
             };
             connections.insert(definition.id, Arc::new(Mutex::new(record)));
         }
+    }
+
+    /// 用给定定义整体替换连接资源池。
+    pub async fn replace_connections(
+        &self,
+        definitions: impl IntoIterator<Item = ConnectionDefinition>,
+    ) {
+        let mut next_connections = HashMap::new();
+        for definition in definitions {
+            let record = ConnectionRecord {
+                id: definition.id.clone(),
+                kind: definition.kind,
+                metadata: definition.metadata,
+                in_use: false,
+                last_borrowed_at: None,
+            };
+            next_connections.insert(definition.id, Arc::new(Mutex::new(record)));
+        }
+
+        let mut connections = self.connections.write().await;
+        *connections = next_connections;
     }
 
     /// 按 ID 定位连接的内层 `Arc`，释放外层读锁后返回。

@@ -3,6 +3,7 @@ import { listen } from '@tauri-apps/api/event';
 import { currentMonitor, getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
 
 import type {
+  ConnectionDefinition,
   ConnectionRecord,
   DeployResponse,
   DispatchResponse,
@@ -292,8 +293,14 @@ export async function watchCurrentWindowMaximized(
   };
 }
 
-export async function deployWorkflow(ast: string): Promise<DeployResponse> {
-  return invoke<DeployResponse>('deploy_workflow', { ast });
+export async function deployWorkflow(
+  ast: string,
+  connectionDefinitions?: ConnectionDefinition[],
+): Promise<DeployResponse> {
+  return invoke<DeployResponse>('deploy_workflow', {
+    ast,
+    connectionDefinitions: connectionDefinitions ?? null,
+  });
 }
 
 export async function dispatchPayload(payload: unknown): Promise<DispatchResponse> {
@@ -306,6 +313,24 @@ export async function undeployWorkflow(): Promise<UndeployResponse> {
 
 export async function listConnections(): Promise<ConnectionRecord[]> {
   return invoke<ConnectionRecord[]>('list_connections');
+}
+
+export async function loadConnectionDefinitions(
+  workspacePath: string,
+): Promise<ConnectionDefinition[]> {
+  return invoke<ConnectionDefinition[]>('load_connection_definitions', {
+    workspacePath: workspacePath.trim() || null,
+  });
+}
+
+export async function saveConnectionDefinitions(
+  workspacePath: string,
+  definitions: ConnectionDefinition[],
+): Promise<void> {
+  return invoke<void>('save_connection_definitions', {
+    workspacePath: workspacePath.trim() || null,
+    definitions,
+  });
 }
 
 export async function loadProjectLibraryFile(

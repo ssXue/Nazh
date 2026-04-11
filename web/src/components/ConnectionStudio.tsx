@@ -1,12 +1,17 @@
-import { useEffect, useMemo, useState, type ComponentType, type SVGProps } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type ComponentType,
+  type Dispatch,
+  type SVGProps,
+  type SetStateAction,
+} from 'react';
 
-import { formatWorkflowGraph } from '../lib/flowgram';
 import type {
   ConnectionDefinition,
   ConnectionRecord,
   JsonValue,
-  WorkflowGraph,
-  WorkflowNodeDefinition,
 } from '../types';
 import {
   ConnectionsIcon,
@@ -17,11 +22,19 @@ import {
   SettingsIcon,
 } from './app/AppIcons';
 
+export interface ConnectionUsageSummary {
+  nodeIds: string[];
+  projectNames: string[];
+}
+
 interface ConnectionStudioProps {
-  graph: WorkflowGraph | null;
-  astError: string | null;
+  connections: ConnectionDefinition[];
+  setConnections: Dispatch<SetStateAction<ConnectionDefinition[]>>;
+  usageByConnection: Map<string, ConnectionUsageSummary>;
   runtimeConnections: ConnectionRecord[];
-  onGraphChange: (nextAstText: string, statusMessage: string) => void;
+  isLoading?: boolean;
+  storageError?: string | null;
+  onStatusMessage: (msg: string) => void;
 }
 
 interface ConnectionTemplate {
@@ -262,61 +275,15 @@ function connectionRuntimeState(runtimeConnection: ConnectionRecord | undefined)
   return { label: '运行可用', state: 'runtime' };
 }
 
-function buildNodeUsageMap(graph: WorkflowGraph | null): Map<string, string[]> {
-  const usage = new Map<string, string[]>();
-  if (!graph) {
-    return usage;
-  }
-
-  for (const [nodeId, node] of Object.entries(graph.nodes)) {
-    if (!node.connection_id) {
-      continue;
-    }
-
-    usage.set(node.connection_id, [...(usage.get(node.connection_id) ?? []), nodeId]);
-  }
-
-  return usage;
-}
-
-function updateNodeBindings(
-  nodes: Record<string, WorkflowNodeDefinition>,
-  sourceConnectionId: string,
-  targetConnectionId: string,
-): {
-  nodes: Record<string, WorkflowNodeDefinition>;
-  affectedNodes: string[];
-} {
-  const nextNodes: Record<string, WorkflowNodeDefinition> = {};
-  const affectedNodes: string[] = [];
-
-  for (const [nodeId, node] of Object.entries(nodes)) {
-    if (node.connection_id !== sourceConnectionId) {
-      nextNodes[nodeId] = node;
-      continue;
-    }
-
-    affectedNodes.push(nodeId);
-    nextNodes[nodeId] = {
-      ...node,
-      connection_id: targetConnectionId || undefined,
-    };
-  }
-
-  return {
-    nodes: nextNodes,
-    affectedNodes,
-  };
-}
-
 export function ConnectionStudio({
-  graph,
-  astError,
+  connections,
+  setConnections,
+  usageByConnection,
   runtimeConnections,
-  onGraphChange,
+  isLoading = false,
+  storageError,
+  onStatusMessage,
 }: ConnectionStudioProps) {
-  const connections = graph?.connections ?? [];
-  const usageByConnection = useMemo(() => buildNodeUsageMap(graph), [graph]);
   const runtimeById = useMemo(
     () => new Map(runtimeConnections.map((connection) => [connection.id, connection])),
     [runtimeConnections],
@@ -340,13 +307,10 @@ export function ConnectionStudio({
   const [metadataDrafts, setMetadataDrafts] = useState<Record<string, string>>({});
   const [metadataErrors, setMetadataErrors] = useState<Record<string, string>>({});
   const [activeConnectionIndex, setActiveConnectionIndex] = useState<number | null>(null);
+  const [pendingDeleteIndex, setPendingDeleteIndex] = useState<number | null>(null);
 
   useEffect(() => {
-    if (!graph) {
-      setIdDrafts({});
-      setMetadataDrafts({});
-      setMetadataErrors({});
-      setActiveConnectionIndex(null);
+    if (isLoading) {
       return;
     }
 
@@ -364,17 +328,28 @@ export function ConnectionStudio({
       ),
     );
     setMetadataErrors({});
-  }, [graph, connections]);
+  }, [connections, isLoading]);
 
   useEffect(() => {
-    if (!graph || activeConnectionIndex === null) {
+    if (isLoading || activeConnectionIndex === null) {
       return;
     }
 
     if (activeConnectionIndex >= connections.length) {
       setActiveConnectionIndex(connections.length > 0 ? connections.length - 1 : null);
     }
-  }, [activeConnectionIndex, graph, connections.length]);
+  }, [activeConnectionIndex, connections.length, isLoading]);
+
+  useEffect(() => {
+    if (activeConnectionIndex === null) {
+      setPendingDeleteIndex(null);
+      return;
+    }
+
+    if (pendingDeleteIndex !== null && pendingDeleteIndex !== activeConnectionIndex) {
+      setPendingDeleteIndex(null);
+    }
+  }, [activeConnectionIndex, pendingDeleteIndex]);
 
   useEffect(() => {
     if (activeConnectionIndex === null) {
@@ -401,61 +376,49 @@ export function ConnectionStudio({
     return `${prefix}_${index}`;
   }
 
-  function emitGraphUpdate(nextGraph: WorkflowGraph, statusMessage: string) {
-    onGraphChange(formatWorkflowGraph(nextGraph), statusMessage);
+  function saveConnections(definitions: ConnectionDefinition[], message: string) {
+    setConnections(definitions);
+    onStatusMessage(message);
   }
 
   function handleAddConnection(template: ConnectionTemplate) {
-    if (!graph) {
-      return;
-    }
-
     const nextConnection: ConnectionDefinition = {
       ...template.definition,
       id: buildNextConnectionId(template.idPrefix),
       metadata: template.definition.metadata ?? {},
     };
 
-    emitGraphUpdate(
-      {
-        ...graph,
-        connections: [...connections, nextConnection],
-      },
-      `已新增 ${template.label} 连接，并同步到 AST 文本。`,
-    );
+    saveConnections([...connections, nextConnection], `已新增 ${template.label} 连接`);
     setActiveConnectionIndex(connections.length);
   }
 
   function handleRemoveConnection(index: number) {
-    if (!graph) {
-      return;
-    }
-
     const target = connections[index];
     if (!target) {
       return;
     }
 
     const nextConnections = connections.filter((_, connectionIndex) => connectionIndex !== index);
-    const usageNodes = target.id ? usageByConnection.get(target.id) ?? [] : [];
-    const bindingUpdate =
-      target.id && usageNodes.length > 0
-        ? updateNodeBindings(graph.nodes, target.id, '')
-        : {
-            nodes: graph.nodes,
-            affectedNodes: [] as string[],
-          };
+    const usage = target.id
+      ? usageByConnection.get(target.id) ?? { nodeIds: [], projectNames: [] }
+      : { nodeIds: [], projectNames: [] };
 
-    emitGraphUpdate(
-      {
-        ...graph,
-        connections: nextConnections,
-        nodes: bindingUpdate.nodes,
-      },
-      bindingUpdate.affectedNodes.length > 0
-        ? `已删除连接 ${target.id}，并解除 ${bindingUpdate.affectedNodes.length} 个节点的绑定。`
-        : `已删除连接 ${target.id || '未命名连接'}。`,
-    );
+    if (pendingDeleteIndex !== index) {
+      setPendingDeleteIndex(index);
+      onStatusMessage(
+        usage.nodeIds.length > 0
+          ? `连接 ${target.id || '未命名连接'} 仍被 ${usage.projectNames.length} 个工程、${usage.nodeIds.length} 个节点引用，再点一次确认删除。`
+          : `再次点击确认删除连接 ${target.id || '未命名连接'}。`,
+      );
+      return;
+    }
+
+    const message = usage.nodeIds.length > 0
+      ? `已删除连接 ${target.id}（${usage.projectNames.length} 个工程仍引用此连接）`
+      : `已删除连接 ${target.id || '未命名连接'}`;
+
+    saveConnections(nextConnections, message);
+    setPendingDeleteIndex(null);
     setActiveConnectionIndex((current) => {
       if (current === null) {
         return null;
@@ -468,10 +431,6 @@ export function ConnectionStudio({
   }
 
   function handleTypeChange(index: number, value: string) {
-    if (!graph) {
-      return;
-    }
-
     const nextConnections = connections.map((connection, connectionIndex) =>
       connectionIndex === index
         ? {
@@ -481,20 +440,10 @@ export function ConnectionStudio({
         : connection,
     );
 
-    emitGraphUpdate(
-      {
-        ...graph,
-        connections: nextConnections,
-      },
-      '连接类型已同步回 AST 文本。',
-    );
+    saveConnections(nextConnections, '连接类型已更新。');
   }
 
   function commitConnectionId(index: number) {
-    if (!graph) {
-      return;
-    }
-
     const currentConnection = connections[index];
     if (!currentConnection) {
       return;
@@ -515,31 +464,10 @@ export function ConnectionStudio({
         : connection,
     );
 
-    const bindingUpdate =
-      currentConnection.id && currentConnection.id !== nextId
-        ? updateNodeBindings(graph.nodes, currentConnection.id, nextId)
-        : {
-            nodes: graph.nodes,
-            affectedNodes: [] as string[],
-          };
-
-    emitGraphUpdate(
-      {
-        ...graph,
-        connections: nextConnections,
-        nodes: bindingUpdate.nodes,
-      },
-      bindingUpdate.affectedNodes.length > 0
-        ? `连接 ID 已更新为 ${nextId || '空值'}，并同步修正了 ${bindingUpdate.affectedNodes.length} 个节点引用。`
-        : `连接 ID 已更新为 ${nextId || '空值'}。`,
-    );
+    saveConnections(nextConnections, `连接 ID 已更新为 ${nextId || '空值'}。`);
   }
 
   function handleMetadataChange(index: number, value: string) {
-    if (!graph) {
-      return;
-    }
-
     const draftKey = connectionKey(index);
     setMetadataDrafts((current) => ({
       ...current,
@@ -563,13 +491,7 @@ export function ConnectionStudio({
         return nextErrors;
       });
 
-      emitGraphUpdate(
-        {
-          ...graph,
-          connections: nextConnections,
-        },
-        '连接元数据已同步回 AST 文本。',
-      );
+      saveConnections(nextConnections, '连接元数据已更新。');
     } catch (error) {
       setMetadataErrors((current) => ({
         ...current,
@@ -579,10 +501,6 @@ export function ConnectionStudio({
   }
 
   function handleMetadataFieldChange(index: number, key: string, value: JsonValue) {
-    if (!graph) {
-      return;
-    }
-
     const currentConnection = connections[index];
     if (!currentConnection) {
       return;
@@ -612,38 +530,18 @@ export function ConnectionStudio({
       return nextErrors;
     });
 
-    emitGraphUpdate(
-      {
-        ...graph,
-        connections: nextConnections,
-      },
-      '连接参数已同步回 AST 文本。',
-    );
-  }
-
-  if (!graph) {
-    return (
-      <section className="connection-studio">
-        <div
-          className="panel__header panel__header--dense window-safe-header"
-          data-window-drag-region
-        >
-          <div>
-            <h2>连接资源编辑</h2>
-          </div>
-        </div>
-        <p className="panel__error">{astError ?? 'AST 解析失败，暂时无法结构化编辑连接。'}</p>
-      </section>
-    );
+    saveConnections(nextConnections, '连接参数已更新。');
   }
 
   const activeConnection =
     activeConnectionIndex !== null ? connections[activeConnectionIndex] : undefined;
+  const isDeletePending =
+    activeConnectionIndex !== null && pendingDeleteIndex === activeConnectionIndex;
   const activeDraftKey =
     activeConnectionIndex !== null ? connectionKey(activeConnectionIndex) : '';
-  const activeUsageNodes = activeConnection?.id
-    ? usageByConnection.get(activeConnection.id) ?? []
-    : [];
+  const activeUsage = activeConnection?.id
+    ? usageByConnection.get(activeConnection.id) ?? { nodeIds: [], projectNames: [] }
+    : { nodeIds: [], projectNames: [] };
   const activeMetadataError = activeDraftKey ? metadataErrors[activeDraftKey] : undefined;
   const ActiveConnectionIcon = activeConnection
     ? connectionIconFor(activeConnection.type)
@@ -663,6 +561,8 @@ export function ConnectionStudio({
         </span>
       </div>
 
+      {storageError ? <p className="connection-card__error">{storageError}</p> : null}
+
       <div className="connection-layout">
         <div className="connection-resources">
           <div className="connection-toolbar">
@@ -679,7 +579,11 @@ export function ConnectionStudio({
             ))}
           </div>
 
-          {connections.length === 0 ? (
+          {isLoading ? (
+            <div className="connection-empty">
+              <p>正在加载连接资源…</p>
+            </div>
+          ) : connections.length === 0 ? (
             <div className="connection-empty">
               <p>暂无连接</p>
             </div>
@@ -689,9 +593,9 @@ export function ConnectionStudio({
                 const runtimeConnection = connection.id
                   ? runtimeById.get(connection.id)
                   : undefined;
-                const usageNodes = connection.id
-                  ? usageByConnection.get(connection.id) ?? []
-                  : [];
+                const usage = connection.id
+                  ? usageByConnection.get(connection.id) ?? { nodeIds: [], projectNames: [] }
+                  : { nodeIds: [], projectNames: [] };
                 const runtimeState = connectionRuntimeState(runtimeConnection);
                 const ConnectionIcon = connectionIconFor(connection.type);
                 const isActive = activeConnectionIndex === index;
@@ -715,7 +619,12 @@ export function ConnectionStudio({
                             {connection.type || 'custom'}
                           </span>
                           <span className="connection-card__tag">
-                            {usageNodes.length > 0 ? `${usageNodes.length} 节点` : '未绑定'}
+                            {usage.nodeIds.length > 0 ? `${usage.nodeIds.length} 节点` : '未绑定'}
+                          </span>
+                          <span className="connection-card__tag">
+                            {usage.projectNames.length > 0
+                              ? `${usage.projectNames.length} 工程`
+                              : '全局可用'}
                           </span>
                         </div>
                       </div>
@@ -1039,20 +948,29 @@ export function ConnectionStudio({
                 </p>
               ) : (
                 <p className="connection-card__hint">
-                  {activeUsageNodes.length > 0
-                    ? `引用节点: ${activeUsageNodes.join(', ')}`
+                  {activeUsage.nodeIds.length > 0
+                    ? `引用工程: ${activeUsage.projectNames.join(', ')} · 节点: ${activeUsage.nodeIds.join(', ')}`
                     : '还没有节点通过 connection_id 绑定到这个连接。'}
                 </p>
               )}
 
               <div className="connection-settings-panel__footer">
+                {isDeletePending ? (
+                  <button
+                    type="button"
+                    className="ghost"
+                    onClick={() => setPendingDeleteIndex(null)}
+                  >
+                    取消
+                  </button>
+                ) : null}
                 <button
                   type="button"
-                  className="ghost connection-card__delete"
+                  className={`ghost connection-card__delete ${isDeletePending ? 'is-pending' : ''}`}
                   onClick={() => handleRemoveConnection(activeConnectionIndex)}
                 >
                   <DeleteActionIcon />
-                  删除连接
+                  {isDeletePending ? '确认删除' : '删除连接'}
                 </button>
               </div>
             </section>

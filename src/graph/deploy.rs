@@ -1,7 +1,7 @@
 //! 工作流部署编排：校验、实例化并将 DAG 部署为并发 Tokio 任务。
 //!
 //! 每个节点获得独立的任务，通过 MPSC 通道连接。叶节点将结果写入结果流；
-//! 所有节点向事件流发送执行事件。图中的连接定义会被写入共享连接管理器。
+//! 所有节点向事件流发送执行事件。连接资源由外部共享连接管理器提供。
 
 use std::{collections::HashMap, time::Duration};
 
@@ -20,17 +20,12 @@ use crate::{EngineError, SharedConnectionManager};
 ///
 /// DAG 校验失败、节点实例化失败或不在 Tokio 运行时中调用时返回错误。
 pub async fn deploy_workflow(
-    mut graph: WorkflowGraph,
+    graph: WorkflowGraph,
     connection_manager: SharedConnectionManager,
 ) -> Result<WorkflowDeployment, EngineError> {
     let topology = graph.topology()?;
     let runtime = tokio::runtime::Handle::try_current()
         .map_err(|_| EngineError::invalid_graph("deploy_workflow 必须在 Tokio 运行时中调用"))?;
-
-    if !graph.connections.is_empty() {
-        let connections = std::mem::take(&mut graph.connections);
-        connection_manager.upsert_connections(connections).await;
-    }
 
     let mut senders = HashMap::new();
     let mut receivers = HashMap::new();
