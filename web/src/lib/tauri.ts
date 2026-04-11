@@ -351,6 +351,39 @@ export async function saveProjectLibraryFile(
   });
 }
 
+export interface SerialPortInfo {
+  path: string;
+  portType: string;
+  description: string;
+}
+
+export async function listSerialPorts(): Promise<SerialPortInfo[]> {
+  return invoke<SerialPortInfo[]>('list_serial_ports');
+}
+
+export interface TestSerialResult {
+  ok: boolean;
+  message: string;
+}
+
+export async function testSerialConnection(
+  portPath: string,
+  baudRate: number,
+  dataBits: number,
+  parity: string,
+  stopBits: number,
+  flowControl: string,
+): Promise<TestSerialResult> {
+  return invoke<TestSerialResult>('test_serial_connection', {
+    portPath,
+    baudRate,
+    dataBits,
+    parity,
+    stopBits,
+    flowControl,
+  });
+}
+
 export async function onWorkflowEvent(
   handler: (payload: unknown) => void,
 ): Promise<() => void> {

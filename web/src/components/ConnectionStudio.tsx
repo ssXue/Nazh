@@ -21,6 +21,12 @@ import {
   SerialNodeIcon,
   SettingsIcon,
 } from './app/AppIcons';
+import {
+  listSerialPorts,
+  testSerialConnection,
+  type SerialPortInfo,
+  type TestSerialResult,
+} from '../lib/tauri';
 
 export interface ConnectionUsageSummary {
   nodeIds: string[];
@@ -128,6 +134,16 @@ const CONNECTION_TEMPLATES: ConnectionTemplate[] = [
     },
   },
 ];
+
+const BAUD_RATE_OPTIONS = [
+  1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600,
+];
+
+const DEFAULT_PORT_PATH: Record<string, string> = {
+  darwin: '/dev/cu.usbserial',
+  linux: '/dev/ttyUSB0',
+  win32: 'COM3',
+};
 
 function connectionKey(index: number): string {
   return String(index);
@@ -308,6 +324,11 @@ export function ConnectionStudio({
   const [metadataErrors, setMetadataErrors] = useState<Record<string, string>>({});
   const [activeConnectionIndex, setActiveConnectionIndex] = useState<number | null>(null);
   const [pendingDeleteIndex, setPendingDeleteIndex] = useState<number | null>(null);
+  const [scannedPorts, setScannedPorts] = useState<SerialPortInfo[]>([]);
+  const [isScanningPorts, setIsScanningPorts] = useState(false);
+  const [testResult, setTestResult] = useState<TestSerialResult | null>(null);
+  const [isTesting, setIsTesting] = useState(false);
+  const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
 
   useEffect(() => {
     if (isLoading) {
@@ -365,6 +386,35 @@ export function ConnectionStudio({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [activeConnectionIndex]);
+
+  useEffect(() => {
+    if (activeConnectionIndex === null) {
+      setScannedPorts([]);
+      setTestResult(null);
+      return;
+    }
+
+    const connection = connections[activeConnectionIndex];
+    if (!connection || !isSerialConnectionType(connection.type)) {
+      setScannedPorts([]);
+      setTestResult(null);
+      return;
+    }
+
+    setIsScanningPorts(true);
+    listSerialPorts()
+      .then((ports) => {
+        setScannedPorts(ports);
+      })
+      .catch(() => {
+        setScannedPorts([]);
+      })
+      .finally(() => {
+        setIsScanningPorts(false);
+      });
+
+    setTestResult(null);
+  }, [activeConnectionIndex, connections]);
 
   function buildNextConnectionId(prefix: string): string {
     const existingIds = new Set(connections.map((connection) => connection.id));
@@ -533,6 +583,74 @@ export function ConnectionStudio({
     saveConnections(nextConnections, '连接参数已更新。');
   }
 
+  async function handleTestConnection() {
+    if (activeConnectionIndex === null) {
+      return;
+    }
+
+    const connection = connections[activeConnectionIndex];
+    if (!connection) {
+      return;
+    }
+
+    setIsTesting(true);
+    setTestResult(null);
+
+    const portPath = metadataString(connection.metadata, 'port_path', '');
+    const baudRate = metadataNumber(connection.metadata, 'baud_rate', 9600);
+    const dataBits = metadataNumber(connection.metadata, 'data_bits', 8);
+    const parity = metadataString(connection.metadata, 'parity', 'none');
+    const stopBits = metadataNumber(connection.metadata, 'stop_bits', 1);
+    const flowControl = metadataString(connection.metadata, 'flow_control', 'none');
+
+    try {
+      const result = await testSerialConnection(
+        portPath,
+        baudRate,
+        dataBits,
+        parity,
+        stopBits,
+        flowControl,
+      );
+      setTestResult(result);
+    } catch (error) {
+      setTestResult({
+        ok: false,
+        message: error instanceof Error ? error.message : '测试连接失败',
+      });
+    } finally {
+      setIsTesting(false);
+    }
+  }
+
+  function handlePortPathChange(index: number, value: string) {
+    handleMetadataFieldChange(index, 'port_path', value);
+    setTestResult(null);
+  }
+
+  function handleBaudRateChange(index: number, value: number) {
+    handleMetadataFieldChange(index, 'baud_rate', value);
+    setTestResult(null);
+  }
+
+  function handleRefreshPorts() {
+    if (activeConnectionIndex === null) {
+      return;
+    }
+
+    setIsScanningPorts(true);
+    listSerialPorts()
+      .then((ports) => {
+        setScannedPorts(ports);
+      })
+      .catch(() => {
+        setScannedPorts([]);
+      })
+      .finally(() => {
+        setIsScanningPorts(false);
+      });
+  }
+
   const activeConnection =
     activeConnectionIndex !== null ? connections[activeConnectionIndex] : undefined;
   const isDeletePending =
@@ -678,13 +796,25 @@ export function ConnectionStudio({
                   </strong>
                   <span>{connectionParameterBrief(activeConnection)}</span>
                 </div>
-                <button
-                  type="button"
-                  className="connection-settings-panel__close"
-                  onClick={() => setActiveConnectionIndex(null)}
-                >
-                  完成
-                </button>
+                <div className="connection-settings-panel__actions">
+                  {isSerialConnectionType(activeConnection.type) ? (
+                    <button
+                      type="button"
+                      className={`ghost ${testResult !== null && testResult.ok ? 'is-success' : ''} ${testResult !== null && !testResult.ok ? 'is-error' : ''}`}
+                      onClick={handleTestConnection}
+                      disabled={isTesting}
+                    >
+                      {isTesting ? '测试中...' : '测试连接'}
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="connection-settings-panel__close"
+                    onClick={() => setActiveConnectionIndex(null)}
+                  >
+                    完成
+                  </button>
+                </div>
               </div>
 
               <div className="connection-form connection-settings-panel__form">
@@ -723,37 +853,50 @@ export function ConnectionStudio({
 
                 {isSerialConnectionType(activeConnection.type) ? (
                   <>
-                    <label>
+                    <label className="serial-port-field">
                       <span>串口路径</span>
-                      <input
-                        value={metadataString(
-                          activeConnection.metadata,
-                          'port_path',
-                          '/dev/tty.usbserial-0001',
-                        )}
-                        onChange={(event) =>
-                          handleMetadataFieldChange(
-                            activeConnectionIndex,
+                      <div className="serial-port-select">
+                        <select
+                          value={metadataString(
+                            activeConnection.metadata,
                             'port_path',
-                            event.target.value,
-                          )
-                        }
-                        placeholder="/dev/tty.usbserial-0001 或 COM3"
-                      />
+                            DEFAULT_PORT_PATH[navigator.platform.startsWith('Win') ? 'win32' : navigator.platform.startsWith('Mac') ? 'darwin' : 'linux'] ?? '/dev/ttyUSB0',
+                          )}
+                          onChange={(event) => handlePortPathChange(activeConnectionIndex, event.target.value)}
+                        >
+                          <option value="">-- 选择端口 --</option>
+                          {scannedPorts.map((port) => (
+                            <option key={port.path} value={port.path}>
+                              {port.path}
+                              {port.description ? ` (${port.description})` : ''}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          className="ghost"
+                          onClick={handleRefreshPorts}
+                          disabled={isScanningPorts}
+                          title="刷新端口列表"
+                        >
+                          {isScanningPorts ? '扫描中...' : '刷新'}
+                        </button>
+                      </div>
                     </label>
                     <label>
                       <span>波特率</span>
-                      <input
-                        type="number"
+                      <select
                         value={metadataNumber(activeConnection.metadata, 'baud_rate', 9600)}
                         onChange={(event) =>
-                          handleMetadataFieldChange(
-                            activeConnectionIndex,
-                            'baud_rate',
-                            parseMetadataNumber(event.target.value, 9600),
-                          )
+                          handleBaudRateChange(activeConnectionIndex, parseInt(event.target.value, 10))
                         }
-                      />
+                      >
+                        {BAUD_RATE_OPTIONS.map((rate) => (
+                          <option key={rate} value={rate}>
+                            {rate}
+                          </option>
+                        ))}
+                      </select>
                     </label>
                     <label>
                       <span>数据位</span>
@@ -839,82 +982,97 @@ export function ConnectionStudio({
                         <option value="hex">HEX</option>
                       </select>
                     </label>
-                    <label>
-                      <span>帧分隔符</span>
-                      <input
-                        value={metadataString(activeConnection.metadata, 'delimiter', '\\n')}
-                        onChange={(event) =>
-                          handleMetadataFieldChange(
-                            activeConnectionIndex,
-                            'delimiter',
-                            event.target.value,
-                          )
-                        }
-                        placeholder="\\n、\\r\\n 或 hex:0D0A"
-                      />
-                    </label>
-                    <label>
-                      <span>读超时 ms</span>
-                      <input
-                        type="number"
-                        value={metadataNumber(activeConnection.metadata, 'read_timeout_ms', 100)}
-                        onChange={(event) =>
-                          handleMetadataFieldChange(
-                            activeConnectionIndex,
-                            'read_timeout_ms',
-                            parseMetadataNumber(event.target.value, 100),
-                          )
-                        }
-                      />
-                    </label>
-                    <label>
-                      <span>空闲提交 ms</span>
-                      <input
-                        type="number"
-                        value={metadataNumber(activeConnection.metadata, 'idle_gap_ms', 80)}
-                        onChange={(event) =>
-                          handleMetadataFieldChange(
-                            activeConnectionIndex,
-                            'idle_gap_ms',
-                            parseMetadataNumber(event.target.value, 80),
-                          )
-                        }
-                      />
-                    </label>
-                    <label>
-                      <span>最大帧字节</span>
-                      <input
-                        type="number"
-                        value={metadataNumber(activeConnection.metadata, 'max_frame_bytes', 512)}
-                        onChange={(event) =>
-                          handleMetadataFieldChange(
-                            activeConnectionIndex,
-                            'max_frame_bytes',
-                            parseMetadataNumber(event.target.value, 512),
-                          )
-                        }
-                      />
-                    </label>
-                    <label>
-                      <span>裁剪空白</span>
-                      <select
-                        value={
-                          metadataBoolean(activeConnection.metadata, 'trim', true)
-                            ? 'true'
-                            : 'false'
-                        }
-                        onChange={(event) =>
-                          handleMetadataFieldChange(
-                            activeConnectionIndex,
-                            'trim',
-                            event.target.value === 'true',
-                          )
-                        }
+
+                    <div className="serial-advanced-toggle">
+                      <button
+                        type="button"
+                        className="ghost"
+                        onClick={() => setIsAdvancedOpen(!isAdvancedOpen)}
                       >
-                        <option value="true">是</option>
-                        <option value="false">否</option>
-                      </select>
-                    </label>
+                        {isAdvancedOpen ? '收起高级设置' : '高级设置'}
+                      </button>
+                    </div>
+
+                    {isAdvancedOpen ? (
+                      <>
+                        <label>
+                          <span>帧分隔符</span>
+                          <input
+                            value={metadataString(activeConnection.metadata, 'delimiter', '\\n')}
+                            onChange={(event) =>
+                              handleMetadataFieldChange(
+                                activeConnectionIndex,
+                                'delimiter',
+                                event.target.value,
+                              )
+                            }
+                            placeholder="\\n、\\r\\n 或 hex:0D0A"
+                          />
+                        </label>
+                        <label>
+                          <span>读超时 ms</span>
+                          <input
+                            type="number"
+                            value={metadataNumber(activeConnection.metadata, 'read_timeout_ms', 100)}
+                            onChange={(event) =>
+                              handleMetadataFieldChange(
+                                activeConnectionIndex,
+                                'read_timeout_ms',
+                                parseMetadataNumber(event.target.value, 100),
+                              )
+                            }
+                          />
+                        </label>
+                        <label>
+                          <span>空闲提交 ms</span>
+                          <input
+                            type="number"
+                            value={metadataNumber(activeConnection.metadata, 'idle_gap_ms', 80)}
+                            onChange={(event) =>
+                              handleMetadataFieldChange(
+                                activeConnectionIndex,
+                                'idle_gap_ms',
+                                parseMetadataNumber(event.target.value, 80),
+                              )
+                            }
+                          />
+                        </label>
+                        <label>
+                          <span>最大帧字节</span>
+                          <input
+                            type="number"
+                            value={metadataNumber(activeConnection.metadata, 'max_frame_bytes', 512)}
+                            onChange={(event) =>
+                              handleMetadataFieldChange(
+                                activeConnectionIndex,
+                                'max_frame_bytes',
+                                parseMetadataNumber(event.target.value, 512),
+                              )
+                            }
+                          />
+                        </label>
+                        <label>
+                          <span>裁剪空白</span>
+                          <select
+                            value={
+                              metadataBoolean(activeConnection.metadata, 'trim', true)
+                                ? 'true'
+                                : 'false'
+                            }
+                            onChange={(event) =>
+                              handleMetadataFieldChange(
+                                activeConnectionIndex,
+                                'trim',
+                                event.target.value === 'true',
+                              )
+                            }
+                          >
+                            <option value="true">是</option>
+                            <option value="false">否</option>
+                          </select>
+                        </label>
+                      </>
+                    ) : null}
                   </>
                 ) : null}
 
@@ -934,6 +1092,7 @@ export function ConnectionStudio({
                     spellCheck={false}
                   />
                 </label>
+
               </div>
 
               {duplicateConnectionIds.has(activeConnection.id.trim()) ? (
@@ -953,6 +1112,12 @@ export function ConnectionStudio({
                     : '还没有节点通过 connection_id 绑定到这个连接。'}
                 </p>
               )}
+
+              {isSerialConnectionType(activeConnection.type) && testResult !== null ? (
+                <p className={`serial-test-result ${testResult.ok ? 'is-ok' : 'is-error'}`}>
+                  {testResult.message}
+                </p>
+              ) : null}
 
               <div className="connection-settings-panel__footer">
                 {isDeletePending ? (
