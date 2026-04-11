@@ -2,7 +2,6 @@
 
 import type { SidebarSectionConfig } from '../components/app/types';
 import type { DeployResponse } from '../types';
-import { BOARD_LIBRARY } from '../components/app/BoardsPanel';
 import { hasTauriRuntime } from './tauri';
 
 /** 根据当前运行时状态构建侧栏导航区段配置列表。 */
@@ -10,6 +9,7 @@ export function buildSidebarSections(
   workflowStatusLabel: string,
   graphConnectionCount: number,
   logCount: number,
+  boardCount: number,
   deployInfo: DeployResponse | null,
   activeBoardName: string | null,
 ): SidebarSectionConfig[] {
@@ -24,7 +24,7 @@ export function buildSidebarSections(
       key: 'boards',
       group: 'top',
       label: '所有看板',
-      badge: activeBoardName ?? `${BOARD_LIBRARY.length} 个工程`,
+      badge: activeBoardName ?? `${boardCount} 个工程`,
     },
     {
       key: 'connections',

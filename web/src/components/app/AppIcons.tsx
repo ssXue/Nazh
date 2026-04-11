@@ -143,6 +143,69 @@ export function DownloadIcon(props: IconProps) {
   );
 }
 
+export function UploadIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="M12 20V10" />
+      <path d="m8 14 4-4 4 4" />
+      <path d="M5 6h14" />
+    </BaseIcon>
+  );
+}
+
+export function SaveIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="M6 4h10l4 4v12H4V6a2 2 0 0 1 2-2Z" />
+      <path d="M8 4v5h8" />
+      <path d="M8 20v-6h8v6" />
+    </BaseIcon>
+  );
+}
+
+export function SnapshotIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <rect x="4" y="6" width="16" height="12" rx="2.6" />
+      <path d="M8 10h8" />
+      <path d="M8 14h5" />
+      <path d="M12 4v4" />
+      <path d="m10 6 2-2 2 2" />
+    </BaseIcon>
+  );
+}
+
+export function HistoryIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="M4 12a8 8 0 1 0 2.3-5.7" />
+      <path d="M4 5v4h4" />
+      <path d="M12 8v4l2.5 1.8" />
+    </BaseIcon>
+  );
+}
+
+export function EnvironmentIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="M4 7h16" />
+      <path d="M4 12h10" />
+      <path d="M4 17h8" />
+      <circle cx="17.5" cy="12" r="2.5" />
+      <circle cx="14.5" cy="17" r="2.2" />
+    </BaseIcon>
+  );
+}
+
+export function PlusIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="M12 5v14" />
+      <path d="M5 12h14" />
+    </BaseIcon>
+  );
+}
+
 export function FileImageIcon(props: IconProps) {
   return (
     <BaseIcon {...props}>

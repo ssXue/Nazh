@@ -1,0 +1,311 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
+
+import {
+  BackIcon,
+  DownloadIcon,
+  EnvironmentIcon,
+  HistoryIcon,
+  PlusIcon,
+  SaveIcon,
+  SnapshotIcon,
+} from './AppIcons';
+import {
+  formatRelativeTimestamp,
+  getActiveEnvironment,
+  type ProjectEnvironmentDiff,
+  type ProjectRecord,
+} from '../../lib/projects';
+
+interface ProjectWorkspaceHeaderProps {
+  project: ProjectRecord;
+  nodeCount: number;
+  onBack: () => void;
+  onSave: () => void;
+  onExport: () => void;
+  onCreateSnapshot: () => void;
+  onRollbackSnapshot: (snapshotId: string) => void;
+  onEnvironmentChange: (environmentId: string) => void;
+  onEnvironmentSave: (
+    environmentId: string,
+    patch: { name: string; description: string; diff: ProjectEnvironmentDiff },
+  ) => void;
+  onDuplicateEnvironment: (environmentId: string) => void;
+  onDeleteEnvironment: (environmentId: string) => void;
+}
+
+function getSnapshotReasonLabel(reason: ProjectRecord['snapshots'][number]['reason']): string {
+  switch (reason) {
+    case 'seed':
+      return '模板';
+    case 'manual':
+      return '快照';
+    case 'import':
+      return '导入';
+    case 'migration':
+      return '迁移';
+    case 'rollback':
+      return '保护';
+  }
+}
+
+function formatEnvironmentDiffText(diff: ProjectEnvironmentDiff): string {
+  return JSON.stringify(diff ?? {}, null, 2);
+}
+
+export function ProjectWorkspaceHeader({
+  project,
+  nodeCount,
+  onBack,
+  onSave,
+  onExport,
+  onCreateSnapshot,
+  onRollbackSnapshot,
+  onEnvironmentChange,
+  onEnvironmentSave,
+  onDuplicateEnvironment,
+  onDeleteEnvironment,
+}: ProjectWorkspaceHeaderProps) {
+  const historyMenuRef = useRef<HTMLDetailsElement | null>(null);
+  const environmentMenuRef = useRef<HTMLDetailsElement | null>(null);
+  const activeEnvironment = getActiveEnvironment(project);
+  const [environmentName, setEnvironmentName] = useState(activeEnvironment?.name ?? '');
+  const [environmentDescription, setEnvironmentDescription] = useState(
+    activeEnvironment?.description ?? '',
+  );
+  const [environmentDiffText, setEnvironmentDiffText] = useState(
+    formatEnvironmentDiffText(activeEnvironment?.diff ?? {}),
+  );
+  const [environmentDiffError, setEnvironmentDiffError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setEnvironmentName(activeEnvironment?.name ?? '');
+    setEnvironmentDescription(activeEnvironment?.description ?? '');
+    setEnvironmentDiffText(formatEnvironmentDiffText(activeEnvironment?.diff ?? {}));
+    setEnvironmentDiffError(null);
+  }, [
+    activeEnvironment?.description,
+    activeEnvironment?.id,
+    activeEnvironment?.name,
+    activeEnvironment?.updatedAt,
+  ]);
+
+  const migrationSummary = useMemo(
+    () => project.migrationNotes[0] ?? null,
+    [project.migrationNotes],
+  );
+
+  const handleSaveEnvironment = () => {
+    if (!activeEnvironment) {
+      return;
+    }
+
+    try {
+      const parsedDiff = JSON.parse(environmentDiffText) as ProjectEnvironmentDiff;
+      onEnvironmentSave(activeEnvironment.id, {
+        name: environmentName.trim() || activeEnvironment.name,
+        description: environmentDescription.trim(),
+        diff: parsedDiff,
+      });
+      setEnvironmentDiffError(null);
+      if (environmentMenuRef.current) {
+        environmentMenuRef.current.open = false;
+      }
+    } catch (error) {
+      setEnvironmentDiffError(
+        error instanceof Error ? error.message : '环境差异配置 JSON 无法解析。',
+      );
+    }
+  };
+
+  return (
+    <div
+      className="studio-board-workspace__header window-safe-header"
+      data-window-drag-region
+    >
+      <div className="studio-board-workspace__header-main">
+        <div className="studio-board-workspace__header-heading">
+          <button
+            type="button"
+            className="studio-board-workspace__back"
+            onClick={onBack}
+            aria-label="返回所有看板"
+            title="返回所有看板"
+          >
+            <BackIcon />
+          </button>
+          <h2>{project.name}</h2>
+        </div>
+        <span>{`${formatRelativeTimestamp(project.updatedAt)} · ${nodeCount} 节点 · ${project.snapshots.length} 个版本`}</span>
+        {migrationSummary ? (
+          <span className="studio-board-workspace__migration">{migrationSummary}</span>
+        ) : null}
+      </div>
+
+      <div className="studio-board-workspace__controls" data-no-window-drag>
+        <label className="studio-board-workspace__environment-select">
+          <EnvironmentIcon />
+          <select
+            value={activeEnvironment?.id ?? ''}
+            aria-label="当前环境"
+            onChange={(event) => onEnvironmentChange(event.target.value)}
+          >
+            {project.environments.map((environment) => (
+              <option key={environment.id} value={environment.id}>
+                {environment.name}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <button
+          type="button"
+          className="studio-board-workspace__action"
+          onClick={onSave}
+        >
+          <SaveIcon />
+          <span>保存</span>
+        </button>
+
+        <button
+          type="button"
+          className="studio-board-workspace__action"
+          onClick={onCreateSnapshot}
+        >
+          <SnapshotIcon />
+          <span>快照</span>
+        </button>
+
+        <button
+          type="button"
+          className="studio-board-workspace__action"
+          onClick={onExport}
+        >
+          <DownloadIcon />
+          <span>导出</span>
+        </button>
+
+        <details ref={historyMenuRef} className="studio-board-workspace__menu" data-no-window-drag>
+          <summary className="studio-board-workspace__action">
+            <HistoryIcon />
+            <span>版本</span>
+          </summary>
+          <div className="studio-board-workspace__menu-panel studio-board-workspace__menu-panel--history">
+            <div className="studio-board-workspace__menu-header">
+              <strong>版本快照</strong>
+              <span>{project.snapshots.length} 个可回滚版本</span>
+            </div>
+            <div className="studio-board-workspace__snapshot-list">
+              {project.snapshots.map((snapshot) => (
+                <article key={snapshot.id} className="studio-board-workspace__snapshot-card">
+                  <div className="studio-board-workspace__snapshot-copy">
+                    <strong>{snapshot.label}</strong>
+                    <span>{snapshot.description}</span>
+                  </div>
+                  <div className="studio-board-workspace__snapshot-meta">
+                    <em>{getSnapshotReasonLabel(snapshot.reason)}</em>
+                    <span>{formatRelativeTimestamp(snapshot.createdAt)}</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="studio-board-workspace__snapshot-action"
+                    onClick={() => {
+                      onRollbackSnapshot(snapshot.id);
+                      if (historyMenuRef.current) {
+                        historyMenuRef.current.open = false;
+                      }
+                    }}
+                  >
+                    回滚
+                  </button>
+                </article>
+              ))}
+            </div>
+          </div>
+        </details>
+
+        <details
+          ref={environmentMenuRef}
+          className="studio-board-workspace__menu"
+          data-no-window-drag
+        >
+          <summary className="studio-board-workspace__action">
+            <EnvironmentIcon />
+            <span>环境差异</span>
+          </summary>
+          <div className="studio-board-workspace__menu-panel studio-board-workspace__menu-panel--environment">
+            <div className="studio-board-workspace__menu-header">
+              <strong>环境差异配置</strong>
+              <span>{activeEnvironment?.name ?? '未选择环境'}</span>
+            </div>
+
+            <div className="studio-board-workspace__environment-editor">
+              <label className="studio-board-workspace__field">
+                <span>环境名称</span>
+                <input
+                  type="text"
+                  value={environmentName}
+                  onChange={(event) => setEnvironmentName(event.target.value)}
+                />
+              </label>
+
+              <label className="studio-board-workspace__field">
+                <span>说明</span>
+                <input
+                  type="text"
+                  value={environmentDescription}
+                  onChange={(event) => setEnvironmentDescription(event.target.value)}
+                />
+              </label>
+
+              <label className="studio-board-workspace__field studio-board-workspace__field--stacked">
+                <span>差异 JSON</span>
+                <textarea
+                  value={environmentDiffText}
+                  spellCheck={false}
+                  onChange={(event) => setEnvironmentDiffText(event.target.value)}
+                />
+              </label>
+
+              {environmentDiffError ? (
+                <p className="studio-board-workspace__field-error">{environmentDiffError}</p>
+              ) : null}
+
+              <div className="studio-board-workspace__environment-actions">
+                <button
+                  type="button"
+                  className="studio-board-workspace__action"
+                  onClick={handleSaveEnvironment}
+                >
+                  <SaveIcon />
+                  <span>应用</span>
+                </button>
+
+                {activeEnvironment ? (
+                  <button
+                    type="button"
+                    className="studio-board-workspace__action"
+                    onClick={() => onDuplicateEnvironment(activeEnvironment.id)}
+                  >
+                    <PlusIcon />
+                    <span>派生</span>
+                  </button>
+                ) : null}
+
+                {activeEnvironment ? (
+                  <button
+                    type="button"
+                    className="studio-board-workspace__action is-danger"
+                    disabled={project.environments.length <= 1}
+                    onClick={() => onDeleteEnvironment(activeEnvironment.id)}
+                  >
+                    <span>删除</span>
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        </details>
+      </div>
+    </div>
+  );
+}

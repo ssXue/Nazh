@@ -1,23 +1,30 @@
 import { useMemo, useRef, useState } from 'react';
 
+import { useProjectLibrary } from './hooks/use-project-library';
 import { useSettings } from './hooks/use-settings';
 import { useWorkflowEngine } from './hooks/use-workflow-engine';
 
 import { AboutPanel } from './components/app/AboutPanel';
-import { BackIcon } from './components/app/AppIcons';
-import { BOARD_LIBRARY, BoardsPanel, type BoardItem } from './components/app/BoardsPanel';
+import { BoardsPanel, type BoardItem } from './components/app/BoardsPanel';
 import { DashboardPanel } from './components/app/DashboardPanel';
 import { LogsPanel } from './components/app/LogsPanel';
 import { PayloadPanel } from './components/app/PayloadPanel';
+import { ProjectWorkspaceHeader } from './components/app/ProjectWorkspaceHeader';
 import { RuntimeDock } from './components/app/RuntimeDock';
 import { SettingsPanel } from './components/app/SettingsPanel';
 import { SidebarNav } from './components/app/SidebarNav';
 import type { SidebarSection } from './components/app/types';
 import { ConnectionStudio } from './components/ConnectionStudio';
 import { FlowgramCanvas, type FlowgramCanvasHandle } from './components/FlowgramCanvas';
-import { buildInitialProjectDrafts, buildProjectAst, CURRENT_USER_NAME, DEFAULT_BOARD_ID, type ProjectDraft } from './lib/demo-data';
 import { parseWorkflowGraph } from './lib/graph';
 import { formatWorkflowGraph } from './lib/flowgram';
+import {
+  CURRENT_USER_NAME,
+  formatRelativeTimestamp,
+  getActiveEnvironment,
+  parseProjectNodeCount,
+  type ProjectEnvironmentDiff,
+} from './lib/projects';
 import { buildSidebarSections } from './lib/sidebar';
 import { ACCENT_PRESET_OPTIONS } from './lib/theme';
 import {
@@ -26,7 +33,6 @@ import {
   hasTauriRuntime,
   undeployWorkflow,
 } from './lib/tauri';
-import { SAMPLE_AST, SAMPLE_PAYLOAD } from './types';
 import type { WorkflowResult } from './types';
 import { describeUnknownError } from './lib/workflow-events';
 import {
@@ -35,82 +41,81 @@ import {
   getWorkflowStatusPillClass,
 } from './lib/workflow-status';
 
-function App() {
-  // 偏好设置状态（主题、强调色、密度、动效、启动页）由 useSettings 统一管理。
-  const settings = useSettings();
+function downloadTextFile(fileName: string, text: string) {
+  const blob = new Blob([text], { type: 'application/json;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = fileName;
+  anchor.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 
-  const [projectDrafts, setProjectDrafts] = useState<Record<string, ProjectDraft>>(
-    buildInitialProjectDrafts,
-  );
-  const [activeBoard, setActiveBoard] = useState<BoardItem | null>(null);
+function App() {
+  const settings = useSettings();
+  const projectLibrary = useProjectLibrary();
+  const [activeBoardId, setActiveBoardId] = useState<string | null>(null);
   const [sidebarSection, setSidebarSection] = useState<SidebarSection>(settings.startupPage);
   const flowgramCanvasRef = useRef<FlowgramCanvasHandle | null>(null);
 
-  // 工作流生命周期状态与副作用由 useWorkflowEngine 统一管理。
+  const boardItems = useMemo<BoardItem[]>(
+    () =>
+      projectLibrary.projects.map((project) => ({
+        id: project.id,
+        name: project.name,
+        description: project.description,
+        nodeCount: parseProjectNodeCount(project.astText),
+        updatedAt: formatRelativeTimestamp(project.updatedAt),
+        snapshotCount: project.snapshots.length,
+        environmentCount: project.environments.length,
+        environmentName: getActiveEnvironment(project)?.name ?? '未选择环境',
+        migrationNote: project.migrationNotes[0] ?? null,
+      })),
+    [projectLibrary.projects],
+  );
+  const activeBoard = useMemo(
+    () => boardItems.find((board) => board.id === activeBoardId) ?? null,
+    [activeBoardId, boardItems],
+  );
+  const activeProject = useMemo(
+    () => projectLibrary.projects.find((project) => project.id === activeBoardId) ?? null,
+    [activeBoardId, projectLibrary.projects],
+  );
+  const currentProject = activeProject ?? projectLibrary.projects[0] ?? null;
+  const astText = currentProject?.astText ?? '';
+  const payloadText = currentProject?.payloadText ?? '{}';
+  const graphState = useMemo(
+    () =>
+      astText
+        ? parseWorkflowGraph(astText)
+        : {
+            graph: null,
+            error: '当前没有可用的工作流工程。',
+          },
+    [astText],
+  );
+
   const engine = useWorkflowEngine(activeBoard, sidebarSection);
 
-  const currentBoardId = activeBoard?.id ?? DEFAULT_BOARD_ID;
-  const currentProject = projectDrafts[currentBoardId] ?? {
-    astText: SAMPLE_AST,
-    payloadText: SAMPLE_PAYLOAD,
-  };
-  const astText = currentProject.astText;
-  const payloadText = currentProject.payloadText;
-  const graphState = useMemo(() => parseWorkflowGraph(astText), [astText]);
-
-  function updateProjectDraft(boardId: string, nextDraft: Partial<ProjectDraft>) {
-    setProjectDrafts((current) => ({
-      ...current,
-      [boardId]: {
-        ...(current[boardId] ?? {
-          astText: buildProjectAst(activeBoard?.id ?? DEFAULT_BOARD_ID, activeBoard?.name ?? '默认工作流'),
-          payloadText: SAMPLE_PAYLOAD,
-        }),
-        ...nextDraft,
-      },
-    }));
+  function updateProjectDraft(
+    projectId: string,
+    nextDraft: Partial<Pick<(typeof projectLibrary.projects)[number], 'astText' | 'payloadText'>>,
+  ) {
+    projectLibrary.updateProjectDraft(projectId, nextDraft);
   }
 
-  function applyStructuredGraphChange(nextAstText: string, nextStatusMessage: string) {
-    if (!activeBoard || nextAstText === astText) {
-      return;
+  function buildProjectDraftSnapshot(projectId: string) {
+    const project = projectLibrary.projects.find((item) => item.id === projectId);
+    if (!project) {
+      return {
+        graph: null,
+        astText: null,
+        error: '当前工程不存在。',
+      };
     }
 
-    updateProjectDraft(activeBoard.id, { astText: nextAstText });
-    engine.setStatusMessage(nextStatusMessage);
-  }
-
-  function handleGraphChange(nextAstText: string) {
-    applyStructuredGraphChange(nextAstText, '画布变更已同步回 AST 文本。');
-  }
-
-  function handleConnectionGraphChange(nextAstText: string, nextStatusMessage: string) {
-    applyStructuredGraphChange(nextAstText, nextStatusMessage);
-  }
-
-  function handlePayloadTextChange(nextText: string) {
-    if (!activeBoard) {
-      return;
-    }
-
-    updateProjectDraft(activeBoard.id, { payloadText: nextText });
-  }
-
-  function handleOpenBoard(board: BoardItem) {
-    setActiveBoard(board);
-    setSidebarSection('boards');
-    engine.resetWorkspaceRuntime(`已进入工程 ${board.name}。`);
-  }
-
-  function handleBackToBoards() {
-    setSidebarSection('boards');
-    setActiveBoard(null);
-    engine.resetWorkspaceRuntime('已返回所有看板。');
-  }
-
-  function buildDeploySnapshot() {
-    const sourceGraphState = parseWorkflowGraph(astText);
-    if (sourceGraphState.error) {
+    const sourceGraphState = parseWorkflowGraph(project.astText);
+    if (sourceGraphState.error && !flowgramCanvasRef.current?.getCurrentWorkflowGraph()) {
       return {
         graph: null,
         astText: null,
@@ -119,7 +124,9 @@ function App() {
     }
 
     const currentGraph =
-      flowgramCanvasRef.current?.getCurrentWorkflowGraph() ?? sourceGraphState.graph;
+      project.id === activeBoardId
+        ? flowgramCanvasRef.current?.getCurrentWorkflowGraph() ?? sourceGraphState.graph
+        : sourceGraphState.graph;
     if (!currentGraph) {
       return {
         graph: null,
@@ -145,32 +152,307 @@ function App() {
     };
   }
 
+  function applyStructuredGraphChange(nextAstText: string, nextStatusMessage: string) {
+    if (!activeProject || nextAstText === activeProject.astText) {
+      return;
+    }
+
+    updateProjectDraft(activeProject.id, { astText: nextAstText });
+    engine.setStatusMessage(nextStatusMessage);
+  }
+
+  function handleGraphChange(nextAstText: string) {
+    applyStructuredGraphChange(nextAstText, '画布变更已同步回项目草稿。');
+  }
+
+  function handleConnectionGraphChange(nextAstText: string, nextStatusMessage: string) {
+    applyStructuredGraphChange(nextAstText, nextStatusMessage);
+  }
+
+  function handlePayloadTextChange(nextText: string) {
+    if (!activeProject) {
+      return;
+    }
+
+    updateProjectDraft(activeProject.id, { payloadText: nextText });
+  }
+
+  function handleOpenBoard(board: BoardItem) {
+    setActiveBoardId(board.id);
+    setSidebarSection('boards');
+    engine.resetWorkspaceRuntime(`已进入工程 ${board.name}。`);
+  }
+
+  function handleBackToBoards() {
+    setSidebarSection('boards');
+    setActiveBoardId(null);
+    engine.resetWorkspaceRuntime('已返回所有看板。');
+  }
+
+  function handleCreateBoard() {
+    const nextProject = projectLibrary.createProject();
+    setActiveBoardId(nextProject.id);
+    setSidebarSection('boards');
+    engine.resetWorkspaceRuntime(`已创建工程 ${nextProject.name}。`);
+    engine.appendRuntimeLog('project', 'success', '已创建工程', nextProject.name);
+  }
+
+  async function handleImportBoardFile(file: File) {
+    try {
+      const sourceText = await file.text();
+      const result = projectLibrary.importProjects(sourceText);
+      const nextProject = result.importedProjects[0] ?? null;
+
+      if (nextProject) {
+        setActiveBoardId(nextProject.id);
+        setSidebarSection('boards');
+      }
+
+      const detail = result.migrationNotes.length > 0 ? result.migrationNotes.join('\n') : null;
+      engine.resetWorkspaceRuntime(
+        nextProject
+          ? `已导入工程 ${nextProject.name}。`
+          : `已导入 ${result.importedProjects.length} 个工程。`,
+      );
+      engine.appendRuntimeLog('project', 'success', '工程导入完成', detail);
+    } catch (error) {
+      const { message, detail } = describeUnknownError(error);
+      engine.appendAppError('command', '导入工程失败', detail ?? message);
+      engine.setStatusMessage(message);
+    }
+  }
+
+  function handleExportBoard(projectId: string) {
+    const draftSnapshot =
+      activeProject?.id === projectId ? buildProjectDraftSnapshot(projectId) : null;
+    const exported = projectLibrary.exportProject(
+      projectId,
+      draftSnapshot?.astText ? { astText: draftSnapshot.astText } : undefined,
+    );
+
+    if (!exported) {
+      engine.setStatusMessage('导出失败：当前工程不存在。');
+      return;
+    }
+
+    downloadTextFile(exported.fileName, exported.text);
+    engine.setStatusMessage(`已导出工程 ${exported.fileName}。`);
+    engine.appendRuntimeLog('project', 'info', '已导出工程包', exported.fileName);
+  }
+
+  function handleDeleteBoard(board: BoardItem) {
+    const deletedProject = projectLibrary.deleteProject(board.id);
+    if (!deletedProject) {
+      engine.setStatusMessage('删除失败：当前工程不存在。');
+      return;
+    }
+
+    if (activeBoardId === board.id) {
+      setActiveBoardId(null);
+      setSidebarSection('boards');
+    }
+
+    engine.setStatusMessage(`已删除工程 ${deletedProject.name}。`);
+    engine.appendRuntimeLog('project', 'warn', '已删除工程', deletedProject.name);
+  }
+
+  function handleSaveProject() {
+    if (!activeProject) {
+      return;
+    }
+
+    const draftSnapshot = buildProjectDraftSnapshot(activeProject.id);
+    if (draftSnapshot.error || !draftSnapshot.astText) {
+      engine.appendAppError('command', '保存工程失败', draftSnapshot.error ?? '未知错误');
+      engine.setStatusMessage(draftSnapshot.error ?? '保存工程失败。');
+      return;
+    }
+
+    projectLibrary.saveProject(activeProject.id, {
+      astText: draftSnapshot.astText,
+      payloadText: activeProject.payloadText,
+    });
+    engine.setStatusMessage(`已保存工程 ${activeProject.name}。`);
+    engine.appendRuntimeLog('project', 'success', '工程已保存', activeProject.name);
+  }
+
+  function handleCreateSnapshot() {
+    if (!activeProject) {
+      return;
+    }
+
+    const draftSnapshot = buildProjectDraftSnapshot(activeProject.id);
+    if (draftSnapshot.error || !draftSnapshot.astText) {
+      engine.appendAppError('command', '创建快照失败', draftSnapshot.error ?? '未知错误');
+      engine.setStatusMessage(draftSnapshot.error ?? '创建快照失败。');
+      return;
+    }
+
+    projectLibrary.saveProject(activeProject.id, {
+      astText: draftSnapshot.astText,
+      payloadText: activeProject.payloadText,
+    });
+    const nextProject = projectLibrary.createSnapshot(activeProject.id);
+    engine.setStatusMessage(`已为 ${activeProject.name} 创建版本快照。`);
+    engine.appendRuntimeLog(
+      'project',
+      'info',
+      '已创建版本快照',
+      nextProject ? `${nextProject.snapshots.length} 个版本` : activeProject.name,
+    );
+  }
+
+  function handleRollbackSnapshot(snapshotId: string) {
+    if (!activeProject) {
+      return;
+    }
+
+    const nextProject = projectLibrary.rollbackProject(activeProject.id, snapshotId);
+    engine.setStatusMessage(`已回滚工程 ${activeProject.name}。`);
+    engine.appendRuntimeLog(
+      'project',
+      'warn',
+      '已回滚工程版本',
+      nextProject?.snapshots[0]?.label ?? activeProject.name,
+    );
+  }
+
+  function handleEnvironmentChange(environmentId: string) {
+    if (!activeProject) {
+      return;
+    }
+
+    const nextEnvironment = activeProject.environments.find(
+      (environment) => environment.id === environmentId,
+    );
+    projectLibrary.setActiveEnvironment(activeProject.id, environmentId);
+    engine.setStatusMessage(`已切换到环境 ${nextEnvironment?.name ?? '未命名环境'}。`);
+    engine.appendRuntimeLog(
+      'project',
+      'info',
+      '已切换运行环境',
+      nextEnvironment?.name ?? environmentId,
+    );
+  }
+
+  function handleEnvironmentSave(
+    environmentId: string,
+    patch: { name: string; description: string; diff: ProjectEnvironmentDiff },
+  ) {
+    if (!activeProject) {
+      return;
+    }
+
+    projectLibrary.updateEnvironment(activeProject.id, environmentId, {
+      name: patch.name,
+      description: patch.description,
+      diff: patch.diff,
+    });
+    engine.setStatusMessage(`已更新环境配置 ${patch.name}。`);
+    engine.appendRuntimeLog('project', 'success', '环境差异配置已更新', patch.name);
+  }
+
+  function handleDuplicateEnvironment(environmentId: string) {
+    if (!activeProject) {
+      return;
+    }
+
+    const nextEnvironment = projectLibrary.duplicateEnvironment(activeProject.id, environmentId);
+    if (!nextEnvironment) {
+      return;
+    }
+
+    engine.setStatusMessage(`已派生环境 ${nextEnvironment.name}。`);
+    engine.appendRuntimeLog('project', 'info', '已派生环境', nextEnvironment.name);
+  }
+
+  function handleDeleteEnvironment(environmentId: string) {
+    if (!activeProject) {
+      return;
+    }
+
+    projectLibrary.deleteEnvironment(activeProject.id, environmentId);
+    engine.setStatusMessage('已删除环境配置。');
+    engine.appendRuntimeLog('project', 'warn', '已删除环境配置');
+  }
+
+  function buildDeploySnapshot() {
+    if (!activeProject) {
+      return {
+        astText: null,
+        runtimeAstText: null,
+        error: '请先从所有看板进入工程。',
+      };
+    }
+
+    const draftSnapshot = buildProjectDraftSnapshot(activeProject.id);
+    if (draftSnapshot.error || !draftSnapshot.graph || !draftSnapshot.astText) {
+      return {
+        astText: null,
+        runtimeAstText: null,
+        error: draftSnapshot.error ?? '当前工作流快照无效。',
+      };
+    }
+
+    const runtimeGraph = projectLibrary.getProjectGraphForRuntime(
+      activeProject.id,
+      draftSnapshot.graph,
+    );
+    if (!runtimeGraph) {
+      return {
+        astText: null,
+        runtimeAstText: null,
+        error: '当前环境差异配置无法应用到工作流。',
+      };
+    }
+
+    const runtimeAstText = formatWorkflowGraph(runtimeGraph);
+    const nextGraphState = parseWorkflowGraph(runtimeAstText);
+    if (nextGraphState.error || !nextGraphState.graph) {
+      return {
+        astText: null,
+        runtimeAstText: null,
+        error: nextGraphState.error ?? '环境覆盖后的工作流无法序列化。',
+      };
+    }
+
+    return {
+      astText: draftSnapshot.astText,
+      runtimeAstText,
+      error: null,
+    };
+  }
+
   async function handleDeploy() {
-    if (!activeBoard) {
+    if (!activeBoard || !activeProject) {
       engine.setStatusMessage('请先从所有看板进入工程。');
       return;
     }
 
     const deploySnapshot = buildDeploySnapshot();
-    if (deploySnapshot.error || !deploySnapshot.astText) {
+    if (deploySnapshot.error || !deploySnapshot.astText || !deploySnapshot.runtimeAstText) {
       engine.appendAppError('command', '部署前 AST 校验失败', deploySnapshot.error ?? '未知错误');
       engine.setStatusMessage(`AST 无法部署: ${deploySnapshot.error ?? '未知错误'}`);
       return;
     }
 
-    if (deploySnapshot.astText !== astText) {
-      updateProjectDraft(activeBoard.id, { astText: deploySnapshot.astText });
+    if (deploySnapshot.astText !== activeProject.astText) {
+      updateProjectDraft(activeProject.id, { astText: deploySnapshot.astText });
     }
 
+    const environmentName = getActiveEnvironment(activeProject)?.name ?? '默认环境';
+
     if (!hasTauriRuntime()) {
-      engine.setStatusMessage('纯 Web 预览模式下不会实际调用后端，已完成 AST 结构校验。');
-      engine.appendRuntimeLog('system', 'info', '纯 Web 预览模式下跳过实际部署');
+      engine.setStatusMessage(`预览模式下已完成 ${environmentName} 的部署校验。`);
+      engine.appendRuntimeLog('project', 'info', '预览模式下跳过实际部署', environmentName);
       return;
     }
 
     try {
-      const response = await deployWorkflow(deploySnapshot.astText);
-      engine.setStatusMessage(`部署完成，节点数 ${response.nodeCount}，边数 ${response.edgeCount}。`);
+      const response = await deployWorkflow(deploySnapshot.runtimeAstText);
+      engine.setStatusMessage(
+        `部署完成，节点数 ${response.nodeCount}，边数 ${response.edgeCount}，环境 ${environmentName}。`,
+      );
       await engine.refreshConnections();
     } catch (error) {
       const { message, detail } = describeUnknownError(error);
@@ -244,7 +526,7 @@ function App() {
 
     try {
       const response = await dispatchPayload(payload);
-      engine.appendRuntimeLog('dispatch', 'info', `已提交测试载荷`, `trace_id=${response.traceId}`);
+      engine.appendRuntimeLog('dispatch', 'info', '已提交测试载荷', `trace_id=${response.traceId}`);
       engine.setStatusMessage(`已提交 payload，trace_id=${response.traceId}`);
     } catch (error) {
       const { message, detail } = describeUnknownError(error);
@@ -273,6 +555,7 @@ function App() {
     workflowStatusLabel,
     graphConnectionCount,
     engine.eventFeed.length + engine.appErrors.length,
+    boardItems.length,
     engine.deployInfo,
     activeBoard?.name ?? null,
   );
@@ -294,11 +577,17 @@ function App() {
   }
 
   function renderBoardWorkspace() {
-    if (!activeBoard) {
+    if (!activeBoard || !activeProject) {
       return (
         <section className="studio-content studio-content--panel">
           <div className="panel studio-content__panel studio-content__panel--scroll">
-            <BoardsPanel onOpenBoard={handleOpenBoard} />
+            <BoardsPanel
+              boards={boardItems}
+              onOpenBoard={handleOpenBoard}
+              onCreateBoard={handleCreateBoard}
+              onImportBoardFile={handleImportBoardFile}
+              onDeleteBoard={handleDeleteBoard}
+            />
           </div>
         </section>
       );
@@ -309,26 +598,19 @@ function App() {
         <div
           className={`studio-board-workspace ${engine.isRuntimeDockCollapsed ? 'is-runtime-collapsed' : ''}`}
         >
-          <div
-            className="studio-board-workspace__header window-safe-header"
-            data-window-drag-region
-          >
-            <div className="studio-board-workspace__header-main">
-              <div className="studio-board-workspace__header-heading">
-                <button
-                  type="button"
-                  className="studio-board-workspace__back"
-                  onClick={handleBackToBoards}
-                  aria-label="返回所有看板"
-                  title="返回所有看板"
-                >
-                  <BackIcon />
-                </button>
-                <h2>{activeBoard.name}</h2>
-              </div>
-              <span>{`${activeBoard.updatedAt} · ${graphNodeCount} 节点`}</span>
-            </div>
-          </div>
+          <ProjectWorkspaceHeader
+            project={activeProject}
+            nodeCount={graphNodeCount}
+            onBack={handleBackToBoards}
+            onSave={handleSaveProject}
+            onExport={() => handleExportBoard(activeProject.id)}
+            onCreateSnapshot={handleCreateSnapshot}
+            onRollbackSnapshot={handleRollbackSnapshot}
+            onEnvironmentChange={handleEnvironmentChange}
+            onEnvironmentSave={handleEnvironmentSave}
+            onDuplicateEnvironment={handleDuplicateEnvironment}
+            onDeleteEnvironment={handleDeleteEnvironment}
+          />
 
           <FlowgramCanvas
             ref={flowgramCanvasRef}
@@ -368,7 +650,7 @@ function App() {
               <DashboardPanel
                 userId={CURRENT_USER_NAME}
                 activeBoardName={activeBoard?.name ?? null}
-                boardCount={BOARD_LIBRARY.length}
+                boardCount={boardItems.length}
                 graphNodeCount={graphNodeCount}
                 graphEdgeCount={graphEdgeCount}
                 graphConnectionCount={graphConnectionCount}
