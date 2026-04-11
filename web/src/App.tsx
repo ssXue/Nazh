@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { useProjectLibrary } from './hooks/use-project-library';
 import { useSettings } from './hooks/use-settings';
@@ -53,7 +53,7 @@ function downloadTextFile(fileName: string, text: string) {
 
 function App() {
   const settings = useSettings();
-  const projectLibrary = useProjectLibrary();
+  const projectLibrary = useProjectLibrary(settings.projectWorkspacePath);
   const [activeBoardId, setActiveBoardId] = useState<string | null>(null);
   const [sidebarSection, setSidebarSection] = useState<SidebarSection>(settings.startupPage);
   const flowgramCanvasRef = useRef<FlowgramCanvasHandle | null>(null);
@@ -96,6 +96,19 @@ function App() {
   );
 
   const engine = useWorkflowEngine(activeBoard, sidebarSection);
+
+  useEffect(() => {
+    if (!activeBoardId) {
+      return;
+    }
+
+    if (projectLibrary.projects.some((project) => project.id === activeBoardId)) {
+      return;
+    }
+
+    setActiveBoardId(null);
+    setSidebarSection('boards');
+  }, [activeBoardId, projectLibrary.projects]);
 
   function updateProjectDraft(
     projectId: string,
@@ -739,6 +752,13 @@ function App() {
                 onMotionModeChange={settings.setMotionMode}
                 startupPage={settings.startupPage}
                 onStartupPageChange={settings.setStartupPage}
+                projectWorkspacePath={settings.projectWorkspacePath}
+                projectWorkspaceResolvedPath={projectLibrary.storage.resolvedWorkspacePath}
+                projectWorkspaceLibraryFilePath={projectLibrary.storage.libraryFilePath}
+                projectWorkspaceUsingDefault={projectLibrary.storage.usingDefaultLocation}
+                projectWorkspaceIsSyncing={projectLibrary.storage.isSyncing}
+                projectWorkspaceError={projectLibrary.storage.error}
+                onProjectWorkspacePathChange={settings.setProjectWorkspacePath}
               />
             </div>
           </section>

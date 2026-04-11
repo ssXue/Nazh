@@ -7,11 +7,13 @@ import {
   ACCENT_PRESET_STORAGE_KEY,
   CUSTOM_ACCENT_STORAGE_KEY,
   MOTION_MODE_STORAGE_KEY,
+  PROJECT_WORKSPACE_PATH_STORAGE_KEY,
   STARTUP_PAGE_STORAGE_KEY,
   THEME_STORAGE_KEY,
   UI_DENSITY_STORAGE_KEY,
   getInitialAccentPreset,
   getInitialCustomAccentHex,
+  getInitialProjectWorkspacePath,
   getInitialMotionMode,
   getInitialStartupPage,
   getInitialThemeMode,
@@ -40,6 +42,8 @@ export interface SettingsState {
   motionMode: MotionMode;
   /** 启动时默认显示的页面。 */
   startupPage: StartupPage;
+  /** 工程工作路径；空字符串表示使用应用默认目录。 */
+  projectWorkspacePath: string;
   /** 完整的强调色 CSS 变量映射（键为 CSS 变量名，值为颜色字符串）。 */
   accentThemeVariables: Record<string, string>;
 }
@@ -58,6 +62,8 @@ export interface SettingsActions {
   setMotionMode: (mode: MotionMode) => void;
   /** 更改启动页面。 */
   setStartupPage: (page: StartupPage) => void;
+  /** 更改工程工作路径。 */
+  setProjectWorkspacePath: (path: string) => void;
   /** 在亮色与暗色主题之间快速切换。 */
   toggleTheme: () => void;
 }
@@ -76,6 +82,9 @@ export function useSettings(): UseSettingsResult {
   const [densityMode, setDensityMode] = useState<UiDensity>(getInitialUiDensity);
   const [motionMode, setMotionMode] = useState<MotionMode>(getInitialMotionMode);
   const [startupPage, setStartupPage] = useState<StartupPage>(getInitialStartupPage);
+  const [projectWorkspacePath, setProjectWorkspacePath] = useState<string>(
+    getInitialProjectWorkspacePath,
+  );
 
   // 计算最终强调色十六进制值。
   const accentHex = useMemo(
@@ -145,6 +154,18 @@ export function useSettings(): UseSettingsResult {
     }
   }, [startupPage]);
 
+  // 工程工作路径变更时持久化。
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        PROJECT_WORKSPACE_PATH_STORAGE_KEY,
+        projectWorkspacePath.trim(),
+      );
+    } catch {
+      // 受限运行时下忽略存储失败。
+    }
+  }, [projectWorkspacePath]);
+
   /** 设置自定义强调色，并自动将预设切换为 custom。 */
   function setCustomAccentHex(hex: string) {
     setAccentPreset('custom');
@@ -164,6 +185,7 @@ export function useSettings(): UseSettingsResult {
     densityMode,
     motionMode,
     startupPage,
+    projectWorkspacePath,
     accentThemeVariables,
     setThemeMode,
     setAccentPreset,
@@ -171,6 +193,7 @@ export function useSettings(): UseSettingsResult {
     setDensityMode,
     setMotionMode,
     setStartupPage,
+    setProjectWorkspacePath,
     toggleTheme,
   };
 }

@@ -914,24 +914,27 @@ export function loadProjectLibrary(): ProjectLibraryState {
     if (!raw) {
       return buildDefaultProjectLibrary();
     }
-
-    const parsed = JSON.parse(raw) as unknown;
-    if (!isRecord(parsed) || !Array.isArray(parsed.projects)) {
-      return buildDefaultProjectLibrary();
-    }
-
-    const projects = parsed.projects.map((item, index) =>
-      normalizeProjectRecord(item, `工程 ${index + 1}`),
-    );
-
-    return {
-      kind: PROJECT_LIBRARY_KIND,
-      schemaVersion: PROJECT_SCHEMA_VERSION,
-      projects,
-    };
+    return parseProjectLibraryText(raw);
   } catch {
     return buildDefaultProjectLibrary();
   }
+}
+
+export function parseProjectLibraryText(raw: string): ProjectLibraryState {
+  const parsed = JSON.parse(raw) as unknown;
+  if (!isRecord(parsed) || !Array.isArray(parsed.projects)) {
+    throw new Error('工程库文件格式无效。');
+  }
+
+  const projects = parsed.projects.map((item, index) =>
+    normalizeProjectRecord(item, `工程 ${index + 1}`),
+  );
+
+  return {
+    kind: PROJECT_LIBRARY_KIND,
+    schemaVersion: PROJECT_SCHEMA_VERSION,
+    projects,
+  };
 }
 
 export function persistProjectLibrary(library: ProjectLibraryState) {

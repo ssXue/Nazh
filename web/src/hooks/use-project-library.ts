@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import type { WorkflowGraph } from '../types';
 import { parseWorkflowGraph } from '../lib/graph';
@@ -10,6 +10,7 @@ import {
   importProjectsFromText,
   loadProjectLibrary,
   mergeImportedProjects,
+  parseProjectLibraryText,
   persistProjectLibrary,
   prepareProjectExport,
   renameProjectRecord,
@@ -19,11 +20,25 @@ import {
   type ProjectLibraryState,
   type ProjectRecord,
 } from '../lib/projects';
+import {
+  hasTauriRuntime,
+  loadProjectLibraryFile,
+  saveProjectLibraryFile,
+} from '../lib/tauri';
 
 interface UpdateEnvironmentPatch {
   name?: string;
   description?: string;
   diff?: ProjectEnvironmentDiff;
+}
+
+export interface ProjectLibraryStorageState {
+  isReady: boolean;
+  isSyncing: boolean;
+  resolvedWorkspacePath: string | null;
+  libraryFilePath: string | null;
+  usingDefaultLocation: boolean;
+  error: string | null;
 }
 
 export interface ProjectLibraryActions {
@@ -54,6 +69,7 @@ export interface ProjectLibraryActions {
 export interface UseProjectLibraryResult extends ProjectLibraryActions {
   library: ProjectLibraryState;
   projects: ProjectRecord[];
+  storage: ProjectLibraryStorageState;
 }
 
 function updateProject(
@@ -64,15 +80,173 @@ function updateProject(
   return projects.map((project) => (project.id === projectId ? updater(project) : project));
 }
 
-export function useProjectLibrary(): UseProjectLibraryResult {
+function cloneEnvironmentDiff(diff: ProjectEnvironmentDiff): ProjectEnvironmentDiff {
+  return JSON.parse(JSON.stringify(diff)) as ProjectEnvironmentDiff;
+}
+
+function describeStorageError(error: unknown): string {
+  if (typeof error === 'string' && error.trim()) {
+    return error;
+  }
+
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+
+  return '工程库同步失败。';
+}
+
+export function useProjectLibrary(workspacePath = ''): UseProjectLibraryResult {
+  const desktopStorageEnabled = hasTauriRuntime();
+  const normalizedWorkspacePath = workspacePath.trim();
   const [library, setLibrary] = useState<ProjectLibraryState>(loadProjectLibrary);
+  const [storage, setStorage] = useState<ProjectLibraryStorageState>(() => ({
+    isReady: !desktopStorageEnabled,
+    isSyncing: false,
+    resolvedWorkspacePath: null,
+    libraryFilePath: null,
+    usingDefaultLocation: normalizedWorkspacePath.length === 0,
+    error: null,
+  }));
+  const [hydratedWorkspacePath, setHydratedWorkspacePath] = useState<string | null>(
+    desktopStorageEnabled ? null : normalizedWorkspacePath,
+  );
+  const latestLibraryRef = useRef(library);
+
+  useEffect(() => {
+    latestLibraryRef.current = library;
+  }, [library]);
 
   useEffect(() => {
     persistProjectLibrary(library);
   }, [library]);
 
+  useEffect(() => {
+    if (!desktopStorageEnabled) {
+      setStorage({
+        isReady: true,
+        isSyncing: false,
+        resolvedWorkspacePath: null,
+        libraryFilePath: null,
+        usingDefaultLocation: true,
+        error: null,
+      });
+      setHydratedWorkspacePath(normalizedWorkspacePath);
+      return;
+    }
+
+    let cancelled = false;
+    const fallbackLibrary = latestLibraryRef.current;
+
+    setStorage((current) => ({
+      ...current,
+      isReady: false,
+      isSyncing: true,
+      usingDefaultLocation: normalizedWorkspacePath.length === 0,
+      error: null,
+    }));
+
+    void loadProjectLibraryFile(normalizedWorkspacePath)
+      .then(async (result) => {
+        let nextLibrary = fallbackLibrary;
+        let nextStorage = result.storage;
+
+        if (result.libraryText) {
+          nextLibrary = parseProjectLibraryText(result.libraryText);
+        } else {
+          nextStorage = await saveProjectLibraryFile(
+            normalizedWorkspacePath,
+            JSON.stringify(fallbackLibrary, null, 2),
+          );
+        }
+
+        if (cancelled) {
+          return;
+        }
+
+        setLibrary(nextLibrary);
+        setStorage({
+          isReady: true,
+          isSyncing: false,
+          resolvedWorkspacePath: nextStorage.workspacePath,
+          libraryFilePath: nextStorage.libraryFilePath,
+          usingDefaultLocation: nextStorage.usingDefaultLocation,
+          error: null,
+        });
+        setHydratedWorkspacePath(normalizedWorkspacePath);
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+
+        setStorage((current) => ({
+          ...current,
+          isReady: true,
+          isSyncing: false,
+          error: describeStorageError(error),
+        }));
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [desktopStorageEnabled, normalizedWorkspacePath]);
+
+  useEffect(() => {
+    if (
+      !desktopStorageEnabled ||
+      !storage.isReady ||
+      hydratedWorkspacePath !== normalizedWorkspacePath
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+
+    setStorage((current) => ({
+      ...current,
+      isSyncing: true,
+      error: null,
+    }));
+
+    void saveProjectLibraryFile(normalizedWorkspacePath, JSON.stringify(library, null, 2))
+      .then((result) => {
+        if (cancelled) {
+          return;
+        }
+
+        setStorage({
+          isReady: true,
+          isSyncing: false,
+          resolvedWorkspacePath: result.workspacePath,
+          libraryFilePath: result.libraryFilePath,
+          usingDefaultLocation: result.usingDefaultLocation,
+          error: null,
+        });
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+
+        setStorage((current) => ({
+          ...current,
+          isSyncing: false,
+          error: describeStorageError(error),
+        }));
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [desktopStorageEnabled, hydratedWorkspacePath, library, normalizedWorkspacePath, storage.isReady]);
+
   const projects = useMemo(
-    () => library.projects.slice().sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)),
+    () =>
+      library.projects
+        .slice()
+        .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)),
     [library.projects],
   );
 
@@ -167,7 +341,11 @@ export function useProjectLibrary(): UseProjectLibraryResult {
     return nextProject;
   }
 
-  function createSnapshot(projectId: string, label?: string, description?: string): ProjectRecord | null {
+  function createSnapshot(
+    projectId: string,
+    label?: string,
+    description?: string,
+  ): ProjectRecord | null {
     const target = library.projects.find((project) => project.id === projectId);
     if (!target) {
       return null;
@@ -230,7 +408,10 @@ export function useProjectLibrary(): UseProjectLibraryResult {
     }));
   }
 
-  function duplicateEnvironment(projectId: string, environmentId: string): ProjectEnvironment | null {
+  function duplicateEnvironment(
+    projectId: string,
+    environmentId: string,
+  ): ProjectEnvironment | null {
     const project = library.projects.find((item) => item.id === projectId);
     const target = project?.environments.find((environment) => environment.id === environmentId);
     if (!project || !target) {
@@ -242,7 +423,7 @@ export function useProjectLibrary(): UseProjectLibraryResult {
       id: `${target.id}-copy-${project.environments.length + 1}`,
       name: `${target.name} 副本`,
       updatedAt: new Date().toISOString(),
-      diff: JSON.parse(JSON.stringify(target.diff)) as ProjectEnvironmentDiff,
+      diff: cloneEnvironmentDiff(target.diff),
     };
 
     setLibrary((current) => ({
@@ -313,6 +494,7 @@ export function useProjectLibrary(): UseProjectLibraryResult {
   return {
     library,
     projects,
+    storage,
     createProject,
     importProjects,
     deleteProject,

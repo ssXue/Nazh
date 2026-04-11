@@ -84,4 +84,11 @@ export interface SettingsPanelProps {
   onMotionModeChange: (mode: MotionMode) => void;
   startupPage: StartupPage;
   onStartupPageChange: (page: StartupPage) => void;
+  projectWorkspacePath: string;
+  projectWorkspaceResolvedPath: string | null;
+  projectWorkspaceLibraryFilePath: string | null;
+  projectWorkspaceUsingDefault: boolean;
+  projectWorkspaceIsSyncing: boolean;
+  projectWorkspaceError: string | null;
+  onProjectWorkspacePathChange: (path: string) => void;
 }

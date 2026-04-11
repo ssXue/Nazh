@@ -3,9 +3,11 @@
 // settings 单元测试：验证 localStorage 持久化读取逻辑。
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import {
+  getInitialProjectWorkspacePath,
   getInitialStartupPage,
   getInitialThemeMode,
   getInitialUiDensity,
+  PROJECT_WORKSPACE_PATH_STORAGE_KEY,
   STARTUP_PAGE_STORAGE_KEY,
   THEME_STORAGE_KEY,
   UI_DENSITY_STORAGE_KEY,
@@ -68,5 +70,16 @@ describe('getInitialStartupPage', () => {
 
   it('无存储值 → 默认返回 dashboard', () => {
     expect(getInitialStartupPage()).toBe('dashboard');
+  });
+});
+
+describe('getInitialProjectWorkspacePath', () => {
+  it('已存储工作路径 → 返回存储值', () => {
+    localStorage.setItem(PROJECT_WORKSPACE_PATH_STORAGE_KEY, '/Users/demo/Nazh Workspace');
+    expect(getInitialProjectWorkspacePath()).toBe('/Users/demo/Nazh Workspace');
+  });
+
+  it('无存储值 → 默认返回空字符串', () => {
+    expect(getInitialProjectWorkspacePath()).toBe('');
   });
 });

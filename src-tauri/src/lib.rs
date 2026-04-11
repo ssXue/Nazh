@@ -13,9 +13,11 @@ use nazh_engine::{
     DeployResponse, DispatchResponse, EngineError, ExecutionEvent, SerialTriggerNodeConfig,
     TimerNodeConfig, UndeployResponse, WorkflowContext, WorkflowGraph, WorkflowIngress,
 };
+use serde::Serialize;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::Mutex;
+use tokio::fs;
 
 use std::{
     io::Read,
@@ -84,6 +86,22 @@ struct SerialRootSpec {
     node_id: String,
     connection_id: String,
     config: SerialTriggerNodeConfig,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProjectWorkspaceStorageInfo {
+    workspace_path: String,
+    library_file_path: String,
+    using_default_location: bool,
+    library_exists: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProjectWorkspaceLoadResult {
+    storage: ProjectWorkspaceStorageInfo,
+    library_text: Option<String>,
 }
 
 #[tauri::command]
@@ -203,8 +221,104 @@ async fn list_connections(state: State<'_, DesktopState>) -> Result<Vec<Connecti
     Ok(connections)
 }
 
+#[tauri::command]
+async fn load_project_library_file(
+    app: AppHandle,
+    workspace_path: Option<String>,
+) -> Result<ProjectWorkspaceLoadResult, String> {
+    let storage = resolve_project_workspace_storage(&app, workspace_path.as_deref())?;
+    let library_text = if storage.library_exists {
+        Some(
+            fs::read_to_string(&storage.library_file_path)
+                .await
+                .map_err(|error| format!("读取工程库失败: {error}"))?,
+        )
+    } else {
+        None
+    };
+
+    Ok(ProjectWorkspaceLoadResult {
+        storage,
+        library_text,
+    })
+}
+
+#[tauri::command]
+async fn save_project_library_file(
+    app: AppHandle,
+    workspace_path: Option<String>,
+    library_text: String,
+) -> Result<ProjectWorkspaceStorageInfo, String> {
+    let storage = resolve_project_workspace_storage(&app, workspace_path.as_deref())?;
+    let workspace_dir = PathBuf::from(&storage.workspace_path);
+
+    fs::create_dir_all(&workspace_dir)
+        .await
+        .map_err(|error| format!("创建工程目录失败: {error}"))?;
+    fs::write(&storage.library_file_path, library_text)
+        .await
+        .map_err(|error| format!("写入工程库失败: {error}"))?;
+
+    resolve_project_workspace_storage(&app, workspace_path.as_deref())
+}
+
 fn stringify_error(error: EngineError) -> String {
     error.to_string()
+}
+
+fn resolve_project_workspace_storage(
+    app: &AppHandle,
+    workspace_path: Option<&str>,
+) -> Result<ProjectWorkspaceStorageInfo, String> {
+    let (workspace_dir, using_default_location) =
+        resolve_project_workspace_dir(app, workspace_path)?;
+    let library_file_path = workspace_dir.join("project-library.json");
+
+    Ok(ProjectWorkspaceStorageInfo {
+        workspace_path: workspace_dir.to_string_lossy().to_string(),
+        library_file_path: library_file_path.to_string_lossy().to_string(),
+        using_default_location,
+        library_exists: library_file_path.exists(),
+    })
+}
+
+fn resolve_project_workspace_dir(
+    app: &AppHandle,
+    workspace_path: Option<&str>,
+) -> Result<(PathBuf, bool), String> {
+    let trimmed = workspace_path.unwrap_or_default().trim();
+    if trimmed.is_empty() {
+        let default_dir = app
+            .path()
+            .app_local_data_dir()
+            .map_err(|error| format!("无法解析默认工程目录: {error}"))?
+            .join("workspace");
+        return Ok((default_dir, true));
+    }
+
+    let expanded = expand_user_path(app, trimmed)?;
+    if !expanded.is_absolute() {
+        return Err("工作路径需要填写绝对路径。".to_owned());
+    }
+
+    Ok((expanded, false))
+}
+
+fn expand_user_path(app: &AppHandle, raw_path: &str) -> Result<PathBuf, String> {
+    if raw_path == "~" || raw_path.starts_with("~/") {
+        let home_dir = app
+            .path()
+            .home_dir()
+            .map_err(|error| format!("无法解析用户目录: {error}"))?;
+        let suffix = raw_path.trim_start_matches('~').trim_start_matches('/');
+        return Ok(if suffix.is_empty() {
+            home_dir
+        } else {
+            home_dir.join(suffix)
+        });
+    }
+
+    Ok(PathBuf::from(raw_path))
 }
 
 fn count_incoming_edges(
@@ -744,7 +858,9 @@ pub fn run() {
             deploy_workflow,
             dispatch_payload,
             undeploy_workflow,
-            list_connections
+            list_connections,
+            load_project_library_file,
+            save_project_library_file
         ]);
 
     if let Err(error) = builder.run(tauri::generate_context!()) {

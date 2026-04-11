@@ -10,6 +10,18 @@ import type {
   WorkflowResult,
 } from '../types';
 
+export interface ProjectWorkspaceStorageInfo {
+  workspacePath: string;
+  libraryFilePath: string;
+  usingDefaultLocation: boolean;
+  libraryExists: boolean;
+}
+
+export interface ProjectWorkspaceLoadResult {
+  storage: ProjectWorkspaceStorageInfo;
+  libraryText: string | null;
+}
+
 export function hasTauriRuntime(): boolean {
   if (typeof window === 'undefined') {
     return false;
@@ -294,6 +306,24 @@ export async function undeployWorkflow(): Promise<UndeployResponse> {
 
 export async function listConnections(): Promise<ConnectionRecord[]> {
   return invoke<ConnectionRecord[]>('list_connections');
+}
+
+export async function loadProjectLibraryFile(
+  workspacePath: string,
+): Promise<ProjectWorkspaceLoadResult> {
+  return invoke<ProjectWorkspaceLoadResult>('load_project_library_file', {
+    workspacePath: workspacePath.trim() || null,
+  });
+}
+
+export async function saveProjectLibraryFile(
+  workspacePath: string,
+  libraryText: string,
+): Promise<ProjectWorkspaceStorageInfo> {
+  return invoke<ProjectWorkspaceStorageInfo>('save_project_library_file', {
+    workspacePath: workspacePath.trim() || null,
+    libraryText,
+  });
 }
 
 export async function onWorkflowEvent(

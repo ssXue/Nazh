@@ -15,6 +15,8 @@ export const UI_DENSITY_STORAGE_KEY = 'nazh.ui-density';
 export const MOTION_MODE_STORAGE_KEY = 'nazh.motion-mode';
 /** localStorage 键名：启动页面。 */
 export const STARTUP_PAGE_STORAGE_KEY = 'nazh.startup-page';
+/** localStorage 键名：工程工作路径。 */
+export const PROJECT_WORKSPACE_PATH_STORAGE_KEY = 'nazh.project-workspace-path';
 
 /** 从 localStorage 读取主题模式，缺省时跟随系统偏好。 */
 export function getInitialThemeMode(): ThemeMode {
@@ -125,4 +127,17 @@ export function getInitialStartupPage(): StartupPage {
   }
 
   return 'dashboard';
+}
+
+/** 从 localStorage 读取工程工作路径，缺省时返回空字符串（使用默认目录）。 */
+export function getInitialProjectWorkspacePath(): string {
+  if (typeof window === 'undefined') {
+    return '';
+  }
+
+  try {
+    return window.localStorage.getItem(PROJECT_WORKSPACE_PATH_STORAGE_KEY)?.trim() ?? '';
+  } catch {
+    return '';
+  }
 }

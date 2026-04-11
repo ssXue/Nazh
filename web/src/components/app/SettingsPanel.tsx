@@ -1,4 +1,5 @@
 import type { CSSProperties } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import type { SettingsPanelProps } from './types';
 
@@ -20,7 +21,44 @@ export function SettingsPanel({
   onMotionModeChange,
   startupPage,
   onStartupPageChange,
+  projectWorkspacePath,
+  projectWorkspaceResolvedPath,
+  projectWorkspaceLibraryFilePath,
+  projectWorkspaceUsingDefault,
+  projectWorkspaceIsSyncing,
+  projectWorkspaceError,
+  onProjectWorkspacePathChange,
 }: SettingsPanelProps) {
+  const [workspaceDraft, setWorkspaceDraft] = useState(projectWorkspacePath);
+
+  useEffect(() => {
+    setWorkspaceDraft(projectWorkspacePath);
+  }, [projectWorkspacePath]);
+
+  const isWorkspaceDirty = workspaceDraft.trim() !== projectWorkspacePath.trim();
+  const workspaceStatus = useMemo(() => {
+    if (!isTauriRuntime) {
+      return '当前为浏览器预览，仅保留本地镜像存储。';
+    }
+
+    if (projectWorkspaceError) {
+      return projectWorkspaceError;
+    }
+
+    if (projectWorkspaceIsSyncing) {
+      return '正在同步工程库到当前工作路径。';
+    }
+
+    return projectWorkspaceUsingDefault
+      ? '当前使用应用默认目录。'
+      : '当前使用自定义工作目录。';
+  }, [
+    isTauriRuntime,
+    projectWorkspaceError,
+    projectWorkspaceIsSyncing,
+    projectWorkspaceUsingDefault,
+  ]);
+
   return (
     <>
       <div
@@ -178,6 +216,78 @@ export function SettingsPanel({
               >
                 所有看板
               </button>
+            </div>
+          </article>
+        </section>
+
+        <section className="settings-group">
+          <div className="settings-group__header">
+            <h3>工程</h3>
+          </div>
+
+          <article className="settings-row settings-row--stacked">
+            <div className="settings-row__copy">
+              <strong>工作路径</strong>
+              <span>设置工程库的实际存储目录。留空时使用应用默认目录。</span>
+            </div>
+
+            <div className="settings-path-editor">
+              <div className="settings-path-input-row">
+                <input
+                  className="settings-path-input"
+                  type="text"
+                  value={workspaceDraft}
+                  placeholder={isTauriRuntime ? '例如：~/Documents/Nazh Workspace' : '仅桌面端可设置'}
+                  disabled={!isTauriRuntime || projectWorkspaceIsSyncing}
+                  onChange={(event) => setWorkspaceDraft(event.target.value)}
+                />
+
+                <div className="settings-path-actions">
+                  <button
+                    type="button"
+                    className="settings-inline-button"
+                    disabled={!isTauriRuntime || !isWorkspaceDirty || projectWorkspaceIsSyncing}
+                    onClick={() => onProjectWorkspacePathChange(workspaceDraft.trim())}
+                  >
+                    应用
+                  </button>
+                  <button
+                    type="button"
+                    className="settings-inline-button settings-inline-button--ghost"
+                    disabled={
+                      !isTauriRuntime ||
+                      (projectWorkspacePath.trim().length === 0 && !projectWorkspaceIsSyncing)
+                    }
+                    onClick={() => {
+                      setWorkspaceDraft('');
+                      onProjectWorkspacePathChange('');
+                    }}
+                  >
+                    默认
+                  </button>
+                </div>
+              </div>
+
+              <div
+                className={
+                  projectWorkspaceError
+                    ? 'settings-path-status settings-path-status--error'
+                    : 'settings-path-status'
+                }
+              >
+                <article>
+                  <span>状态</span>
+                  <strong>{workspaceStatus}</strong>
+                </article>
+                <article>
+                  <span>目录</span>
+                  <code>{projectWorkspaceResolvedPath ?? '等待桌面端解析'}</code>
+                </article>
+                <article>
+                  <span>工程库文件</span>
+                  <code>{projectWorkspaceLibraryFilePath ?? '等待桌面端解析'}</code>
+                </article>
+              </div>
             </div>
           </article>
         </section>
