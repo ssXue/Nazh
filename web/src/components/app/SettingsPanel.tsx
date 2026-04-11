@@ -15,8 +15,6 @@ export function SettingsPanel({
   customAccentHex,
   onAccentPresetChange,
   onCustomAccentChange,
-  densityMode,
-  onDensityModeChange,
   motionMode,
   onMotionModeChange,
   startupPage,
@@ -98,31 +96,6 @@ export function SettingsPanel({
                 onClick={() => onThemeModeChange('dark')}
               >
                 暗色
-              </button>
-            </div>
-          </article>
-
-          <article className="settings-row">
-            <div className="settings-row__copy">
-              <strong>界面密度</strong>
-              <span>调整面板间距和整体信息密度。</span>
-            </div>
-            <div className="settings-segment" role="group" aria-label="界面密度">
-              <button
-                type="button"
-                className={densityMode === 'comfortable' ? 'settings-segment__button is-active' : 'settings-segment__button'}
-                aria-pressed={densityMode === 'comfortable'}
-                onClick={() => onDensityModeChange('comfortable')}
-              >
-                舒展
-              </button>
-              <button
-                type="button"
-                className={densityMode === 'compact' ? 'settings-segment__button is-active' : 'settings-segment__button'}
-                aria-pressed={densityMode === 'compact'}
-                onClick={() => onDensityModeChange('compact')}
-              >
-                紧凑
               </button>
             </div>
           </article>

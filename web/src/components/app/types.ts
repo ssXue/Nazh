@@ -8,7 +8,6 @@ import type {
 import type { AccentPreset, AccentPresetOption } from '../../lib/theme';
 
 export type ThemeMode = 'light' | 'dark';
-export type UiDensity = 'comfortable' | 'compact';
 export type MotionMode = 'full' | 'reduced';
 export type StartupPage = 'dashboard' | 'boards';
 export type SidebarSection =
@@ -78,8 +77,6 @@ export interface SettingsPanelProps {
   customAccentHex: string;
   onAccentPresetChange: (preset: AccentPreset) => void;
   onCustomAccentChange: (hex: string) => void;
-  densityMode: UiDensity;
-  onDensityModeChange: (mode: UiDensity) => void;
   motionMode: MotionMode;
   onMotionModeChange: (mode: MotionMode) => void;
   startupPage: StartupPage;

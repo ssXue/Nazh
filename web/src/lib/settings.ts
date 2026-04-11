@@ -1,6 +1,6 @@
 //! 桌面偏好设置的 localStorage 持久化读取。
 
-import type { MotionMode, StartupPage, ThemeMode, UiDensity } from '../components/app/types';
+import type { MotionMode, StartupPage, ThemeMode } from '../components/app/types';
 import { ACCENT_PRESET_OPTIONS, normalizeCustomAccentHex, type AccentPreset } from './theme';
 
 /** localStorage 键名：主题模式。 */
@@ -9,8 +9,6 @@ export const THEME_STORAGE_KEY = 'nazh.theme';
 export const ACCENT_PRESET_STORAGE_KEY = 'nazh.accent-preset';
 /** localStorage 键名：自定义强调色十六进制值。 */
 export const CUSTOM_ACCENT_STORAGE_KEY = 'nazh.custom-accent';
-/** localStorage 键名：界面密度。 */
-export const UI_DENSITY_STORAGE_KEY = 'nazh.ui-density';
 /** localStorage 键名：动效模式。 */
 export const MOTION_MODE_STORAGE_KEY = 'nazh.motion-mode';
 /** localStorage 键名：启动页面。 */
@@ -73,24 +71,6 @@ export function getInitialCustomAccentHex(): string {
   }
 
   return normalizeCustomAccentHex(ACCENT_PRESET_OPTIONS[0].hex);
-}
-
-/** 从 localStorage 读取界面密度，缺省为 comfortable。 */
-export function getInitialUiDensity(): UiDensity {
-  if (typeof window === 'undefined') {
-    return 'comfortable';
-  }
-
-  try {
-    const storedDensity = window.localStorage.getItem(UI_DENSITY_STORAGE_KEY);
-    if (storedDensity === 'comfortable' || storedDensity === 'compact') {
-      return storedDensity;
-    }
-  } catch {
-    // Ignore storage access failures and fall back to defaults.
-  }
-
-  return 'comfortable';
 }
 
 /** 从 localStorage 读取动效模式，缺省时跟随系统 prefers-reduced-motion。 */

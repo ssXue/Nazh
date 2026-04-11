@@ -6,11 +6,9 @@ import {
   getInitialProjectWorkspacePath,
   getInitialStartupPage,
   getInitialThemeMode,
-  getInitialUiDensity,
   PROJECT_WORKSPACE_PATH_STORAGE_KEY,
   STARTUP_PAGE_STORAGE_KEY,
   THEME_STORAGE_KEY,
-  UI_DENSITY_STORAGE_KEY,
 } from '../settings';
 
 // jsdom 不实现 matchMedia；此存根让未命中 localStorage 时回退至 light。
@@ -48,17 +46,6 @@ describe('getInitialThemeMode', () => {
   it('无效存储值 → 默认返回 light', () => {
     localStorage.setItem(THEME_STORAGE_KEY, 'blue');
     expect(getInitialThemeMode()).toBe('light');
-  });
-});
-
-describe('getInitialUiDensity', () => {
-  it('已存储 compact → 返回 compact', () => {
-    localStorage.setItem(UI_DENSITY_STORAGE_KEY, 'compact');
-    expect(getInitialUiDensity()).toBe('compact');
-  });
-
-  it('无存储值 → 默认返回 comfortable', () => {
-    expect(getInitialUiDensity()).toBe('comfortable');
   });
 });
 

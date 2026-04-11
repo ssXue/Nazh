@@ -925,8 +925,6 @@ function App() {
                 customAccentHex={settings.customAccentHex}
                 onAccentPresetChange={settings.setAccentPreset}
                 onCustomAccentChange={settings.setCustomAccentHex}
-                densityMode={settings.densityMode}
-                onDensityModeChange={settings.setDensityMode}
                 motionMode={settings.motionMode}
                 onMotionModeChange={settings.setMotionMode}
                 startupPage={settings.startupPage}

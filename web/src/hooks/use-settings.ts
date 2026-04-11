@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 
-import type { MotionMode, StartupPage, ThemeMode, UiDensity } from '../components/app/types';
+import type { MotionMode, StartupPage, ThemeMode } from '../components/app/types';
 import {
   ACCENT_PRESET_STORAGE_KEY,
   CUSTOM_ACCENT_STORAGE_KEY,
@@ -10,14 +10,12 @@ import {
   PROJECT_WORKSPACE_PATH_STORAGE_KEY,
   STARTUP_PAGE_STORAGE_KEY,
   THEME_STORAGE_KEY,
-  UI_DENSITY_STORAGE_KEY,
   getInitialAccentPreset,
   getInitialCustomAccentHex,
   getInitialProjectWorkspacePath,
   getInitialMotionMode,
   getInitialStartupPage,
   getInitialThemeMode,
-  getInitialUiDensity,
 } from '../lib/settings';
 import {
   buildAccentThemeVariables,
@@ -36,8 +34,6 @@ export interface SettingsState {
   customAccentHex: string;
   /** 经过计算后的最终强调色十六进制值。 */
   accentHex: string;
-  /** 当前界面密度。 */
-  densityMode: UiDensity;
   /** 当前动效模式。 */
   motionMode: MotionMode;
   /** 启动时默认显示的页面。 */
@@ -56,8 +52,6 @@ export interface SettingsActions {
   setAccentPreset: (preset: AccentPreset) => void;
   /** 更改自定义强调色（同时自动将预设切换为 custom）。 */
   setCustomAccentHex: (hex: string) => void;
-  /** 更改界面密度。 */
-  setDensityMode: (mode: UiDensity) => void;
   /** 更改动效模式。 */
   setMotionMode: (mode: MotionMode) => void;
   /** 更改启动页面。 */
@@ -79,7 +73,6 @@ export function useSettings(): UseSettingsResult {
   const [themeMode, setThemeMode] = useState<ThemeMode>(getInitialThemeMode);
   const [accentPreset, setAccentPreset] = useState<AccentPreset>(getInitialAccentPreset);
   const [customAccentHex, setCustomAccentHexRaw] = useState<string>(getInitialCustomAccentHex);
-  const [densityMode, setDensityMode] = useState<UiDensity>(getInitialUiDensity);
   const [motionMode, setMotionMode] = useState<MotionMode>(getInitialMotionMode);
   const [startupPage, setStartupPage] = useState<StartupPage>(getInitialStartupPage);
   const [projectWorkspacePath, setProjectWorkspacePath] = useState<string>(
@@ -123,16 +116,16 @@ export function useSettings(): UseSettingsResult {
     }
   }, [accentPreset, accentThemeVariables, customAccentHex]);
 
-  // 界面密度变更时更新 document dataset 并持久化。
+  // 清理历史遗留的界面密度状态链。
   useEffect(() => {
-    document.documentElement.dataset.uiDensity = densityMode;
+    delete document.documentElement.dataset.uiDensity;
 
     try {
-      window.localStorage.setItem(UI_DENSITY_STORAGE_KEY, densityMode);
+      window.localStorage.removeItem('nazh.ui-density');
     } catch {
-      // 受限运行时下忽略存储失败。
+      // Ignore storage cleanup failures in restricted runtimes.
     }
-  }, [densityMode]);
+  }, []);
 
   // 动效模式变更时更新 document dataset 并持久化。
   useEffect(() => {
@@ -182,7 +175,6 @@ export function useSettings(): UseSettingsResult {
     accentPreset,
     customAccentHex,
     accentHex,
-    densityMode,
     motionMode,
     startupPage,
     projectWorkspacePath,
@@ -190,7 +182,6 @@ export function useSettings(): UseSettingsResult {
     setThemeMode,
     setAccentPreset,
     setCustomAccentHex,
-    setDensityMode,
     setMotionMode,
     setStartupPage,
     setProjectWorkspacePath,
