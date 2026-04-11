@@ -70,8 +70,10 @@ where
 
     if let Some(conn_id) = connection_id {
         let release_result = connection_manager.release(conn_id).await;
-        if result.is_ok() {
-            release_result?;
+        if let Err(e) = release_result {
+            if result.is_ok() {
+                return Err(e);
+            }
         }
     }
 

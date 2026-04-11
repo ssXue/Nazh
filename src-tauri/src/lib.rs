@@ -661,12 +661,10 @@ fn spawn_timer_root_tasks(
                         .await;
                 }
 
-                let mut interval =
-                    tokio::time::interval(std::time::Duration::from_millis(timer_root.interval_ms));
-                let _ = interval.tick().await;
+                let delay = Duration::from_millis(timer_root.interval_ms);
 
                 loop {
-                    let _ = interval.tick().await;
+                    tokio::time::sleep(delay).await;
                     if task_cancel.load(Ordering::Relaxed) {
                         break;
                     }
@@ -762,14 +760,25 @@ fn run_serial_root_reader(
                     submit_serial_frame(&app, &ingress, &serial_root, &frame);
                 }
             }
-            Err(error) if error.kind() == std::io::ErrorKind::TimedOut => flush_idle_serial_frame(
-                &app,
-                &ingress,
-                &serial_root,
-                &mut buffer,
-                last_byte_at,
-                idle_gap,
-            ),
+            Err(error) if error.kind() == std::io::ErrorKind::TimedOut => {
+                if buffer.is_empty() {
+                    continue;
+                }
+                let Some(last_byte_at_instant) = last_byte_at else {
+                    continue;
+                };
+                if last_byte_at_instant.elapsed() < idle_gap {
+                    continue;
+                }
+                flush_idle_serial_frame(
+                    &app,
+                    &ingress,
+                    &serial_root,
+                    &mut buffer,
+                    last_byte_at,
+                    idle_gap,
+                );
+            }
             Err(error) => {
                 emit_serial_trigger_failure(
                     &app,
