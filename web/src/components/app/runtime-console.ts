@@ -1,4 +1,4 @@
-import type { AppErrorRecord, RuntimeLogEntry } from '../../types';
+import type { AppErrorRecord, ObservabilityEntry, RuntimeLogEntry } from '../../types';
 
 export interface RuntimeConsoleEntry {
   id: string;
@@ -8,8 +8,12 @@ export interface RuntimeConsoleEntry {
   message: string;
   detail?: string | null;
   tag?: string | null;
-  channel: 'event' | 'exception';
+  channel: 'event' | 'alert' | 'audit' | 'exception';
   scope?: AppErrorRecord['scope'] | null;
+  traceId?: string | null;
+  nodeId?: string | null;
+  durationMs?: number | null;
+  payload?: unknown;
 }
 
 export function formatLogTimestamp(timestamp: number): string {
@@ -82,18 +86,48 @@ function isMirroredFlowgramError(
 export function buildRuntimeConsoleEntries(
   eventFeed: RuntimeLogEntry[],
   appErrors: AppErrorRecord[],
+  observabilityEntries?: ObservabilityEntry[] | null,
 ): RuntimeConsoleEntry[] {
-  const eventEntries: RuntimeConsoleEntry[] = eventFeed.map((entry) => ({
-    id: entry.id,
-    timestamp: entry.timestamp,
-    level: entry.level,
-    source: entry.source,
-    message: entry.message,
-    detail: entry.detail,
-    tag: null,
-    channel: 'event',
-    scope: null,
-  }));
+  const eventEntries: RuntimeConsoleEntry[] =
+    observabilityEntries && observabilityEntries.length > 0
+      ? observabilityEntries.map((entry) => ({
+          id: entry.id,
+          timestamp: Date.parse(entry.timestamp) || Date.now(),
+          level: entry.level,
+          source: entry.source,
+          message: entry.message,
+          detail: entry.detail,
+          tag:
+            entry.category === 'alert'
+              ? '告警'
+              : entry.category === 'audit'
+                ? '审计'
+                : entry.category === 'result'
+                  ? '结果'
+                  : null,
+          channel:
+            entry.category === 'alert'
+              ? 'alert'
+              : entry.category === 'audit'
+                ? 'audit'
+                : 'event',
+          scope: null,
+          traceId: entry.traceId ?? null,
+          nodeId: entry.nodeId ?? null,
+          durationMs: entry.durationMs ?? null,
+          payload: entry.data,
+        }))
+      : eventFeed.map((entry) => ({
+          id: entry.id,
+          timestamp: entry.timestamp,
+          level: entry.level,
+          source: entry.source,
+          message: entry.message,
+          detail: entry.detail,
+          tag: null,
+          channel: 'event',
+          scope: null,
+        }));
 
   const capturedErrorEntries: RuntimeConsoleEntry[] = appErrors
     .filter((error) => {

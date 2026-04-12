@@ -3,6 +3,7 @@ import { JsonView, collapseAllNested, darkStyles, defaultStyles } from 'react-js
 import 'react-json-view-lite/dist/index.css';
 
 import { CopyIcon } from './AppIcons';
+import { hasTauriRuntime, queryObservability } from '../../lib/tauri';
 import {
   buildEventFeedPlainText,
   buildRuntimeConsoleEntries,
@@ -26,6 +27,8 @@ const LEVEL_FILTERS: Array<{ value: LogLevelFilter; label: string }> = [
 const TYPE_FILTERS: Array<{ value: LogTypeFilter; label: string }> = [
   { value: 'all', label: '全部' },
   { value: 'event', label: '事件' },
+  { value: 'alert', label: '告警' },
+  { value: 'audit', label: '审计' },
   { value: 'exception', label: '异常' },
 ];
 
@@ -43,7 +46,16 @@ function getLevelLabel(level: RuntimeConsoleEntry['level']): string {
 }
 
 function getChannelLabel(channel: RuntimeConsoleEntry['channel']): string {
-  return channel === 'exception' ? '异常捕获' : '运行事件';
+  switch (channel) {
+    case 'alert':
+      return '告警投递';
+    case 'audit':
+      return '审计留痕';
+    case 'exception':
+      return '异常捕获';
+    default:
+      return '运行事件';
+  }
 }
 
 function normalizeSearchText(value: string): string {
@@ -85,19 +97,75 @@ export function LogsPanel({
   themeMode,
   activeBoardName,
   workflowStatusLabel,
+  workspacePath,
+  activeTraceId,
 }: LogsPanelProps) {
   const [levelFilter, setLevelFilter] = useState<LogLevelFilter>('all');
   const [typeFilter, setTypeFilter] = useState<LogTypeFilter>('all');
   const [sourceFilter, setSourceFilter] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [traceQuery, setTraceQuery] = useState('');
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
   const [hasCopiedVisibleLogs, setHasCopiedVisibleLogs] = useState(false);
+  const [observability, setObservability] = useState<LogsPanelProps['observability']>(null);
+  const [observabilityError, setObservabilityError] = useState<string | null>(null);
+  const [isObservabilityLoading, setIsObservabilityLoading] = useState(false);
+
+  useEffect(() => {
+    if (!hasTauriRuntime()) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadObservability = async () => {
+      setIsObservabilityLoading(true);
+      try {
+        const nextResult = await queryObservability(
+          workspacePath,
+          traceQuery.trim() || null,
+          null,
+          260,
+        );
+        if (cancelled) {
+          return;
+        }
+        setObservability(nextResult);
+        setObservabilityError(null);
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+        setObservabilityError(error instanceof Error ? error.message : '加载观测记录失败。');
+      } finally {
+        if (!cancelled) {
+          setIsObservabilityLoading(false);
+        }
+      }
+    };
+
+    void loadObservability();
+    const timer = window.setInterval(() => {
+      void loadObservability();
+    }, 2500);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [traceQuery, workspacePath]);
 
   const consoleEntries = useMemo(
-    () => buildRuntimeConsoleEntries(eventFeed, appErrors).slice().reverse(),
-    [appErrors, eventFeed],
+    () =>
+      buildRuntimeConsoleEntries(eventFeed, appErrors, observability?.entries ?? null)
+        .slice()
+        .reverse(),
+    [appErrors, eventFeed, observability?.entries],
   );
   const normalizedSearchTerm = normalizeSearchText(searchTerm);
+  const traceSummaries = observability?.traces ?? [];
+  const alertCount = observability?.alerts.length ?? 0;
+  const auditCount = observability?.audits.length ?? 0;
 
   const sourceBreakdown = useMemo(() => {
     const sourceCounts = new Map<string, number>();
@@ -197,9 +265,13 @@ export function LogsPanel({
         scope: selectedEntry.scope ?? null,
         level: getLevelLabel(selectedEntry.level),
         source: selectedEntry.source,
+        trace_id: selectedEntry.traceId ?? null,
+        node_id: selectedEntry.nodeId ?? null,
+        duration_ms: selectedEntry.durationMs ?? null,
         message: selectedEntry.message,
         detail: selectedEntry.detail ?? null,
         tag: selectedEntry.tag ?? null,
+        payload: selectedEntry.payload ?? null,
         timestamp: new Date(selectedEntry.timestamp).toISOString(),
         local_time: `${formatLogDate(selectedEntry.timestamp)} ${formatLogTimestamp(selectedEntry.timestamp)}`,
       }
@@ -240,8 +312,13 @@ export function LogsPanel({
             <em>{errorCount > 0 ? '需要关注' : '当前平稳'}</em>
           </article>
           <article className="logs-panel__summary-item">
-            <span>活跃来源</span>
-            <strong>{sourceBreakdown.length}</strong>
+            <span>Trace 数</span>
+            <strong>{traceSummaries.length}</strong>
+            <em>{activeTraceId ? '当前 Trace 已锁定' : '可按 Trace 回看'}</em>
+          </article>
+          <article className="logs-panel__summary-item">
+            <span>告警 / 审计</span>
+            <strong>{`${alertCount} / ${auditCount}`}</strong>
             <em>{resultCount} 条结果输出</em>
           </article>
           <article className="logs-panel__summary-item">
@@ -261,6 +338,17 @@ export function LogsPanel({
             </div>
 
             <div className="logs-panel__rail-body">
+              <label className="logs-panel__search-field">
+                <span>Trace</span>
+                <input
+                  type="search"
+                  className="logs-panel__search"
+                  placeholder="输入 trace_id"
+                  value={traceQuery}
+                  onChange={(event) => setTraceQuery(event.target.value)}
+                />
+              </label>
+
               <label className="logs-panel__search-field">
                 <span>检索</span>
                 <input
@@ -318,6 +406,63 @@ export function LogsPanel({
                     );
                   })}
                 </div>
+              </section>
+
+              <section className="logs-panel__group" aria-label="按 Trace 查询">
+                <div className="logs-panel__group-title">
+                  Trace
+                  {isObservabilityLoading ? ' · 同步中' : ''}
+                </div>
+                <div className="logs-panel__source-list">
+                  <button
+                    type="button"
+                    className={traceQuery.trim() ? 'logs-panel__source' : 'logs-panel__source is-active'}
+                    aria-pressed={!traceQuery.trim()}
+                    onClick={() => setTraceQuery('')}
+                  >
+                    <span className="logs-panel__source-dot logs-panel__source-dot--all" />
+                      <span className="logs-panel__source-name">全部 Trace</span>
+                      <strong>{traceSummaries.length}</strong>
+                    </button>
+
+                  {activeTraceId ? (
+                    <button
+                      type="button"
+                      className={traceQuery === activeTraceId ? 'logs-panel__source is-active' : 'logs-panel__source'}
+                      aria-pressed={traceQuery === activeTraceId}
+                      onClick={() => setTraceQuery(activeTraceId)}
+                    >
+                      <span className="logs-panel__source-dot" />
+                      <span className="logs-panel__source-name">当前 Trace</span>
+                      <strong>live</strong>
+                      <span className="logs-panel__source-meta">
+                        {activeTraceId.slice(0, 8)}...{activeTraceId.slice(-6)}
+                      </span>
+                    </button>
+                  ) : null}
+
+                  {traceSummaries.slice(0, 8).map((trace) => (
+                    <button
+                      key={trace.traceId}
+                      type="button"
+                      className={traceQuery === trace.traceId ? 'logs-panel__source is-active' : 'logs-panel__source'}
+                      aria-pressed={traceQuery === trace.traceId}
+                      onClick={() => setTraceQuery(trace.traceId)}
+                    >
+                      <span className="logs-panel__source-dot" />
+                      <span className="logs-panel__source-name">
+                        {trace.traceId.slice(0, 8)}...{trace.traceId.slice(-6)}
+                      </span>
+                      <strong>{trace.totalEvents}</strong>
+                      <span className="logs-panel__source-meta">
+                        {trace.status} · {trace.lastNodeId ?? 'workflow'}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                {observabilityError ? (
+                  <span className="logs-panel__inline-error">{observabilityError}</span>
+                ) : null}
               </section>
 
               <section className="logs-panel__group" aria-label="按来源筛选">
@@ -402,6 +547,12 @@ export function LogsPanel({
                       <span className="logs-panel__entry-type">{getChannelLabel(entry.channel)}</span>
                     </div>
                     <strong className="logs-panel__entry-message">{entry.message}</strong>
+                    {entry.traceId || entry.durationMs ? (
+                      <span className="logs-panel__entry-meta">
+                        {entry.traceId ? `trace=${entry.traceId.slice(0, 8)}` : '--'}
+                        {entry.durationMs ? ` · ${entry.durationMs} ms` : ''}
+                      </span>
+                    ) : null}
                     {entry.detail ? (
                       <span className="logs-panel__entry-detail">{entry.detail}</span>
                     ) : null}
@@ -437,10 +588,46 @@ export function LogsPanel({
                     </div>
                   </section>
 
+                  {selectedEntry.traceId || selectedEntry.durationMs ? (
+                    <section className="logs-panel__detail-block">
+                      <div className="logs-panel__detail-block-title">Trace / 耗时</div>
+                      <div className="logs-panel__detail-kv">
+                        <span>Trace</span>
+                        <strong>{selectedEntry.traceId ?? '--'}</strong>
+                      </div>
+                      <div className="logs-panel__detail-kv">
+                        <span>节点</span>
+                        <strong>{selectedEntry.nodeId ?? selectedEntry.source}</strong>
+                      </div>
+                      <div className="logs-panel__detail-kv">
+                        <span>耗时</span>
+                        <strong>
+                          {selectedEntry.durationMs !== null && selectedEntry.durationMs !== undefined
+                            ? `${selectedEntry.durationMs} ms`
+                            : '--'}
+                        </strong>
+                      </div>
+                    </section>
+                  ) : null}
+
                   {selectedEntry.detail ? (
                     <section className="logs-panel__detail-block">
                       <div className="logs-panel__detail-block-title">明细</div>
                       <pre>{selectedEntry.detail}</pre>
+                    </section>
+                  ) : null}
+
+                  {selectedEntry.payload ? (
+                    <section className="logs-panel__detail-block logs-panel__detail-block--json">
+                      <div className="logs-panel__detail-block-title">载荷</div>
+                      <div className="logs-panel__json-view">
+                        <JsonView
+                          data={selectedEntry.payload}
+                          shouldExpandNode={collapseAllNested}
+                          clickToExpandNode
+                          style={themeMode === 'dark' ? darkStyles : defaultStyles}
+                        />
+                      </div>
                     </section>
                   ) : null}
 

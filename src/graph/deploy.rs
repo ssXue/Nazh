@@ -24,6 +24,9 @@ pub async fn deploy_workflow(
     connection_manager: SharedConnectionManager,
 ) -> Result<WorkflowDeployment, EngineError> {
     let topology = graph.topology()?;
+
+    connection_manager.upsert_connections(graph.connections).await;
+
     let runtime = tokio::runtime::Handle::try_current()
         .map_err(|_| EngineError::invalid_graph("deploy_workflow 必须在 Tokio 运行时中调用"))?;
 

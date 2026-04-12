@@ -57,7 +57,9 @@ async fn workflow_graph_executes_end_to_end() {
                     "id": "mqtt-main",
                     "type": "mqtt",
                     "metadata": {
-                        "broker": "127.0.0.1:1883"
+                        "host": "127.0.0.1",
+                        "port": 1883,
+                        "topic": "test/topic"
                     }
                 }
             ],
@@ -114,7 +116,9 @@ async fn workflow_graph_executes_end_to_end() {
                         "id": "mqtt-main",
                         "kind": "mqtt",
                         "metadata": {
-                            "broker": "127.0.0.1:1883"
+                            "host": "127.0.0.1",
+                            "port": 1883,
+                            "topic": "test/topic"
                         }
                     },
                     "_native_message": "ingest",
@@ -167,7 +171,7 @@ async fn connection_manager_borrows_and_releases_connections() {
         .register_connection(ConnectionDefinition {
             id: "plc-1".to_owned(),
             kind: "modbus".to_owned(),
-            metadata: json!({ "unit_id": 1 }),
+            metadata: json!({ "unit_id": 1, "host": "127.0.0.1", "port": 502 }),
         })
         .await;
     assert!(register_result.is_ok(), "connection should register");

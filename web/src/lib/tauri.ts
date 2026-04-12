@@ -7,6 +7,7 @@ import type {
   ConnectionRecord,
   DeployResponse,
   DispatchResponse,
+  ObservabilityQueryResult,
   UndeployResponse,
   WorkflowResult,
 } from '../types';
@@ -297,10 +298,28 @@ export async function watchCurrentWindowMaximized(
 export async function deployWorkflow(
   ast: string,
   connectionDefinitions?: ConnectionDefinition[],
+  observabilityContext?: {
+    workspacePath: string;
+    projectId: string;
+    projectName: string;
+    environmentId: string;
+    environmentName: string;
+    deploymentSource?: string;
+  },
 ): Promise<DeployResponse> {
   return invoke<DeployResponse>('deploy_workflow', {
     ast,
     connectionDefinitions: connectionDefinitions ?? null,
+    observabilityContext: observabilityContext
+      ? {
+          workspacePath: observabilityContext.workspacePath.trim(),
+          projectId: observabilityContext.projectId,
+          projectName: observabilityContext.projectName,
+          environmentId: observabilityContext.environmentId,
+          environmentName: observabilityContext.environmentName,
+          deploymentSource: observabilityContext.deploymentSource ?? 'manual',
+        }
+      : null,
   });
 }
 
@@ -314,6 +333,20 @@ export async function undeployWorkflow(): Promise<UndeployResponse> {
 
 export async function listConnections(): Promise<ConnectionRecord[]> {
   return invoke<ConnectionRecord[]>('list_connections');
+}
+
+export async function queryObservability(
+  workspacePath: string,
+  traceId?: string | null,
+  search?: string | null,
+  limit = 240,
+): Promise<ObservabilityQueryResult> {
+  return invoke<ObservabilityQueryResult>('query_observability', {
+    workspacePath: workspacePath.trim() || null,
+    traceId: traceId?.trim() ? traceId.trim() : null,
+    search: search?.trim() ? search.trim() : null,
+    limit,
+  });
 }
 
 export async function loadConnectionDefinitions(

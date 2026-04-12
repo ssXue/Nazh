@@ -753,7 +753,14 @@ function App() {
     }
 
     try {
-      const response = await deployWorkflow(snapshot.runtimeAstText, snapshot.runtimeConnections);
+      const response = await deployWorkflow(snapshot.runtimeAstText, snapshot.runtimeConnections, {
+        workspacePath: settings.projectWorkspacePath,
+        projectId: snapshot.projectId,
+        projectName: snapshot.projectName,
+        environmentId: snapshot.environmentId,
+        environmentName: snapshot.environmentName,
+        deploymentSource: source,
+      });
       await persistDeploymentSnapshot(snapshot);
       engine.setStatusMessage(
         source === 'restore'
@@ -1333,6 +1340,8 @@ function App() {
                 themeMode={settings.themeMode}
                 activeBoardName={activeBoard?.name ?? null}
                 workflowStatusLabel={workflowStatusLabel}
+                workspacePath={settings.projectWorkspacePath}
+                activeTraceId={engine.runtimeState.traceId}
               />
             </div>
           </section>

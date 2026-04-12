@@ -8,11 +8,17 @@
 //!
 //! 引擎事件通过 `Window::emit` 转发给前端。
 
+mod observability;
+
 use nazh_engine::{
     deploy_workflow as deploy_workflow_graph, shared_connection_manager, ConnectionDefinition,
     ConnectionRecord, DeployResponse, DispatchResponse, EngineError, ExecutionEvent,
     SerialTriggerNodeConfig, TimerNodeConfig, UndeployResponse, WorkflowContext, WorkflowGraph,
     WorkflowIngress,
+};
+use observability::{
+    query_observability as query_workspace_observability, ObservabilityContextInput,
+    ObservabilityQueryResult, ObservabilityStore, SharedObservabilityStore,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -64,6 +70,7 @@ impl DesktopWorkflow {
 struct DesktopState {
     connection_manager: nazh_engine::SharedConnectionManager,
     workflow: Mutex<Option<DesktopWorkflow>>,
+    observability: Mutex<Option<SharedObservabilityStore>>,
 }
 
 impl Default for DesktopState {
@@ -71,6 +78,7 @@ impl Default for DesktopState {
         Self {
             connection_manager: shared_connection_manager(),
             workflow: Mutex::new(None),
+            observability: Mutex::new(None),
         }
     }
 }
@@ -181,21 +189,57 @@ async fn deploy_workflow(
     state: State<'_, DesktopState>,
     ast: String,
     connection_definitions: Option<Vec<ConnectionDefinition>>,
+    observability_context: Option<ObservabilityContextInput>,
 ) -> Result<DeployResponse, String> {
     let mut graph = WorkflowGraph::from_json(&ast).map_err(stringify_error)?;
     normalize_sql_writer_paths(&app, &mut graph).map_err(stringify_error)?;
     if let Some(definitions) = connection_definitions {
         state.connection_manager.replace_connections(definitions).await;
     }
+    let observability_store = if let Some(context) = observability_context.clone() {
+        let (workspace_dir, _) =
+            resolve_project_workspace_dir(&app, Some(context.workspace_path.as_str()))?;
+        let store = ObservabilityStore::new(workspace_dir, context).await?;
+        let _ = store
+            .record_audit(
+                "info",
+                "workflow",
+                "收到部署请求",
+                observability_context.as_ref().map(|context| {
+                    format!("{} · {}", context.project_name, context.environment_name)
+                }),
+                None,
+                None,
+            )
+            .await;
+        Some(store)
+    } else {
+        None
+    };
     let timer_roots = collect_timer_root_specs(&graph).map_err(stringify_error)?;
     let serial_roots = collect_serial_root_specs(&graph, state.connection_manager.clone())
         .await
         .map_err(stringify_error)?;
     let node_count = graph.nodes.len();
     let edge_count = graph.edges.len();
-    let deployment = deploy_workflow_graph(graph, state.connection_manager.clone())
-        .await
-        .map_err(stringify_error)?;
+    let deployment = match deploy_workflow_graph(graph, state.connection_manager.clone()).await {
+        Ok(deployment) => deployment,
+        Err(error) => {
+            if let Some(store) = &observability_store {
+                let _ = store
+                    .record_audit(
+                        "error",
+                        "workflow",
+                        "部署失败",
+                        Some(error.to_string()),
+                        None,
+                        None,
+                    )
+                    .await;
+            }
+            return Err(stringify_error(error));
+        }
+    };
     let (ingress, streams) = deployment.into_parts();
     let root_nodes = ingress.root_nodes().to_vec();
     let (mut event_rx, mut result_rx) = streams.into_receivers();
@@ -214,6 +258,7 @@ async fn deploy_workflow(
         app.clone(),
         ingress.clone(),
         state.connection_manager.clone(),
+        observability_store.clone(),
         serial_roots,
     ));
 
@@ -224,17 +269,29 @@ async fn deploy_workflow(
             trigger_tasks,
         });
     }
+    {
+        let mut observability_guard = state.observability.lock().await;
+        *observability_guard = observability_store.clone();
+    }
 
     let event_app = app.clone();
+    let event_store = observability_store.clone();
     tauri::async_runtime::spawn(async move {
         while let Some(event) = event_rx.recv().await {
+            if let Some(store) = &event_store {
+                let _ = store.record_execution_event(&event).await;
+            }
             let _ = event_app.emit("workflow://node-status", event);
         }
     });
 
     let result_app = app.clone();
+    let result_store = observability_store.clone();
     tauri::async_runtime::spawn(async move {
         while let Some(result) = result_rx.recv().await {
+            if let Some(store) = &result_store {
+                let _ = store.record_result(&result).await;
+            }
             let _ = result_app.emit("workflow://result", result);
         }
     });
@@ -244,6 +301,22 @@ async fn deploy_workflow(
         edge_count,
         root_nodes,
     };
+    if let Some(store) = &observability_store {
+        let _ = store
+            .record_audit(
+                "success",
+                "workflow",
+                "部署完成",
+                Some(format!("节点 {} / 连线 {}", node_count, edge_count)),
+                None,
+                Some(json!({
+                    "node_count": node_count,
+                    "edge_count": edge_count,
+                    "root_nodes": deploy_payload.root_nodes.clone(),
+                })),
+            )
+            .await;
+    }
     let _ = app.emit("workflow://deployed", deploy_payload.clone());
     Ok(deploy_payload)
 }
@@ -253,6 +326,10 @@ async fn dispatch_payload(
     state: State<'_, DesktopState>,
     payload: Value,
 ) -> Result<DispatchResponse, String> {
+    let observability_store = {
+        let observability_guard = state.observability.lock().await;
+        observability_guard.clone()
+    };
     let ingress = {
         let workflow_guard = state.workflow.lock().await;
         workflow_guard
@@ -263,7 +340,34 @@ async fn dispatch_payload(
 
     let ctx = WorkflowContext::new(payload);
     let trace_id = ctx.trace_id.to_string();
-    ingress.submit(ctx).await.map_err(stringify_error)?;
+    if let Err(error) = ingress.submit(ctx).await {
+        if let Some(store) = &observability_store {
+            let _ = store
+                .record_audit(
+                    "error",
+                    "dispatch",
+                    "提交测试载荷失败",
+                    Some(error.to_string()),
+                    Some(trace_id.clone()),
+                    None,
+                )
+                .await;
+        }
+        return Err(stringify_error(error));
+    }
+
+    if let Some(store) = &observability_store {
+        let _ = store
+            .record_audit(
+                "info",
+                "dispatch",
+                "已提交测试载荷",
+                Some(format!("trace_id={trace_id}")),
+                Some(trace_id.clone()),
+                None,
+            )
+            .await;
+    }
     Ok(DispatchResponse { trace_id })
 }
 
@@ -272,6 +376,10 @@ async fn undeploy_workflow(
     app: AppHandle,
     state: State<'_, DesktopState>,
 ) -> Result<UndeployResponse, String> {
+    let observability_store = {
+        let observability_guard = state.observability.lock().await;
+        observability_guard.clone()
+    };
     let existing_workflow = {
         let mut workflow_guard = state.workflow.lock().await;
         workflow_guard.take()
@@ -293,6 +401,29 @@ async fn undeploy_workflow(
         .connection_manager
         .mark_all_idle("运行已停止，连接会话已回收到空闲态")
         .await;
+    if let Some(store) = &observability_store {
+        let _ = store
+            .record_audit(
+                if response.had_workflow { "warn" } else { "info" },
+                "workflow",
+                if response.had_workflow {
+                    "运行已停止"
+                } else {
+                    "停止请求未命中已部署工作流"
+                },
+                Some(format!(
+                    "已中止 {} 个根触发任务",
+                    response.aborted_timer_count
+                )),
+                None,
+                None,
+            )
+            .await;
+    }
+    {
+        let mut observability_guard = state.observability.lock().await;
+        *observability_guard = None;
+    }
 
     let _ = app.emit("workflow://undeployed", response.clone());
     Ok(response)
@@ -302,6 +433,19 @@ async fn undeploy_workflow(
 async fn list_connections(state: State<'_, DesktopState>) -> Result<Vec<ConnectionRecord>, String> {
     let connections = state.connection_manager.list().await;
     Ok(connections)
+}
+
+#[tauri::command]
+async fn query_observability(
+    app: AppHandle,
+    workspace_path: Option<String>,
+    trace_id: Option<String>,
+    search: Option<String>,
+    limit: Option<usize>,
+) -> Result<ObservabilityQueryResult, String> {
+    let (workspace_dir, _) =
+        resolve_project_workspace_dir(&app, workspace_path.as_deref()).map_err(|error| error)?;
+    query_workspace_observability(workspace_dir, trace_id, search, limit.unwrap_or(240)).await
 }
 
 #[tauri::command]
@@ -785,6 +929,7 @@ fn spawn_serial_root_tasks(
     app: AppHandle,
     ingress: WorkflowIngress,
     connection_manager: nazh_engine::SharedConnectionManager,
+    observability: Option<SharedObservabilityStore>,
     serial_roots: Vec<SerialRootSpec>,
 ) -> Vec<DesktopTriggerTask> {
     serial_roots
@@ -793,10 +938,18 @@ fn spawn_serial_root_tasks(
             let app = app.clone();
             let ingress = ingress.clone();
             let connection_manager = connection_manager.clone();
+            let observability = observability.clone();
             let cancel = Arc::new(AtomicBool::new(false));
             let task_cancel = Arc::clone(&cancel);
             let join = tauri::async_runtime::spawn_blocking(move || {
-                run_serial_root_reader(app, ingress, connection_manager, serial_root, task_cancel);
+                run_serial_root_reader(
+                    app,
+                    ingress,
+                    connection_manager,
+                    observability,
+                    serial_root,
+                    task_cancel,
+                );
             });
 
             DesktopTriggerTask { cancel, join }
@@ -808,6 +961,7 @@ fn run_serial_root_reader(
     app: AppHandle,
     ingress: WorkflowIngress,
     connection_manager: nazh_engine::SharedConnectionManager,
+    observability: Option<SharedObservabilityStore>,
     serial_root: SerialRootSpec,
     cancel: Arc<AtomicBool>,
 ) {
@@ -824,7 +978,12 @@ fn run_serial_root_reader(
             Ok(lease) => lease,
             Err(error) => {
                 let retry_after_ms = retry_delay_from_error(&error).unwrap_or(800);
-                emit_serial_trigger_failure(&app, &serial_root.node_id, error.to_string());
+                emit_serial_trigger_failure(
+                    &app,
+                    observability.as_ref(),
+                    &serial_root.node_id,
+                    error.to_string(),
+                );
                 sleep_with_cancel(&cancel, Duration::from_millis(retry_after_ms));
                 continue;
             }
@@ -868,7 +1027,12 @@ fn run_serial_root_reader(
                 let _ = tauri::async_runtime::block_on(
                     connection_manager.release(&serial_root.connection_id),
                 );
-                emit_serial_trigger_failure(&app, &serial_root.node_id, reason);
+                emit_serial_trigger_failure(
+                    &app,
+                    observability.as_ref(),
+                    &serial_root.node_id,
+                    reason,
+                );
                 sleep_with_cancel(&cancel, Duration::from_millis(retry_after_ms));
                 continue;
             }
@@ -887,6 +1051,7 @@ fn run_serial_root_reader(
                         &app,
                         &ingress,
                         &serial_root,
+                        observability.as_ref(),
                         &mut buffer,
                         last_byte_at,
                         idle_gap,
@@ -911,12 +1076,12 @@ fn run_serial_root_reader(
                     last_heartbeat_sent_at = Instant::now();
 
                     while let Some(frame) = drain_serial_delimited_frame(&mut buffer, &delimiter) {
-                        submit_serial_frame(&app, &ingress, &serial_root, &frame);
+                        submit_serial_frame(&app, &ingress, &serial_root, observability.as_ref(), &frame);
                     }
 
                     if buffer.len() >= max_frame_bytes {
                         let frame = buffer.drain(..max_frame_bytes).collect::<Vec<_>>();
-                        submit_serial_frame(&app, &ingress, &serial_root, &frame);
+                        submit_serial_frame(&app, &ingress, &serial_root, observability.as_ref(), &frame);
                     }
                 }
                 Err(error) if error.kind() == std::io::ErrorKind::TimedOut => {
@@ -945,6 +1110,7 @@ fn run_serial_root_reader(
                         &app,
                         &ingress,
                         &serial_root,
+                        observability.as_ref(),
                         &mut buffer,
                         last_byte_at,
                         idle_gap,
@@ -958,7 +1124,7 @@ fn run_serial_root_reader(
         }
 
         if !cancel.load(Ordering::Relaxed) && !buffer.is_empty() {
-            submit_serial_frame(&app, &ingress, &serial_root, &buffer);
+            submit_serial_frame(&app, &ingress, &serial_root, observability.as_ref(), &buffer);
         }
 
         if cancel.load(Ordering::Relaxed) {
@@ -982,7 +1148,12 @@ fn run_serial_root_reader(
         let _ = tauri::async_runtime::block_on(connection_manager.release(
             &serial_root.connection_id,
         ));
-        emit_serial_trigger_failure(&app, &serial_root.node_id, reason);
+        emit_serial_trigger_failure(
+            &app,
+            observability.as_ref(),
+            &serial_root.node_id,
+            reason,
+        );
         sleep_with_cancel(&cancel, Duration::from_millis(retry_after_ms));
     }
 }
@@ -991,6 +1162,7 @@ fn flush_idle_serial_frame(
     app: &AppHandle,
     ingress: &WorkflowIngress,
     serial_root: &SerialRootSpec,
+    observability: Option<&SharedObservabilityStore>,
     buffer: &mut Vec<u8>,
     last_byte_at: Option<Instant>,
     idle_gap: Duration,
@@ -1001,7 +1173,7 @@ fn flush_idle_serial_frame(
 
     if last_byte_at.is_some_and(|instant| instant.elapsed() >= idle_gap) {
         let frame = std::mem::take(buffer);
-        submit_serial_frame(app, ingress, serial_root, &frame);
+        submit_serial_frame(app, ingress, serial_root, observability, &frame);
     }
 }
 
@@ -1022,6 +1194,7 @@ fn submit_serial_frame(
     app: &AppHandle,
     ingress: &WorkflowIngress,
     serial_root: &SerialRootSpec,
+    observability: Option<&SharedObservabilityStore>,
     frame: &[u8],
 ) {
     if frame.is_empty() {
@@ -1047,12 +1220,26 @@ fn submit_serial_frame(
     if let Err(error) =
         ingress.blocking_submit_to(&serial_root.node_id, WorkflowContext::new(payload))
     {
-        emit_serial_trigger_failure(app, &serial_root.node_id, error.to_string());
+        emit_serial_trigger_failure(app, observability, &serial_root.node_id, error.to_string());
     }
 }
 
-fn emit_serial_trigger_failure(app: &AppHandle, node_id: &str, message: String) {
+fn emit_serial_trigger_failure(
+    app: &AppHandle,
+    observability: Option<&SharedObservabilityStore>,
+    node_id: &str,
+    message: String,
+) {
     let context = WorkflowContext::new(Value::Object(Default::default()));
+    if let Some(store) = observability {
+        let _ = tauri::async_runtime::block_on(store.record_external_failure(
+            node_id,
+            "串口触发失败".to_owned(),
+            Some(message.clone()),
+            Some(context.trace_id.to_string()),
+            None,
+        ));
+    }
     let _ = app.emit(
         "workflow://node-status",
         ExecutionEvent::Failed {
@@ -1294,6 +1481,7 @@ pub fn run() {
             dispatch_payload,
             undeploy_workflow,
             list_connections,
+            query_observability,
             load_connection_definitions,
             save_connection_definitions,
             load_deployment_session_file,

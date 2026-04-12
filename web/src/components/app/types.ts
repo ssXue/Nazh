@@ -1,5 +1,6 @@
 import type {
   AppErrorRecord,
+  ObservabilityQueryResult,
   ConnectionRecord,
   DeployResponse,
   RuntimeLogEntry,
@@ -53,6 +54,9 @@ export interface LogsPanelProps {
   themeMode: ThemeMode;
   activeBoardName: string | null;
   workflowStatusLabel: string;
+  workspacePath: string;
+  activeTraceId: string | null;
+  observability?: ObservabilityQueryResult | null;
 }
 
 export interface RuntimeDockProps {

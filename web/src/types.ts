@@ -138,3 +138,63 @@ export interface AppErrorRecord {
   title: string;
   detail?: string | null;
 }
+
+export interface ObservabilityEntry {
+  id: string;
+  timestamp: string;
+  level: 'info' | 'success' | 'warn' | 'error';
+  category: 'execution' | 'result' | 'audit' | 'alert' | string;
+  source: string;
+  message: string;
+  detail?: string | null;
+  traceId?: string | null;
+  nodeId?: string | null;
+  durationMs?: number | null;
+  projectId?: string | null;
+  projectName?: string | null;
+  environmentId?: string | null;
+  environmentName?: string | null;
+  data?: JsonValue;
+}
+
+export interface AlertDeliveryRecord {
+  id: string;
+  timestamp: string;
+  traceId: string;
+  nodeId: string;
+  projectId: string;
+  projectName: string;
+  environmentId: string;
+  environmentName: string;
+  url: string;
+  method: string;
+  status: number;
+  success: boolean;
+  webhookKind?: string | null;
+  bodyMode?: string | null;
+  requestTimeoutMs?: number | null;
+  requestedAt?: string | null;
+  requestBodyPreview?: string | null;
+}
+
+export interface ObservabilityTraceSummary {
+  traceId: string;
+  status: string;
+  startedAt?: string | null;
+  lastSeenAt?: string | null;
+  totalEvents: number;
+  nodeCount: number;
+  outputCount: number;
+  failureCount: number;
+  totalDurationMs?: number | null;
+  lastNodeId?: string | null;
+  projectName?: string | null;
+  environmentName?: string | null;
+}
+
+export interface ObservabilityQueryResult {
+  entries: ObservabilityEntry[];
+  traces: ObservabilityTraceSummary[];
+  alerts: AlertDeliveryRecord[];
+  audits: ObservabilityEntry[];
+}

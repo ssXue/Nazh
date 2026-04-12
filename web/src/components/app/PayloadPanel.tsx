@@ -1,6 +1,24 @@
+import { useState } from 'react';
+
 import type { PayloadPanelProps } from './types';
 
 export function PayloadPanel({ payloadText, deployInfo, onPayloadTextChange }: PayloadPanelProps) {
+  const [isValidJson, setIsValidJson] = useState(true);
+
+  function handleChange(value: string) {
+    if (value.trim() === '') {
+      setIsValidJson(true);
+    } else {
+      try {
+        JSON.parse(value);
+        setIsValidJson(true);
+      } catch {
+        setIsValidJson(false);
+      }
+    }
+    onPayloadTextChange(value);
+  }
+
   return (
     <>
       <div
@@ -14,10 +32,11 @@ export function PayloadPanel({ payloadText, deployInfo, onPayloadTextChange }: P
       </div>
 
       <textarea
-        className="code-editor code-editor--short code-editor--payload"
+        className={`code-editor code-editor--short code-editor--payload ${!isValidJson ? 'is-invalid' : ''}`}
         value={payloadText}
-        onChange={(event) => onPayloadTextChange(event.target.value)}
+        onChange={(event) => handleChange(event.target.value)}
         spellCheck={false}
+        aria-label="Payload JSON"
       />
     </>
   );

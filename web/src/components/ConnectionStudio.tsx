@@ -900,6 +900,7 @@ export function ConnectionStudio({
 
           {isLoading ? (
             <div className="connection-empty">
+              <span className="connection-loading-spinner" aria-hidden="true" />
               <p>正在加载连接资源…</p>
             </div>
           ) : connections.length === 0 ? (

@@ -296,6 +296,7 @@ impl NodeTrait for HttpClientNode {
         let trace_id = ctx.trace_id;
         let mut payload_map = into_payload_map(ctx.payload);
         let http_meta = json!({
+            "node_id": self.id,
             "url": url,
             "method": method,
             "webhook_kind": webhook_kind,

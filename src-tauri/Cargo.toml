@@ -23,6 +23,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+chrono = { version = "0.4", features = ["clock", "serde"] }
 nazh-engine = { path = ".." }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
