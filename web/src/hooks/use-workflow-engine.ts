@@ -12,8 +12,10 @@ import {
   enableAdaptiveWindowSizing,
   hasTauriRuntime,
   listConnections,
+  listRuntimeWorkflows,
   onWorkflowDeployed,
   onWorkflowEvent,
+  onRuntimeWorkflowFocus,
   onWorkflowResult,
   onWorkflowUndeployed,
 } from '../lib/tauri';
@@ -34,6 +36,23 @@ import type {
   WorkflowRuntimeState,
 } from '../types';
 
+function toDeployInfoFromSummary(summary: {
+  workflowId: string;
+  projectId?: string | null;
+  nodeCount: number;
+  edgeCount: number;
+  rootNodes: string[];
+}): DeployResponse {
+  return {
+    nodeCount: summary.nodeCount,
+    edgeCount: summary.edgeCount,
+    rootNodes: summary.rootNodes,
+    projectId: summary.projectId ?? null,
+    workflowId: summary.workflowId,
+    replacedExisting: null,
+  };
+}
+
 /** 工作流引擎的只读状态快照。 */
 export interface WorkflowEngineState {
   statusMessage: string;
@@ -53,6 +72,7 @@ export interface WorkflowEngineActions {
   appendAppError: (scope: AppErrorRecord['scope'], title: string, detail?: string | null) => void;
   handleFlowgramError: (title: string, detail?: string | null) => void;
   resetWorkspaceRuntime: (nextMessage: string) => void;
+  applyDeploymentState: (payload: DeployResponse, nextMessage?: string) => void;
   addResult: (result: WorkflowResult) => void;
   refreshConnections: () => Promise<void>;
   setIsRuntimeDockCollapsed: React.Dispatch<React.SetStateAction<boolean>>;
@@ -121,6 +141,24 @@ export function useWorkflowEngine(
     setAppErrors([]);
     setRuntimeState(EMPTY_RUNTIME_STATE);
     setStatusMessage(nextMessage);
+  }
+
+  function applyDeploymentState(payload: DeployResponse, nextMessage?: string) {
+    setDeployInfo(payload);
+    setEventFeed([
+      buildRuntimeLogEntry(
+        'system',
+        'success',
+        '工作流部署完成',
+        payload.rootNodes.length > 0 ? `根节点: ${payload.rootNodes.join(', ')}` : null,
+      ),
+    ]);
+    setResults([]);
+    setAppErrors([]);
+    setRuntimeState(EMPTY_RUNTIME_STATE);
+    setStatusMessage(
+      nextMessage ?? `已部署 ${payload.nodeCount} 个节点，根节点: ${payload.rootNodes.join(', ')}`,
+    );
   }
 
   async function refreshConnections() {
@@ -293,19 +331,7 @@ export function useWorkflowEngine(
         return;
       }
 
-      setDeployInfo(payload);
-      setEventFeed([
-        buildRuntimeLogEntry(
-          'system',
-          'success',
-          '工作流部署完成',
-          payload.rootNodes.length > 0 ? `根节点: ${payload.rootNodes.join(', ')}` : null,
-        ),
-      ]);
-      setResults([]);
-      setAppErrors([]);
-      setRuntimeState(EMPTY_RUNTIME_STATE);
-      setStatusMessage(`已部署 ${payload.nodeCount} 个节点，根节点: ${payload.rootNodes.join(', ')}`);
+      applyDeploymentState(payload);
     }).then((cleanup) => {
       if (alive) {
         cleanups.push(cleanup);
@@ -337,6 +363,49 @@ export function useWorkflowEngine(
       }
     });
 
+    void onRuntimeWorkflowFocus((payload) => {
+      if (!alive) {
+        return;
+      }
+
+      setDeployInfo(toDeployInfoFromSummary(payload));
+      setEventFeed([
+        buildRuntimeLogEntry(
+          'system',
+          'info',
+          '已切换当前运行工作流',
+          payload.projectName ?? payload.workflowId,
+        ),
+      ]);
+      setAppErrors([]);
+      setResults([]);
+      setRuntimeState(EMPTY_RUNTIME_STATE);
+      setStatusMessage(`已切换到 ${payload.projectName ?? payload.workflowId} 的运行上下文。`);
+    }).then((cleanup) => {
+      if (alive) {
+        cleanups.push(cleanup);
+      }
+    });
+
+    void listRuntimeWorkflows()
+      .then((workflows) => {
+        if (!alive) {
+          return;
+        }
+
+        const activeWorkflow = workflows.find((workflow) => workflow.active);
+        if (activeWorkflow) {
+          setDeployInfo(toDeployInfoFromSummary(activeWorkflow));
+        } else {
+          setDeployInfo(null);
+        }
+      })
+      .catch(() => {
+        if (alive) {
+          setDeployInfo(null);
+        }
+      });
+
     return () => {
       alive = false;
       for (const cleanup of cleanups) {
@@ -359,6 +428,7 @@ export function useWorkflowEngine(
     appendAppError,
     handleFlowgramError,
     resetWorkspaceRuntime,
+    applyDeploymentState,
     addResult: (result: WorkflowResult) => {
       setResults((current) => [result, ...current].slice(0, 8));
     },

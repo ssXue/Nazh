@@ -1,6 +1,7 @@
 import type { ConnectionDefinition } from '../types';
 
 export const DEPLOYMENT_SESSION_STORAGE_KEY = 'nazh.deployment-session';
+const DEPLOYMENT_SESSION_COLLECTION_VERSION = 2;
 
 export interface PersistedDeploymentSession {
   version: 1;
@@ -11,6 +12,11 @@ export interface PersistedDeploymentSession {
   deployedAt: string;
   runtimeAstText: string;
   runtimeConnections: ConnectionDefinition[];
+}
+
+interface PersistedDeploymentSessionCollection {
+  version: 2;
+  sessions: PersistedDeploymentSession[];
 }
 
 function buildStorageKey(workspacePath: string): string {
@@ -37,7 +43,49 @@ function isPersistedDeploymentSession(value: unknown): value is PersistedDeploym
   );
 }
 
-export function loadDeploymentSession(workspacePath = ''): PersistedDeploymentSession | null {
+function isPersistedDeploymentSessionCollection(
+  value: unknown,
+): value is PersistedDeploymentSessionCollection {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const record = value as Record<string, unknown>;
+  return (
+    record.version === DEPLOYMENT_SESSION_COLLECTION_VERSION &&
+    Array.isArray(record.sessions) &&
+    record.sessions.every((entry) => isPersistedDeploymentSession(entry))
+  );
+}
+
+function sortSessionsByFreshness(sessions: PersistedDeploymentSession[]) {
+  return sessions.sort((left, right) => {
+    const leftTime = Date.parse(left.deployedAt);
+    const rightTime = Date.parse(right.deployedAt);
+
+    if (Number.isNaN(leftTime) || Number.isNaN(rightTime)) {
+      return right.projectId.localeCompare(left.projectId);
+    }
+
+    return rightTime - leftTime;
+  });
+}
+
+function normalizeSessions(
+  sessions: PersistedDeploymentSession[],
+): PersistedDeploymentSession[] {
+  const deduped = new Map<string, PersistedDeploymentSession>();
+
+  for (const session of sortSessionsByFreshness([...sessions])) {
+    if (!deduped.has(session.projectId)) {
+      deduped.set(session.projectId, session);
+    }
+  }
+
+  return [...deduped.values()];
+}
+
+function readStoredSessions(workspacePath = ''): PersistedDeploymentSession[] | null {
   if (typeof window === 'undefined') {
     return null;
   }
@@ -51,31 +99,78 @@ export function loadDeploymentSession(workspacePath = ''): PersistedDeploymentSe
     }
 
     const parsed = JSON.parse(raw) as unknown;
+    if (isPersistedDeploymentSessionCollection(parsed)) {
+      return normalizeSessions(parsed.sessions);
+    }
+
+    if (isPersistedDeploymentSession(parsed)) {
+      return [parsed];
+    }
+
+    if (Array.isArray(parsed) && parsed.every((entry) => isPersistedDeploymentSession(entry))) {
+      return normalizeSessions(parsed);
+    }
+
     if (!isPersistedDeploymentSession(parsed)) {
       window.localStorage.removeItem(storageKey);
       return null;
     }
 
-    return parsed;
+    return [parsed];
   } catch {
     window.localStorage.removeItem(storageKey);
     return null;
   }
 }
 
-export function saveDeploymentSession(
+function writeStoredSessions(
   workspacePath: string,
-  session: PersistedDeploymentSession,
+  sessions: PersistedDeploymentSession[],
 ) {
   if (typeof window === 'undefined') {
     return;
   }
 
   try {
-    window.localStorage.setItem(buildStorageKey(workspacePath), JSON.stringify(session));
+    const payload: PersistedDeploymentSessionCollection = {
+      version: DEPLOYMENT_SESSION_COLLECTION_VERSION,
+      sessions: normalizeSessions(sessions),
+    };
+    window.localStorage.setItem(buildStorageKey(workspacePath), JSON.stringify(payload));
   } catch {
     // Ignore preview persistence failures.
   }
+}
+
+export function loadDeploymentSessions(workspacePath = ''): PersistedDeploymentSession[] {
+  return readStoredSessions(workspacePath) ?? [];
+}
+
+export function loadDeploymentSession(workspacePath = ''): PersistedDeploymentSession | null {
+  return loadDeploymentSessions(workspacePath)[0] ?? null;
+}
+
+export function saveDeploymentSession(
+  workspacePath: string,
+  session: PersistedDeploymentSession,
+) {
+  const current = loadDeploymentSessions(workspacePath).filter(
+    (entry) => entry.projectId !== session.projectId,
+  );
+  writeStoredSessions(workspacePath, [session, ...current]);
+}
+
+export function removeDeploymentSession(workspacePath: string, projectId: string) {
+  const nextSessions = loadDeploymentSessions(workspacePath).filter(
+    (entry) => entry.projectId !== projectId,
+  );
+
+  if (nextSessions.length === 0) {
+    clearDeploymentSession(workspacePath);
+    return;
+  }
+
+  writeStoredSessions(workspacePath, nextSessions);
 }
 
 export function clearDeploymentSession(workspacePath = '') {

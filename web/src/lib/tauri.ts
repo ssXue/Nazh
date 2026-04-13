@@ -5,13 +5,26 @@ import { currentMonitor, getCurrentWindow, LogicalSize } from '@tauri-apps/api/w
 import type {
   ConnectionDefinition,
   ConnectionRecord,
+  DeadLetterRecord,
   DeployResponse,
   DispatchResponse,
   ObservabilityQueryResult,
+  RuntimeBackpressureStrategy,
+  RuntimeWorkflowSummary,
   UndeployResponse,
   WorkflowResult,
 } from '../types';
 import type { PersistedDeploymentSession } from './deployment-session';
+
+export interface WorkflowRuntimePolicyInput {
+  manualQueueCapacity?: number;
+  triggerQueueCapacity?: number;
+  manualBackpressureStrategy?: RuntimeBackpressureStrategy;
+  triggerBackpressureStrategy?: RuntimeBackpressureStrategy;
+  maxRetryAttempts?: number;
+  initialRetryBackoffMs?: number;
+  maxRetryBackoffMs?: number;
+}
 
 export interface ProjectWorkspaceStorageInfo {
   workspacePath: string;
@@ -306,6 +319,10 @@ export async function deployWorkflow(
     environmentName: string;
     deploymentSource?: string;
   },
+  runtimeOptions?: {
+    workflowId?: string;
+    runtimePolicy?: WorkflowRuntimePolicyInput;
+  },
 ): Promise<DeployResponse> {
   return invoke<DeployResponse>('deploy_workflow', {
     ast,
@@ -320,19 +337,53 @@ export async function deployWorkflow(
           deploymentSource: observabilityContext.deploymentSource ?? 'manual',
         }
       : null,
+    workflowId: runtimeOptions?.workflowId?.trim() ? runtimeOptions.workflowId.trim() : null,
+    runtimePolicy: runtimeOptions?.runtimePolicy ?? null,
   });
 }
 
-export async function dispatchPayload(payload: unknown): Promise<DispatchResponse> {
-  return invoke<DispatchResponse>('dispatch_payload', { payload });
+export async function dispatchPayload(
+  payload: unknown,
+  workflowId?: string | null,
+): Promise<DispatchResponse> {
+  return invoke<DispatchResponse>('dispatch_payload', {
+    payload,
+    workflowId: workflowId?.trim() ? workflowId.trim() : null,
+  });
 }
 
-export async function undeployWorkflow(): Promise<UndeployResponse> {
-  return invoke<UndeployResponse>('undeploy_workflow');
+export async function undeployWorkflow(workflowId?: string | null): Promise<UndeployResponse> {
+  return invoke<UndeployResponse>('undeploy_workflow', {
+    workflowId: workflowId?.trim() ? workflowId.trim() : null,
+  });
 }
 
 export async function listConnections(): Promise<ConnectionRecord[]> {
   return invoke<ConnectionRecord[]>('list_connections');
+}
+
+export async function listRuntimeWorkflows(): Promise<RuntimeWorkflowSummary[]> {
+  return invoke<RuntimeWorkflowSummary[]>('list_runtime_workflows');
+}
+
+export async function setActiveRuntimeWorkflow(
+  workflowId: string,
+): Promise<RuntimeWorkflowSummary> {
+  return invoke<RuntimeWorkflowSummary>('set_active_runtime_workflow', {
+    workflowId: workflowId.trim(),
+  });
+}
+
+export async function listDeadLetters(
+  workspacePath: string,
+  workflowId?: string | null,
+  limit = 120,
+): Promise<DeadLetterRecord[]> {
+  return invoke<DeadLetterRecord[]>('list_dead_letters', {
+    workspacePath: workspacePath.trim() || null,
+    workflowId: workflowId?.trim() ? workflowId.trim() : null,
+    limit,
+  });
 }
 
 export async function queryObservability(
@@ -393,6 +444,14 @@ export async function loadDeploymentSessionFile(
   });
 }
 
+export async function listDeploymentSessionsFile(
+  workspacePath: string,
+): Promise<PersistedDeploymentSession[]> {
+  return invoke<PersistedDeploymentSession[]>('list_deployment_sessions_file', {
+    workspacePath: workspacePath.trim() || null,
+  });
+}
+
 export async function saveDeploymentSessionFile(
   workspacePath: string,
   session: PersistedDeploymentSession,
@@ -400,6 +459,16 @@ export async function saveDeploymentSessionFile(
   return invoke<void>('save_deployment_session_file', {
     workspacePath: workspacePath.trim() || null,
     session,
+  });
+}
+
+export async function removeDeploymentSessionFile(
+  workspacePath: string,
+  projectId: string,
+): Promise<void> {
+  return invoke<void>('remove_deployment_session_file', {
+    workspacePath: workspacePath.trim() || null,
+    projectId: projectId.trim(),
   });
 }
 
@@ -482,6 +551,18 @@ export async function onWorkflowUndeployed(
   handler: (payload: UndeployResponse) => void,
 ): Promise<() => void> {
   const unlisten = await listen<UndeployResponse>('workflow://undeployed', (event) => {
+    handler(event.payload);
+  });
+
+  return () => {
+    unlisten();
+  };
+}
+
+export async function onRuntimeWorkflowFocus(
+  handler: (payload: RuntimeWorkflowSummary) => void,
+): Promise<() => void> {
+  const unlisten = await listen<RuntimeWorkflowSummary>('workflow://runtime-focus', (event) => {
     handler(event.payload);
   });
 

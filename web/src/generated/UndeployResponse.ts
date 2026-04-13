@@ -3,4 +3,8 @@
 /**
  * 工作流卸载后的响应。
  */
-export type UndeployResponse = { hadWorkflow: boolean, abortedTimerCount: number, };
+export type UndeployResponse = {
+  hadWorkflow: boolean,
+  abortedTimerCount: number,
+  workflowId?: string | null,
+};

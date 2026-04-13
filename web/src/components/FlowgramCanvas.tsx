@@ -1140,6 +1140,28 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
     workflowStatus === 'completed' ||
     workflowStatus === 'failed';
   const workflowStatusLabel = getCanvasWorkflowStatusLabel(workflowStatus);
+  const runtimeContextLabel = useMemo(() => {
+    if (!isWorkflowActive) {
+      return '运行上下文: 未绑定';
+    }
+
+    if (runtimeState.traceId) {
+      return `运行上下文: ${runtimeState.lastEventType ?? 'deployed'} @ ${runtimeState.lastNodeId ?? '--'}`;
+    }
+
+    if (workflowStatus === 'deployed') {
+      return '运行上下文: 已绑定，等待触发';
+    }
+
+    return `运行上下文: ${workflowStatusLabel}`;
+  }, [
+    isWorkflowActive,
+    runtimeState.lastEventType,
+    runtimeState.lastNodeId,
+    runtimeState.traceId,
+    workflowStatus,
+    workflowStatusLabel,
+  ]);
 
   const resolveNodeRuntimeStatus = useCallback(
     (nodeId: string): RuntimeNodeStatus => {
@@ -1657,11 +1679,7 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
                   <span>{`工作流状态: ${workflowStatusLabel}`}</span>
                   <span>{lastChange ? `最近变更: ${lastChange}` : '未变更'}</span>
                   <span>{`${resolvedFlowgramData.nodes.length} nodes / ${resolvedFlowgramData.edges.length} edges`}</span>
-                  <span>
-                    {isWorkflowRuntimeMapped && runtimeState.traceId
-                      ? `运行态: ${runtimeState.lastEventType ?? 'idle'} @ ${runtimeState.lastNodeId ?? '--'}`
-                      : '运行态: non-runtime'}
-                  </span>
+                  <span>{runtimeContextLabel}</span>
                 </div>
               </div>
             </div>

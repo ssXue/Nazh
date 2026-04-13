@@ -1,8 +1,10 @@
 import type {
   AppErrorRecord,
+  DeadLetterRecord,
   ObservabilityQueryResult,
   ConnectionRecord,
   DeployResponse,
+  RuntimeWorkflowSummary,
   RuntimeLogEntry,
   WorkflowResult,
 } from '../../types';
@@ -14,6 +16,7 @@ export type StartupPage = 'dashboard' | 'boards';
 export type SidebarSection =
   | 'dashboard'
   | 'boards'
+  | 'runtime'
   | 'connections'
   | 'payload'
   | 'logs'
@@ -92,4 +95,18 @@ export interface SettingsPanelProps {
   projectWorkspaceIsSyncing: boolean;
   projectWorkspaceError: string | null;
   onProjectWorkspacePathChange: (path: string) => void;
+}
+
+export interface RuntimeManagerPanelProps {
+  workspacePath: string;
+  themeMode: ThemeMode;
+  activeBoardId: string | null;
+  onOpenBoard: (boardId: string) => void;
+  onBeforeWorkflowStop?: () => void;
+  onAfterWorkflowStop?: () => void;
+  onRemovePersistedDeployment?: (projectId: string) => Promise<void>;
+  onStatusMessage: (message: string) => void;
+  onRuntimeCountChange?: (count: number) => void;
+  initialWorkflows?: RuntimeWorkflowSummary[];
+  initialDeadLetters?: DeadLetterRecord[];
 }

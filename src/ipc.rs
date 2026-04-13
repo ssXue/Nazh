@@ -14,6 +14,15 @@ pub struct DeployResponse {
     pub node_count: usize,
     pub edge_count: usize,
     pub root_nodes: Vec<String>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub project_id: Option<String>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub workflow_id: Option<String>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub replaced_existing: Option<bool>,
 }
 
 /// 载荷分发成功后的响应。
@@ -22,6 +31,9 @@ pub struct DeployResponse {
 #[serde(rename_all = "camelCase")]
 pub struct DispatchResponse {
     pub trace_id: String,
+    #[serde(default)]
+    #[ts(optional)]
+    pub workflow_id: Option<String>,
 }
 
 /// 工作流卸载后的响应。
@@ -31,4 +43,7 @@ pub struct DispatchResponse {
 pub struct UndeployResponse {
     pub had_workflow: bool,
     pub aborted_timer_count: usize,
+    #[serde(default)]
+    #[ts(optional)]
+    pub workflow_id: Option<String>,
 }

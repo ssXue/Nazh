@@ -198,3 +198,55 @@ export interface ObservabilityQueryResult {
   alerts: AlertDeliveryRecord[];
   audits: ObservabilityEntry[];
 }
+
+export type RuntimeBackpressureStrategy = 'block' | 'rejectNewest';
+
+export interface WorkflowRuntimePolicy {
+  manualQueueCapacity: number;
+  triggerQueueCapacity: number;
+  manualBackpressureStrategy: RuntimeBackpressureStrategy;
+  triggerBackpressureStrategy: RuntimeBackpressureStrategy;
+  maxRetryAttempts: number;
+  initialRetryBackoffMs: number;
+  maxRetryBackoffMs: number;
+}
+
+export interface DispatchLaneSnapshot {
+  depth: number;
+  accepted: number;
+  retried: number;
+  deadLettered: number;
+}
+
+export interface RuntimeWorkflowSummary {
+  workflowId: string;
+  projectId?: string | null;
+  projectName?: string | null;
+  environmentId?: string | null;
+  environmentName?: string | null;
+  deployedAt: string;
+  nodeCount: number;
+  edgeCount: number;
+  rootNodes: string[];
+  active: boolean;
+  policy: WorkflowRuntimePolicy;
+  manualLane: DispatchLaneSnapshot;
+  triggerLane: DispatchLaneSnapshot;
+}
+
+export interface DeadLetterRecord {
+  id: string;
+  timestamp: string;
+  workflowId: string;
+  lane: 'manual' | 'trigger' | string;
+  source: string;
+  targetNodeId?: string | null;
+  traceId: string;
+  attempts: number;
+  reason: string;
+  projectId?: string | null;
+  projectName?: string | null;
+  environmentId?: string | null;
+  environmentName?: string | null;
+  payload: JsonValue;
+}

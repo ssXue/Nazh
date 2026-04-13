@@ -3,4 +3,11 @@
 /**
  * 工作流部署成功后的响应。
  */
-export type DeployResponse = { nodeCount: number, edgeCount: number, rootNodes: Array<string>, };
+export type DeployResponse = {
+  nodeCount: number,
+  edgeCount: number,
+  rootNodes: Array<string>,
+  projectId?: string | null,
+  workflowId?: string | null,
+  replacedExisting?: boolean | null,
+};

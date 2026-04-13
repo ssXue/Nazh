@@ -7,6 +7,7 @@ import { hasTauriRuntime } from './tauri';
 /** 根据当前运行时状态构建侧栏导航区段配置列表。 */
 export function buildSidebarSections(
   workflowStatusLabel: string,
+  runtimeWorkflowCount: number,
   globalConnectionCount: number,
   logCount: number,
   boardCount: number,
@@ -25,6 +26,12 @@ export function buildSidebarSections(
       group: 'top',
       label: '所有看板',
       badge: activeBoardName ?? `${boardCount} 个工程`,
+    },
+    {
+      key: 'runtime',
+      group: 'main',
+      label: '运行时管理',
+      badge: runtimeWorkflowCount > 0 ? `${runtimeWorkflowCount} 个在线` : '当前空闲',
     },
     {
       key: 'connections',
