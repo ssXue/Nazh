@@ -58,6 +58,8 @@ pub struct ObservabilityEntry {
     pub environment_name: Option<String>,
     #[serde(default)]
     pub data: Option<Value>,
+    #[serde(default)]
+    pub event_kind: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -172,24 +174,32 @@ impl ObservabilityStore {
         let now = Utc::now();
         let mut state = self.state.lock().await;
 
+        state
+            .active_spans
+            .retain(|_, started_at| (now - *started_at).num_seconds() < 3600);
+
         let (entry, clear_span) = match event {
             ExecutionEvent::Started { stage, trace_id } => {
                 state
                     .active_spans
                     .insert(span_key(trace_id, stage), now);
                 (
-                    self.build_entry(
-                        "info",
-                        "execution",
-                        stage.clone(),
-                        "节点开始执行",
-                        None,
-                        Some(trace_id.to_string()),
-                        Some(stage.clone()),
-                        None,
-                        None,
-                        now,
-                    ),
+                    {
+                        let mut e = self.build_entry(
+                            "info",
+                            "execution",
+                            stage.clone(),
+                            "节点开始执行",
+                            None,
+                            Some(trace_id.to_string()),
+                            Some(stage.clone()),
+                            None,
+                            None,
+                            now,
+                        );
+                        e.event_kind = Some("started".to_owned());
+                        e
+                    },
                     false,
                 )
             }
@@ -199,18 +209,22 @@ impl ObservabilityStore {
                     .get(&span_key(trace_id, stage))
                     .map(|started_at| (now - *started_at).num_milliseconds().max(0) as u64);
                 (
-                    self.build_entry(
-                        "success",
-                        "execution",
-                        stage.clone(),
-                        "节点执行完成",
-                        duration_ms.map(|ms| format!("节点耗时 {ms} ms")),
-                        Some(trace_id.to_string()),
-                        Some(stage.clone()),
-                        duration_ms,
-                        None,
-                        now,
-                    ),
+                    {
+                        let mut e = self.build_entry(
+                            "success",
+                            "execution",
+                            stage.clone(),
+                            "节点执行完成",
+                            duration_ms.map(|ms| format!("节点耗时 {ms} ms")),
+                            Some(trace_id.to_string()),
+                            Some(stage.clone()),
+                            duration_ms,
+                            None,
+                            now,
+                        );
+                        e.event_kind = Some("completed".to_owned());
+                        e
+                    },
                     true,
                 )
             }
@@ -224,49 +238,61 @@ impl ObservabilityStore {
                     .get(&span_key(trace_id, stage))
                     .map(|started_at| (now - *started_at).num_milliseconds().max(0) as u64);
                 (
-                    self.build_entry(
-                        "error",
-                        "execution",
-                        stage.clone(),
-                        "节点执行失败",
-                        Some(error.clone()),
-                        Some(trace_id.to_string()),
-                        Some(stage.clone()),
-                        duration_ms,
-                        None,
-                        now,
-                    ),
+                    {
+                        let mut e = self.build_entry(
+                            "error",
+                            "execution",
+                            stage.clone(),
+                            "节点执行失败",
+                            Some(error.clone()),
+                            Some(trace_id.to_string()),
+                            Some(stage.clone()),
+                            duration_ms,
+                            None,
+                            now,
+                        );
+                        e.event_kind = Some("failed".to_owned());
+                        e
+                    },
                     true,
                 )
             }
             ExecutionEvent::Output { stage, trace_id } => (
-                self.build_entry(
-                    "success",
-                    "execution",
-                    stage.clone(),
-                    "节点产生输出",
-                    None,
-                    Some(trace_id.to_string()),
-                    Some(stage.clone()),
-                    None,
-                    None,
-                    now,
-                ),
+                {
+                    let mut e = self.build_entry(
+                        "success",
+                        "execution",
+                        stage.clone(),
+                        "节点产生输出",
+                        None,
+                        Some(trace_id.to_string()),
+                        Some(stage.clone()),
+                        None,
+                        None,
+                        now,
+                    );
+                    e.event_kind = Some("output".to_owned());
+                    e
+                },
                 false,
             ),
             ExecutionEvent::Finished { trace_id } => (
-                self.build_entry(
-                    "success",
-                    "execution",
-                    "workflow".to_owned(),
-                    "执行链路完成",
-                    None,
-                    Some(trace_id.to_string()),
-                    None,
-                    None,
-                    None,
-                    now,
-                ),
+                {
+                    let mut e = self.build_entry(
+                        "success",
+                        "execution",
+                        "workflow".to_owned(),
+                        "执行链路完成",
+                        None,
+                        Some(trace_id.to_string()),
+                        None,
+                        None,
+                        None,
+                        now,
+                    );
+                    e.event_kind = Some("finished".to_owned());
+                    e
+                },
                 false,
             ),
         };
@@ -388,6 +414,7 @@ impl ObservabilityStore {
             environment_id: Some(self.session.environment_id.clone()),
             environment_name: Some(self.session.environment_name.clone()),
             data,
+            event_kind: None,
         }
     }
 }
@@ -492,14 +519,14 @@ fn build_trace_summaries(
             accumulator.node_ids.insert(node_id.clone());
             accumulator.last_node_id = Some(node_id.clone());
         }
-        if entry.message.contains("输出") {
+        if entry.event_kind.as_deref() == Some("output") {
             accumulator.output_count += 1;
         }
         if entry.level == "error" {
             accumulator.failure_count += 1;
             accumulator.status = "failed".to_owned();
         } else if accumulator.status.is_empty() {
-            accumulator.status = if entry.message.contains("完成") {
+            accumulator.status = if entry.event_kind.as_deref() == Some("completed") {
                 "completed".to_owned()
             } else {
                 "running".to_owned()
@@ -588,6 +615,7 @@ fn alert_to_entry(alert: &AlertDeliveryRecord) -> ObservabilityEntry {
             "requested_at": alert.requested_at,
             "request_body_preview": alert.request_body_preview,
         })),
+        event_kind: None,
     }
 }
 

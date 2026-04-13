@@ -72,14 +72,11 @@ export function SettingsPanel({
       <div className="settings-panel">
         <section className="settings-group">
           <div className="settings-group__header">
-            <h3>外观</h3>
+            <h3>偏好设置</h3>
           </div>
 
           <article className="settings-row">
-            <div className="settings-row__copy">
-              <strong>主题模式</strong>
-              <span>立即切换亮色或暗色外观。</span>
-            </div>
+            <strong className="settings-row__label">主题模式</strong>
             <div className="settings-segment" role="group" aria-label="主题模式">
               <button
                 type="button"
@@ -100,30 +97,26 @@ export function SettingsPanel({
             </div>
           </article>
 
-          <article className="settings-row settings-row--stacked">
-            <div className="settings-row__copy">
-              <strong>主题色</strong>
-              <span>统一控制导航高亮、主要按钮、看板入口与流程强调；辅助状态色会自动降饱和。</span>
-            </div>
-            <div className="settings-accent-grid" role="group" aria-label="主题色">
+          <article className="settings-row">
+            <strong className="settings-row__label">主题色</strong>
+            <div className="settings-accent-inline" role="group" aria-label="主题色">
               {accentOptions.map((option) => (
                 <button
                   key={option.key}
                   type="button"
-                  className={accentPreset === option.key ? 'settings-accent-swatch is-active' : 'settings-accent-swatch'}
+                  className={accentPreset === option.key ? 'settings-accent-chip is-active' : 'settings-accent-chip'}
                   aria-pressed={accentPreset === option.key}
+                  aria-label={option.label}
                   onClick={() => onAccentPresetChange(option.key)}
                 >
                   <span
-                    className="settings-accent-swatch__chip"
+                    className="settings-accent-chip__dot"
                     style={{ '--settings-accent-chip': option.hex } as CSSProperties}
                   />
-                  <strong>{option.label}</strong>
+                  <span>{option.label}</span>
                 </button>
               ))}
-              <label
-                className={accentPreset === 'custom' ? 'settings-accent-custom is-active' : 'settings-accent-custom'}
-              >
+              <label className="settings-accent-chip settings-accent-chip--custom">
                 <input
                   type="color"
                   value={customAccentHex}
@@ -131,22 +124,12 @@ export function SettingsPanel({
                   onChange={(event) => onCustomAccentChange(event.target.value)}
                 />
                 <span>自定义</span>
-                <code>{customAccentHex}</code>
               </label>
             </div>
           </article>
-        </section>
-
-        <section className="settings-group">
-          <div className="settings-group__header">
-            <h3>交互</h3>
-          </div>
 
           <article className="settings-row">
-            <div className="settings-row__copy">
-              <strong>动效强度</strong>
-              <span>减少过渡与动画，适合更稳的桌面操作节奏。</span>
-            </div>
+            <strong className="settings-row__label">动效强度</strong>
             <div className="settings-segment" role="group" aria-label="动效强度">
               <button
                 type="button"
@@ -168,10 +151,7 @@ export function SettingsPanel({
           </article>
 
           <article className="settings-row">
-            <div className="settings-row__copy">
-              <strong>启动页</strong>
-              <span>下次打开应用时默认进入的页面。</span>
-            </div>
+            <strong className="settings-row__label">启动页</strong>
             <div className="settings-segment" role="group" aria-label="启动页">
               <button
                 type="button"
@@ -195,98 +175,66 @@ export function SettingsPanel({
 
         <section className="settings-group">
           <div className="settings-group__header">
-            <h3>工程</h3>
+            <h3>工程路径</h3>
           </div>
 
-          <article className="settings-row settings-row--stacked">
-            <div className="settings-row__copy">
-              <strong>工作路径</strong>
-              <span>设置工程库的实际存储目录。留空时使用应用默认目录。</span>
-            </div>
+          <div className="settings-path-editor">
+            <div className="settings-path-input-row">
+              <input
+                className="settings-path-input"
+                type="text"
+                value={workspaceDraft}
+                placeholder={isTauriRuntime ? '例如：~/Documents/Nazh Workspace' : '仅桌面端可设置'}
+                disabled={!isTauriRuntime || projectWorkspaceIsSyncing}
+                onChange={(event) => setWorkspaceDraft(event.target.value)}
+              />
 
-            <div className="settings-path-editor">
-              <div className="settings-path-input-row">
-                <input
-                  className="settings-path-input"
-                  type="text"
-                  value={workspaceDraft}
-                  placeholder={isTauriRuntime ? '例如：~/Documents/Nazh Workspace' : '仅桌面端可设置'}
-                  disabled={!isTauriRuntime || projectWorkspaceIsSyncing}
-                  onChange={(event) => setWorkspaceDraft(event.target.value)}
-                />
-
-                <div className="settings-path-actions">
-                  <button
-                    type="button"
-                    className="settings-inline-button"
-                    disabled={!isTauriRuntime || !isWorkspaceDirty || projectWorkspaceIsSyncing}
-                    onClick={() => onProjectWorkspacePathChange(workspaceDraft.trim())}
-                  >
-                    应用
-                  </button>
-                  <button
-                    type="button"
-                    className="settings-inline-button settings-inline-button--ghost"
-                    disabled={
-                      !isTauriRuntime ||
-                      (projectWorkspacePath.trim().length === 0 && !projectWorkspaceIsSyncing)
-                    }
-                    onClick={() => {
-                      setWorkspaceDraft('');
-                      onProjectWorkspacePathChange('');
-                    }}
-                  >
-                    默认
-                  </button>
-                </div>
-              </div>
-
-              <div
-                className={
-                  projectWorkspaceError
-                    ? 'settings-path-status settings-path-status--error'
-                    : 'settings-path-status'
-                }
-              >
-                <article>
-                  <span>状态</span>
-                  <strong>{workspaceStatus}</strong>
-                </article>
-                <article>
-                  <span>目录</span>
-                  <code>{projectWorkspaceResolvedPath ?? '等待桌面端解析'}</code>
-                </article>
-                <article>
-                  <span>工程库文件</span>
-                  <code>{projectWorkspaceLibraryFilePath ?? '等待桌面端解析'}</code>
-                </article>
+              <div className="settings-path-actions">
+                <button
+                  type="button"
+                  className="settings-inline-button"
+                  disabled={!isTauriRuntime || !isWorkspaceDirty || projectWorkspaceIsSyncing}
+                  onClick={() => onProjectWorkspacePathChange(workspaceDraft.trim())}
+                >
+                  应用
+                </button>
+                <button
+                  type="button"
+                  className="settings-inline-button settings-inline-button--ghost"
+                  disabled={
+                    !isTauriRuntime ||
+                    (projectWorkspacePath.trim().length === 0 && !projectWorkspaceIsSyncing)
+                  }
+                  onClick={() => {
+                    setWorkspaceDraft('');
+                    onProjectWorkspacePathChange('');
+                  }}
+                >
+                  默认
+                </button>
               </div>
             </div>
-          </article>
-        </section>
 
-        <section className="settings-group settings-group--status">
-          <div className="settings-group__header">
-            <h3>当前会话</h3>
-          </div>
-
-          <div className="settings-summary">
-            <article>
-              <span>运行环境</span>
-              <strong>{runtimeModeLabel}</strong>
-            </article>
-            <article>
-              <span>工作流状态</span>
-              <strong>{workflowStatusLabel}</strong>
-            </article>
-            <article>
-              <span>窗口能力</span>
-              <strong>{isTauriRuntime ? '桌面增强已启用' : '当前为浏览器预览'}</strong>
-            </article>
-            <article>
-              <span>最近状态</span>
-              <strong>{statusMessage}</strong>
-            </article>
+            <div
+              className={
+                projectWorkspaceError
+                  ? 'settings-path-status settings-path-status--error'
+                  : 'settings-path-status'
+              }
+            >
+              <article>
+                <span>状态</span>
+                <strong>{workspaceStatus}</strong>
+              </article>
+              <article>
+                <span>目录</span>
+                <code>{projectWorkspaceResolvedPath ?? '等待桌面端解析'}</code>
+              </article>
+              <article>
+                <span>工程库文件</span>
+                <code>{projectWorkspaceLibraryFilePath ?? '等待桌面端解析'}</code>
+              </article>
+            </div>
           </div>
         </section>
       </div>

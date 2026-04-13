@@ -156,7 +156,7 @@ pub(crate) fn instantiate_node(
                 definition.id.clone(),
                 config,
                 description,
-            )))
+            )?))
         }
         "sqlWriter" | "sql/writer" => {
             let config: SqlWriterNodeConfig = parse_config(definition)?;

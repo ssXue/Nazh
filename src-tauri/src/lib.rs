@@ -36,30 +36,52 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// IPC 命令输入的最大允许字节数（10 MB）。
+const MAX_IPC_INPUT_BYTES: usize = 10 * 1024 * 1024;
+
 /// 已部署工作流的运行时包装，包含入口句柄和根触发任务。
 struct DesktopWorkflow {
     ingress: WorkflowIngress,
     trigger_tasks: Vec<DesktopTriggerTask>,
+    forwarding_tasks: Vec<tauri::async_runtime::JoinHandle<()>>,
+}
+
+enum TriggerJoinHandle {
+    Async(tauri::async_runtime::JoinHandle<()>),
+    Thread(std::thread::JoinHandle<()>),
 }
 
 struct DesktopTriggerTask {
     cancel: Arc<AtomicBool>,
-    join: tauri::async_runtime::JoinHandle<()>,
+    join: TriggerJoinHandle,
 }
 
 impl DesktopWorkflow {
-    /// 中止所有根触发任务，返回中止数量。
+    /// 中止所有根触发任务和事件转发任务，返回中止的触发任务数量。
     async fn abort_triggers(&mut self) -> usize {
+        for task in &self.forwarding_tasks {
+            task.abort();
+        }
+
         let tasks = self.trigger_tasks.drain(..).collect::<Vec<_>>();
         let aborted = tasks.len();
 
         for task in &tasks {
             task.cancel.store(true, Ordering::Relaxed);
-            task.join.abort();
+            if let TriggerJoinHandle::Async(handle) = &task.join {
+                handle.abort();
+            }
         }
 
         for task in tasks {
-            let _ = task.join.await;
+            match task.join {
+                TriggerJoinHandle::Async(handle) => {
+                    let _ = handle.await;
+                }
+                TriggerJoinHandle::Thread(handle) => {
+                    let _ = handle.join();
+                }
+            }
         }
 
         aborted
@@ -191,6 +213,9 @@ async fn deploy_workflow(
     connection_definitions: Option<Vec<ConnectionDefinition>>,
     observability_context: Option<ObservabilityContextInput>,
 ) -> Result<DeployResponse, String> {
+    if ast.len() > MAX_IPC_INPUT_BYTES {
+        return Err("AST 超过最大允许大小（10 MB）".to_owned());
+    }
     let mut graph = WorkflowGraph::from_json(&ast).map_err(stringify_error)?;
     normalize_sql_writer_paths(&app, &mut graph).map_err(stringify_error)?;
     if let Some(definitions) = connection_definitions {
@@ -244,15 +269,6 @@ async fn deploy_workflow(
     let root_nodes = ingress.root_nodes().to_vec();
     let (mut event_rx, mut result_rx) = streams.into_receivers();
 
-    let existing_workflow = {
-        let mut workflow_guard = state.workflow.lock().await;
-        workflow_guard.take()
-    };
-
-    if let Some(mut existing) = existing_workflow {
-        existing.abort_triggers().await;
-    }
-
     let mut trigger_tasks = spawn_timer_root_tasks(ingress.clone(), timer_roots);
     trigger_tasks.extend(spawn_serial_root_tasks(
         app.clone(),
@@ -264,37 +280,44 @@ async fn deploy_workflow(
 
     {
         let mut workflow_guard = state.workflow.lock().await;
+        if let Some(mut existing) = workflow_guard.take() {
+            existing.abort_triggers().await;
+        }
+
+        let mut forwarding_tasks = Vec::new();
+
+        let event_app = app.clone();
+        let event_store = observability_store.clone();
+        forwarding_tasks.push(tauri::async_runtime::spawn(async move {
+            while let Some(event) = event_rx.recv().await {
+                if let Some(store) = &event_store {
+                    let _ = store.record_execution_event(&event).await;
+                }
+                let _ = event_app.emit("workflow://node-status", event);
+            }
+        }));
+
+        let result_app = app.clone();
+        let result_store = observability_store.clone();
+        forwarding_tasks.push(tauri::async_runtime::spawn(async move {
+            while let Some(result) = result_rx.recv().await {
+                if let Some(store) = &result_store {
+                    let _ = store.record_result(&result).await;
+                }
+                let _ = result_app.emit("workflow://result", result);
+            }
+        }));
+
         *workflow_guard = Some(DesktopWorkflow {
             ingress,
             trigger_tasks,
+            forwarding_tasks,
         });
     }
     {
         let mut observability_guard = state.observability.lock().await;
         *observability_guard = observability_store.clone();
     }
-
-    let event_app = app.clone();
-    let event_store = observability_store.clone();
-    tauri::async_runtime::spawn(async move {
-        while let Some(event) = event_rx.recv().await {
-            if let Some(store) = &event_store {
-                let _ = store.record_execution_event(&event).await;
-            }
-            let _ = event_app.emit("workflow://node-status", event);
-        }
-    });
-
-    let result_app = app.clone();
-    let result_store = observability_store.clone();
-    tauri::async_runtime::spawn(async move {
-        while let Some(result) = result_rx.recv().await {
-            if let Some(store) = &result_store {
-                let _ = store.record_result(&result).await;
-            }
-            let _ = result_app.emit("workflow://result", result);
-        }
-    });
 
     let deploy_payload = DeployResponse {
         node_count,
@@ -676,6 +699,9 @@ async fn save_project_library_file(
     workspace_path: Option<String>,
     library_text: String,
 ) -> Result<ProjectWorkspaceStorageInfo, String> {
+    if library_text.len() > MAX_IPC_INPUT_BYTES {
+        return Err("工程库文件超过最大允许大小（10 MB）".to_owned());
+    }
     let storage = resolve_project_workspace_storage(&app, workspace_path.as_deref())?;
     let workspace_dir = PathBuf::from(&storage.workspace_path);
 
@@ -709,6 +735,31 @@ fn resolve_project_workspace_storage(
     })
 }
 
+/// 检查工作路径是否指向已知的系统敏感目录。
+fn is_safe_workspace_path(path: &std::path::Path) -> Result<(), String> {
+    let path_str = path.to_string_lossy();
+    let forbidden_prefixes = [
+        "/etc",
+        "/var",
+        "/sys",
+        "/proc",
+        "/dev",
+        "/System",
+        "/Library",
+        "/usr",
+        "/bin",
+        "/sbin",
+        "/private/etc",
+        "/private/var",
+    ];
+    for prefix in &forbidden_prefixes {
+        if path_str.starts_with(prefix) {
+            return Err(format!("工作路径不允许指向系统目录: {prefix}"));
+        }
+    }
+    Ok(())
+}
+
 fn resolve_project_workspace_dir(
     app: &AppHandle,
     workspace_path: Option<&str>,
@@ -727,6 +778,8 @@ fn resolve_project_workspace_dir(
     if !expanded.is_absolute() {
         return Err("工作路径需要填写绝对路径。".to_owned());
     }
+
+    is_safe_workspace_path(&expanded)?;
 
     Ok((expanded, false))
 }
@@ -920,7 +973,7 @@ fn spawn_timer_root_tasks(
                 }
             });
 
-            DesktopTriggerTask { cancel, join }
+            DesktopTriggerTask { cancel, join: TriggerJoinHandle::Async(join) }
         })
         .collect()
 }
@@ -941,7 +994,7 @@ fn spawn_serial_root_tasks(
             let observability = observability.clone();
             let cancel = Arc::new(AtomicBool::new(false));
             let task_cancel = Arc::clone(&cancel);
-            let join = tauri::async_runtime::spawn_blocking(move || {
+            let join = std::thread::spawn(move || {
                 run_serial_root_reader(
                     app,
                     ingress,
@@ -952,7 +1005,7 @@ fn spawn_serial_root_tasks(
                 );
             });
 
-            DesktopTriggerTask { cancel, join }
+            DesktopTriggerTask { cancel, join: TriggerJoinHandle::Thread(join) }
         })
         .collect()
 }

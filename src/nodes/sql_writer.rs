@@ -72,6 +72,12 @@ impl NodeTrait for SqlWriterNode {
 
     async fn execute(&self, ctx: WorkflowContext) -> Result<NodeExecution, EngineError> {
         let database_path = self.config.database_path.trim().to_owned();
+        if database_path.contains("..") {
+            return Err(EngineError::node_config(
+                self.id.clone(),
+                "database_path 不允许包含路径穿越（..）",
+            ));
+        }
         let table = sanitize_sqlite_identifier(&self.config.table).ok_or_else(|| {
             EngineError::node_config(
                 self.id.clone(),

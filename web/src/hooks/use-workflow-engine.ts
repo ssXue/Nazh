@@ -181,14 +181,20 @@ export function useWorkflowEngine(
       return;
     }
 
-    let cleanup = () => {};
+    let alive = true;
+    let cleanup: (() => void) | null = null;
 
     void enableAdaptiveWindowSizing().then((nextCleanup) => {
-      cleanup = nextCleanup;
+      if (alive) {
+        cleanup = nextCleanup;
+      } else {
+        nextCleanup();
+      }
     });
 
     return () => {
-      cleanup();
+      alive = false;
+      cleanup?.();
     };
   }, []);
 

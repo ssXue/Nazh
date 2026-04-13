@@ -781,7 +781,7 @@ async fn http_client_node_posts_payload_and_records_response() {
         }
     });
 
-    let node = HttpClientNode::new(
+    let node = match HttpClientNode::new(
         "dingtalk-alert",
         HttpClientNodeConfig {
             url: format!("http://{address}/robot"),
@@ -789,7 +789,10 @@ async fn http_client_node_posts_payload_and_records_response() {
             ..HttpClientNodeConfig::default()
         },
         "send alarm",
-    );
+    ) {
+        Ok(n) => n,
+        Err(e) => panic!("HttpClientNode 创建失败: {e}"),
+    };
 
     let result = node
         .execute(WorkflowContext::new(
@@ -918,7 +921,7 @@ async fn http_alarm_node_renders_dingtalk_markdown_body() {
         }
     });
 
-    let node = HttpClientNode::new(
+    let node = match HttpClientNode::new(
         "http_alarm",
         HttpClientNodeConfig {
             url: format!("http://{address}/robot"),
@@ -934,7 +937,10 @@ async fn http_alarm_node_renders_dingtalk_markdown_body() {
             ..HttpClientNodeConfig::default()
         },
         "send formatted dingtalk alarm",
-    );
+    ) {
+        Ok(n) => n,
+        Err(e) => panic!("HttpClientNode 创建失败: {e}"),
+    };
 
     let result = node
         .execute(WorkflowContext::new(json!({

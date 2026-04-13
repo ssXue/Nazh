@@ -52,6 +52,12 @@ pub(crate) fn insert_connection_lease(
 ///
 /// 自动从 [`SharedConnectionManager`] 借出连接（若 `connection_id` 非空），
 /// 执行闭包，最后无论成功与否都释放连接。新增需要连接的节点时使用此辅助。
+///
+/// # Panic 安全
+///
+/// 节点级 panic 由 [`crate::guard::guarded_execute`] 在 runner 层统一捕获。
+/// 若闭包 panic，连接的 `in_use` 状态不会被清除——这是已知的权衡，
+/// 后续可通过 scopeguard 或 Drop guard 模式加固。
 pub(crate) async fn with_connection<F>(
     connection_manager: &SharedConnectionManager,
     connection_id: Option<&str>,

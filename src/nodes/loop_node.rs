@@ -12,6 +12,9 @@ use super::helpers::{default_max_operations, into_payload_map, RhaiNodeBase};
 use super::{NodeDispatch, NodeExecution, NodeOutput, NodeTrait};
 use crate::{EngineError, WorkflowContext};
 
+/// Loop 节点单次执行的最大迭代数量，防止恶意脚本导致 OOM。
+const MAX_LOOP_ITERATIONS: usize = 10_000;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoopNodeConfig {
     pub script: String,
@@ -75,6 +78,12 @@ fn collect_loop_items(node_id: &str, result: Dynamic) -> Result<Vec<Option<Value
                 "Loop 节点脚本必须返回非负整数或数组",
             )
         })?;
+        if n > MAX_LOOP_ITERATIONS {
+            return Err(EngineError::payload_conversion(
+                node_id.to_owned(),
+                format!("Loop 迭代次数 {n} 超过上限 {MAX_LOOP_ITERATIONS}"),
+            ));
+        }
         return Ok((0..n).map(|_| None).collect());
     }
 
@@ -82,10 +91,22 @@ fn collect_loop_items(node_id: &str, result: Dynamic) -> Result<Vec<Option<Value
         let n = usize::try_from(count).map_err(|_| {
             EngineError::payload_conversion(node_id.to_owned(), "Loop 迭代次数超出平台 usize 容量")
         })?;
+        if n > MAX_LOOP_ITERATIONS {
+            return Err(EngineError::payload_conversion(
+                node_id.to_owned(),
+                format!("Loop 迭代次数 {n} 超过上限 {MAX_LOOP_ITERATIONS}"),
+            ));
+        }
         return Ok((0..n).map(|_| None).collect());
     }
 
     if let Some(items) = result.try_cast::<Array>() {
+        if items.len() > MAX_LOOP_ITERATIONS {
+            return Err(EngineError::payload_conversion(
+                node_id.to_owned(),
+                format!("Loop 数组长度 {} 超过上限 {MAX_LOOP_ITERATIONS}", items.len()),
+            ));
+        }
         return items
             .into_iter()
             .map(|item| {

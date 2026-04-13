@@ -201,21 +201,32 @@ pub struct HttpClientNode {
 }
 
 impl HttpClientNode {
+    /// 创建新的 HTTP 客户端节点。
+    ///
+    /// # Errors
+    ///
+    /// 当 `reqwest::Client` 构建失败时返回 `EngineError`（例如 TLS 后端初始化异常）。
     pub fn new(
         id: impl Into<String>,
         config: HttpClientNodeConfig,
         ai_description: impl Into<String>,
-    ) -> Self {
+    ) -> Result<Self, EngineError> {
+        let id = id.into();
         let client = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::limited(10))
             .build()
-            .unwrap_or_default();
-        Self {
-            id: id.into(),
+            .map_err(|error| {
+                EngineError::node_config(
+                    id.clone(),
+                    format!("HTTP 客户端初始化失败: {error}"),
+                )
+            })?;
+        Ok(Self {
+            id,
             ai_description: ai_description.into(),
             config,
             client,
-        }
+        })
     }
 }
 

@@ -190,6 +190,7 @@ function App() {
     scope: null,
     status: 'idle',
   });
+  const migrationDoneRef = useRef(false);
 
   const boardItems = useMemo<BoardItem[]>(
     () =>
@@ -251,6 +252,9 @@ function App() {
     if (!connectionLibrary.storage.isReady || !projectLibrary.storage.isReady) {
       return;
     }
+
+    if (migrationDoneRef.current) return;
+    migrationDoneRef.current = true;
 
     const migratedConnections = collectLegacyProjectConnections(
       projectLibrary.projects,
@@ -1000,13 +1004,16 @@ function App() {
     setRestoreCountdown(10);
   }, [deploymentRestoreScope]);
 
+  const handleConfirmRestoreRef = useRef(handleConfirmRestore);
+  handleConfirmRestoreRef.current = handleConfirmRestore;
+
   useEffect(() => {
     if (!pendingRestoreSession) {
       return;
     }
 
     if (restoreCountdown <= 0) {
-      void handleConfirmRestore(pendingRestoreSession);
+      void handleConfirmRestoreRef.current(pendingRestoreSession);
       return;
     }
 
