@@ -14,7 +14,10 @@ import type {
   UndeployResponse,
   WorkflowResult,
 } from '../types';
-import type { PersistedDeploymentSession } from './deployment-session';
+import type {
+  PersistedDeploymentSession,
+  PersistedDeploymentSessionState,
+} from './deployment-session';
 
 export interface WorkflowRuntimePolicyInput {
   manualQueueCapacity?: number;
@@ -444,6 +447,14 @@ export async function loadDeploymentSessionFile(
   });
 }
 
+export async function loadDeploymentSessionStateFile(
+  workspacePath: string,
+): Promise<PersistedDeploymentSessionState> {
+  return invoke<PersistedDeploymentSessionState>('load_deployment_session_state_file', {
+    workspacePath: workspacePath.trim() || null,
+  });
+}
+
 export async function listDeploymentSessionsFile(
   workspacePath: string,
 ): Promise<PersistedDeploymentSession[]> {
@@ -455,10 +466,22 @@ export async function listDeploymentSessionsFile(
 export async function saveDeploymentSessionFile(
   workspacePath: string,
   session: PersistedDeploymentSession,
+  activeProjectId?: string | null,
 ): Promise<void> {
   return invoke<void>('save_deployment_session_file', {
     workspacePath: workspacePath.trim() || null,
     session,
+    activeProjectId: activeProjectId === undefined ? null : activeProjectId,
+  });
+}
+
+export async function setDeploymentSessionActiveProjectFile(
+  workspacePath: string,
+  projectId: string | null,
+): Promise<void> {
+  return invoke<void>('set_deployment_session_active_project_file', {
+    workspacePath: workspacePath.trim() || null,
+    projectId: projectId?.trim() ? projectId.trim() : null,
   });
 }
 

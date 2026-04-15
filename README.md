@@ -280,6 +280,115 @@ npm --prefix web run build
 - AI Copilot：在真实协议、项目持久化、观测和安全基础稳定后，再把 `ai_description` 串到脚本生成、节点建议、故障定位和流程生成链路。
 - 模板与生态：沉淀行业模板库、节点插件机制和标准化集成接口，降低不同产线 / 场景的复用成本。
 
+## 参考改进
+
+参考 [VoltAgent](https://github.com/VoltAgent/voltagent) 等工业级 AI Agent 框架，以下为Nazh的演进建议：
+
+### 架构模块化
+
+当前单 crate 结构建议拆分为 monorepo 组织：
+
+```
+nazh-engine-core      # WorkflowContext, NodeTrait, DAG 解析
+nazh-protocol-modbus  # Modbus TCP/RTU 驱动
+nazh-protocol-mqtt    # MQTT Pub/Sub 驱动
+nazh-protocol-serial  # 串口/RS-485 驱动
+nazh-observability    # OpenTelemetry + 结构化日志
+```
+
+### 工作流引擎增强
+
+| 功能 | 当前状态 | 建议 |
+|------|----------|------|
+| Human-in-the-Loop | ❌ 无 | 增加 `SuspendNode`：暂停 DAG 等待人工决策 |
+| 时间旅行 | ❌ 无 | 支持从历史步骤重放执行 |
+| 检查点 | ⚠️ 仅重启恢复 | 自动持久化执行状态，支持故障恢复 |
+| 并行执行 | ⚠️ `andAll`/`andRace` | 完善 `andBranch` 条件并行 |
+
+### 观测能力升级
+
+当前基于 `events.jsonl` 的日志系统建议升级为 OpenTelemetry：
+
+```rust
+// 节点执行作为 span
+span!("modbus_read.execute")
+    .record("node_id", self.id())
+    .record("connection_id", connection_id)
+```
+
+支持 Langfuse / Vercel AI Exporter 等云端观测后端。
+
+### 记忆系统
+
+工业场景需要设备状态记忆：
+
+```rust
+struct DeviceMemory {
+    device_id: String,
+    last_values: HashMap<u16, Value>,  // 寄存器 -> 值
+    last_read_at: DateTime<Utc>,
+}
+```
+
+支持历史数据查询，用于 IF/Switch 条件判断和多时间窗口聚合。
+
+### 节点插件化
+
+参考 VoltAgent 的 `createTool` 模式，将节点抽象为 Plugin：
+
+```rust
+#[async_trait]
+pub trait NodePlugin: Send + Sync {
+    fn manifest(&self) -> NodeManifest;
+    async fn execute(&self, ctx: WorkflowContext) -> Result<NodeExecution, EngineError>;
+}
+```
+
+支持第三方扩展和 MCP Tool 暴露。
+
+### 评测体系
+
+参考 `@voltagent/evals` 包，建立协议驱动集成测试：
+
+```rust
+modbus_fixture! {
+    server: "127.0.0.1:502",
+    cases: [
+        (read_holding(0x0000), [42]),
+        (read_holding(0x0001), [1337]),
+    ]
+}
+```
+
+### 工程化
+
+| 方面 | 当前 | 建议 |
+|------|------|------|
+| Changelog | 手动 | 引入 `changesets` 自动发版 |
+| 贡献指南 | ❌ | 增加 `CONTRIBUTING.md` |
+| Lint | clippy + fmt | 统一 Biome (前后端) |
+| 版本发布 | 手动 tag | 自动化 (changesets) |
+
+### 优先级建议
+
+**P0 短期**（试点可用）：
+1. 真实 Modbus TCP 驱动
+2. MQTT Pub/Sub 节点
+3. OpenTelemetry 埋点
+4. Schema Migration
+
+**P1 中期**（生产准备）：
+1. 节点插件化
+2. Suspend/Resume（人工决策节点）
+3. 设备状态记忆
+4. 协议集成测试框架
+
+**P2 长期**（平台化）：
+1. MCP Server（暴露节点为 MCP Tools）
+2. Agent Copilot（基于 `ai_description` 的 LLM 脚本生成）
+3. RAG 知识库（节点模板、行业方案）
+4. 多人协作（变更审批流）
+
 ## 相关文档
 
 - `docs/README.md`：项目文档总览

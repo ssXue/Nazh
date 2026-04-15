@@ -102,6 +102,7 @@ export interface RuntimeManagerPanelProps {
   themeMode: ThemeMode;
   activeBoardId: string | null;
   onOpenBoard: (boardId: string) => void;
+  onPersistActiveProject?: (projectId: string | null) => Promise<void> | void;
   onBeforeWorkflowStop?: () => void;
   onAfterWorkflowStop?: () => void;
   onRemovePersistedDeployment?: (projectId: string) => Promise<void>;

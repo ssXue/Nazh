@@ -113,6 +113,7 @@ export function RuntimeManagerPanel({
   themeMode,
   activeBoardId,
   onOpenBoard,
+  onPersistActiveProject,
   onBeforeWorkflowStop,
   onAfterWorkflowStop,
   onRemovePersistedDeployment,
@@ -287,6 +288,7 @@ export function RuntimeManagerPanel({
     setPendingAction(`activate:${workflowId}`);
     try {
       const summary = await setActiveRuntimeWorkflow(workflowId);
+      await onPersistActiveProject?.(summary.projectId?.trim() || summary.workflowId.trim() || null);
       setWorkflows((current) =>
         current.map((workflow) => ({
           ...workflow,
@@ -314,6 +316,10 @@ export function RuntimeManagerPanel({
       }
 
       const nextWorkflows = await listRuntimeWorkflows();
+      const nextActiveWorkflow = nextWorkflows.find((item) => item.active) ?? null;
+      await onPersistActiveProject?.(
+        nextActiveWorkflow?.projectId?.trim() || nextActiveWorkflow?.workflowId.trim() || null,
+      );
       setWorkflows(nextWorkflows);
       setSelectedWorkflowId((current) => {
         if (current && nextWorkflows.some((workflow) => workflow.workflowId === current)) {
@@ -343,7 +349,8 @@ export function RuntimeManagerPanel({
 
     setPendingAction(`activate:${workflow.workflowId}`);
     try {
-      await setActiveRuntimeWorkflow(workflow.workflowId);
+      const summary = await setActiveRuntimeWorkflow(workflow.workflowId);
+      await onPersistActiveProject?.(summary.projectId?.trim() || summary.workflowId.trim() || null);
       setWorkflows((current) =>
         current.map((item) => ({
           ...item,
@@ -382,66 +389,47 @@ export function RuntimeManagerPanel({
   return (
     <div className="runtime-manager">
       <div className="runtime-manager__header window-safe-header" data-window-drag-region>
-        <div className="runtime-manager__heading">
-          <h2>运行时管理</h2>
-          <span>
-            多工作流在线、队列压力、切换主控与死信留存都在这里统一查看。
+        <h2>运行时管理</h2>
+
+        <div className="runtime-manager__header-metrics">
+          <span className="runtime-manager__header-metric">
+            <strong>{workflows.length}</strong> 在线
+          </span>
+          <span className="runtime-manager__header-metric">
+            <strong>{totalQueuedCount}</strong> 积压
+          </span>
+          <span className="runtime-manager__header-metric">
+            <strong>{totalRetryCount}</strong> 重试
+          </span>
+          <span className="runtime-manager__header-metric">
+            <strong>{totalDeadLetterCount}</strong> 死信
           </span>
         </div>
 
-        <div className="runtime-manager__header-actions" data-no-window-drag>
-          <button
-            type="button"
-            className="runtime-manager__icon-button"
-            onClick={() => void handleRefresh()}
-            disabled={isLoading || isDeadLettersLoading}
-            aria-label="刷新运行时管理"
-            title="刷新"
-          >
-            <HistoryIcon />
-          </button>
-        </div>
+        <button
+          type="button"
+          className="runtime-manager__icon-button"
+          onClick={() => void handleRefresh()}
+          disabled={isLoading || isDeadLettersLoading}
+          aria-label="刷新运行时管理"
+          title="刷新"
+        >
+          <HistoryIcon />
+        </button>
       </div>
-
-      <section className="runtime-manager__summary" aria-label="运行时概览">
-        <div className="runtime-manager__metric">
-          <span className="runtime-manager__metric-label">在线工作流</span>
-          <strong className="runtime-manager__metric-value">{workflows.length}</strong>
-          <span className="runtime-manager__metric-meta">
-            {selectedWorkflow?.projectName ?? '等待选择工作流'}
-          </span>
-        </div>
-        <div className="runtime-manager__metric">
-          <span className="runtime-manager__metric-label">队列积压</span>
-          <strong className="runtime-manager__metric-value">{totalQueuedCount}</strong>
-          <span className="runtime-manager__metric-meta">手动与触发通道合计</span>
-        </div>
-        <div className="runtime-manager__metric">
-          <span className="runtime-manager__metric-label">已重试</span>
-          <strong className="runtime-manager__metric-value">{totalRetryCount}</strong>
-          <span className="runtime-manager__metric-meta">运行期自动退避重投</span>
-        </div>
-        <div className="runtime-manager__metric">
-          <span className="runtime-manager__metric-label">死信留存</span>
-          <strong className="runtime-manager__metric-value">{totalDeadLetterCount}</strong>
-          <span className="runtime-manager__metric-meta">
-            {deadLetters.length > 0 ? `当前视图 ${deadLetters.length} 条` : '暂无死信'}
-          </span>
-        </div>
-      </section>
 
       <div className="runtime-manager__workspace">
         <aside className="runtime-manager__lane runtime-manager__lane--list" aria-label="运行中的工作流">
           <div className="runtime-manager__section-head">
             <strong>在线编队</strong>
-            <span>{isLoading ? '同步中' : runtimeError ? '读取异常' : '轮询更新'}</span>
+            <span>{isLoading ? '同步中' : runtimeError ? '读取异常' : `${workflows.length} 个`}</span>
           </div>
 
           <div className="runtime-manager__workflow-list">
             {workflows.length === 0 ? (
               <div className="runtime-manager__empty">
                 <strong>当前没有在线工作流</strong>
-                <span>部署任意工程后，这里会出现独立的运行实例与队列状态。</span>
+                <span>部署工程后，运行实例会出现在这里。</span>
               </div>
             ) : (
               workflows.map((workflow) => {
@@ -476,12 +464,8 @@ export function RuntimeManagerPanel({
                     <div className="runtime-manager__workflow-row-meta">
                       <span>{workflow.environmentName ?? '默认环境'}</span>
                       <span>{formatRelativeStamp(workflow.deployedAt)}</span>
-                    </div>
-
-                    <div className="runtime-manager__workflow-row-strip">
                       <span>{workflow.nodeCount} 节点</span>
-                      <span>{workflow.edgeCount} 连线</span>
-                      <span>{queuePressure} 积压</span>
+                      {queuePressure > 0 ? <span>{queuePressure} 积压</span> : null}
                       {isOwnedByBoard ? <span>当前工程</span> : null}
                     </div>
                   </button>
@@ -491,27 +475,15 @@ export function RuntimeManagerPanel({
           </div>
         </aside>
 
-        <section className="runtime-manager__lane runtime-manager__lane--detail" aria-label="工作流详情">
-          <div className="runtime-manager__section-head">
-            <strong>生命周期</strong>
-            <span>
-              {selectedWorkflow ? `workflow_id=${selectedWorkflow.workflowId}` : '等待选择'}
-            </span>
-          </div>
-
-          {selectedWorkflow ? (
-            <div className="runtime-manager__detail">
-              <div className="runtime-manager__detail-hero">
-                <div className="runtime-manager__detail-copy">
-                  <h3>{selectedWorkflow.projectName ?? selectedWorkflow.workflowId}</h3>
-                  <div className="runtime-manager__detail-meta">
-                    <span>{selectedWorkflow.environmentName ?? '默认环境'}</span>
-                    <span>{selectedWorkflow.rootNodes.length} 个根节点</span>
-                    <span>{formatRelativeStamp(selectedWorkflow.deployedAt)}</span>
-                  </div>
-                </div>
-
-                <div className="runtime-manager__detail-actions" data-no-window-drag>
+        <div className="runtime-manager__right">
+          <section className="runtime-manager__lane runtime-manager__lane--detail" aria-label="工作流详情">
+            <div className="runtime-manager__section-head">
+              <strong>生命周期</strong>
+              <span>
+                {selectedWorkflow ? selectedWorkflow.workflowId.slice(0, 8) : '等待选择'}
+              </span>
+              {selectedWorkflow && (
+                <div className="runtime-manager__section-actions" data-no-window-drag>
                   {!selectedWorkflow.active ? (
                     <button
                       type="button"
@@ -545,244 +517,227 @@ export function RuntimeManagerPanel({
                     <span>停止</span>
                   </button>
                 </div>
-              </div>
-
-              <div className="runtime-manager__queue-grid">
-                <article className="runtime-manager__queue-block">
-                  <div className="runtime-manager__queue-head">
-                    <strong>手动通道</strong>
-                    <span>{selectedWorkflow.policy.manualBackpressureStrategy}</span>
-                  </div>
-                  <div className="runtime-manager__queue-stats">
-                    <span>深度 {selectedWorkflow.manualLane.depth}</span>
-                    <span>接收 {selectedWorkflow.manualLane.accepted}</span>
-                    <span>重试 {selectedWorkflow.manualLane.retried}</span>
-                    <span>死信 {selectedWorkflow.manualLane.deadLettered}</span>
-                  </div>
-                  <div className="runtime-manager__queue-rail">
-                    <span
-                      className="runtime-manager__queue-fill"
-                      style={{
-                        width: `${Math.min(
-                          100,
-                          (selectedWorkflow.manualLane.depth /
-                            Math.max(1, selectedWorkflow.policy.manualQueueCapacity)) *
-                            100,
-                        )}%`,
-                      }}
-                    />
-                  </div>
-                </article>
-
-                <article className="runtime-manager__queue-block">
-                  <div className="runtime-manager__queue-head">
-                    <strong>触发通道</strong>
-                    <span>{selectedWorkflow.policy.triggerBackpressureStrategy}</span>
-                  </div>
-                  <div className="runtime-manager__queue-stats">
-                    <span>深度 {selectedWorkflow.triggerLane.depth}</span>
-                    <span>接收 {selectedWorkflow.triggerLane.accepted}</span>
-                    <span>重试 {selectedWorkflow.triggerLane.retried}</span>
-                    <span>死信 {selectedWorkflow.triggerLane.deadLettered}</span>
-                  </div>
-                  <div className="runtime-manager__queue-rail">
-                    <span
-                      className="runtime-manager__queue-fill is-trigger"
-                      style={{
-                        width: `${Math.min(
-                          100,
-                          (selectedWorkflow.triggerLane.depth /
-                            Math.max(1, selectedWorkflow.policy.triggerQueueCapacity)) *
-                            100,
-                        )}%`,
-                      }}
-                    />
-                  </div>
-                </article>
-              </div>
-
-              <div className="runtime-manager__detail-grid">
-                <section className="runtime-manager__detail-block">
-                  <div className="runtime-manager__detail-block-title">调度策略</div>
-                  <div className="runtime-manager__kv-list">
-                    <div className="runtime-manager__kv-row">
-                      <span>手动容量</span>
-                      <strong>{selectedWorkflow.policy.manualQueueCapacity}</strong>
-                    </div>
-                    <div className="runtime-manager__kv-row">
-                      <span>触发容量</span>
-                      <strong>{selectedWorkflow.policy.triggerQueueCapacity}</strong>
-                    </div>
-                    <div className="runtime-manager__kv-row">
-                      <span>最大重试</span>
-                      <strong>{selectedWorkflow.policy.maxRetryAttempts}</strong>
-                    </div>
-                    <div className="runtime-manager__kv-row">
-                      <span>初始退避</span>
-                      <strong>{formatDuration(selectedWorkflow.policy.initialRetryBackoffMs)}</strong>
-                    </div>
-                    <div className="runtime-manager__kv-row">
-                      <span>最大退避</span>
-                      <strong>{formatDuration(selectedWorkflow.policy.maxRetryBackoffMs)}</strong>
-                    </div>
-                  </div>
-                </section>
-
-                <section className="runtime-manager__detail-block">
-                  <div className="runtime-manager__detail-block-title">根节点与环境</div>
-                  <div className="runtime-manager__chip-row">
-                    {selectedWorkflow.rootNodes.map((nodeId) => (
-                      <span key={nodeId} className="runtime-manager__chip">
-                        {nodeId}
-                      </span>
-                    ))}
-                  </div>
-                  <div className="runtime-manager__identity-list">
-                    <span>{selectedWorkflow.workflowId}</span>
-                    {selectedWorkflow.environmentId ? <span>{selectedWorkflow.environmentId}</span> : null}
-                    {selectedWorkflow.projectId ? <span>{selectedWorkflow.projectId}</span> : null}
-                  </div>
-                </section>
-              </div>
-            </div>
-          ) : (
-            <div className="runtime-manager__empty runtime-manager__empty--detail">
-              <strong>还没有选中的运行实例</strong>
-              <span>左侧会列出当前在线的工作流，选择后可查看队列与死信细节。</span>
-            </div>
-          )}
-        </section>
-
-        <aside className="runtime-manager__lane runtime-manager__lane--dead" aria-label="死信留存">
-          <div className="runtime-manager__section-head">
-            <strong>Dead Letter</strong>
-            <div className="runtime-manager__section-actions" data-no-window-drag>
-              <button
-                type="button"
-                className={
-                  deadLetterScope === 'selected'
-                    ? 'runtime-manager__scope-toggle is-active'
-                    : 'runtime-manager__scope-toggle'
-                }
-                onClick={() => setDeadLetterScope('selected')}
-              >
-                当前
-              </button>
-              <button
-                type="button"
-                className={
-                  deadLetterScope === 'all'
-                    ? 'runtime-manager__scope-toggle is-active'
-                    : 'runtime-manager__scope-toggle'
-                }
-                onClick={() => setDeadLetterScope('all')}
-              >
-                全部
-              </button>
-            </div>
-          </div>
-
-          <div className="runtime-manager__dead-layout">
-            <div className="runtime-manager__dead-list">
-              {deadLetters.length === 0 ? (
-                <div className="runtime-manager__empty runtime-manager__empty--dead">
-                  <strong>{isDeadLettersLoading ? '正在读取死信记录' : '当前没有死信'}</strong>
-                  <span>
-                    {deadLetterError
-                      ? deadLetterError
-                      : '一旦运行期重试耗尽或背压拒绝，消息会在这里留下可追踪记录。'}
-                  </span>
-                </div>
-              ) : (
-                deadLetters.map((entry) => (
-                  <button
-                    key={entry.id}
-                    type="button"
-                    className={
-                      entry.id === selectedDeadLetterId
-                        ? 'runtime-manager__dead-row is-selected'
-                        : 'runtime-manager__dead-row'
-                    }
-                    onClick={() => setSelectedDeadLetterId(entry.id)}
-                  >
-                    <div className="runtime-manager__dead-row-top">
-                      <strong>{entry.projectName ?? entry.workflowId}</strong>
-                      <span>{formatLogTimestamp(Date.parse(entry.timestamp) || Date.now())}</span>
-                    </div>
-                    <div className="runtime-manager__dead-row-meta">
-                      <span>{entry.lane}</span>
-                      <span>{entry.attempts} 次</span>
-                      <span>{entry.targetNodeId ?? 'workflow-root'}</span>
-                    </div>
-                    <div className="runtime-manager__dead-row-reason">{entry.reason}</div>
-                    <div className="runtime-manager__dead-row-payload">
-                      {formatPayloadPreview(entry.payload)}
-                    </div>
-                  </button>
-                ))
               )}
             </div>
 
-            <div className="runtime-manager__dead-detail">
-              {selectedDeadLetter ? (
-                <>
-                  <div className="runtime-manager__dead-detail-head">
-                    <div>
-                      <strong>{selectedDeadLetter.projectName ?? selectedDeadLetter.workflowId}</strong>
-                      <span>{selectedDeadLetter.reason}</span>
+            {selectedWorkflow ? (
+              <div className="runtime-manager__detail">
+                <div className="runtime-manager__queue-grid">
+                  <article className="runtime-manager__queue-block">
+                    <div className="runtime-manager__queue-head">
+                      <strong>手动通道</strong>
+                      <span>{selectedWorkflow.policy.manualBackpressureStrategy}</span>
                     </div>
+                    <div className="runtime-manager__queue-stats">
+                      <span>深度 {selectedWorkflow.manualLane.depth}</span>
+                      <span>接收 {selectedWorkflow.manualLane.accepted}</span>
+                      <span>重试 {selectedWorkflow.manualLane.retried}</span>
+                      <span>死信 {selectedWorkflow.manualLane.deadLettered}</span>
+                    </div>
+                    <div className="runtime-manager__queue-rail">
+                      <span
+                        className="runtime-manager__queue-fill"
+                        style={{
+                          width: `${Math.min(
+                            100,
+                            (selectedWorkflow.manualLane.depth /
+                              Math.max(1, selectedWorkflow.policy.manualQueueCapacity)) *
+                              100,
+                          )}%`,
+                        }}
+                      />
+                    </div>
+                  </article>
 
+                  <article className="runtime-manager__queue-block">
+                    <div className="runtime-manager__queue-head">
+                      <strong>触发通道</strong>
+                      <span>{selectedWorkflow.policy.triggerBackpressureStrategy}</span>
+                    </div>
+                    <div className="runtime-manager__queue-stats">
+                      <span>深度 {selectedWorkflow.triggerLane.depth}</span>
+                      <span>接收 {selectedWorkflow.triggerLane.accepted}</span>
+                      <span>重试 {selectedWorkflow.triggerLane.retried}</span>
+                      <span>死信 {selectedWorkflow.triggerLane.deadLettered}</span>
+                    </div>
+                    <div className="runtime-manager__queue-rail">
+                      <span
+                        className="runtime-manager__queue-fill is-trigger"
+                        style={{
+                          width: `${Math.min(
+                            100,
+                            (selectedWorkflow.triggerLane.depth /
+                              Math.max(1, selectedWorkflow.policy.triggerQueueCapacity)) *
+                              100,
+                          )}%`,
+                        }}
+                      />
+                    </div>
+                  </article>
+                </div>
+
+                <div className="runtime-manager__detail-grid">
+                  <section className="runtime-manager__detail-block">
+                    <div className="runtime-manager__detail-block-title">调度策略</div>
+                    <div className="runtime-manager__kv-list">
+                      <div className="runtime-manager__kv-row">
+                        <span>手动容量</span>
+                        <strong>{selectedWorkflow.policy.manualQueueCapacity}</strong>
+                      </div>
+                      <div className="runtime-manager__kv-row">
+                        <span>触发容量</span>
+                        <strong>{selectedWorkflow.policy.triggerQueueCapacity}</strong>
+                      </div>
+                      <div className="runtime-manager__kv-row">
+                        <span>最大重试</span>
+                        <strong>{selectedWorkflow.policy.maxRetryAttempts}</strong>
+                      </div>
+                      <div className="runtime-manager__kv-row">
+                        <span>初始退避</span>
+                        <strong>{formatDuration(selectedWorkflow.policy.initialRetryBackoffMs)}</strong>
+                      </div>
+                      <div className="runtime-manager__kv-row">
+                        <span>最大退避</span>
+                        <strong>{formatDuration(selectedWorkflow.policy.maxRetryBackoffMs)}</strong>
+                      </div>
+                    </div>
+                  </section>
+
+                  <section className="runtime-manager__detail-block">
+                    <div className="runtime-manager__detail-block-title">根节点</div>
+                    <div className="runtime-manager__chip-row">
+                      {selectedWorkflow.rootNodes.map((nodeId) => (
+                        <span key={nodeId} className="runtime-manager__chip">
+                          {nodeId}
+                        </span>
+                      ))}
+                    </div>
+                  </section>
+                </div>
+              </div>
+            ) : (
+              <div className="runtime-manager__empty runtime-manager__empty--detail">
+                <strong>选择左侧工作流</strong>
+                <span>查看队列状态与调度策略。</span>
+              </div>
+            )}
+          </section>
+
+          <aside className="runtime-manager__lane runtime-manager__lane--dead" aria-label="死信留存">
+            <div className="runtime-manager__section-head">
+              <strong>Dead Letter</strong>
+              <div className="runtime-manager__section-actions" data-no-window-drag>
+                <button
+                  type="button"
+                  className={
+                    deadLetterScope === 'selected'
+                      ? 'runtime-manager__scope-toggle is-active'
+                      : 'runtime-manager__scope-toggle'
+                  }
+                  onClick={() => setDeadLetterScope('selected')}
+                >
+                  当前
+                </button>
+                <button
+                  type="button"
+                  className={
+                    deadLetterScope === 'all'
+                      ? 'runtime-manager__scope-toggle is-active'
+                      : 'runtime-manager__scope-toggle'
+                  }
+                  onClick={() => setDeadLetterScope('all')}
+                >
+                  全部
+                </button>
+              </div>
+            </div>
+
+            <div className="runtime-manager__dead-layout">
+              <div className="runtime-manager__dead-list">
+                {deadLetters.length === 0 ? (
+                  <div className="runtime-manager__empty runtime-manager__empty--dead">
+                    <strong>{isDeadLettersLoading ? '读取中' : '暂无死信'}</strong>
+                    <span>{deadLetterError ? deadLetterError : '重试耗尽的消息会出现在这里。'}</span>
+                  </div>
+                ) : (
+                  deadLetters.map((entry) => (
                     <button
+                      key={entry.id}
                       type="button"
                       className={
-                        hasCopiedPayload
-                          ? 'runtime-manager__icon-button is-active'
-                          : 'runtime-manager__icon-button'
+                        entry.id === selectedDeadLetterId
+                          ? 'runtime-manager__dead-row is-selected'
+                          : 'runtime-manager__dead-row'
                       }
-                      onClick={() => void handleCopyDeadLetterPayload()}
-                      aria-label="复制死信载荷"
-                      title="复制 JSON"
+                      onClick={() => setSelectedDeadLetterId(entry.id)}
                     >
-                      <CopyIcon />
+                      <div className="runtime-manager__dead-row-top">
+                        <strong>{entry.projectName ?? entry.workflowId}</strong>
+                        <span>{formatLogTimestamp(Date.parse(entry.timestamp) || Date.now())}</span>
+                      </div>
+                      <div className="runtime-manager__dead-row-reason">{entry.reason}</div>
                     </button>
-                  </div>
+                  ))
+                )}
+              </div>
 
-                  <div className="runtime-manager__kv-list">
-                    <div className="runtime-manager__kv-row">
-                      <span>Trace</span>
-                      <strong>{selectedDeadLetter.traceId}</strong>
-                    </div>
-                    <div className="runtime-manager__kv-row">
-                      <span>来源</span>
-                      <strong>{selectedDeadLetter.source}</strong>
-                    </div>
-                    <div className="runtime-manager__kv-row">
-                      <span>目标节点</span>
-                      <strong>{selectedDeadLetter.targetNodeId ?? 'workflow-root'}</strong>
-                    </div>
-                    <div className="runtime-manager__kv-row">
-                      <span>重试次数</span>
-                      <strong>{selectedDeadLetter.attempts}</strong>
-                    </div>
-                  </div>
+              <div className="runtime-manager__dead-detail">
+                {selectedDeadLetter ? (
+                  <>
+                    <div className="runtime-manager__dead-detail-head">
+                      <div>
+                        <strong>{selectedDeadLetter.projectName ?? selectedDeadLetter.workflowId}</strong>
+                        <span>{selectedDeadLetter.reason}</span>
+                      </div>
 
-                  <div className="runtime-manager__json-shell">
-                    <JsonView
-                      data={normalizeJsonTree(selectedDeadLetter.payload)}
-                      shouldExpandNode={collapseAllNested}
-                      style={jsonTheme}
-                    />
+                      <button
+                        type="button"
+                        className={
+                          hasCopiedPayload
+                            ? 'runtime-manager__icon-button is-active'
+                            : 'runtime-manager__icon-button'
+                        }
+                        onClick={() => void handleCopyDeadLetterPayload()}
+                        aria-label="复制死信载荷"
+                        title="复制 JSON"
+                      >
+                        <CopyIcon />
+                      </button>
+                    </div>
+
+                    <div className="runtime-manager__kv-list">
+                      <div className="runtime-manager__kv-row">
+                        <span>Trace</span>
+                        <strong>{selectedDeadLetter.traceId}</strong>
+                      </div>
+                      <div className="runtime-manager__kv-row">
+                        <span>目标节点</span>
+                        <strong>{selectedDeadLetter.targetNodeId ?? 'workflow-root'}</strong>
+                      </div>
+                      <div className="runtime-manager__kv-row">
+                        <span>重试</span>
+                        <strong>{selectedDeadLetter.attempts} 次</strong>
+                      </div>
+                    </div>
+
+                    <div className="runtime-manager__json-shell">
+                      <JsonView
+                        data={normalizeJsonTree(selectedDeadLetter.payload)}
+                        shouldExpandNode={collapseAllNested}
+                        style={jsonTheme}
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <div className="runtime-manager__empty runtime-manager__empty--dead-detail">
+                    <strong>选择一条死信记录</strong>
+                    <span>查看失败原因和完整 payload。</span>
                   </div>
-                </>
-              ) : (
-                <div className="runtime-manager__empty runtime-manager__empty--dead-detail">
-                  <strong>选择一条死信记录</strong>
-                  <span>右侧会展示失败原因、trace 和完整 payload。</span>
-                </div>
-              )}
+                )}
+              </div>
             </div>
-          </div>
-        </aside>
+          </aside>
+        </div>
       </div>
     </div>
   );

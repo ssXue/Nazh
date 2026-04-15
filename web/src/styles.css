@@ -1472,30 +1472,36 @@ h3 {
 
 .runtime-manager__header {
   display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 18px;
+  align-items: center;
+  gap: 16px;
   padding-bottom: 6px;
   border-bottom: 1px solid color-mix(in srgb, var(--line-soft) 74%, transparent);
 }
 
-.runtime-manager__heading {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.runtime-manager__heading h2 {
+.runtime-manager__header h2 {
   margin: 0;
-  font-size: 22px;
-  line-height: 1.1;
+  font-size: 17px;
+  line-height: 1.2;
   letter-spacing: -0.02em;
+  white-space: nowrap;
 }
 
-.runtime-manager__heading span {
+.runtime-manager__header-metrics {
+  display: flex;
+  gap: 14px;
+  flex: 1;
+}
+
+.runtime-manager__header-metric {
   color: var(--text-secondary);
   font-size: 12px;
-  line-height: 1.5;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.runtime-manager__header-metric strong {
+  color: var(--text-primary);
+  font-weight: 700;
 }
 
 .runtime-manager__header-actions,
@@ -1545,57 +1551,26 @@ h3 {
   height: 15px;
 }
 
-.runtime-manager__summary {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.runtime-manager__metric {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-  padding: 14px 16px;
-  border: 1px solid color-mix(in srgb, var(--line-soft) 76%, transparent);
-  border-radius: 16px;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--panel-elevated) 96%, transparent), transparent 120%),
-    color-mix(in srgb, var(--surface-panel) 96%, transparent);
-  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.05);
-}
-
-.runtime-manager__metric-label,
 .runtime-manager__section-head span,
 .runtime-manager__workflow-row-meta,
-.runtime-manager__workflow-row-strip,
-.runtime-manager__queue-head span,
-.runtime-manager__dead-row-meta,
-.runtime-manager__dead-row-payload,
-.runtime-manager__detail-meta,
-.runtime-manager__identity-list {
+.runtime-manager__queue-head span {
   color: var(--text-secondary);
   font-size: 11px;
   line-height: 1.45;
 }
 
-.runtime-manager__metric-value {
-  font-size: 24px;
-  line-height: 1;
-  letter-spacing: -0.03em;
-}
-
-.runtime-manager__metric-meta {
-  color: var(--text-secondary);
-  font-size: 12px;
-  line-height: 1.45;
-}
-
 .runtime-manager__workspace {
   display: grid;
-  grid-template-columns: minmax(260px, 0.9fr) minmax(380px, 1.35fr) minmax(360px, 1.15fr);
+  grid-template-columns: minmax(240px, 0.8fr) minmax(400px, 1.2fr);
   gap: 14px;
   min-height: min(680px, calc(100vh - var(--window-safe-top) - 240px));
+}
+
+.runtime-manager__right {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
 }
 
 .runtime-manager__lane {
@@ -1603,11 +1578,10 @@ h3 {
   display: flex;
   flex-direction: column;
   border: 1px solid color-mix(in srgb, var(--line-soft) 78%, transparent);
-  border-radius: 18px;
+  border-radius: 12px;
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--panel-elevated) 98%, transparent), transparent 120%),
     color-mix(in srgb, var(--surface-panel) 98%, transparent);
-  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.05);
   overflow: hidden;
 }
 
@@ -1616,8 +1590,8 @@ h3 {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  min-height: 48px;
-  padding: 0 16px;
+  min-height: 40px;
+  padding: 0 14px;
   border-bottom: 1px solid color-mix(in srgb, var(--line-soft) 72%, transparent);
 }
 
@@ -1637,8 +1611,8 @@ h3 {
   width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 14px 16px;
+  gap: 6px;
+  padding: 10px 14px;
   border: 0;
   border-bottom: 1px solid color-mix(in srgb, var(--line-soft) 64%, transparent);
   background: transparent;
@@ -1671,17 +1645,13 @@ h3 {
 }
 
 .runtime-manager__workflow-row-top strong,
-.runtime-manager__dead-row-top strong,
-.runtime-manager__detail-copy h3 {
-  font-size: 14px;
+.runtime-manager__dead-row-top strong {
+  font-size: 13px;
   line-height: 1.2;
   margin: 0;
 }
 
-.runtime-manager__workflow-row-meta,
-.runtime-manager__workflow-row-strip,
-.runtime-manager__detail-meta,
-.runtime-manager__identity-list {
+.runtime-manager__workflow-row-meta {
   display: flex;
   flex-wrap: wrap;
   gap: 8px 10px;
@@ -1718,22 +1688,6 @@ h3 {
 .runtime-manager__detail {
   gap: 14px;
   padding: 16px;
-}
-
-.runtime-manager__detail-hero {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 18px;
-  padding-bottom: 14px;
-  border-bottom: 1px solid color-mix(in srgb, var(--line-soft) 68%, transparent);
-}
-
-.runtime-manager__detail-copy {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 0;
 }
 
 .runtime-manager__action-button {
@@ -1788,10 +1742,10 @@ h3 {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 14px;
+  gap: 8px;
+  padding: 12px;
   border: 1px solid color-mix(in srgb, var(--line-soft) 76%, transparent);
-  border-radius: 14px;
+  border-radius: 10px;
   background: color-mix(in srgb, var(--surface-panel) 98%, transparent);
 }
 
@@ -1913,12 +1867,6 @@ h3 {
   line-height: 1.45;
 }
 
-.runtime-manager__dead-row-payload {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .runtime-manager__json-shell {
   min-height: 0;
   flex: 1;
@@ -1969,25 +1917,16 @@ h3 {
 
 @media (max-width: 1440px) {
   .runtime-manager__workspace {
-    grid-template-columns: minmax(240px, 0.82fr) minmax(320px, 1.18fr);
-  }
-
-  .runtime-manager__lane--dead {
-    grid-column: 1 / -1;
+    grid-template-columns: minmax(220px, 0.75fr) minmax(340px, 1.25fr);
   }
 }
 
 @media (max-width: 1080px) {
-  .runtime-manager__summary,
   .runtime-manager__workspace,
   .runtime-manager__queue-grid,
   .runtime-manager__detail-grid,
   .runtime-manager__dead-layout {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .runtime-manager__detail-hero {
-    flex-direction: column;
   }
 
   .runtime-manager__dead-detail {
@@ -6655,18 +6594,65 @@ html.is-tauri-runtime [data-window-drag-region] {
 
 .runtime-dock__grid {
   display: grid;
-  grid-template-columns: minmax(260px, 0.86fr) minmax(0, 1fr) minmax(0, 1fr);
-  gap: 10px;
+  gap: 6px;
   min-height: 0;
   height: 100%;
   overflow: hidden;
-  max-height: 640px;
+  max-height: 480px;
   opacity: 1;
   transform: translateY(0);
   transition:
     max-height 240ms ease,
     opacity 220ms ease,
     transform 220ms ease;
+}
+
+.runtime-dock__connections {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.runtime-dock__conn-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--surface-muted);
+  font-size: var(--font-caption);
+  line-height: 1;
+  color: var(--text);
+}
+
+.runtime-dock__conn-chip small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.runtime-dock__conn-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--muted);
+}
+
+.runtime-dock__conn-chip.is-idle .runtime-dock__conn-dot {
+  background: var(--success-ink);
+}
+
+.runtime-dock__conn-chip.is-busy .runtime-dock__conn-dot {
+  background: var(--warning-ink);
+}
+
+.runtime-dock__main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
 }
 
 .runtime-dock.is-collapsed .runtime-dock__grid {
@@ -6723,7 +6709,7 @@ html.is-tauri-runtime [data-window-drag-region] {
   gap: 10px;
   min-height: 0;
   overflow: hidden;
-  max-height: 560px;
+  max-height: 420px;
   opacity: 1;
   transform: translateY(0);
   transition:
@@ -6756,9 +6742,6 @@ html.is-tauri-runtime [data-window-drag-region] {
   display: flex;
   flex-direction: column;
   gap: 0;
-  height: 248px;
-  max-height: 248px;
-  min-height: 0;
   flex: 1;
   overflow: auto;
   border: 1px solid var(--line-soft);
@@ -6855,10 +6838,8 @@ html.is-tauri-runtime [data-window-drag-region] {
 .runtime-results {
   display: flex;
   flex-direction: column;
-  height: 248px;
-  max-height: 248px;
-  min-height: 0;
   flex: 1;
+  min-height: 0;
   overflow: hidden;
   padding: 10px 12px;
   border: 1px solid var(--line-soft);

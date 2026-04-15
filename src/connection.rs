@@ -518,6 +518,11 @@ impl ConnectionManager {
     ///
     /// 释放不会改变既有节点行为，但会记录健康状态和失败原因，
     /// 以便前端进行状态诊断展示。
+    ///
+    /// # Errors
+    ///
+    /// 当连接 ID 不存在或内部锁获取失败时返回 `EngineError`。
+    #[allow(clippy::cast_sign_loss)]
     pub async fn release_lease(
         &self,
         lease: &ConnectionLease,
@@ -537,14 +542,15 @@ impl ConnectionManager {
         record.health.last_latency_ms = Some(elapsed_ms);
 
         if elapsed_ms > policy.operation_timeout_ms {
+            let timeout_reason = format!(
+                "连接占用 {elapsed_ms} ms，超过治理超时 {} ms",
+                policy.operation_timeout_ms
+            );
             let _ = apply_runtime_failure(
                 &mut record,
                 &policy,
                 now,
-                format!(
-                    "连接占用 {} ms，超过治理超时 {} ms",
-                    elapsed_ms, policy.operation_timeout_ms
-                ),
+                &timeout_reason,
                 true,
             );
             return Ok(());
@@ -556,7 +562,7 @@ impl ConnectionManager {
             record.health.last_connected_at = Some(now);
             record.health.last_heartbeat_at = Some(now);
             record.health.last_checked_at = Some(now);
-            record.health.diagnosis = Some(format!("最近一次连接操作完成，用时 {} ms", elapsed_ms));
+            record.health.diagnosis = Some(format!("最近一次连接操作完成，用时 {elapsed_ms} ms"));
             record.health.recommended_action = Some("连接空闲，可继续被节点复用".to_owned());
             record.health.consecutive_failures = 0;
             record.health.reconnect_attempts = 0;
@@ -602,6 +608,10 @@ impl ConnectionManager {
     }
 
     /// 记录一次真实建连成功。
+    ///
+    /// # Errors
+    ///
+    /// 当连接 ID 不存在或内部锁获取失败时返回 `EngineError`。
     pub async fn record_connect_success(
         &self,
         connection_id: &str,
@@ -632,6 +642,10 @@ impl ConnectionManager {
     }
 
     /// 记录一次心跳。
+    ///
+    /// # Errors
+    ///
+    /// 当连接 ID 不存在或内部锁获取失败时返回 `EngineError`。
     pub async fn record_heartbeat(
         &self,
         connection_id: &str,
@@ -662,10 +676,14 @@ impl ConnectionManager {
     }
 
     /// 记录一次连接失败，并返回建议的重连等待时长。
+    ///
+    /// # Errors
+    ///
+    /// 当连接 ID 不存在或内部锁获取失败时返回 `EngineError`。
     pub async fn record_connect_failure(
         &self,
         connection_id: &str,
-        reason: impl Into<String>,
+        reason: &str,
     ) -> Result<u64, EngineError> {
         let entry = self.entry(connection_id).await?;
         let mut record = entry.lock().await;
@@ -675,16 +693,20 @@ impl ConnectionManager {
             &mut record,
             &policy,
             now,
-            reason.into(),
+            reason,
             false,
         ))
     }
 
     /// 记录一次心跳或运行链路超时，并返回建议的重连等待时长。
+    ///
+    /// # Errors
+    ///
+    /// 当连接 ID 不存在或内部锁获取失败时返回 `EngineError`。
     pub async fn record_timeout(
         &self,
         connection_id: &str,
-        reason: impl Into<String>,
+        reason: &str,
     ) -> Result<u64, EngineError> {
         let entry = self.entry(connection_id).await?;
         let mut record = entry.lock().await;
@@ -694,29 +716,37 @@ impl ConnectionManager {
             &mut record,
             &policy,
             now,
-            reason.into(),
+            reason,
             true,
         ))
     }
 
     /// 标记连接配置本身无效。
+    ///
+    /// # Errors
+    ///
+    /// 当连接 ID 不存在或内部锁获取失败时返回 `EngineError`。
     pub async fn mark_invalid_configuration(
         &self,
         connection_id: &str,
-        reason: impl Into<String>,
+        reason: &str,
     ) -> Result<(), EngineError> {
         let entry = self.entry(connection_id).await?;
         let mut record = entry.lock().await;
         let now = Utc::now();
-        mark_invalid(&mut record, reason.into(), now);
+        mark_invalid(&mut record, reason.to_string(), now);
         Ok(())
     }
 
     /// 标记连接已断开。
+    ///
+    /// # Errors
+    ///
+    /// 当连接 ID 不存在或内部锁获取失败时返回 `EngineError`。
     pub async fn mark_disconnected(
         &self,
         connection_id: &str,
-        diagnosis: impl Into<String>,
+        diagnosis: &str,
     ) -> Result<(), EngineError> {
         let entry = self.entry(connection_id).await?;
         let mut record = entry.lock().await;
@@ -727,7 +757,7 @@ impl ConnectionManager {
         record.health.last_state_changed_at = Some(now);
         record.health.last_checked_at = Some(now);
         record.health.last_released_at = Some(now);
-        record.health.diagnosis = Some(diagnosis.into());
+        record.health.diagnosis = Some(diagnosis.to_string());
         record.health.recommended_action = Some("如需恢复，请检查设备在线状态并等待重连".to_owned());
 
         Ok(())
@@ -842,6 +872,7 @@ fn refresh_definition_diagnosis(record: &mut ConnectionRecord) {
     }
 }
 
+#[allow(clippy::cast_sign_loss)]
 fn reconcile_timed_state(
     record: &mut ConnectionRecord,
     policy: &ConnectionGovernancePolicy,
@@ -930,7 +961,7 @@ fn apply_runtime_failure(
     record: &mut ConnectionRecord,
     policy: &ConnectionGovernancePolicy,
     now: DateTime<Utc>,
-    reason: String,
+    reason: &str,
     is_timeout: bool,
 ) -> u64 {
     record.health.total_failures = record.health.total_failures.saturating_add(1);
@@ -943,7 +974,7 @@ fn apply_runtime_failure(
     record.health.last_failure_at = Some(now);
     record.health.last_checked_at = Some(now);
     record.health.last_state_changed_at = Some(now);
-    record.health.last_failure_reason = Some(reason.clone());
+    record.health.last_failure_reason = Some(reason.to_string());
 
     if record.health.consecutive_failures >= policy.circuit_failure_threshold {
         let open_until = now + duration_ms(policy.circuit_open_ms);
@@ -1082,10 +1113,12 @@ fn normalize_connection_kind(value: &str) -> String {
     value.trim().to_ascii_lowercase()
 }
 
+#[allow(clippy::cast_possible_wrap)]
 fn duration_ms(value: u64) -> chrono::Duration {
     chrono::Duration::milliseconds(value.min(i64::MAX as u64) as i64)
 }
 
+#[allow(clippy::cast_sign_loss)]
 fn remaining_ms(target: DateTime<Utc>, now: DateTime<Utc>) -> u64 {
     (target - now).num_milliseconds().max(0) as u64
 }

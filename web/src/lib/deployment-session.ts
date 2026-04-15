@@ -1,7 +1,7 @@
 import type { ConnectionDefinition } from '../types';
 
 export const DEPLOYMENT_SESSION_STORAGE_KEY = 'nazh.deployment-session';
-const DEPLOYMENT_SESSION_COLLECTION_VERSION = 2;
+const DEPLOYMENT_SESSION_COLLECTION_VERSION = 3;
 
 export interface PersistedDeploymentSession {
   version: 1;
@@ -15,8 +15,9 @@ export interface PersistedDeploymentSession {
 }
 
 interface PersistedDeploymentSessionCollection {
-  version: 2;
+  version: 3;
   sessions: PersistedDeploymentSession[];
+  activeProjectId?: string | null;
 }
 
 function buildStorageKey(workspacePath: string): string {
@@ -54,7 +55,10 @@ function isPersistedDeploymentSessionCollection(
   return (
     record.version === DEPLOYMENT_SESSION_COLLECTION_VERSION &&
     Array.isArray(record.sessions) &&
-    record.sessions.every((entry) => isPersistedDeploymentSession(entry))
+    record.sessions.every((entry) => isPersistedDeploymentSession(entry)) &&
+    (record.activeProjectId === undefined ||
+      record.activeProjectId === null ||
+      typeof record.activeProjectId === 'string')
   );
 }
 
@@ -85,7 +89,30 @@ function normalizeSessions(
   return [...deduped.values()];
 }
 
-function readStoredSessions(workspacePath = ''): PersistedDeploymentSession[] | null {
+export interface PersistedDeploymentSessionState {
+  version: 3;
+  sessions: PersistedDeploymentSession[];
+  activeProjectId: string | null;
+}
+
+function normalizeState(state: {
+  sessions: PersistedDeploymentSession[];
+  activeProjectId?: string | null;
+}): PersistedDeploymentSessionState {
+  const sessions = normalizeSessions(state.sessions);
+  const activeProjectId =
+    state.activeProjectId?.trim() && sessions.some((session) => session.projectId === state.activeProjectId)
+      ? state.activeProjectId
+      : null;
+
+  return {
+    version: DEPLOYMENT_SESSION_COLLECTION_VERSION,
+    sessions,
+    activeProjectId,
+  };
+}
+
+function readStoredState(workspacePath = ''): PersistedDeploymentSessionState | null {
   if (typeof window === 'undefined') {
     return null;
   }
@@ -100,15 +127,15 @@ function readStoredSessions(workspacePath = ''): PersistedDeploymentSession[] | 
 
     const parsed = JSON.parse(raw) as unknown;
     if (isPersistedDeploymentSessionCollection(parsed)) {
-      return normalizeSessions(parsed.sessions);
+      return normalizeState(parsed);
     }
 
     if (isPersistedDeploymentSession(parsed)) {
-      return [parsed];
+      return normalizeState({ sessions: [parsed] });
     }
 
     if (Array.isArray(parsed) && parsed.every((entry) => isPersistedDeploymentSession(entry))) {
-      return normalizeSessions(parsed);
+      return normalizeState({ sessions: parsed });
     }
 
     if (!isPersistedDeploymentSession(parsed)) {
@@ -116,34 +143,42 @@ function readStoredSessions(workspacePath = ''): PersistedDeploymentSession[] | 
       return null;
     }
 
-    return [parsed];
+    return normalizeState({ sessions: [parsed] });
   } catch {
     window.localStorage.removeItem(storageKey);
     return null;
   }
 }
 
-function writeStoredSessions(
+function writeStoredState(
   workspacePath: string,
-  sessions: PersistedDeploymentSession[],
+  state: PersistedDeploymentSessionState,
 ) {
   if (typeof window === 'undefined') {
     return;
   }
 
   try {
-    const payload: PersistedDeploymentSessionCollection = {
-      version: DEPLOYMENT_SESSION_COLLECTION_VERSION,
-      sessions: normalizeSessions(sessions),
-    };
+    const normalized = normalizeState(state);
+    const payload: PersistedDeploymentSessionCollection = normalized;
     window.localStorage.setItem(buildStorageKey(workspacePath), JSON.stringify(payload));
   } catch {
     // Ignore preview persistence failures.
   }
 }
 
+export function loadDeploymentSessionState(workspacePath = ''): PersistedDeploymentSessionState {
+  return (
+    readStoredState(workspacePath) ?? {
+      version: DEPLOYMENT_SESSION_COLLECTION_VERSION,
+      sessions: [],
+      activeProjectId: null,
+    }
+  );
+}
+
 export function loadDeploymentSessions(workspacePath = ''): PersistedDeploymentSession[] {
-  return readStoredSessions(workspacePath) ?? [];
+  return loadDeploymentSessionState(workspacePath).sessions;
 }
 
 export function loadDeploymentSession(workspacePath = ''): PersistedDeploymentSession | null {
@@ -153,15 +188,40 @@ export function loadDeploymentSession(workspacePath = ''): PersistedDeploymentSe
 export function saveDeploymentSession(
   workspacePath: string,
   session: PersistedDeploymentSession,
+  activeProjectId?: string | null,
 ) {
-  const current = loadDeploymentSessions(workspacePath).filter(
+  const state = loadDeploymentSessionState(workspacePath);
+  const current = state.sessions.filter(
     (entry) => entry.projectId !== session.projectId,
   );
-  writeStoredSessions(workspacePath, [session, ...current]);
+  writeStoredState(workspacePath, {
+    version: DEPLOYMENT_SESSION_COLLECTION_VERSION,
+    sessions: [session, ...current],
+    activeProjectId: activeProjectId === undefined ? state.activeProjectId : activeProjectId,
+  });
+}
+
+export function setDeploymentSessionActiveProject(
+  workspacePath: string,
+  projectId: string | null,
+) {
+  const state = loadDeploymentSessionState(workspacePath);
+  const activeProjectId = projectId?.trim() || null;
+
+  if (state.sessions.length === 0 && !activeProjectId) {
+    clearDeploymentSession(workspacePath);
+    return;
+  }
+
+  writeStoredState(workspacePath, {
+    ...state,
+    activeProjectId,
+  });
 }
 
 export function removeDeploymentSession(workspacePath: string, projectId: string) {
-  const nextSessions = loadDeploymentSessions(workspacePath).filter(
+  const state = loadDeploymentSessionState(workspacePath);
+  const nextSessions = state.sessions.filter(
     (entry) => entry.projectId !== projectId,
   );
 
@@ -170,7 +230,12 @@ export function removeDeploymentSession(workspacePath: string, projectId: string
     return;
   }
 
-  writeStoredSessions(workspacePath, nextSessions);
+  writeStoredState(workspacePath, {
+    version: DEPLOYMENT_SESSION_COLLECTION_VERSION,
+    sessions: nextSessions,
+    activeProjectId:
+      state.activeProjectId && state.activeProjectId !== projectId ? state.activeProjectId : null,
+  });
 }
 
 export function clearDeploymentSession(workspacePath = '') {

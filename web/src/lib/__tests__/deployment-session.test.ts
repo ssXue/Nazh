@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   clearDeploymentSession,
   DEPLOYMENT_SESSION_STORAGE_KEY,
+  loadDeploymentSessionState,
   loadDeploymentSession,
   saveDeploymentSession,
   type PersistedDeploymentSession,
@@ -50,8 +51,24 @@ describe('deployment session storage', () => {
     saveDeploymentSession('', session);
 
     expect(JSON.parse(localStorage.getItem(DEPLOYMENT_SESSION_STORAGE_KEY) ?? 'null')).toEqual(
-      session,
+      {
+        version: 3,
+        sessions: [session],
+        activeProjectId: null,
+      },
     );
+  });
+
+  it('可以持久化主控工程选择', () => {
+    const session = buildSession();
+
+    saveDeploymentSession('', session, session.projectId);
+
+    expect(loadDeploymentSessionState('')).toEqual({
+      version: 3,
+      sessions: [session],
+      activeProjectId: session.projectId,
+    });
   });
 
   it('非法会话会被清理', () => {

@@ -180,7 +180,7 @@ impl NodeTrait for SerialTriggerNode {
         let received_at = incoming_frame
             .get("received_at")
             .and_then(Value::as_str)
-            .map(ToOwned::to_owned)
+            .map(|v| v.to_owned())
             .unwrap_or_else(|| Utc::now().to_rfc3339());
         let port_path = incoming_frame
             .get("port_path")

@@ -754,6 +754,17 @@ struct PersistedDeploymentSession {
 #[serde(rename_all = "camelCase")]
 struct PersistedDeploymentSessionCollection {
     version: u8,
+    #[serde(default)]
+    active_project_id: Option<String>,
+    sessions: Vec<PersistedDeploymentSession>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PersistedDeploymentSessionState {
+    version: u8,
+    #[serde(default)]
+    active_project_id: Option<String>,
     sessions: Vec<PersistedDeploymentSession>,
 }
 
@@ -779,11 +790,40 @@ fn normalize_deployment_sessions(
     normalized
 }
 
+fn normalize_deployment_session_state(
+    state: PersistedDeploymentSessionState,
+) -> PersistedDeploymentSessionState {
+    let sessions = normalize_deployment_sessions(state.sessions);
+    let active_project_id = state
+        .active_project_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .filter(|value| sessions.iter().any(|session| session.project_id == *value))
+        .map(str::to_owned);
+
+    PersistedDeploymentSessionState {
+        version: 3,
+        active_project_id,
+        sessions,
+    }
+}
+
 async fn read_deployment_sessions_from_path(
     path: &Path,
 ) -> Result<Vec<PersistedDeploymentSession>, String> {
+    Ok(read_deployment_session_state_from_path(path).await?.sessions)
+}
+
+async fn read_deployment_session_state_from_path(
+    path: &Path,
+) -> Result<PersistedDeploymentSessionState, String> {
     if !path.exists() {
-        return Ok(Vec::new());
+        return Ok(PersistedDeploymentSessionState {
+            version: 3,
+            active_project_id: None,
+            sessions: Vec::new(),
+        });
     }
 
     let text = fs::read_to_string(path)
@@ -798,19 +838,28 @@ async fn read_deployment_sessions_from_path(
     {
         let collection = serde_json::from_value::<PersistedDeploymentSessionCollection>(value)
             .map_err(|error| format!("解析 deployment-session.json 失败: {error}"))?;
-        return Ok(normalize_deployment_sessions(collection.sessions));
+        return Ok(normalize_deployment_session_state(PersistedDeploymentSessionState {
+            version: collection.version,
+            active_project_id: collection.active_project_id,
+            sessions: collection.sessions,
+        }));
     }
 
     let session = serde_json::from_value::<PersistedDeploymentSession>(value)
         .map_err(|error| format!("解析 deployment-session.json 失败: {error}"))?;
-    Ok(vec![session])
+    Ok(normalize_deployment_session_state(PersistedDeploymentSessionState {
+        version: 1,
+        active_project_id: None,
+        sessions: vec![session],
+    }))
 }
 
-async fn write_deployment_sessions_to_path(
+async fn write_deployment_session_state_to_path(
     path: &Path,
-    sessions: Vec<PersistedDeploymentSession>,
+    state: PersistedDeploymentSessionState,
 ) -> Result<(), String> {
-    let sessions = normalize_deployment_sessions(sessions);
+    let normalized = normalize_deployment_session_state(state);
+    let sessions = normalized.sessions.clone();
 
     if sessions.is_empty() {
         if path.exists() {
@@ -827,7 +876,8 @@ async fn write_deployment_sessions_to_path(
         .map_err(|error| format!("创建部署会话目录失败: {error}"))?;
 
     let payload = PersistedDeploymentSessionCollection {
-        version: 2,
+        version: 3,
+        active_project_id: normalized.active_project_id,
         sessions,
     };
     let text = serde_json::to_string_pretty(&payload)
@@ -1402,6 +1452,16 @@ async fn load_deployment_session_file(
 }
 
 #[tauri::command]
+async fn load_deployment_session_state_file(
+    app: AppHandle,
+    workspace_path: Option<String>,
+) -> Result<PersistedDeploymentSessionState, String> {
+    let path =
+        DesktopState::deployment_session_file_path(&app, workspace_path.as_deref()).map_err(|e| e)?;
+    read_deployment_session_state_from_path(&path).await
+}
+
+#[tauri::command]
 async fn list_deployment_sessions_file(
     app: AppHandle,
     workspace_path: Option<String>,
@@ -1416,13 +1476,41 @@ async fn save_deployment_session_file(
     app: AppHandle,
     workspace_path: Option<String>,
     session: PersistedDeploymentSession,
+    active_project_id: Option<String>,
 ) -> Result<(), String> {
     let path =
         DesktopState::deployment_session_file_path(&app, workspace_path.as_deref()).map_err(|e| e)?;
-    let mut sessions = read_deployment_sessions_from_path(&path).await?;
-    sessions.retain(|current| current.project_id != session.project_id);
-    sessions.push(session);
-    write_deployment_sessions_to_path(&path, sessions).await
+    let mut state = read_deployment_session_state_from_path(&path).await?;
+    state
+        .sessions
+        .retain(|current| current.project_id != session.project_id);
+    state.sessions.push(session);
+    if let Some(active_project_id) = active_project_id {
+        let trimmed = active_project_id.trim();
+        state.active_project_id = if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_owned())
+        };
+    }
+    write_deployment_session_state_to_path(&path, state).await
+}
+
+#[tauri::command]
+async fn set_deployment_session_active_project_file(
+    app: AppHandle,
+    workspace_path: Option<String>,
+    project_id: Option<String>,
+) -> Result<(), String> {
+    let path =
+        DesktopState::deployment_session_file_path(&app, workspace_path.as_deref()).map_err(|e| e)?;
+    let mut state = read_deployment_session_state_from_path(&path).await?;
+    state.active_project_id = project_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned);
+    write_deployment_session_state_to_path(&path, state).await
 }
 
 #[tauri::command]
@@ -1438,9 +1526,14 @@ async fn remove_deployment_session_file(
         return Ok(());
     }
 
-    let mut sessions = read_deployment_sessions_from_path(&path).await?;
-    sessions.retain(|session| session.project_id != target_project_id);
-    write_deployment_sessions_to_path(&path, sessions).await
+    let mut state = read_deployment_session_state_from_path(&path).await?;
+    state
+        .sessions
+        .retain(|session| session.project_id != target_project_id);
+    if state.active_project_id.as_deref() == Some(target_project_id) {
+        state.active_project_id = None;
+    }
+    write_deployment_session_state_to_path(&path, state).await
 }
 
 #[tauri::command]
@@ -1964,15 +2057,13 @@ async fn collect_serial_root_specs(
             })?;
 
         if !is_serial_connection_type(&connection.kind) {
+            let reason = format!("连接资源 `{connection_id}` 不是串口类型");
             let _ = connection_manager
-                .mark_invalid_configuration(
-                    connection_id,
-                    format!("连接资源 `{connection_id}` 不是串口类型"),
-                )
+                .mark_invalid_configuration(connection_id, &reason)
                 .await;
             return Err(EngineError::node_config(
                 node_id.clone(),
-                format!("连接资源 `{connection_id}` 不是串口类型"),
+                reason,
             ));
         }
 
@@ -1986,15 +2077,13 @@ async fn collect_serial_root_specs(
         config.port_path = config.port_path.trim().to_owned();
 
         if config.port_path.is_empty() {
+            let reason = format!("串口连接资源 `{connection_id}` 需要配置 port_path");
             let _ = connection_manager
-                .mark_invalid_configuration(
-                    connection_id,
-                    format!("串口连接资源 `{connection_id}` 需要配置 port_path"),
-                )
+                .mark_invalid_configuration(connection_id, &reason)
                 .await;
             return Err(EngineError::node_config(
                 node_id.clone(),
-                format!("串口连接资源 `{connection_id}` 需要配置 port_path"),
+                reason,
             ));
         }
 
@@ -2151,7 +2240,7 @@ fn run_serial_root_reader(
                 let retry_after_ms = tauri::async_runtime::block_on(
                     connection_manager.record_connect_failure(
                         &serial_root.connection_id,
-                        reason.clone(),
+                        &reason,
                     ),
                 )
                 .unwrap_or(800);
@@ -2286,9 +2375,10 @@ fn run_serial_root_reader(
             let _ = tauri::async_runtime::block_on(
                 connection_manager.release(&serial_root.connection_id),
             );
+            let reason = format!("串口 {} 监听已停止", config.port_path);
             let _ = tauri::async_runtime::block_on(connection_manager.mark_disconnected(
                 &serial_root.connection_id,
-                format!("串口 {} 监听已停止", config.port_path),
+                &reason,
             ));
             break;
         }
@@ -2297,7 +2387,7 @@ fn run_serial_root_reader(
             .unwrap_or_else(|| format!("串口 {} 连接已断开", config.port_path));
         let retry_after_ms = tauri::async_runtime::block_on(connection_manager.record_connect_failure(
             &serial_root.connection_id,
-            reason.clone(),
+            &reason,
         ))
         .unwrap_or(800);
         let _ = tauri::async_runtime::block_on(connection_manager.release(
@@ -2669,8 +2759,10 @@ pub fn run() {
             load_connection_definitions,
             save_connection_definitions,
             load_deployment_session_file,
+            load_deployment_session_state_file,
             list_deployment_sessions_file,
             save_deployment_session_file,
+            set_deployment_session_active_project_file,
             remove_deployment_session_file,
             clear_deployment_session_file,
             list_serial_ports,
