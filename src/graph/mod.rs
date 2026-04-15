@@ -13,10 +13,10 @@
 //! | [`runner`] | 单节点异步执行循环与事件发射 |
 
 mod deploy;
-mod instantiate;
+pub(crate) mod instantiate;
 mod runner;
 mod topology;
-mod types;
+pub(crate) mod types;
 
 pub use deploy::deploy_workflow;
 pub use types::{

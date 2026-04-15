@@ -73,10 +73,7 @@ where
     };
 
     let result = operation(lease.as_ref());
-    let operation_error = result
-        .as_ref()
-        .err()
-        .map(std::string::ToString::to_string);
+    let operation_error = result.as_ref().err().map(std::string::ToString::to_string);
 
     if let Some(lease) = lease.as_ref() {
         let release_result = connection_manager

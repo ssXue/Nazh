@@ -1,4 +1,6 @@
-use nazh_engine::{deploy_workflow, shared_connection_manager, WorkflowContext, WorkflowGraph};
+use nazh_engine::{
+    deploy_workflow, shared_connection_manager, NodeRegistry, WorkflowContext, WorkflowGraph,
+};
 use serde_json::json;
 
 #[tokio::main]
@@ -44,7 +46,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     let connection_manager = shared_connection_manager();
-    let mut deployment = deploy_workflow(graph, connection_manager).await?;
+    let registry = NodeRegistry::with_standard_nodes();
+    let mut deployment = deploy_workflow(graph, connection_manager, &registry).await?;
 
     deployment
         .submit(WorkflowContext::new(json!({ "value": 24.5 })))

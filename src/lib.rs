@@ -30,6 +30,7 @@ mod guard;
 pub mod ipc;
 pub mod nodes;
 pub mod pipeline;
+pub mod registry;
 
 pub use connection::{
     shared_connection_manager, ConnectionDefinition, ConnectionLease, ConnectionManager,
@@ -52,3 +53,4 @@ pub use nodes::{
     TryCatchNodeConfig,
 };
 pub use pipeline::{build_linear_pipeline, PipelineHandle, PipelineStage, StageFuture};
+pub use registry::NodeRegistry;

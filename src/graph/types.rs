@@ -163,6 +163,27 @@ pub(crate) fn default_node_buffer() -> usize {
     32
 }
 
+// ── WorkflowNodeDefinition 辅助方法 ─────────────
+
+impl WorkflowNodeDefinition {
+    /// 从 `config` 字段反序列化出指定类型的配置结构体。
+    ///
+    /// # Errors
+    ///
+    /// 反序列化失败时返回 [`EngineError::NodeConfig`]。
+    pub fn parse_config<T: serde::de::DeserializeOwned>(&self) -> Result<T, crate::EngineError> {
+        serde_json::from_value(self.config.clone())
+            .map_err(|error| crate::EngineError::node_config(self.id.clone(), error.to_string()))
+    }
+
+    /// 获取节点的 AI 描述，若未配置则使用 `fallback`。
+    pub fn resolve_description(&self, fallback: &str) -> String {
+        self.ai_description
+            .clone()
+            .unwrap_or_else(|| fallback.to_owned())
+    }
+}
+
 // ── 句柄方法 ──────────────────────────────────────
 
 impl WorkflowIngress {

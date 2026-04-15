@@ -410,7 +410,10 @@ impl ConnectionManager {
             .or_insert_with(VecDeque::new);
         let cutoff = now - duration_ms(policy.rate_limit_window_ms);
 
-        while attempts.front().is_some_and(|attempted_at| *attempted_at < cutoff) {
+        while attempts
+            .front()
+            .is_some_and(|attempted_at| *attempted_at < cutoff)
+        {
             let _ = attempts.pop_front();
         }
 
@@ -503,8 +506,7 @@ impl ConnectionManager {
             ConnectionHealthState::Reconnecting => "正在重建连接会话".to_owned(),
             _ => "正在建立连接会话".to_owned(),
         });
-        record.health.recommended_action =
-            Some("连接已被运行态占用，完成后会自动释放".to_owned());
+        record.health.recommended_action = Some("连接已被运行态占用，完成后会自动释放".to_owned());
 
         Ok(ConnectionLease {
             id: record.id.clone(),
@@ -533,8 +535,7 @@ impl ConnectionManager {
         let mut record = entry.lock().await;
         let now = Utc::now();
         let policy = ConnectionGovernancePolicy::from_metadata(&record.metadata);
-        let elapsed_ms =
-            (now - lease.borrowed_at).num_milliseconds().max(0) as u64;
+        let elapsed_ms = (now - lease.borrowed_at).num_milliseconds().max(0) as u64;
 
         record.in_use = false;
         record.health.last_released_at = Some(now);
@@ -546,13 +547,7 @@ impl ConnectionManager {
                 "连接占用 {elapsed_ms} ms，超过治理超时 {} ms",
                 policy.operation_timeout_ms
             );
-            let _ = apply_runtime_failure(
-                &mut record,
-                &policy,
-                now,
-                &timeout_reason,
-                true,
-            );
+            let _ = apply_runtime_failure(&mut record, &policy, now, &timeout_reason, true);
             return Ok(());
         }
 
@@ -758,7 +753,8 @@ impl ConnectionManager {
         record.health.last_checked_at = Some(now);
         record.health.last_released_at = Some(now);
         record.health.diagnosis = Some(diagnosis.to_string());
-        record.health.recommended_action = Some("如需恢复，请检查设备在线状态并等待重连".to_owned());
+        record.health.recommended_action =
+            Some("如需恢复，请检查设备在线状态并等待重连".to_owned());
 
         Ok(())
     }
@@ -780,8 +776,7 @@ impl ConnectionManager {
 
             if matches!(record.health.phase, ConnectionHealthState::Invalid) {
                 record.health.last_state_changed_at = Some(now);
-                record.health.diagnosis =
-                    Some("连接配置仍无效，运行停止后保留当前诊断".to_owned());
+                record.health.diagnosis = Some("连接配置仍无效，运行停止后保留当前诊断".to_owned());
                 record.health.recommended_action =
                     Some("请先修正连接配置，再重新部署或测试".to_owned());
                 continue;
@@ -916,8 +911,7 @@ fn reconcile_timed_state(
             record.health.phase = ConnectionHealthState::Idle;
             record.health.last_state_changed_at = Some(now);
             record.health.diagnosis = Some("已结束退避等待，可再次尝试建连".to_owned());
-            record.health.recommended_action =
-                Some("若仍失败，请检查目标端是否可达".to_owned());
+            record.health.recommended_action = Some("若仍失败，请检查目标端是否可达".to_owned());
         }
     }
 
@@ -928,8 +922,7 @@ fn reconcile_timed_state(
         }
 
         if let Some(last_heartbeat_at) = record.health.last_heartbeat_at {
-            let heartbeat_age_ms =
-                (now - last_heartbeat_at).num_milliseconds().max(0) as u64;
+            let heartbeat_age_ms = (now - last_heartbeat_at).num_milliseconds().max(0) as u64;
             if heartbeat_age_ms > policy.heartbeat_timeout_ms
                 && matches!(record.health.phase, ConnectionHealthState::Healthy)
             {
@@ -982,9 +975,8 @@ fn apply_runtime_failure(
         record.health.circuit_open_until = Some(open_until);
         record.health.next_retry_at = Some(open_until);
         record.health.diagnosis = Some("连接连续失败，已进入熔断保护".to_owned());
-        record.health.recommended_action = Some(
-            "请检查目标端可达性、串口占用或参数配置，冷却结束后会再次允许建连".to_owned(),
-        );
+        record.health.recommended_action =
+            Some("请检查目标端可达性、串口占用或参数配置，冷却结束后会再次允许建连".to_owned());
         return policy.circuit_open_ms;
     }
 

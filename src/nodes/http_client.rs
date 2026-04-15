@@ -216,10 +216,7 @@ impl HttpClientNode {
             .redirect(reqwest::redirect::Policy::limited(10))
             .build()
             .map_err(|error| {
-                EngineError::node_config(
-                    id.clone(),
-                    format!("HTTP 客户端初始化失败: {error}"),
-                )
+                EngineError::node_config(id.clone(), format!("HTTP 客户端初始化失败: {error}"))
             })?;
         Ok(Self {
             id,

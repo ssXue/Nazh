@@ -1,183 +1,185 @@
-//! 节点工厂：根据 [`WorkflowNodeDefinition`] 中的 `node_type` 字段
-//! 创建对应的 [`NodeTrait`] 实例。
+//! 标准库节点注册：将引擎内置的所有节点类型注册到 [`NodeRegistry`]。
+//!
+//! 此前本文件包含一个 180 行的 `match` 工厂函数，每新增一种节点都要改动。
+//! 现在所有节点通过 [`register_standard_nodes`] 注册到 [`NodeRegistry`]，
+//! 引擎核心不再硬编码任何节点类型。
 //!
 //! ## 添加新节点类型
 //!
 //! 1. 在 `nodes/` 目录下实现节点并导出 Config 和节点结构体
-//! 2. 在下方 `instantiate_node` 的 match 中添加对应分支
+//! 2. 在下方 [`register_standard_nodes`] 中添加 `register` + `alias` 调用
+//! 3. 在 `nodes/mod.rs` 和 `lib.rs` 中导出
 
 use std::sync::Arc;
 
-use serde::de::DeserializeOwned;
-
-use super::types::WorkflowNodeDefinition;
+use crate::registry::NodeRegistry;
 use crate::{
-    DebugConsoleNode, DebugConsoleNodeConfig, EngineError, HttpClientNode, HttpClientNodeConfig,
-    IfNode, IfNodeConfig, LoopNode, LoopNodeConfig, ModbusReadNode, ModbusReadNodeConfig,
-    NativeNode, NativeNodeConfig, NodeTrait, RhaiNode, RhaiNodeConfig, SerialTriggerNode,
-    SerialTriggerNodeConfig, SharedConnectionManager, SqlWriterNode, SqlWriterNodeConfig,
-    SwitchNode, SwitchNodeConfig, TimerNode, TimerNodeConfig, TryCatchNode, TryCatchNodeConfig,
+    DebugConsoleNode, DebugConsoleNodeConfig, HttpClientNode, HttpClientNodeConfig, IfNode,
+    IfNodeConfig, LoopNode, LoopNodeConfig, ModbusReadNode, ModbusReadNodeConfig, NativeNode,
+    NativeNodeConfig, RhaiNode, RhaiNodeConfig, SerialTriggerNode, SerialTriggerNodeConfig,
+    SqlWriterNode, SqlWriterNodeConfig, SwitchNode, SwitchNodeConfig, TimerNode, TimerNodeConfig,
+    TryCatchNode, TryCatchNodeConfig,
 };
 
-/// 从节点定义中反序列化配置。
-fn parse_config<T: DeserializeOwned>(
-    definition: &WorkflowNodeDefinition,
-) -> Result<T, EngineError> {
-    serde_json::from_value(definition.config.clone())
-        .map_err(|error| EngineError::node_config(definition.id.clone(), error.to_string()))
-}
-
-/// 从节点定义中获取 AI 描述，若未配置则使用 fallback。
-fn resolve_description(definition: &WorkflowNodeDefinition, fallback: &str) -> String {
-    definition
-        .ai_description
-        .clone()
-        .unwrap_or_else(|| fallback.to_owned())
-}
-
-/// 根据节点定义的 `node_type` 实例化具体节点。
+/// 将所有标准库节点注册到注册表中。
 ///
-/// # Errors
-///
-/// 配置反序列化失败或节点类型不支持时返回 [`EngineError`]。
+/// 标准库包含引擎内置的 12 种节点类型及其别名，涵盖：
+/// - 流程原语：if、switch、tryCatch、loop
+/// - 脚本执行：rhai / code
+/// - 数据注入：native / log
+/// - 硬件接口：timer、serialTrigger、modbusRead
+/// - 外部通信：httpClient
+/// - 持久化：sqlWriter
+/// - 调试工具：debugConsole
 #[allow(clippy::too_many_lines)]
-pub(crate) fn instantiate_node(
-    definition: &WorkflowNodeDefinition,
-    connection_manager: SharedConnectionManager,
-) -> Result<Arc<dyn NodeTrait>, EngineError> {
-    match definition.node_type.as_str() {
-        "native" | "native/log" | "log" => {
-            let mut config: NativeNodeConfig = parse_config(definition)?;
-            if config.connection_id.is_none() {
-                config.connection_id.clone_from(&definition.connection_id);
-            }
-            let description =
-                resolve_description(definition, "打印 payload 元数据，可选附加连接上下文");
-            Ok(Arc::new(NativeNode::new(
-                definition.id.clone(),
-                config,
-                description,
-                connection_manager,
-            )))
+pub(crate) fn register_standard_nodes(registry: &mut NodeRegistry) {
+    // ── native / log ─────────────────────────────
+    registry.register("native", |def, cm| {
+        let mut config: NativeNodeConfig = def.parse_config()?;
+        if config.connection_id.is_none() {
+            config.connection_id.clone_from(&def.connection_id);
         }
-        "rhai" | "code" | "code/rhai" => {
-            let config: RhaiNodeConfig = parse_config(definition)?;
-            let description = resolve_description(definition, "使用有界 Rhai 脚本执行业务逻辑");
-            Ok(Arc::new(RhaiNode::new(
-                definition.id.clone(),
-                config,
-                description,
-            )?))
+        let description = def.resolve_description("打印 payload 元数据，可选附加连接上下文");
+        Ok(Arc::new(NativeNode::new(
+            def.id.clone(),
+            config,
+            description,
+            cm,
+        )))
+    });
+    // 别名注册不会失败，因为 "native" 刚注册过
+    let _ = registry.alias("native/log", "native");
+    let _ = registry.alias("log", "native");
+
+    // ── rhai / code ──────────────────────────────
+    registry.register("rhai", |def, _cm| {
+        let config: RhaiNodeConfig = def.parse_config()?;
+        let description = def.resolve_description("使用有界 Rhai 脚本执行业务逻辑");
+        Ok(Arc::new(RhaiNode::new(
+            def.id.clone(),
+            config,
+            description,
+        )?))
+    });
+    let _ = registry.alias("code", "rhai");
+    let _ = registry.alias("code/rhai", "rhai");
+
+    // ── timer ────────────────────────────────────
+    registry.register("timer", |def, _cm| {
+        let config: TimerNodeConfig = def.parse_config()?;
+        let description = def.resolve_description("按固定间隔触发工作流并注入计时元数据");
+        Ok(Arc::new(TimerNode::new(
+            def.id.clone(),
+            config,
+            description,
+        )))
+    });
+
+    // ── serialTrigger ────────────────────────────
+    registry.register("serialTrigger", |def, _cm| {
+        let config: SerialTriggerNodeConfig = def.parse_config()?;
+        let description =
+            def.resolve_description("接收串口外设主动上报的 ASCII/HEX 数据流并触发工作流");
+        Ok(Arc::new(SerialTriggerNode::new(
+            def.id.clone(),
+            config,
+            description,
+        )))
+    });
+    let _ = registry.alias("serial/trigger", "serialTrigger");
+    let _ = registry.alias("serial", "serialTrigger");
+
+    // ── modbusRead ───────────────────────────────
+    registry.register("modbusRead", |def, cm| {
+        let mut config: ModbusReadNodeConfig = def.parse_config()?;
+        if config.connection_id.is_none() {
+            config.connection_id.clone_from(&def.connection_id);
         }
-        "timer" => {
-            let config: TimerNodeConfig = parse_config(definition)?;
-            let description =
-                resolve_description(definition, "按固定间隔触发工作流并注入计时元数据");
-            Ok(Arc::new(TimerNode::new(
-                definition.id.clone(),
-                config,
-                description,
-            )))
-        }
-        "serialTrigger" | "serial/trigger" | "serial" => {
-            let config: SerialTriggerNodeConfig = parse_config(definition)?;
-            let description = resolve_description(
-                definition,
-                "接收串口外设主动上报的 ASCII/HEX 数据流并触发工作流",
-            );
-            Ok(Arc::new(SerialTriggerNode::new(
-                definition.id.clone(),
-                config,
-                description,
-            )))
-        }
-        "modbusRead" | "modbus/read" => {
-            let mut config: ModbusReadNodeConfig = parse_config(definition)?;
-            if config.connection_id.is_none() {
-                config.connection_id.clone_from(&definition.connection_id);
-            }
-            let description =
-                resolve_description(definition, "读取模拟 Modbus 寄存器并将遥测数据写入 payload");
-            Ok(Arc::new(ModbusReadNode::new(
-                definition.id.clone(),
-                config,
-                description,
-                connection_manager,
-            )))
-        }
-        "if" => {
-            let config: IfNodeConfig = parse_config(definition)?;
-            let description =
-                resolve_description(definition, "求值布尔脚本并路由到 true 或 false 分支");
-            Ok(Arc::new(IfNode::new(
-                definition.id.clone(),
-                config,
-                description,
-            )?))
-        }
-        "switch" => {
-            let config: SwitchNodeConfig = parse_config(definition)?;
-            let description = resolve_description(definition, "求值路由脚本并分发到匹配的分支");
-            Ok(Arc::new(SwitchNode::new(
-                definition.id.clone(),
-                config,
-                description,
-            )?))
-        }
-        "tryCatch" => {
-            let config: TryCatchNodeConfig = parse_config(definition)?;
-            let description =
-                resolve_description(definition, "执行受保护的脚本并路由到 try 或 catch 分支");
-            Ok(Arc::new(TryCatchNode::new(
-                definition.id.clone(),
-                config,
-                description,
-            )?))
-        }
-        "loop" => {
-            let config: LoopNodeConfig = parse_config(definition)?;
-            let description = resolve_description(
-                definition,
-                "求值可迭代脚本，逐项通过 body 分发，完成后发送 done",
-            );
-            Ok(Arc::new(LoopNode::new(
-                definition.id.clone(),
-                config,
-                description,
-            )?))
-        }
-        "httpClient" | "http/client" => {
-            let config: HttpClientNodeConfig = parse_config(definition)?;
-            let description = resolve_description(
-                definition,
-                "将 payload 发送到 HTTP 端点（如钉钉机器人告警）",
-            );
-            Ok(Arc::new(HttpClientNode::new(
-                definition.id.clone(),
-                config,
-                description,
-            )?))
-        }
-        "sqlWriter" | "sql/writer" => {
-            let config: SqlWriterNodeConfig = parse_config(definition)?;
-            let description =
-                resolve_description(definition, "将当前 payload 持久化到本地 SQLite 表");
-            Ok(Arc::new(SqlWriterNode::new(
-                definition.id.clone(),
-                config,
-                description,
-            )))
-        }
-        "debugConsole" | "debug/console" => {
-            let config: DebugConsoleNodeConfig = parse_config(definition)?;
-            let description =
-                resolve_description(definition, "将 payload 打印到调试控制台以供检查");
-            Ok(Arc::new(DebugConsoleNode::new(
-                definition.id.clone(),
-                config,
-                description,
-            )))
-        }
-        other => Err(EngineError::unsupported_node_type(other)),
-    }
+        let description = def.resolve_description("读取模拟 Modbus 寄存器并将遥测数据写入 payload");
+        Ok(Arc::new(ModbusReadNode::new(
+            def.id.clone(),
+            config,
+            description,
+            cm,
+        )))
+    });
+    let _ = registry.alias("modbus/read", "modbusRead");
+
+    // ── if ────────────────────────────────────────
+    registry.register("if", |def, _cm| {
+        let config: IfNodeConfig = def.parse_config()?;
+        let description = def.resolve_description("求值布尔脚本并路由到 true 或 false 分支");
+        Ok(Arc::new(IfNode::new(def.id.clone(), config, description)?))
+    });
+
+    // ── switch ───────────────────────────────────
+    registry.register("switch", |def, _cm| {
+        let config: SwitchNodeConfig = def.parse_config()?;
+        let description = def.resolve_description("求值路由脚本并分发到匹配的分支");
+        Ok(Arc::new(SwitchNode::new(
+            def.id.clone(),
+            config,
+            description,
+        )?))
+    });
+
+    // ── tryCatch ─────────────────────────────────
+    registry.register("tryCatch", |def, _cm| {
+        let config: TryCatchNodeConfig = def.parse_config()?;
+        let description = def.resolve_description("执行受保护的脚本并路由到 try 或 catch 分支");
+        Ok(Arc::new(TryCatchNode::new(
+            def.id.clone(),
+            config,
+            description,
+        )?))
+    });
+
+    // ── loop ─────────────────────────────────────
+    registry.register("loop", |def, _cm| {
+        let config: LoopNodeConfig = def.parse_config()?;
+        let description =
+            def.resolve_description("求值可迭代脚本，逐项通过 body 分发，完成后发送 done");
+        Ok(Arc::new(LoopNode::new(
+            def.id.clone(),
+            config,
+            description,
+        )?))
+    });
+
+    // ── httpClient ───────────────────────────────
+    registry.register("httpClient", |def, _cm| {
+        let config: HttpClientNodeConfig = def.parse_config()?;
+        let description =
+            def.resolve_description("将 payload 发送到 HTTP 端点（如钉钉机器人告警）");
+        Ok(Arc::new(HttpClientNode::new(
+            def.id.clone(),
+            config,
+            description,
+        )?))
+    });
+    let _ = registry.alias("http/client", "httpClient");
+
+    // ── sqlWriter ────────────────────────────────
+    registry.register("sqlWriter", |def, _cm| {
+        let config: SqlWriterNodeConfig = def.parse_config()?;
+        let description = def.resolve_description("将当前 payload 持久化到本地 SQLite 表");
+        Ok(Arc::new(SqlWriterNode::new(
+            def.id.clone(),
+            config,
+            description,
+        )))
+    });
+    let _ = registry.alias("sql/writer", "sqlWriter");
+
+    // ── debugConsole ─────────────────────────────
+    registry.register("debugConsole", |def, _cm| {
+        let config: DebugConsoleNodeConfig = def.parse_config()?;
+        let description = def.resolve_description("将 payload 打印到调试控制台以供检查");
+        Ok(Arc::new(DebugConsoleNode::new(
+            def.id.clone(),
+            config,
+            description,
+        )))
+    });
+    let _ = registry.alias("debug/console", "debugConsole");
 }

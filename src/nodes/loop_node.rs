@@ -104,7 +104,10 @@ fn collect_loop_items(node_id: &str, result: Dynamic) -> Result<Vec<Option<Value
         if items.len() > MAX_LOOP_ITERATIONS {
             return Err(EngineError::payload_conversion(
                 node_id.to_owned(),
-                format!("Loop 数组长度 {} 超过上限 {MAX_LOOP_ITERATIONS}", items.len()),
+                format!(
+                    "Loop 数组长度 {} 超过上限 {MAX_LOOP_ITERATIONS}",
+                    items.len()
+                ),
             ));
         }
         return items

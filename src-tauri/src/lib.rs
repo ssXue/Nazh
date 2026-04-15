@@ -13,8 +13,8 @@ mod observability;
 use nazh_engine::{
     deploy_workflow as deploy_workflow_graph, shared_connection_manager, ConnectionDefinition,
     ConnectionRecord, DeployResponse, DispatchResponse, EngineError, ExecutionEvent,
-    SerialTriggerNodeConfig, TimerNodeConfig, UndeployResponse, WorkflowContext, WorkflowGraph,
-    WorkflowIngress,
+    NodeRegistry, SerialTriggerNodeConfig, TimerNodeConfig, UndeployResponse, WorkflowContext,
+    WorkflowGraph, WorkflowIngress,
 };
 use observability::{
     query_observability as query_workspace_observability, ObservabilityContextInput,
@@ -966,7 +966,8 @@ async fn deploy_workflow(
         .map_err(stringify_error)?;
     let node_count = graph.nodes.len();
     let edge_count = graph.edges.len();
-    let deployment = match deploy_workflow_graph(graph, state.connection_manager.clone()).await {
+    let registry = NodeRegistry::with_standard_nodes();
+    let deployment = match deploy_workflow_graph(graph, state.connection_manager.clone(), &registry).await {
         Ok(deployment) => deployment,
         Err(error) => {
             if let Some(store) = &observability_store {
