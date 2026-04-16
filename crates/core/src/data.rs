@@ -11,8 +11,8 @@
 //!   N 个下游各自 `read()` 获取 Arc 共享引用，`release()` 触发引用计数归零后释放。
 
 use std::sync::{
-    atomic::{AtomicUsize, Ordering},
     Arc,
+    atomic::{AtomicUsize, Ordering},
 };
 
 use serde::{Deserialize, Serialize};
@@ -187,29 +187,41 @@ mod tests {
     #[test]
     fn 写入后可零拷贝读取() {
         let store = ArenaDataStore::new();
-        let data_id = store.write(json!({"value": 42}), 1).unwrap_or_else(|e| panic!("写入失败: {e}"));
-        let payload = store.read(&data_id).unwrap_or_else(|e| panic!("读取失败: {e}"));
+        let data_id = store
+            .write(json!({"value": 42}), 1)
+            .unwrap_or_else(|e| panic!("写入失败: {e}"));
+        let payload = store
+            .read(&data_id)
+            .unwrap_or_else(|e| panic!("读取失败: {e}"));
         assert_eq!(*payload, json!({"value": 42}));
     }
 
     #[test]
     fn 读取可修改副本不影响原始数据() {
         let store = ArenaDataStore::new();
-        let data_id = store.write(json!({"value": 1}), 2).unwrap_or_else(|e| panic!("写入失败: {e}"));
+        let data_id = store
+            .write(json!({"value": 1}), 2)
+            .unwrap_or_else(|e| panic!("写入失败: {e}"));
 
-        let mut copy = store.read_mut(&data_id).unwrap_or_else(|e| panic!("读取失败: {e}"));
+        let mut copy = store
+            .read_mut(&data_id)
+            .unwrap_or_else(|e| panic!("读取失败: {e}"));
         if let Some(obj) = copy.as_object_mut() {
             obj.insert("value".to_owned(), json!(999));
         }
 
-        let original = store.read(&data_id).unwrap_or_else(|e| panic!("原始读取失败: {e}"));
+        let original = store
+            .read(&data_id)
+            .unwrap_or_else(|e| panic!("原始读取失败: {e}"));
         assert_eq!(*original, json!({"value": 1}), "原始数据不应被修改");
     }
 
     #[test]
     fn 引用计数归零后数据被释放() {
         let store = ArenaDataStore::new();
-        let data_id = store.write(json!("hello"), 3).unwrap_or_else(|e| panic!("写入失败: {e}"));
+        let data_id = store
+            .write(json!("hello"), 3)
+            .unwrap_or_else(|e| panic!("写入失败: {e}"));
 
         store.release(&data_id);
         assert!(store.read(&data_id).is_ok(), "释放 1/3 后仍可读");
@@ -224,10 +236,16 @@ mod tests {
     #[test]
     fn 扇出共享同一份数据() {
         let store = ArenaDataStore::new();
-        let data_id = store.write(json!({"fan": "out"}), 3).unwrap_or_else(|e| panic!("写入失败: {e}"));
+        let data_id = store
+            .write(json!({"fan": "out"}), 3)
+            .unwrap_or_else(|e| panic!("写入失败: {e}"));
 
-        let a = store.read(&data_id).unwrap_or_else(|e| panic!("读取 A 失败: {e}"));
-        let b = store.read(&data_id).unwrap_or_else(|e| panic!("读取 B 失败: {e}"));
+        let a = store
+            .read(&data_id)
+            .unwrap_or_else(|e| panic!("读取 A 失败: {e}"));
+        let b = store
+            .read(&data_id)
+            .unwrap_or_else(|e| panic!("读取 B 失败: {e}"));
         // Arc::ptr_eq 验证两次读取返回的是同一份内存
         assert!(Arc::ptr_eq(&a, &b), "扇出读取应共享同一份 Arc");
     }

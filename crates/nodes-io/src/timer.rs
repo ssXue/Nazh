@@ -3,7 +3,7 @@
 use async_trait::async_trait;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 
 use nazh_core::into_payload_map;
 use nazh_core::{ContextRef, DataStore, EngineError};
@@ -48,7 +48,11 @@ impl TimerNode {
 impl NodeTrait for TimerNode {
     nazh_core::impl_node_meta!("timer");
 
-    async fn execute(&self, ctx: &ContextRef, store: &dyn DataStore) -> Result<NodeExecution, EngineError> {
+    async fn execute(
+        &self,
+        ctx: &ContextRef,
+        store: &dyn DataStore,
+    ) -> Result<NodeExecution, EngineError> {
         let payload = store.read_mut(&ctx.data_id)?;
         let mut payload_map = into_payload_map(payload);
 

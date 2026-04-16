@@ -7,7 +7,7 @@
 use async_trait::async_trait;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 
 use crate::template::{self, TemplateVars};
 use nazh_core::into_payload_map;
@@ -233,7 +233,11 @@ impl HttpClientNode {
 impl NodeTrait for HttpClientNode {
     nazh_core::impl_node_meta!("httpClient");
 
-    async fn execute(&self, ctx: &ContextRef, store: &dyn DataStore) -> Result<NodeExecution, EngineError> {
+    async fn execute(
+        &self,
+        ctx: &ContextRef,
+        store: &dyn DataStore,
+    ) -> Result<NodeExecution, EngineError> {
         let payload = store.read_mut(&ctx.data_id)?;
         let method = self.config.method.trim().to_uppercase();
         let url = self.config.url.trim().to_owned();
@@ -246,8 +250,14 @@ impl NodeTrait for HttpClientNode {
 
         let requested_at = Utc::now().to_rfc3339();
         let request_timeout_ms = self.config.request_timeout_ms.max(500);
-        let (payload_body, content_type, webhook_kind, body_mode) =
-            prepare_http_request_body(&self.id, &self.config, &payload, &ctx.trace_id, &ctx.timestamp, &requested_at)?;
+        let (payload_body, content_type, webhook_kind, body_mode) = prepare_http_request_body(
+            &self.id,
+            &self.config,
+            &payload,
+            &ctx.trace_id,
+            &ctx.timestamp,
+            &requested_at,
+        )?;
 
         let reqwest_method = method.parse::<reqwest::Method>().map_err(|error| {
             EngineError::node_config(self.id.clone(), format!("无效的 HTTP 方法: {error}"))

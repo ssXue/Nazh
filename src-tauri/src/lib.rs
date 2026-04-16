@@ -15,28 +15,28 @@ use nazh_ai_core::{
     AiProviderDraft, AiService, AiTestResult, OpenAiCompatibleService,
 };
 use nazh_engine::{
-    deploy_workflow as deploy_workflow_graph, shared_connection_manager, standard_registry,
     ConnectionDefinition, ConnectionRecord, DeployResponse, DispatchResponse, EngineError,
     ExecutionEvent, ListNodeTypesResponse, SerialTriggerNodeConfig, TimerNodeConfig,
     UndeployResponse, WorkflowContext, WorkflowGraph, WorkflowIngress,
+    deploy_workflow as deploy_workflow_graph, shared_connection_manager, standard_registry,
 };
 use observability::{
-    query_observability as query_workspace_observability, ObservabilityContextInput,
-    ObservabilityQueryResult, ObservabilityStore, SharedObservabilityStore,
+    ObservabilityContextInput, ObservabilityQueryResult, ObservabilityStore,
+    SharedObservabilityStore, query_observability as query_workspace_observability,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::fs;
-use tokio::sync::{mpsc, Mutex, RwLock};
+use tokio::sync::{Mutex, RwLock, mpsc};
 
 use std::{
     collections::HashMap,
     io::{Read, Write},
     path::{Component, Path, PathBuf},
     sync::{
-        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
         Arc,
+        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
     },
     time::{Duration, Instant},
 };
@@ -54,7 +54,6 @@ enum RuntimeBackpressureStrategy {
     Block,
     RejectNewest,
 }
-
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -126,10 +125,14 @@ impl WorkflowRuntimePolicy {
                 .map_or(defaults.max_retry_attempts, |value| value.min(8)),
             initial_retry_backoff_ms: input
                 .initial_retry_backoff_ms
-                .map_or(defaults.initial_retry_backoff_ms, |value| value.clamp(25, 5_000)),
+                .map_or(defaults.initial_retry_backoff_ms, |value| {
+                    value.clamp(25, 5_000)
+                }),
             max_retry_backoff_ms: input
                 .max_retry_backoff_ms
-                .map_or(defaults.max_retry_backoff_ms, |value| value.clamp(100, 30_000)),
+                .map_or(defaults.max_retry_backoff_ms, |value| {
+                    value.clamp(100, 30_000)
+                }),
         }
     }
 }
@@ -344,7 +347,11 @@ struct WorkflowDispatchRouter {
 }
 
 impl WorkflowDispatchRouter {
-    async fn submit_manual(&self, ctx: WorkflowContext, source: impl Into<String>) -> Result<(), String> {
+    async fn submit_manual(
+        &self,
+        ctx: WorkflowContext,
+        source: impl Into<String>,
+    ) -> Result<(), String> {
         let envelope = DispatchEnvelope {
             ctx,
             lane: DispatchLane::Manual,
@@ -631,8 +638,8 @@ impl DesktopState {
         app: &AppHandle,
         workspace_path: Option<&str>,
     ) -> Result<PathBuf, String> {
-        let workspace_dir = resolve_project_workspace_dir(app, workspace_path)
-            .map(|(dir, _)| dir)?;
+        let workspace_dir =
+            resolve_project_workspace_dir(app, workspace_path).map(|(dir, _)| dir)?;
         Ok(workspace_dir.join("connections.json"))
     }
 
@@ -640,8 +647,8 @@ impl DesktopState {
         app: &AppHandle,
         workspace_path: Option<&str>,
     ) -> Result<PathBuf, String> {
-        let workspace_dir = resolve_project_workspace_dir(app, workspace_path)
-            .map(|(dir, _)| dir)?;
+        let workspace_dir =
+            resolve_project_workspace_dir(app, workspace_path).map(|(dir, _)| dir)?;
         Ok(workspace_dir.join("deployment-session.json"))
     }
 
@@ -662,7 +669,9 @@ impl DesktopState {
             Ok(path) => {
                 if path.exists() {
                     if let Ok(text) = fs::read_to_string(&path).await {
-                        if let Ok(defs) = serde_json::from_str::<Vec<nazh_engine::ConnectionDefinition>>(&text) {
+                        if let Ok(defs) =
+                            serde_json::from_str::<Vec<nazh_engine::ConnectionDefinition>>(&text)
+                        {
                             manager.replace_connections(defs).await;
                         } else {
                             manager
@@ -776,9 +785,7 @@ struct PersistedDeploymentSessionState {
     sessions: Vec<PersistedDeploymentSession>,
 }
 
-fn sort_deployment_sessions_by_freshness(
-    sessions: &mut Vec<PersistedDeploymentSession>,
-) {
+fn sort_deployment_sessions_by_freshness(sessions: &mut Vec<PersistedDeploymentSession>) {
     sessions.sort_by(|left, right| right.deployed_at.cmp(&left.deployed_at));
 }
 
@@ -820,7 +827,9 @@ fn normalize_deployment_session_state(
 async fn read_deployment_sessions_from_path(
     path: &Path,
 ) -> Result<Vec<PersistedDeploymentSession>, String> {
-    Ok(read_deployment_session_state_from_path(path).await?.sessions)
+    Ok(read_deployment_session_state_from_path(path)
+        .await?
+        .sessions)
 }
 
 async fn read_deployment_session_state_from_path(
@@ -846,20 +855,24 @@ async fn read_deployment_session_state_from_path(
     {
         let collection = serde_json::from_value::<PersistedDeploymentSessionCollection>(value)
             .map_err(|error| format!("解析 deployment-session.json 失败: {error}"))?;
-        return Ok(normalize_deployment_session_state(PersistedDeploymentSessionState {
-            version: collection.version,
-            active_project_id: collection.active_project_id,
-            sessions: collection.sessions,
-        }));
+        return Ok(normalize_deployment_session_state(
+            PersistedDeploymentSessionState {
+                version: collection.version,
+                active_project_id: collection.active_project_id,
+                sessions: collection.sessions,
+            },
+        ));
     }
 
     let session = serde_json::from_value::<PersistedDeploymentSession>(value)
         .map_err(|error| format!("解析 deployment-session.json 失败: {error}"))?;
-    Ok(normalize_deployment_session_state(PersistedDeploymentSessionState {
-        version: 1,
-        active_project_id: None,
-        sessions: vec![session],
-    }))
+    Ok(normalize_deployment_session_state(
+        PersistedDeploymentSessionState {
+            version: 1,
+            active_project_id: None,
+            sessions: vec![session],
+        },
+    ))
 }
 
 async fn write_deployment_session_state_to_path(
@@ -943,9 +956,15 @@ async fn deploy_workflow(
 
     if let Some(definitions) = connection_definitions {
         if state.workflows.lock().await.is_empty() {
-            state.connection_manager.replace_connections(definitions).await;
+            state
+                .connection_manager
+                .replace_connections(definitions)
+                .await;
         } else {
-            state.connection_manager.upsert_connections(definitions).await;
+            state
+                .connection_manager
+                .upsert_connections(definitions)
+                .await;
         }
     }
     let observability_store = if let Some(context) = observability_context.clone() {
@@ -975,24 +994,25 @@ async fn deploy_workflow(
     let node_count = graph.nodes.len();
     let edge_count = graph.edges.len();
     let registry = standard_registry();
-    let deployment = match deploy_workflow_graph(graph, state.connection_manager.clone(), &registry).await {
-        Ok(deployment) => deployment,
-        Err(error) => {
-            if let Some(store) = &observability_store {
-                let _ = store
-                    .record_audit(
-                        "error",
-                        "workflow",
-                        "部署失败",
-                        Some(error.to_string()),
-                        None,
-                        None,
-                    )
-                    .await;
+    let deployment =
+        match deploy_workflow_graph(graph, state.connection_manager.clone(), &registry).await {
+            Ok(deployment) => deployment,
+            Err(error) => {
+                if let Some(store) = &observability_store {
+                    let _ = store
+                        .record_audit(
+                            "error",
+                            "workflow",
+                            "部署失败",
+                            Some(error.to_string()),
+                            None,
+                            None,
+                        )
+                        .await;
+                }
+                return Err(stringify_error(error));
             }
-            return Err(stringify_error(error));
-        }
-    };
+        };
     let (ingress, streams) = deployment.into_parts();
     let root_nodes = ingress.root_nodes().to_vec();
     let (mut event_rx, mut result_rx, result_store_ref) = streams.into_receivers();
@@ -1114,7 +1134,9 @@ async fn deploy_workflow(
                 "success",
                 "workflow",
                 "部署完成",
-                Some(format!("workflow_id={workflow_id} · 节点 {node_count} / 连线 {edge_count}")),
+                Some(format!(
+                    "workflow_id={workflow_id} · 节点 {node_count} / 连线 {edge_count}"
+                )),
                 None,
                 Some(json!({
                     "workflow_id": workflow_id.clone(),
@@ -1187,7 +1209,9 @@ async fn dispatch_payload(
                 "info",
                 "dispatch",
                 "已提交测试载荷",
-                Some(format!("workflow_id={target_workflow_id} · trace_id={trace_id}")),
+                Some(format!(
+                    "workflow_id={target_workflow_id} · trace_id={trace_id}"
+                )),
                 Some(trace_id.clone()),
                 Some(json!({
                     "workflow_id": target_workflow_id,
@@ -1269,7 +1293,11 @@ async fn undeploy_workflow(
     if let Some(store) = removed_observability {
         let _ = store
             .record_audit(
-                if response.had_workflow { "warn" } else { "info" },
+                if response.had_workflow {
+                    "warn"
+                } else {
+                    "info"
+                },
                 "workflow",
                 if response.had_workflow {
                     "运行已停止"
@@ -1278,8 +1306,7 @@ async fn undeploy_workflow(
                 },
                 Some(format!(
                     "workflow_id={} · 已中止 {} 个根触发任务",
-                    target_workflow_id,
-                    response.aborted_timer_count
+                    target_workflow_id, response.aborted_timer_count
                 )),
                 None,
                 Some(json!({
@@ -1321,7 +1348,9 @@ async fn list_runtime_workflows(
     let workflows = state.workflows.lock().await;
     let mut summaries = workflows
         .values()
-        .map(|workflow| workflow.summary(active_workflow_id.as_deref() == Some(workflow.workflow_id.as_str())))
+        .map(|workflow| {
+            workflow.summary(active_workflow_id.as_deref() == Some(workflow.workflow_id.as_str()))
+        })
         .collect::<Vec<_>>();
     summaries.sort_by(|left, right| right.deployed_at.cmp(&left.deployed_at));
     Ok(summaries)
@@ -1352,18 +1381,19 @@ async fn set_active_runtime_workflow(
     }
 
     if let Some(workflow) = state.workflows.lock().await.get(workflow_id)
-        && let Some(store) = &workflow.observability {
-            let _ = store
-                .record_audit(
-                    "info",
-                    "runtime",
-                    "已切换当前工作流",
-                    Some(format!("workflow_id={workflow_id}")),
-                    None,
-                    None,
-                )
-                .await;
-        }
+        && let Some(store) = &workflow.observability
+    {
+        let _ = store
+            .record_audit(
+                "info",
+                "runtime",
+                "已切换当前工作流",
+                Some(format!("workflow_id={workflow_id}")),
+                None,
+                None,
+            )
+            .await;
+    }
 
     let _ = app.emit("workflow://runtime-focus", summary.clone());
     Ok(summary)
@@ -1376,8 +1406,7 @@ async fn list_dead_letters(
     workflow_id: Option<String>,
     limit: Option<usize>,
 ) -> Result<Vec<DeadLetterRecord>, String> {
-    let (workspace_dir, _) =
-        resolve_project_workspace_dir(&app, workspace_path.as_deref())?;
+    let (workspace_dir, _) = resolve_project_workspace_dir(&app, workspace_path.as_deref())?;
     let file_path = workspace_dir.join(DEAD_LETTER_DIR).join(DEAD_LETTER_FILE);
     if !file_path.exists() {
         return Ok(Vec::new());
@@ -1413,8 +1442,7 @@ async fn query_observability(
     search: Option<String>,
     limit: Option<usize>,
 ) -> Result<ObservabilityQueryResult, String> {
-    let (workspace_dir, _) =
-        resolve_project_workspace_dir(&app, workspace_path.as_deref())?;
+    let (workspace_dir, _) = resolve_project_workspace_dir(&app, workspace_path.as_deref())?;
     query_workspace_observability(workspace_dir, trace_id, search, limit.unwrap_or(240)).await
 }
 
@@ -1424,8 +1452,7 @@ async fn load_connection_definitions(
     state: State<'_, DesktopState>,
     workspace_path: Option<String>,
 ) -> Result<Vec<ConnectionDefinition>, String> {
-    let path =
-        DesktopState::connections_file_path(&app, workspace_path.as_deref())?;
+    let path = DesktopState::connections_file_path(&app, workspace_path.as_deref())?;
     if !path.exists() {
         state
             .connection_manager
@@ -1452,8 +1479,7 @@ async fn save_connection_definitions(
     workspace_path: Option<String>,
     definitions: Vec<ConnectionDefinition>,
 ) -> Result<(), String> {
-    let path =
-        DesktopState::connections_file_path(&app, workspace_path.as_deref())?;
+    let path = DesktopState::connections_file_path(&app, workspace_path.as_deref())?;
     let dir = path.parent().ok_or("无法确定连接文件目录")?;
     fs::create_dir_all(dir)
         .await
@@ -1475,9 +1501,11 @@ async fn load_deployment_session_file(
     app: AppHandle,
     workspace_path: Option<String>,
 ) -> Result<Option<PersistedDeploymentSession>, String> {
-    let path =
-        DesktopState::deployment_session_file_path(&app, workspace_path.as_deref())?;
-    Ok(read_deployment_sessions_from_path(&path).await?.into_iter().next())
+    let path = DesktopState::deployment_session_file_path(&app, workspace_path.as_deref())?;
+    Ok(read_deployment_sessions_from_path(&path)
+        .await?
+        .into_iter()
+        .next())
 }
 
 #[tauri::command]
@@ -1485,8 +1513,7 @@ async fn load_deployment_session_state_file(
     app: AppHandle,
     workspace_path: Option<String>,
 ) -> Result<PersistedDeploymentSessionState, String> {
-    let path =
-        DesktopState::deployment_session_file_path(&app, workspace_path.as_deref())?;
+    let path = DesktopState::deployment_session_file_path(&app, workspace_path.as_deref())?;
     read_deployment_session_state_from_path(&path).await
 }
 
@@ -1495,8 +1522,7 @@ async fn list_deployment_sessions_file(
     app: AppHandle,
     workspace_path: Option<String>,
 ) -> Result<Vec<PersistedDeploymentSession>, String> {
-    let path =
-        DesktopState::deployment_session_file_path(&app, workspace_path.as_deref())?;
+    let path = DesktopState::deployment_session_file_path(&app, workspace_path.as_deref())?;
     read_deployment_sessions_from_path(&path).await
 }
 
@@ -1507,8 +1533,7 @@ async fn save_deployment_session_file(
     session: PersistedDeploymentSession,
     active_project_id: Option<String>,
 ) -> Result<(), String> {
-    let path =
-        DesktopState::deployment_session_file_path(&app, workspace_path.as_deref())?;
+    let path = DesktopState::deployment_session_file_path(&app, workspace_path.as_deref())?;
     let mut state = read_deployment_session_state_from_path(&path).await?;
     state
         .sessions
@@ -1531,8 +1556,7 @@ async fn set_deployment_session_active_project_file(
     workspace_path: Option<String>,
     project_id: Option<String>,
 ) -> Result<(), String> {
-    let path =
-        DesktopState::deployment_session_file_path(&app, workspace_path.as_deref())?;
+    let path = DesktopState::deployment_session_file_path(&app, workspace_path.as_deref())?;
     let mut state = read_deployment_session_state_from_path(&path).await?;
     state.active_project_id = project_id
         .as_deref()
@@ -1548,8 +1572,7 @@ async fn remove_deployment_session_file(
     workspace_path: Option<String>,
     project_id: String,
 ) -> Result<(), String> {
-    let path =
-        DesktopState::deployment_session_file_path(&app, workspace_path.as_deref())?;
+    let path = DesktopState::deployment_session_file_path(&app, workspace_path.as_deref())?;
     let target_project_id = project_id.trim();
     if target_project_id.is_empty() {
         return Ok(());
@@ -1570,8 +1593,7 @@ async fn clear_deployment_session_file(
     app: AppHandle,
     workspace_path: Option<String>,
 ) -> Result<(), String> {
-    let path =
-        DesktopState::deployment_session_file_path(&app, workspace_path.as_deref())?;
+    let path = DesktopState::deployment_session_file_path(&app, workspace_path.as_deref())?;
 
     if !path.exists() {
         return Ok(());
@@ -1651,8 +1673,7 @@ struct SerialPortInfo {
 
 #[tauri::command]
 async fn list_serial_ports() -> Result<Vec<SerialPortInfo>, String> {
-    let ports = serialport::available_ports()
-        .map_err(|e| format!("枚举串口失败: {e}"))?;
+    let ports = serialport::available_ports().map_err(|e| format!("枚举串口失败: {e}"))?;
 
     let infos = ports
         .into_iter()
@@ -1911,8 +1932,7 @@ where
         .map_err(|error| format!("打开 `{}` 失败: {error}", path.display()))?;
     let line =
         serde_json::to_string(value).map_err(|error| format!("序列化 JSONL 失败: {error}"))?;
-    writeln!(file, "{line}")
-        .map_err(|error| format!("写入 `{}` 失败: {error}", path.display()))
+    writeln!(file, "{line}").map_err(|error| format!("写入 `{}` 失败: {error}", path.display()))
 }
 
 fn decrement_queue_depth(counter: &AtomicUsize) {
@@ -1937,7 +1957,9 @@ fn retry_backoff_ms(policy: &WorkflowRuntimePolicy, attempt: u32) -> u64 {
         .saturating_mul(multiplier)
         .clamp(
             policy.initial_retry_backoff_ms,
-            policy.max_retry_backoff_ms.max(policy.initial_retry_backoff_ms),
+            policy
+                .max_retry_backoff_ms
+                .max(policy.initial_retry_backoff_ms),
         )
 }
 
@@ -1947,7 +1969,10 @@ fn create_dispatch_router(
     policy: WorkflowRuntimePolicy,
     observability: Option<SharedObservabilityStore>,
     dead_letters: Arc<DeadLetterSink>,
-) -> (WorkflowDispatchRouter, Vec<tauri::async_runtime::JoinHandle<()>>) {
+) -> (
+    WorkflowDispatchRouter,
+    Vec<tauri::async_runtime::JoinHandle<()>>,
+) {
     let manual_metrics = Arc::new(DispatchLaneMetrics::default());
     let trigger_metrics = Arc::new(DispatchLaneMetrics::default());
     let (manual_tx, manual_rx) = mpsc::channel(policy.manual_queue_capacity);
@@ -2031,7 +2056,7 @@ fn spawn_dispatch_lane_task(
 
 async fn is_active_workflow(app: &AppHandle, workflow_id: &str) -> bool {
     let state: State<'_, DesktopState> = app.state();
-    
+
     state.active_workflow_id.lock().await.as_deref() == Some(workflow_id)
 }
 
@@ -2052,9 +2077,7 @@ fn expand_user_path(app: &AppHandle, raw_path: &str) -> Result<PathBuf, String> 
     Ok(PathBuf::from(raw_path))
 }
 
-fn count_incoming_edges(
-    graph: &WorkflowGraph,
-) -> std::collections::HashMap<String, usize> {
+fn count_incoming_edges(graph: &WorkflowGraph) -> std::collections::HashMap<String, usize> {
     let mut incoming_counts = graph
         .nodes
         .keys()
@@ -2133,32 +2156,30 @@ async fn collect_serial_root_specs(
             .ok_or_else(|| {
                 EngineError::node_config(node_id.clone(), "串口触发节点需要绑定串口连接资源")
             })?;
-        let connection = connection_manager
-            .get(connection_id)
-            .await
-            .ok_or_else(|| {
-                EngineError::node_config(
-                    node_id.clone(),
-                    format!("串口连接资源 `{connection_id}` 未注册"),
-                )
-            })?;
+        let connection = connection_manager.get(connection_id).await.ok_or_else(|| {
+            EngineError::node_config(
+                node_id.clone(),
+                format!("串口连接资源 `{connection_id}` 未注册"),
+            )
+        })?;
 
         if !is_serial_connection_type(&connection.kind) {
             let reason = format!("连接资源 `{connection_id}` 不是串口类型");
             let _ = connection_manager
                 .mark_invalid_configuration(connection_id, &reason)
                 .await;
-            return Err(EngineError::node_config(
-                node_id.clone(),
-                reason,
-            ));
+            return Err(EngineError::node_config(node_id.clone(), reason));
         }
 
-        let mut config: SerialTriggerNodeConfig =
-            serde_json::from_value(connection.metadata).map_err(|error| {
+        let mut config: SerialTriggerNodeConfig = serde_json::from_value(connection.metadata)
+            .map_err(|error| {
                 EngineError::node_config(node_definition.id.clone(), error.to_string())
             })?;
-        if let Some(inject) = node_definition.config.get("inject").and_then(Value::as_object) {
+        if let Some(inject) = node_definition
+            .config
+            .get("inject")
+            .and_then(Value::as_object)
+        {
             config.inject.clone_from(inject);
         }
         config.port_path = config.port_path.trim().to_owned();
@@ -2168,10 +2189,7 @@ async fn collect_serial_root_specs(
             let _ = connection_manager
                 .mark_invalid_configuration(connection_id, &reason)
                 .await;
-            return Err(EngineError::node_config(
-                node_id.clone(),
-                reason,
-            ));
+            return Err(EngineError::node_config(node_id.clone(), reason));
         }
 
         serial_roots.push(SerialRootSpec {
@@ -2222,7 +2240,10 @@ fn spawn_timer_root_tasks(
                 }
             });
 
-            DesktopTriggerTask { cancel, join: TriggerJoinHandle::Async(join) }
+            DesktopTriggerTask {
+                cancel,
+                join: TriggerJoinHandle::Async(join),
+            }
         })
         .collect()
 }
@@ -2257,7 +2278,10 @@ fn spawn_serial_root_tasks(
                 );
             });
 
-            DesktopTriggerTask { cancel, join: TriggerJoinHandle::Thread(join) }
+            DesktopTriggerTask {
+                cancel,
+                join: TriggerJoinHandle::Thread(join),
+            }
         })
         .collect()
 }
@@ -2314,10 +2338,7 @@ fn run_serial_root_reader(
                 let connect_latency_ms = connect_started_at.elapsed().as_millis() as u64;
                 let _ = tauri::async_runtime::block_on(connection_manager.record_connect_success(
                     &serial_root.connection_id,
-                    format!(
-                        "串口 {} 已建立监听，等待外设上报数据",
-                        config.port_path
-                    ),
+                    format!("串口 {} 已建立监听，等待外设上报数据", config.port_path),
                     Some(connect_latency_ms),
                 ));
                 port
@@ -2325,10 +2346,7 @@ fn run_serial_root_reader(
             Err(error) => {
                 let reason = format!("串口打开失败: {error}");
                 let retry_after_ms = tauri::async_runtime::block_on(
-                    connection_manager.record_connect_failure(
-                        &serial_root.connection_id,
-                        &reason,
-                    ),
+                    connection_manager.record_connect_failure(&serial_root.connection_id, &reason),
                 )
                 .unwrap_or(800);
                 let _ = tauri::async_runtime::block_on(
@@ -2367,10 +2385,11 @@ fn run_serial_root_reader(
                     );
 
                     if last_heartbeat_sent_at.elapsed() >= heartbeat_interval {
-                        let _ = tauri::async_runtime::block_on(connection_manager.record_heartbeat(
-                            &serial_root.connection_id,
-                            format!("串口 {} 心跳正常，监听仍在进行中", config.port_path),
-                        ));
+                        let _ =
+                            tauri::async_runtime::block_on(connection_manager.record_heartbeat(
+                                &serial_root.connection_id,
+                                format!("串口 {} 心跳正常，监听仍在进行中", config.port_path),
+                            ));
                         last_heartbeat_sent_at = Instant::now();
                     }
                 }
@@ -2463,23 +2482,20 @@ fn run_serial_root_reader(
                 connection_manager.release(&serial_root.connection_id),
             );
             let reason = format!("串口 {} 监听已停止", config.port_path);
-            let _ = tauri::async_runtime::block_on(connection_manager.mark_disconnected(
-                &serial_root.connection_id,
-                &reason,
-            ));
+            let _ = tauri::async_runtime::block_on(
+                connection_manager.mark_disconnected(&serial_root.connection_id, &reason),
+            );
             break;
         }
 
-        let reason = disconnected_reason
-            .unwrap_or_else(|| format!("串口 {} 连接已断开", config.port_path));
-        let retry_after_ms = tauri::async_runtime::block_on(connection_manager.record_connect_failure(
-            &serial_root.connection_id,
-            &reason,
-        ))
+        let reason =
+            disconnected_reason.unwrap_or_else(|| format!("串口 {} 连接已断开", config.port_path));
+        let retry_after_ms = tauri::async_runtime::block_on(
+            connection_manager.record_connect_failure(&serial_root.connection_id, &reason),
+        )
         .unwrap_or(800);
-        let _ = tauri::async_runtime::block_on(connection_manager.release(
-            &serial_root.connection_id,
-        ));
+        let _ =
+            tauri::async_runtime::block_on(connection_manager.release(&serial_root.connection_id));
         emit_serial_trigger_failure(
             &app,
             &workflow_id,
@@ -2564,13 +2580,7 @@ fn submit_serial_frame(
         WorkflowContext::new(payload),
         format!("serial:{}", serial_root.node_id),
     ) {
-        emit_serial_trigger_failure(
-            app,
-            workflow_id,
-            observability,
-            &serial_root.node_id,
-            error,
-        );
+        emit_serial_trigger_failure(app, workflow_id, observability, &serial_root.node_id, error);
     }
 }
 
@@ -2631,7 +2641,9 @@ fn sleep_with_cancel(cancel: &AtomicBool, duration: Duration) {
         if cancel.load(Ordering::Relaxed) {
             break;
         }
-        std::thread::sleep(Duration::from_millis(100).min(duration.saturating_sub(start.elapsed())));
+        std::thread::sleep(
+            Duration::from_millis(100).min(duration.saturating_sub(start.elapsed())),
+        );
     }
 }
 
@@ -2674,7 +2686,10 @@ fn decode_serial_delimiter(value: &str) -> Vec<u8> {
     }
 
     let trimmed = value.trim();
-    if let Some(hex) = trimmed.strip_prefix("hex:").or_else(|| trimmed.strip_prefix("0x")) {
+    if let Some(hex) = trimmed
+        .strip_prefix("hex:")
+        .or_else(|| trimmed.strip_prefix("0x"))
+    {
         return parse_hex_bytes(hex);
     }
 
@@ -2705,10 +2720,7 @@ fn decode_serial_delimiter(value: &str) -> Vec<u8> {
 }
 
 fn parse_hex_bytes(value: &str) -> Vec<u8> {
-    let nibbles = value
-        .bytes()
-        .filter_map(hex_nibble)
-        .collect::<Vec<_>>();
+    let nibbles = value.bytes().filter_map(hex_nibble).collect::<Vec<_>>();
     let mut bytes = Vec::with_capacity(nibbles.len() / 2);
 
     for pair in nibbles.chunks(2) {

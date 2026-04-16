@@ -6,7 +6,7 @@
 use async_trait::async_trait;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use nazh_core::into_payload_map;
 use nazh_core::{ContextRef, DataStore, EngineError};
@@ -70,7 +70,11 @@ impl SqlWriterNode {
 impl NodeTrait for SqlWriterNode {
     nazh_core::impl_node_meta!("sqlWriter");
 
-    async fn execute(&self, ctx: &ContextRef, store: &dyn DataStore) -> Result<NodeExecution, EngineError> {
+    async fn execute(
+        &self,
+        ctx: &ContextRef,
+        store: &dyn DataStore,
+    ) -> Result<NodeExecution, EngineError> {
         let shared_payload = store.read(&ctx.data_id)?;
         let database_path = self.config.database_path.trim().to_owned();
         if database_path.contains("..") {
@@ -96,15 +100,16 @@ impl NodeTrait for SqlWriterNode {
 
         tokio::task::spawn_blocking(move || {
             if let Some(parent) = std::path::Path::new(&db_path_clone).parent()
-                && !parent.as_os_str().is_empty() {
-                    std::fs::create_dir_all(parent).map_err(|error| {
-                        EngineError::stage_execution(
-                            node_id.clone(),
-                            trace_id,
-                            format!("创建 SQLite 目录失败: {error}"),
-                        )
-                    })?;
-                }
+                && !parent.as_os_str().is_empty()
+            {
+                std::fs::create_dir_all(parent).map_err(|error| {
+                    EngineError::stage_execution(
+                        node_id.clone(),
+                        trace_id,
+                        format!("创建 SQLite 目录失败: {error}"),
+                    )
+                })?;
+            }
 
             let conn = rusqlite::Connection::open(&db_path_clone).map_err(|error| {
                 EngineError::stage_execution(

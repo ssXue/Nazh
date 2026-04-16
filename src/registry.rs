@@ -51,7 +51,15 @@ mod tests {
         let registry = standard_registry();
         let types = registry.registered_types();
 
-        for expected in ["if", "switch", "tryCatch", "loop", "rhai", "code", "code/rhai"] {
+        for expected in [
+            "if",
+            "switch",
+            "tryCatch",
+            "loop",
+            "rhai",
+            "code",
+            "code/rhai",
+        ] {
             assert!(
                 types.contains(&expected),
                 "FlowPlugin 缺少节点类型: {expected}"

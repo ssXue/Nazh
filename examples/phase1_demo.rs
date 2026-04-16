@@ -1,9 +1,9 @@
 use std::time::Duration;
 
 use nazh_engine::{
-    build_linear_pipeline, EngineError, ExecutionEvent, PipelineStage, WorkflowContext,
+    EngineError, ExecutionEvent, PipelineStage, WorkflowContext, build_linear_pipeline,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 #[tokio::main]
 async fn main() -> Result<(), EngineError> {

@@ -5,7 +5,7 @@
 use async_trait::async_trait;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use nazh_core::into_payload_map;
 use nazh_core::{ContextRef, DataStore, EngineError};
@@ -48,7 +48,11 @@ impl DebugConsoleNode {
 impl NodeTrait for DebugConsoleNode {
     nazh_core::impl_node_meta!("debugConsole");
 
-    async fn execute(&self, ctx: &ContextRef, store: &dyn DataStore) -> Result<NodeExecution, EngineError> {
+    async fn execute(
+        &self,
+        ctx: &ContextRef,
+        store: &dyn DataStore,
+    ) -> Result<NodeExecution, EngineError> {
         let shared_payload = store.read(&ctx.data_id)?;
         let label = self
             .config

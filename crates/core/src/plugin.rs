@@ -334,7 +334,9 @@ mod tests {
         host.load(&TestPlugin);
         let registry = host.into_registry();
 
-        let node = registry.create(&node_def("n1", "alpha"), stub_resources()).unwrap();
+        let node = registry
+            .create(&node_def("n1", "alpha"), stub_resources())
+            .unwrap();
         assert_eq!(node.id(), "n1");
         assert_eq!(node.kind(), "alpha");
     }
@@ -345,7 +347,9 @@ mod tests {
         host.load(&TestPlugin);
         let registry = host.into_registry();
 
-        let node = registry.create(&node_def("n2", "a"), stub_resources()).unwrap();
+        let node = registry
+            .create(&node_def("n2", "a"), stub_resources())
+            .unwrap();
         assert_eq!(node.kind(), "alpha");
     }
 
@@ -356,8 +360,16 @@ mod tests {
         host.load(&AnotherPlugin);
         let registry = host.into_registry();
 
-        assert!(registry.create(&node_def("n1", "alpha"), stub_resources()).is_ok());
-        assert!(registry.create(&node_def("n2", "beta"), stub_resources()).is_ok());
+        assert!(
+            registry
+                .create(&node_def("n1", "alpha"), stub_resources())
+                .is_ok()
+        );
+        assert!(
+            registry
+                .create(&node_def("n2", "beta"), stub_resources())
+                .is_ok()
+        );
     }
 
     #[test]
@@ -375,9 +387,9 @@ mod tests {
 
         let mut registry = NodeRegistry::new();
         registry.register("check", |def, res| {
-            let marker = res.downcast_ref::<Marker>().ok_or_else(|| {
-                EngineError::invalid_graph("downcast 失败")
-            })?;
+            let marker = res
+                .downcast_ref::<Marker>()
+                .ok_or_else(|| EngineError::invalid_graph("downcast 失败"))?;
             Ok(Arc::new(StubNode {
                 id: format!("{}:{}", def.id, marker.0),
                 kind: "check",
@@ -385,7 +397,9 @@ mod tests {
         });
 
         let resources: SharedResources = Arc::new(Marker(42));
-        let node = registry.create(&node_def("n1", "check"), resources).unwrap();
+        let node = registry
+            .create(&node_def("n1", "check"), resources)
+            .unwrap();
         assert_eq!(node.id(), "n1:42");
     }
 }

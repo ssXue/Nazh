@@ -21,9 +21,7 @@ pub use event::ExecutionEvent;
 pub use ipc::{
     DeployResponse, DispatchResponse, ListNodeTypesResponse, NodeTypeEntry, UndeployResponse,
 };
-pub use node::{
-    into_payload_map, NodeDispatch, NodeExecution, NodeOutput, NodeTrait,
-};
+pub use node::{NodeDispatch, NodeExecution, NodeOutput, NodeTrait, into_payload_map};
 pub use plugin::{
     NodeRegistry, Plugin, PluginHost, PluginManifest, SharedResources, WorkflowNodeDefinition,
 };

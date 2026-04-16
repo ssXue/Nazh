@@ -7,9 +7,9 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use scripting::{default_max_operations, RhaiNodeBase};
+use nazh_core::{ContextRef, DataStore, EngineError, into_payload_map};
 use nazh_core::{NodeExecution, NodeTrait};
-use nazh_core::{into_payload_map, ContextRef, DataStore, EngineError};
+use scripting::{RhaiNodeBase, default_max_operations};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TryCatchNodeConfig {
@@ -43,7 +43,11 @@ impl TryCatchNode {
 impl NodeTrait for TryCatchNode {
     scripting::delegate_node_base!("tryCatch");
 
-    async fn execute(&self, ctx: &ContextRef, store: &dyn DataStore) -> Result<NodeExecution, EngineError> {
+    async fn execute(
+        &self,
+        ctx: &ContextRef,
+        store: &dyn DataStore,
+    ) -> Result<NodeExecution, EngineError> {
         let input_payload = store.read_mut(&ctx.data_id)?;
         let (scope, script_result) = self.base.evaluate_catching(input_payload.clone())?;
         match script_result {

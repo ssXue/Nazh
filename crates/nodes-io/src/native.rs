@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use connections::{insert_connection_lease, ConnectionGuard, SharedConnectionManager};
+use connections::{ConnectionGuard, SharedConnectionManager, insert_connection_lease};
 use nazh_core::into_payload_map;
 use nazh_core::{ContextRef, DataStore, EngineError};
 use nazh_core::{NodeExecution, NodeTrait};
@@ -81,7 +81,11 @@ impl NativeNode {
 impl NodeTrait for NativeNode {
     nazh_core::impl_node_meta!("native");
 
-    async fn execute(&self, ctx: &ContextRef, store: &dyn DataStore) -> Result<NodeExecution, EngineError> {
+    async fn execute(
+        &self,
+        ctx: &ContextRef,
+        store: &dyn DataStore,
+    ) -> Result<NodeExecution, EngineError> {
         let payload = store.read_mut(&ctx.data_id)?;
         let mut guard = if let Some(conn_id) = &self.config.connection_id {
             Some(self.connection_manager.acquire(conn_id).await?)

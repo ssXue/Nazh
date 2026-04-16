@@ -21,18 +21,18 @@ pub mod graph;
 mod registry;
 
 pub use nazh_core::{
-    into_payload_map, ArenaDataStore, ContextRef, DataId, DataStore, DeployResponse,
-    DispatchResponse, EngineError, ExecutionEvent, ListNodeTypesResponse, NodeDispatch,
-    NodeExecution, NodeOutput, NodeRegistry, NodeTrait, NodeTypeEntry, Plugin, PluginHost,
-    PluginManifest, SharedResources, UndeployResponse, WorkflowContext, WorkflowNodeDefinition,
+    ArenaDataStore, ContextRef, DataId, DataStore, DeployResponse, DispatchResponse, EngineError,
+    ExecutionEvent, ListNodeTypesResponse, NodeDispatch, NodeExecution, NodeOutput, NodeRegistry,
+    NodeTrait, NodeTypeEntry, Plugin, PluginHost, PluginManifest, SharedResources,
+    UndeployResponse, WorkflowContext, WorkflowNodeDefinition, into_payload_map,
 };
 
 pub use connections::{
-    shared_connection_manager, ConnectionDefinition, ConnectionGuard, ConnectionLease,
-    ConnectionManager, ConnectionRecord, SharedConnectionManager,
+    ConnectionDefinition, ConnectionGuard, ConnectionLease, ConnectionManager, ConnectionRecord,
+    SharedConnectionManager, shared_connection_manager,
 };
 
-pub use pipeline::{build_linear_pipeline, PipelineHandle, PipelineStage, StageFuture};
+pub use pipeline::{PipelineHandle, PipelineStage, StageFuture, build_linear_pipeline};
 
 pub use nodes_flow::{
     FlowPlugin, IfNode, IfNodeConfig, LoopNode, LoopNodeConfig, RhaiNode, RhaiNodeConfig,
@@ -46,7 +46,7 @@ pub use nodes_io::{
 };
 
 pub use graph::{
-    deploy_workflow, WorkflowDeployment, WorkflowGraph, WorkflowIngress, WorkflowStreams,
+    WorkflowDeployment, WorkflowGraph, WorkflowIngress, WorkflowStreams, deploy_workflow,
 };
 
 /// 加载全部标准库插件，返回就绪的节点注册表。

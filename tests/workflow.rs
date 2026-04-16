@@ -5,12 +5,12 @@ use std::{
 };
 
 use nazh_engine::{
-    deploy_workflow, shared_connection_manager, standard_registry, ArenaDataStore,
-    ConnectionDefinition, ConnectionManager, ContextRef, DataStore, DebugConsoleNode,
-    DebugConsoleNodeConfig, EngineError, HttpClientNode, HttpClientNodeConfig, ModbusReadNode,
-    ModbusReadNodeConfig, NodeDispatch, NodeTrait, RhaiNode, RhaiNodeConfig, SerialTriggerNode,
-    SerialTriggerNodeConfig, SqlWriterNode, SqlWriterNodeConfig, TimerNode, TimerNodeConfig,
-    WorkflowContext, WorkflowGraph,
+    ArenaDataStore, ConnectionDefinition, ConnectionManager, ContextRef, DataStore,
+    DebugConsoleNode, DebugConsoleNodeConfig, EngineError, HttpClientNode, HttpClientNodeConfig,
+    ModbusReadNode, ModbusReadNodeConfig, NodeDispatch, NodeTrait, RhaiNode, RhaiNodeConfig,
+    SerialTriggerNode, SerialTriggerNodeConfig, SqlWriterNode, SqlWriterNodeConfig, TimerNode,
+    TimerNodeConfig, WorkflowContext, WorkflowGraph, deploy_workflow, shared_connection_manager,
+    standard_registry,
 };
 use serde_json::json;
 use tokio::time::timeout;
@@ -549,10 +549,7 @@ async fn timer_node_injects_trigger_metadata() {
                 assert_eq!(first_output.payload["seed"], json!("keep"));
                 assert_eq!(first_output.payload["source"], json!("timer"));
                 assert_eq!(first_output.payload["_timer"]["node_id"], json!("tick"));
-                assert_eq!(
-                    first_output.payload["_timer"]["interval_ms"],
-                    json!(2_500)
-                );
+                assert_eq!(first_output.payload["_timer"]["interval_ms"], json!(2_500));
                 assert_eq!(first_output.payload["_timer"]["immediate"], json!(true));
             }
             None => panic!("timer node should produce one output"),
@@ -622,10 +619,7 @@ async fn serial_trigger_node_normalizes_ascii_and_hex_frames() {
                     first_output.payload["_serial"]["port_path"],
                     json!("/dev/tty.mock")
                 );
-                assert_eq!(
-                    first_output.payload["_serial"]["encoding"],
-                    json!("hex")
-                );
+                assert_eq!(first_output.payload["_serial"]["encoding"], json!("hex"));
             }
             None => panic!("serial trigger node should produce one output"),
         },
@@ -703,14 +697,8 @@ async fn modbus_read_node_emits_simulated_values() {
     match result {
         Ok(execution) => match execution.first() {
             Some(first_output) => {
-                assert_eq!(
-                    first_output.payload["_modbus"]["simulated"],
-                    json!(true)
-                );
-                assert_eq!(
-                    first_output.payload["_modbus"]["register"],
-                    json!(40_001)
-                );
+                assert_eq!(first_output.payload["_modbus"]["simulated"], json!(true));
+                assert_eq!(first_output.payload["_modbus"]["register"], json!(40_001));
                 assert_eq!(first_output.payload["_modbus"]["quantity"], json!(2));
                 assert!(
                     first_output.payload["values"].as_array().map(Vec::len) == Some(2),
@@ -782,10 +770,10 @@ async fn http_client_node_posts_payload_and_records_response() {
                 }
             }
 
-            if let Some(total_len) = expected_len {
-                if request_bytes.len() >= total_len {
-                    break;
-                }
+            if let Some(total_len) = expected_len
+                && request_bytes.len() >= total_len
+            {
+                break;
             }
         }
 
@@ -906,10 +894,10 @@ async fn http_alarm_node_renders_dingtalk_markdown_body() {
                 }
             }
 
-            if let Some(total_len) = expected_len {
-                if request_bytes.len() >= total_len {
-                    break;
-                }
+            if let Some(total_len) = expected_len
+                && request_bytes.len() >= total_len
+            {
+                break;
             }
         }
 
@@ -998,10 +986,7 @@ async fn http_alarm_node_renders_dingtalk_markdown_body() {
                     first_output.payload["_http"]["body_mode"],
                     json!("dingtalk_markdown")
                 );
-                assert_eq!(
-                    first_output.payload["http_response"]["errcode"],
-                    json!(0)
-                );
+                assert_eq!(first_output.payload["http_response"]["errcode"], json!(0));
             }
             None => panic!("http alarm node should produce one output"),
         },

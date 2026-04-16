@@ -3,14 +3,14 @@
 //!
 //! 脚本可返回整数（生成 N 次无 item 的迭代）或数组（逐项迭代）。
 
-use ::rhai::{serde::from_dynamic, Array, Dynamic};
+use ::rhai::{Array, Dynamic, serde::from_dynamic};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use scripting::{default_max_operations, RhaiNodeBase};
-use nazh_core::{into_payload_map, NodeDispatch, NodeExecution, NodeOutput, NodeTrait};
 use nazh_core::{ContextRef, DataStore, EngineError};
+use nazh_core::{NodeDispatch, NodeExecution, NodeOutput, NodeTrait, into_payload_map};
+use scripting::{RhaiNodeBase, default_max_operations};
 
 /// Loop 节点单次执行的最大迭代数量，防止恶意脚本导致 OOM。
 const MAX_LOOP_ITERATIONS: usize = 10_000;
@@ -133,7 +133,11 @@ fn collect_loop_items(node_id: &str, result: Dynamic) -> Result<Vec<Option<Value
 impl NodeTrait for LoopNode {
     scripting::delegate_node_base!("loop");
 
-    async fn execute(&self, ctx: &ContextRef, store: &dyn DataStore) -> Result<NodeExecution, EngineError> {
+    async fn execute(
+        &self,
+        ctx: &ContextRef,
+        store: &dyn DataStore,
+    ) -> Result<NodeExecution, EngineError> {
         let input_payload = store.read_mut(&ctx.data_id)?;
         let (scope, result) = self.base.evaluate(input_payload)?;
         let payload = self.base.payload_from_scope(&scope)?;

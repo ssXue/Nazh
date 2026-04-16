@@ -2,6 +2,9 @@
 //!
 //! [`ExecutionEvent`] 覆盖 DAG 工作流和线性流水线两种执行模式，
 //! 替代原先独立的 `WorkflowEvent` 和 `PipelineEvent`。
+//!
+//! 事件发射使用 `try_send`（非阻塞），确保可观测性不会拖慢数据通路。
+//! 通道满或关闭时通过 `tracing::error!` 报告——事件丢失即丢帧，不可接受。
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
@@ -33,13 +36,25 @@ pub enum ExecutionEvent {
     Finished { trace_id: Uuid },
 }
 
-/// 向事件通道发送执行事件（忽略发送失败）。
-pub async fn emit_event(tx: &mpsc::Sender<ExecutionEvent>, event: ExecutionEvent) {
-    let _ = tx.send(event).await;
+/// 非阻塞发送执行事件。
+///
+/// 使用 `try_send` 而非 `.await`，保证事件发射不阻塞节点的数据处理循环。
+/// 通道满或关闭时记录 `error!`——事件丢失即丢帧，属于系统异常。
+pub fn emit_event(tx: &mpsc::Sender<ExecutionEvent>, event: ExecutionEvent) {
+    if let Err(err) = tx.try_send(event) {
+        match err {
+            mpsc::error::TrySendError::Full(dropped) => {
+                tracing::error!(?dropped, "事件通道已满，事件被丢弃");
+            }
+            mpsc::error::TrySendError::Closed(dropped) => {
+                tracing::error!(?dropped, "事件通道已关闭，事件消费者可能已崩溃");
+            }
+        }
+    }
 }
 
-/// 向事件通道发送失败事件。
-pub async fn emit_failure(
+/// 发送失败事件并记录结构化日志。
+pub fn emit_failure(
     tx: &mpsc::Sender<ExecutionEvent>,
     stage: &str,
     trace_id: Uuid,
@@ -53,6 +68,70 @@ pub async fn emit_failure(
             trace_id,
             error: error.to_string(),
         },
-    )
-    .await;
+    );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn started_event() -> ExecutionEvent {
+        ExecutionEvent::Started {
+            stage: "test-node".to_owned(),
+            trace_id: Uuid::new_v4(),
+        }
+    }
+
+    #[test]
+    fn 正常发送事件进入通道() {
+        let (tx, mut rx) = mpsc::channel(4);
+        let event = started_event();
+        let expected = event.clone();
+
+        emit_event(&tx, event);
+
+        let received = rx.try_recv();
+        assert_eq!(received.ok(), Some(expected));
+    }
+
+    #[test]
+    fn 通道满时事件被丢弃且不崩溃() {
+        let (tx, _rx) = mpsc::channel(1);
+
+        emit_event(&tx, started_event());
+        // 通道容量为 1，第二次应触发 Full 分支
+        emit_event(&tx, started_event());
+    }
+
+    #[test]
+    fn 通道关闭时事件被丢弃且不崩溃() {
+        let (tx, rx) = mpsc::channel(4);
+        drop(rx);
+
+        // 接收端已 drop，应触发 Closed 分支
+        emit_event(&tx, started_event());
+    }
+
+    #[test]
+    fn emit_failure_构造正确的失败事件() {
+        let (tx, mut rx) = mpsc::channel(4);
+        let trace_id = Uuid::new_v4();
+        let error = EngineError::invalid_graph("测试错误");
+
+        emit_failure(&tx, "fail-node", trace_id, &error);
+
+        let received = rx.try_recv();
+        match received {
+            Ok(ExecutionEvent::Failed {
+                stage,
+                trace_id: tid,
+                error: msg,
+            }) => {
+                assert_eq!(stage, "fail-node");
+                assert_eq!(tid, trace_id);
+                assert!(msg.contains("测试错误"));
+            }
+            other => panic!("应收到 Failed 事件，实际收到: {other:?}"),
+        }
+    }
 }

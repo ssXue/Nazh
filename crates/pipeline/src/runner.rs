@@ -9,9 +9,9 @@ use tracing::Instrument;
 
 use super::types::PipelineStage;
 use nazh_core::{
-    event::{emit_event, emit_failure, ExecutionEvent},
-    guard::guarded_execute,
     EngineError, WorkflowContext,
+    event::{ExecutionEvent, emit_event, emit_failure},
+    guard::guarded_execute,
 };
 
 /// 单阶段的异步执行循环。
@@ -32,8 +32,7 @@ pub(crate) async fn run_stage(
                 stage: stage_name.clone(),
                 trace_id,
             },
-        )
-        .await;
+        );
 
         let span = tracing::info_span!(
             "stage.execute",
@@ -69,21 +68,20 @@ pub(crate) async fn run_stage(
                                 stage: stage_name.clone(),
                                 trace_id,
                             },
-                        )
-                        .await;
+                        );
 
                         if output_tx.is_none() {
-                            emit_event(&event_tx, ExecutionEvent::Finished { trace_id }).await;
+                            emit_event(&event_tx, ExecutionEvent::Finished { trace_id });
                         }
                     }
                     Err(error) => {
-                        emit_failure(&event_tx, &stage_name, trace_id, &error).await;
+                        emit_failure(&event_tx, &stage_name, trace_id, &error);
                         break;
                     }
                 }
             }
             Err(error) => {
-                emit_failure(&event_tx, &stage_name, trace_id, &error).await;
+                emit_failure(&event_tx, &stage_name, trace_id, &error);
             }
         }
     }

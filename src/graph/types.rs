@@ -9,7 +9,9 @@
 
 use std::{collections::HashMap, sync::Arc};
 
-use crate::{ContextRef, DataStore, EngineError, ExecutionEvent, WorkflowContext, WorkflowNodeDefinition};
+use crate::{
+    ContextRef, DataStore, EngineError, ExecutionEvent, WorkflowContext, WorkflowNodeDefinition,
+};
 use serde::{Deserialize, Deserializer, Serialize};
 use tokio::sync::mpsc;
 use ts_rs::TS;
@@ -120,7 +122,12 @@ impl WorkflowIngress {
         let trace_id = ctx.trace_id;
         let timestamp = ctx.timestamp;
         let data_id = self.store.write(ctx.payload, consumer_count)?;
-        let ctx_ref = ContextRef { trace_id, timestamp, data_id, source_node: None };
+        let ctx_ref = ContextRef {
+            trace_id,
+            timestamp,
+            data_id,
+            source_node: None,
+        };
 
         for sender in self.root_senders.values() {
             sender
@@ -145,7 +152,12 @@ impl WorkflowIngress {
         let trace_id = ctx.trace_id;
         let timestamp = ctx.timestamp;
         let data_id = self.store.write(ctx.payload, 1)?;
-        let ctx_ref = ContextRef { trace_id, timestamp, data_id, source_node: None };
+        let ctx_ref = ContextRef {
+            trace_id,
+            timestamp,
+            data_id,
+            source_node: None,
+        };
         sender
             .send(ctx_ref)
             .await
@@ -170,7 +182,12 @@ impl WorkflowIngress {
         let trace_id = ctx.trace_id;
         let timestamp = ctx.timestamp;
         let data_id = self.store.write(ctx.payload, 1)?;
-        let ctx_ref = ContextRef { trace_id, timestamp, data_id, source_node: None };
+        let ctx_ref = ContextRef {
+            trace_id,
+            timestamp,
+            data_id,
+            source_node: None,
+        };
         sender
             .blocking_send(ctx_ref)
             .map_err(|_| EngineError::ChannelClosed {

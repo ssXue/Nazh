@@ -1,10 +1,10 @@
 use std::time::Duration;
 
 use nazh_engine::{
-    build_linear_pipeline, EngineError, ExecutionEvent, PipelineStage, WorkflowContext,
+    EngineError, ExecutionEvent, PipelineStage, WorkflowContext, build_linear_pipeline,
 };
-use serde_json::{json, Value};
-use tokio::time::{sleep, timeout, Instant};
+use serde_json::{Value, json};
+use tokio::time::{Instant, sleep, timeout};
 
 #[tokio::test]
 async fn linear_pipeline_transforms_payload() {
@@ -100,20 +100,20 @@ async fn stage_errors_do_not_block_following_messages() {
     while Instant::now() < deadline && (!saw_failure || !saw_result) {
         if !saw_failure {
             let event = timeout(Duration::from_millis(100), pipeline.next_event()).await;
-            if let Ok(Some(ExecutionEvent::Failed { trace_id, .. })) = event {
-                if trace_id == failed_trace_id {
-                    saw_failure = true;
-                }
+            if let Ok(Some(ExecutionEvent::Failed { trace_id, .. })) = event
+                && trace_id == failed_trace_id
+            {
+                saw_failure = true;
             }
         }
 
         if !saw_result {
             let result = timeout(Duration::from_millis(100), pipeline.next_result()).await;
-            if let Ok(Some(ctx)) = result {
-                if ctx.trace_id == ok_trace_id {
-                    assert_eq!(ctx.payload, json!({ "value": 10 }));
-                    saw_result = true;
-                }
+            if let Ok(Some(ctx)) = result
+                && ctx.trace_id == ok_trace_id
+            {
+                assert_eq!(ctx.payload, json!({ "value": 10 }));
+                saw_result = true;
             }
         }
     }
@@ -168,20 +168,19 @@ async fn panicking_stage_is_isolated() {
             if let Ok(Some(ExecutionEvent::Failed {
                 trace_id, error, ..
             })) = event
+                && trace_id == panic_trace_id
             {
-                if trace_id == panic_trace_id {
-                    assert!(error.contains("panic"), "failure event should report panic");
-                    saw_failure = true;
-                }
+                assert!(error.contains("panic"), "failure event should report panic");
+                saw_failure = true;
             }
         }
 
         if !saw_result {
             let result = timeout(Duration::from_millis(100), pipeline.next_result()).await;
-            if let Ok(Some(ctx)) = result {
-                if ctx.trace_id == ok_trace_id {
-                    saw_result = true;
-                }
+            if let Ok(Some(ctx)) = result
+                && ctx.trace_id == ok_trace_id
+            {
+                saw_result = true;
             }
         }
     }
@@ -193,11 +192,13 @@ async fn panicking_stage_is_isolated() {
 #[tokio::test]
 async fn timeout_reports_failure_without_killing_pipeline() {
     let mut pipeline = match build_linear_pipeline(
-        vec![PipelineStage::new("slow", |ctx| async move {
-            sleep(Duration::from_millis(100)).await;
-            Ok(ctx)
-        })
-        .with_timeout(Duration::from_millis(10))],
+        vec![
+            PipelineStage::new("slow", |ctx| async move {
+                sleep(Duration::from_millis(100)).await;
+                Ok(ctx)
+            })
+            .with_timeout(Duration::from_millis(10)),
+        ],
         8,
     ) {
         Ok(pipeline) => pipeline,

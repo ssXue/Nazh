@@ -6,9 +6,9 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-use scripting::{default_max_operations, RhaiNodeBase};
-use nazh_core::{NodeExecution, NodeTrait};
 use nazh_core::{ContextRef, DataStore, EngineError};
+use nazh_core::{NodeExecution, NodeTrait};
+use scripting::{RhaiNodeBase, default_max_operations};
 
 fn default_switch_branch() -> String {
     "default".to_owned()
@@ -64,7 +64,11 @@ impl SwitchNode {
 impl NodeTrait for SwitchNode {
     scripting::delegate_node_base!("switch");
 
-    async fn execute(&self, ctx: &ContextRef, store: &dyn DataStore) -> Result<NodeExecution, EngineError> {
+    async fn execute(
+        &self,
+        ctx: &ContextRef,
+        store: &dyn DataStore,
+    ) -> Result<NodeExecution, EngineError> {
         let payload = store.read_mut(&ctx.data_id)?;
         let (scope, result) = self.base.evaluate(payload)?;
         let new_payload = self.base.payload_from_scope(&scope)?;

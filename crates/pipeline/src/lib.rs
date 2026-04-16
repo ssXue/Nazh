@@ -11,4 +11,4 @@
 mod runner;
 mod types;
 
-pub use types::{build_linear_pipeline, PipelineHandle, PipelineStage, StageFuture};
+pub use types::{PipelineHandle, PipelineStage, StageFuture, build_linear_pipeline};

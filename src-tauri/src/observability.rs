@@ -8,8 +8,8 @@ use std::{
 
 use chrono::{DateTime, Utc};
 use nazh_engine::{ExecutionEvent, WorkflowContext};
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde_json::{Value, json};
 use tokio::sync::Mutex;
 
 const OBSERVABILITY_DIR: &str = "observability";
@@ -180,9 +180,7 @@ impl ObservabilityStore {
 
         let (entry, clear_span) = match event {
             ExecutionEvent::Started { stage, trace_id } => {
-                state
-                    .active_spans
-                    .insert(span_key(trace_id, stage), now);
+                state.active_spans.insert(span_key(trace_id, stage), now);
                 (
                     {
                         let mut e = self.build_entry(
@@ -435,7 +433,9 @@ pub async fn query_observability(
         });
     }
 
-    let trace_filter = trace_id.map(|value| value.trim().to_owned()).filter(|value| !value.is_empty());
+    let trace_filter = trace_id
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty());
     let search_filter = search
         .map(|value| value.trim().to_ascii_lowercase())
         .filter(|value| !value.is_empty());
@@ -447,7 +447,8 @@ pub async fn query_observability(
 
     events.retain(|entry| matches_entry(entry, trace_filter.as_deref(), search_filter.as_deref()));
     audits.retain(|entry| matches_entry(entry, trace_filter.as_deref(), search_filter.as_deref()));
-    alerts.retain(|record| matches_alert(record, trace_filter.as_deref(), search_filter.as_deref()));
+    alerts
+        .retain(|record| matches_alert(record, trace_filter.as_deref(), search_filter.as_deref()));
 
     let mut merged = events.clone();
     merged.extend(audits.clone());
@@ -509,11 +510,20 @@ fn build_trace_summaries(
 
         let accumulator = traces.entry(trace_id.clone()).or_default();
         accumulator.total_events += 1;
-        accumulator.last_seen_at = max_timestamp(accumulator.last_seen_at.take(), Some(entry.timestamp.clone()));
-        accumulator.started_at = min_timestamp(accumulator.started_at.take(), Some(entry.timestamp.clone()));
-        accumulator.project_name = accumulator.project_name.clone().or_else(|| entry.project_name.clone());
-        accumulator.environment_name =
-            accumulator.environment_name.clone().or_else(|| entry.environment_name.clone());
+        accumulator.last_seen_at = max_timestamp(
+            accumulator.last_seen_at.take(),
+            Some(entry.timestamp.clone()),
+        );
+        accumulator.started_at =
+            min_timestamp(accumulator.started_at.take(), Some(entry.timestamp.clone()));
+        accumulator.project_name = accumulator
+            .project_name
+            .clone()
+            .or_else(|| entry.project_name.clone());
+        accumulator.environment_name = accumulator
+            .environment_name
+            .clone()
+            .or_else(|| entry.environment_name.clone());
 
         if let Some(node_id) = &entry.node_id {
             accumulator.node_ids.insert(node_id.clone());
@@ -533,7 +543,8 @@ fn build_trace_summaries(
             };
         }
         if let Some(duration_ms) = entry.duration_ms {
-            accumulator.total_duration_ms = accumulator.total_duration_ms.saturating_add(duration_ms);
+            accumulator.total_duration_ms =
+                accumulator.total_duration_ms.saturating_add(duration_ms);
             accumulator.has_duration = true;
         }
     }
@@ -545,8 +556,10 @@ fn build_trace_summaries(
         let accumulator = traces.entry(alert.trace_id.clone()).or_default();
         accumulator.project_name = Some(alert.project_name.clone());
         accumulator.environment_name = Some(alert.environment_name.clone());
-        accumulator.last_seen_at =
-            max_timestamp(accumulator.last_seen_at.take(), Some(alert.timestamp.clone()));
+        accumulator.last_seen_at = max_timestamp(
+            accumulator.last_seen_at.take(),
+            Some(alert.timestamp.clone()),
+        );
     }
 
     let mut result = traces
@@ -564,7 +577,9 @@ fn build_trace_summaries(
             node_count: accumulator.node_ids.len(),
             output_count: accumulator.output_count,
             failure_count: accumulator.failure_count,
-            total_duration_ms: accumulator.has_duration.then_some(accumulator.total_duration_ms),
+            total_duration_ms: accumulator
+                .has_duration
+                .then_some(accumulator.total_duration_ms),
             last_node_id: accumulator.last_node_id,
             project_name: accumulator.project_name,
             environment_name: accumulator.environment_name,
@@ -585,7 +600,11 @@ fn alert_to_entry(alert: &AlertDeliveryRecord) -> ObservabilityEntry {
     ObservabilityEntry {
         id: alert.id.clone(),
         timestamp: alert.timestamp.clone(),
-        level: if alert.success { "success".to_owned() } else { "error".to_owned() },
+        level: if alert.success {
+            "success".to_owned()
+        } else {
+            "error".to_owned()
+        },
         category: "alert".to_owned(),
         source: alert.node_id.clone(),
         message: if alert.success {
@@ -693,7 +712,13 @@ fn truncate_value(value: &Value, max_text_len: usize) -> Value {
                 Value::String(text.chars().take(max_text_len).collect::<String>())
             }
         }
-        Value::Array(items) => Value::Array(items.iter().take(12).map(|item| truncate_value(item, max_text_len)).collect()),
+        Value::Array(items) => Value::Array(
+            items
+                .iter()
+                .take(12)
+                .map(|item| truncate_value(item, max_text_len))
+                .collect(),
+        ),
         Value::Object(map) => {
             let mut next = serde_json::Map::new();
             for (key, nested) in map.iter().take(12) {
@@ -705,7 +730,11 @@ fn truncate_value(value: &Value, max_text_len: usize) -> Value {
     }
 }
 
-fn matches_entry(entry: &ObservabilityEntry, trace_filter: Option<&str>, search_filter: Option<&str>) -> bool {
+fn matches_entry(
+    entry: &ObservabilityEntry,
+    trace_filter: Option<&str>,
+    search_filter: Option<&str>,
+) -> bool {
     if trace_filter.is_some_and(|filter| entry.trace_id.as_deref() != Some(filter)) {
         return false;
     }
@@ -729,7 +758,11 @@ fn matches_entry(entry: &ObservabilityEntry, trace_filter: Option<&str>, search_
     true
 }
 
-fn matches_alert(record: &AlertDeliveryRecord, trace_filter: Option<&str>, search_filter: Option<&str>) -> bool {
+fn matches_alert(
+    record: &AlertDeliveryRecord,
+    trace_filter: Option<&str>,
+    search_filter: Option<&str>,
+) -> bool {
     if trace_filter.is_some_and(|filter| record.trace_id != filter) {
         return false;
     }
@@ -795,13 +828,12 @@ async fn append_jsonl<T>(path: PathBuf, record: &T) -> Result<(), String>
 where
     T: Serialize + Send + Sync,
 {
-    let line = serde_json::to_string(record)
-        .map_err(|error| format!("序列化观测记录失败: {error}"))?;
+    let line =
+        serde_json::to_string(record).map_err(|error| format!("序列化观测记录失败: {error}"))?;
 
     tokio::task::spawn_blocking(move || -> Result<(), String> {
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|error| format!("创建观测目录失败: {error}"))?;
+            fs::create_dir_all(parent).map_err(|error| format!("创建观测目录失败: {error}"))?;
         }
 
         let mut file = OpenOptions::new()
@@ -821,5 +853,9 @@ fn span_key(trace_id: impl std::fmt::Display, stage: &str) -> String {
 }
 
 fn build_record_id(prefix: &str, timestamp: &DateTime<Utc>) -> String {
-    format!("{prefix}-{}-{}", timestamp.timestamp_millis(), timestamp.timestamp_subsec_nanos())
+    format!(
+        "{prefix}-{}-{}",
+        timestamp.timestamp_millis(),
+        timestamp.timestamp_subsec_nanos()
+    )
 }

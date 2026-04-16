@@ -7,7 +7,7 @@
 use async_trait::async_trait;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 
 use nazh_core::into_payload_map;
 use nazh_core::{ContextRef, DataStore, EngineError};
@@ -147,7 +147,11 @@ fn frame_u64(frame: &Map<String, Value>, key: &str, fallback: u64) -> u64 {
 impl NodeTrait for SerialTriggerNode {
     nazh_core::impl_node_meta!("serialTrigger");
 
-    async fn execute(&self, ctx: &ContextRef, store: &dyn DataStore) -> Result<NodeExecution, EngineError> {
+    async fn execute(
+        &self,
+        ctx: &ContextRef,
+        store: &dyn DataStore,
+    ) -> Result<NodeExecution, EngineError> {
         let payload = store.read_mut(&ctx.data_id)?;
         let mut payload_map = into_payload_map(payload);
 

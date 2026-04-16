@@ -11,9 +11,9 @@ use tokio::sync::mpsc;
 use tracing::Instrument;
 
 use nazh_core::{
+    ContextRef, DataStore, EngineError, ExecutionEvent, NodeDispatch, NodeTrait,
     event::{emit_event, emit_failure},
     guard::guarded_execute,
-    ContextRef, DataStore, EngineError, ExecutionEvent, NodeDispatch, NodeTrait,
 };
 
 use super::types::DownstreamTarget;
@@ -40,8 +40,7 @@ pub(crate) async fn run_node(
                 stage: node_id.clone(),
                 trace_id,
             },
-        )
-        .await;
+        );
 
         let span = tracing::info_span!(
             "node.execute",
@@ -87,18 +86,15 @@ pub(crate) async fn run_node(
                         }
                     };
 
-                    let new_ref = ContextRef::new(
-                        trace_id,
-                        data_id,
-                        Some(node_id.clone()),
-                    );
+                    let new_ref = ContextRef::new(trace_id, data_id, Some(node_id.clone()));
 
                     let write_result = if matching_targets.is_empty() {
-                        result_tx.send(new_ref).await.map_err(|_| {
-                            EngineError::ChannelClosed {
+                        result_tx
+                            .send(new_ref)
+                            .await
+                            .map_err(|_| EngineError::ChannelClosed {
                                 stage: node_id.clone(),
-                            }
-                        })
+                            })
                     } else {
                         let mut downstream_error = None;
                         for target in &matching_targets {
@@ -125,8 +121,7 @@ pub(crate) async fn run_node(
                                         stage: node_id.clone(),
                                         trace_id,
                                     },
-                                )
-                                .await;
+                                );
                             }
                         }
                         Err(error) => {
@@ -137,7 +132,7 @@ pub(crate) async fn run_node(
                 }
 
                 if let Some(error) = send_error {
-                    emit_failure(&event_tx, &node_id, trace_id, &error).await;
+                    emit_failure(&event_tx, &node_id, trace_id, &error);
                     break;
                 }
 
@@ -147,11 +142,10 @@ pub(crate) async fn run_node(
                         stage: node_id.clone(),
                         trace_id,
                     },
-                )
-                .await;
+                );
             }
             Err(error) => {
-                emit_failure(&event_tx, &node_id, trace_id, &error).await;
+                emit_failure(&event_tx, &node_id, trace_id, &error);
             }
         }
     }

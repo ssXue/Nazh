@@ -5,8 +5,8 @@
 //! 来复用脚本执行能力。添加新的脚本节点时只需嵌入 `RhaiNodeBase` 字段。
 
 use rhai::{
+    AST, Dynamic, Engine, Scope,
     serde::{from_dynamic, to_dynamic},
-    Dynamic, Engine, Scope, AST,
 };
 use serde_json::Value;
 
@@ -90,10 +90,7 @@ impl RhaiNodeBase {
     /// 执行 Rhai 脚本，返回作用域和结果值。
     ///
     /// 脚本运行时错误会转换为 [`EngineError::RhaiRuntime`]。
-    pub fn evaluate(
-        &self,
-        payload: Value,
-    ) -> Result<(Scope<'static>, Dynamic), EngineError> {
+    pub fn evaluate(&self, payload: Value) -> Result<(Scope<'static>, Dynamic), EngineError> {
         let mut scope = self.prepare_scope(payload)?;
         let result = self
             .engine
@@ -112,7 +109,8 @@ impl RhaiNodeBase {
         let mut scope = self.prepare_scope(payload)?;
         let script_result = self
             .engine
-            .eval_ast_with_scope::<Dynamic>(&mut scope, &self.ast).map_or_else(|error| Err(error.to_string()), Ok);
+            .eval_ast_with_scope::<Dynamic>(&mut scope, &self.ast)
+            .map_or_else(|error| Err(error.to_string()), Ok);
         Ok((scope, script_result))
     }
 

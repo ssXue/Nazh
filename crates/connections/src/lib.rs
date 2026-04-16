@@ -335,7 +335,10 @@ impl ConnectionGuard {
 
 impl Drop for ConnectionGuard {
     fn drop(&mut self) {
-        let mut record = self.record.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut record = self
+            .record
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         finalize_release(&mut record, self.lease.borrowed_at, &self.outcome);
     }
 }
@@ -481,9 +484,7 @@ impl ConnectionManager {
             .attempt_windows
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let attempts = attempt_windows
-            .entry(connection_id.to_owned())
-            .or_default();
+        let attempts = attempt_windows.entry(connection_id.to_owned()).or_default();
         let cutoff = now - duration_ms(policy.rate_limit_window_ms);
 
         while attempts
@@ -513,7 +514,9 @@ impl ConnectionManager {
     pub async fn acquire(&self, connection_id: &str) -> Result<ConnectionGuard, EngineError> {
         let entry = self.entry(connection_id).await?;
         let lease = {
-            let mut record = entry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            let mut record = entry
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             let now = Utc::now();
             let policy = ConnectionGovernancePolicy::from_metadata(&record.metadata);
 
@@ -532,25 +535,27 @@ impl ConnectionManager {
             }
 
             if let Some(circuit_open_until) = record.health.circuit_open_until
-                && circuit_open_until > now {
-                    return Err(EngineError::ConnectionCircuitOpen {
-                        connection_id: connection_id.to_owned(),
-                        retry_after_ms: remaining_ms(circuit_open_until, now),
-                        reason: record
-                            .health
-                            .last_failure_reason
-                            .clone()
-                            .unwrap_or_else(|| "连接仍处于熔断冷却期".to_owned()),
-                    });
-                }
+                && circuit_open_until > now
+            {
+                return Err(EngineError::ConnectionCircuitOpen {
+                    connection_id: connection_id.to_owned(),
+                    retry_after_ms: remaining_ms(circuit_open_until, now),
+                    reason: record
+                        .health
+                        .last_failure_reason
+                        .clone()
+                        .unwrap_or_else(|| "连接仍处于熔断冷却期".to_owned()),
+                });
+            }
 
             if let Some(rate_limited_until) = record.health.rate_limited_until
-                && rate_limited_until > now {
-                    return Err(EngineError::ConnectionRateLimited {
-                        connection_id: connection_id.to_owned(),
-                        retry_after_ms: remaining_ms(rate_limited_until, now),
-                    });
-                }
+                && rate_limited_until > now
+            {
+                return Err(EngineError::ConnectionRateLimited {
+                    connection_id: connection_id.to_owned(),
+                    retry_after_ms: remaining_ms(rate_limited_until, now),
+                });
+            }
 
             if let Err(retry_after_ms) = self.register_attempt(connection_id, &policy, now) {
                 record.health.rate_limit_hits = record.health.rate_limit_hits.saturating_add(1);
@@ -558,8 +563,7 @@ impl ConnectionManager {
                 record.health.phase = ConnectionHealthState::RateLimited;
                 record.health.last_state_changed_at = Some(now);
                 record.health.last_checked_at = Some(now);
-                record.health.diagnosis =
-                    Some("短时间内建连次数过多，已进入限流保护".to_owned());
+                record.health.diagnosis = Some("短时间内建连次数过多，已进入限流保护".to_owned());
                 record.health.recommended_action =
                     Some("等待冷却结束后重试，或降低节点触发频率".to_owned());
 
@@ -623,7 +627,9 @@ impl ConnectionManager {
         operation_error: Option<&str>,
     ) -> Result<(), EngineError> {
         let entry = self.entry(&lease.id).await?;
-        let mut record = entry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut record = entry
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let outcome = if operation_succeeded {
             ConnectionOutcome::Success
         } else {
@@ -640,7 +646,9 @@ impl ConnectionManager {
     /// 连接不存在时返回 [`EngineError::ConnectionNotFound`]。
     pub async fn release(&self, connection_id: &str) -> Result<(), EngineError> {
         let entry = self.entry(connection_id).await?;
-        let mut record = entry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut record = entry
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         record.in_use = false;
         record.health.last_released_at = Some(Utc::now());
         Ok(())
@@ -658,7 +666,9 @@ impl ConnectionManager {
         latency_ms: Option<u64>,
     ) -> Result<(), EngineError> {
         let entry = self.entry(connection_id).await?;
-        let mut record = entry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut record = entry
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let now = Utc::now();
 
         record.health.phase = ConnectionHealthState::Healthy;
@@ -691,7 +701,9 @@ impl ConnectionManager {
         diagnosis: impl Into<String>,
     ) -> Result<(), EngineError> {
         let entry = self.entry(connection_id).await?;
-        let mut record = entry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut record = entry
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let now = Utc::now();
 
         record.health.last_heartbeat_at = Some(now);
@@ -725,7 +737,9 @@ impl ConnectionManager {
         reason: &str,
     ) -> Result<u64, EngineError> {
         let entry = self.entry(connection_id).await?;
-        let mut record = entry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut record = entry
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let now = Utc::now();
         let policy = ConnectionGovernancePolicy::from_metadata(&record.metadata);
         Ok(apply_runtime_failure(
@@ -748,7 +762,9 @@ impl ConnectionManager {
         reason: &str,
     ) -> Result<u64, EngineError> {
         let entry = self.entry(connection_id).await?;
-        let mut record = entry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut record = entry
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let now = Utc::now();
         let policy = ConnectionGovernancePolicy::from_metadata(&record.metadata);
         Ok(apply_runtime_failure(
@@ -771,7 +787,9 @@ impl ConnectionManager {
         reason: &str,
     ) -> Result<(), EngineError> {
         let entry = self.entry(connection_id).await?;
-        let mut record = entry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut record = entry
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let now = Utc::now();
         mark_invalid(&mut record, reason.to_string(), now);
         Ok(())
@@ -788,7 +806,9 @@ impl ConnectionManager {
         diagnosis: &str,
     ) -> Result<(), EngineError> {
         let entry = self.entry(connection_id).await?;
-        let mut record = entry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut record = entry
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let now = Utc::now();
 
         record.in_use = false;
@@ -812,7 +832,9 @@ impl ConnectionManager {
         drop(connections);
 
         for entry in entries {
-            let mut record = entry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            let mut record = entry
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             record.in_use = false;
             record.health.last_checked_at = Some(now);
             record.health.last_released_at = Some(now);
@@ -854,7 +876,9 @@ impl ConnectionManager {
     /// 返回单个连接记录的快照。
     pub async fn get(&self, connection_id: &str) -> Option<ConnectionRecord> {
         let entry = self.entry(connection_id).await.ok()?;
-        let mut record = entry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut record = entry
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let now = Utc::now();
         let policy = ConnectionGovernancePolicy::from_metadata(&record.metadata);
         reconcile_timed_state(&mut record, &policy, now);
@@ -869,7 +893,9 @@ impl ConnectionManager {
 
         let mut result = Vec::with_capacity(entries.len());
         for entry in entries {
-            let mut record = entry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            let mut record = entry
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             let now = Utc::now();
             let policy = ConnectionGovernancePolicy::from_metadata(&record.metadata);
             reconcile_timed_state(&mut record, &policy, now);
@@ -912,10 +938,8 @@ fn finalize_release(
             record.health.last_state_changed_at = Some(now);
             record.health.last_connected_at = Some(now);
             record.health.last_heartbeat_at = Some(now);
-            record.health.diagnosis =
-                Some(format!("最近一次连接操作完成，用时 {elapsed_ms} ms"));
-            record.health.recommended_action =
-                Some("连接空闲，可继续被节点复用".to_owned());
+            record.health.diagnosis = Some(format!("最近一次连接操作完成，用时 {elapsed_ms} ms"));
+            record.health.recommended_action = Some("连接空闲，可继续被节点复用".to_owned());
             record.health.consecutive_failures = 0;
             record.health.reconnect_attempts = 0;
             record.health.next_retry_at = None;
@@ -934,9 +958,8 @@ fn finalize_release(
                 record.health.phase = ConnectionHealthState::Degraded;
                 record.health.last_state_changed_at = Some(now);
                 record.health.diagnosis = Some("节点执行失败，连接已安全释放".to_owned());
-                record.health.recommended_action = Some(
-                    "优先检查节点业务逻辑或上游输入，连接本身未被判定为致命故障".to_owned(),
-                );
+                record.health.recommended_action =
+                    Some("优先检查节点业务逻辑或上游输入，连接本身未被判定为致命故障".to_owned());
                 if !reason.is_empty() {
                     record.health.last_failure_reason = Some(reason.clone());
                 }
@@ -948,8 +971,7 @@ fn finalize_release(
             record.health.diagnosis =
                 Some("连接 Guard 未标记结果即被丢弃（可能为 panic 退出）".to_owned());
             record.health.recommended_action =
-                Some("检查节点执行路径是否在所有分支都调用了 mark_success/mark_failure"
-                    .to_owned());
+                Some("检查节点执行路径是否在所有分支都调用了 mark_success/mark_failure".to_owned());
         }
     }
 }
@@ -993,43 +1015,45 @@ fn reconcile_timed_state(
     now: DateTime<Utc>,
 ) {
     if let Some(rate_limited_until) = record.health.rate_limited_until
-        && rate_limited_until <= now {
-            record.health.rate_limited_until = None;
-            if matches!(record.health.phase, ConnectionHealthState::RateLimited) {
-                record.health.phase = ConnectionHealthState::Idle;
-                record.health.last_state_changed_at = Some(now);
-                record.health.diagnosis = Some("限流窗口已结束，可再次尝试建连".to_owned());
-                record.health.recommended_action =
-                    Some("如仍然频繁触发，请调整节点节流策略".to_owned());
-            }
+        && rate_limited_until <= now
+    {
+        record.health.rate_limited_until = None;
+        if matches!(record.health.phase, ConnectionHealthState::RateLimited) {
+            record.health.phase = ConnectionHealthState::Idle;
+            record.health.last_state_changed_at = Some(now);
+            record.health.diagnosis = Some("限流窗口已结束，可再次尝试建连".to_owned());
+            record.health.recommended_action =
+                Some("如仍然频繁触发，请调整节点节流策略".to_owned());
         }
+    }
 
     if let Some(circuit_open_until) = record.health.circuit_open_until
-        && circuit_open_until <= now {
-            record.health.circuit_open_until = None;
-            if matches!(record.health.phase, ConnectionHealthState::CircuitOpen) {
-                record.health.phase = ConnectionHealthState::Idle;
-                record.health.last_state_changed_at = Some(now);
-                record.health.diagnosis = Some("熔断冷却结束，可重新尝试建连".to_owned());
-                record.health.recommended_action =
-                    Some("建议优先检查最近一次失败原因后再重试".to_owned());
-            }
+        && circuit_open_until <= now
+    {
+        record.health.circuit_open_until = None;
+        if matches!(record.health.phase, ConnectionHealthState::CircuitOpen) {
+            record.health.phase = ConnectionHealthState::Idle;
+            record.health.last_state_changed_at = Some(now);
+            record.health.diagnosis = Some("熔断冷却结束，可重新尝试建连".to_owned());
+            record.health.recommended_action =
+                Some("建议优先检查最近一次失败原因后再重试".to_owned());
         }
+    }
 
     if let Some(next_retry_at) = record.health.next_retry_at
         && next_retry_at <= now
-            && matches!(
-                record.health.phase,
-                ConnectionHealthState::Reconnecting | ConnectionHealthState::Timeout
-            )
-            && !record.in_use
-        {
-            record.health.next_retry_at = None;
-            record.health.phase = ConnectionHealthState::Idle;
-            record.health.last_state_changed_at = Some(now);
-            record.health.diagnosis = Some("已结束退避等待，可再次尝试建连".to_owned());
-            record.health.recommended_action = Some("若仍失败，请检查目标端是否可达".to_owned());
-        }
+        && matches!(
+            record.health.phase,
+            ConnectionHealthState::Reconnecting | ConnectionHealthState::Timeout
+        )
+        && !record.in_use
+    {
+        record.health.next_retry_at = None;
+        record.health.phase = ConnectionHealthState::Idle;
+        record.health.last_state_changed_at = Some(now);
+        record.health.diagnosis = Some("已结束退避等待，可再次尝试建连".to_owned());
+        record.health.recommended_action = Some("若仍失败，请检查目标端是否可达".to_owned());
+    }
 
     if !record.in_use {
         if matches!(record.health.phase, ConnectionHealthState::Connecting) {
