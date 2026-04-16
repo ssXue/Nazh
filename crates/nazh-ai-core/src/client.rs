@@ -1,4 +1,4 @@
-//! OpenAI 兼容 HTTP 客户端实现。
+//! `OpenAI` 兼容 HTTP 客户端实现。
 
 use crate::config::AiConfigFile;
 use std::sync::Arc;

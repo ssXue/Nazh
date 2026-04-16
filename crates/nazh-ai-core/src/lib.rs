@@ -1,6 +1,6 @@
 //! # Nazh AI Core
 //!
-//! AI 公共层：封装 OpenAI 兼容 API 的 HTTP 客户端调用与配置模型。
+//! AI 公共层：封装 `OpenAI` 兼容 API 的 HTTP 客户端调用与配置模型。
 //!
 //! 本 crate 不依赖引擎业务逻辑，可被 Tauri 壳层（配置态 Copilot）
 //! 和 nazh-engine（运行时 AI 节点）分别引用。
@@ -28,10 +28,11 @@ mod export_bindings {
     //! ts-rs 类型导出入口，通过 `cargo test export_bindings` 触发生成。
 
     use super::*;
+    use ts_rs::TS;
 
     #[test]
     fn export_ai_types() {
-        let _ = std::fs::create_dir_all(concat!(env!("OUT_DIR"), "/ts"));
+        let _ = std::fs::create_dir_all(std::env::var("OUT_DIR").unwrap_or_else(|_| "/tmp".to_owned()));
         let _ = AiConfigView::export();
         let _ = AiConfigUpdate::export();
         let _ = AiGenerationParams::export();
