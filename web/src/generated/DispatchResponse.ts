@@ -3,4 +3,4 @@
 /**
  * 载荷分发成功后的响应。
  */
-export type DispatchResponse = { traceId: string, workflowId?: string | null, };
+export type DispatchResponse = { traceId: string, workflowId?: string, };

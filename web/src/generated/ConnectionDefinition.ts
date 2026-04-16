@@ -2,6 +2,6 @@
 import type { JsonValue } from "./serde_json/JsonValue";
 
 /**
- * 连接资源的声明式定义（用于工作流 AST）。
+ * 连接资源的声明式定义（用于全局连接资源库）。
  */
 export type ConnectionDefinition = { id: string, type: string, metadata: JsonValue, };
