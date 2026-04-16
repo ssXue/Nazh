@@ -93,6 +93,9 @@ pub enum EngineError {
 
     #[error("DataStore 已达容量上限（{capacity} 条）")]
     DataStoreCapacityExceeded { capacity: usize },
+
+    #[error("AI 节点 `{node_id}` 调用失败: {message}")]
+    AiNodeError { node_id: String, message: String },
 }
 
 impl EngineError {
@@ -147,6 +150,13 @@ impl EngineError {
 
     pub fn payload_conversion(node_id: impl Into<String>, message: impl Into<String>) -> Self {
         Self::PayloadConversion {
+            node_id: node_id.into(),
+            message: message.into(),
+        }
+    }
+
+    pub fn ai_node_error(node_id: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::AiNodeError {
             node_id: node_id.into(),
             message: message.into(),
         }
