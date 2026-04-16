@@ -57,8 +57,12 @@ import {
   saveDeploymentSessionFile,
   setDeploymentSessionActiveProjectFile,
   undeployWorkflow,
+  loadAiConfig,
+  saveAiConfig,
+  testAiProvider,
 } from './lib/tauri';
 import type { ConnectionDefinition, WorkflowResult, WorkflowNodeDefinition } from './types';
+import type { AiConfigUpdate, AiConfigView, AiProviderDraft, AiTestResult } from './types';
 import { describeUnknownError } from './lib/workflow-events';
 import {
   deriveWorkflowStatus,
@@ -209,6 +213,11 @@ function App() {
   const [restoreCountdown, setRestoreCountdown] = useState(10);
   const [isRestoreCheckPaused, setIsRestoreCheckPaused] = useState(false);
   const [runtimeWorkflowCount, setRuntimeWorkflowCount] = useState(0);
+  const [aiConfig, setAiConfig] = useState<AiConfigView | null>(null);
+  const [aiConfigLoading, setAiConfigLoading] = useState(true);
+  const [aiConfigError, setAiConfigError] = useState<string | null>(null);
+  const [aiTestResult, setAiTestResult] = useState<AiTestResult | null>(null);
+  const [aiTesting, setAiTesting] = useState(false);
   const flowgramCanvasRef = useRef<FlowgramCanvasHandle | null>(null);
   const restoreLookupRef = useRef<{
     scope: string | null;
@@ -293,6 +302,38 @@ function App() {
       window.clearInterval(timer);
     };
   }, [settings.projectWorkspacePath]);
+
+  useEffect(() => {
+    if (!hasTauriRuntime()) {
+      setAiConfigLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    const load = async () => {
+      try {
+        const config = await loadAiConfig();
+        if (!cancelled) {
+          setAiConfig(config);
+          setAiConfigError(null);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setAiConfigError(describeUnknownError(error).message);
+        }
+      } finally {
+        if (!cancelled) {
+          setAiConfigLoading(false);
+        }
+      }
+    };
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!activeBoardId) {
@@ -1399,6 +1440,32 @@ function App() {
     settings.projectWorkspacePath,
   ]);
 
+  const handleAiConfigSave = async (update: AiConfigUpdate) => {
+    try {
+      const saved = await saveAiConfig(update);
+      setAiConfig(saved);
+      setAiConfigError(null);
+    } catch (error) {
+      setAiConfigError(describeUnknownError(error).message);
+    }
+  };
+
+  const handleAiProviderTest = async (draft: AiProviderDraft) => {
+    setAiTesting(true);
+    setAiTestResult(null);
+    try {
+      const result = await testAiProvider(draft);
+      setAiTestResult(result);
+    } catch (error) {
+      setAiTestResult({
+        success: false,
+        message: describeUnknownError(error).message,
+      });
+    } finally {
+      setAiTesting(false);
+    }
+  };
+
   function renderRestoreDialog() {
     if (pendingRestoreSessions.length === 0 || !pendingRestoreLeadSession) {
       return null;
@@ -1693,6 +1760,13 @@ function App() {
                 projectWorkspaceIsSyncing={projectLibrary.storage.isSyncing}
                 projectWorkspaceError={projectLibrary.storage.error}
                 onProjectWorkspacePathChange={settings.setProjectWorkspacePath}
+                aiConfig={aiConfig}
+                aiConfigLoading={aiConfigLoading}
+                aiConfigError={aiConfigError}
+                onAiConfigSave={handleAiConfigSave}
+                onAiProviderTest={handleAiProviderTest}
+                aiTestResult={aiTestResult}
+                aiTesting={aiTesting}
               />
             </div>
           </section>

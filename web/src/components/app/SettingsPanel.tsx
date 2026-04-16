@@ -26,6 +26,13 @@ export function SettingsPanel({
   projectWorkspaceIsSyncing,
   projectWorkspaceError,
   onProjectWorkspacePathChange,
+  aiConfig,
+  aiConfigLoading,
+  aiConfigError,
+  onAiConfigSave,
+  onAiProviderTest,
+  aiTestResult,
+  aiTesting,
 }: SettingsPanelProps) {
   const [workspaceDraft, setWorkspaceDraft] = useState(projectWorkspacePath);
 
@@ -236,6 +243,109 @@ export function SettingsPanel({
               </article>
             </div>
           </div>
+        </section>
+        <section className="settings-group">
+          <div className="settings-group__header">
+            <h3>AI 配置</h3>
+          </div>
+
+          {!isTauriRuntime ? (
+            <article className="settings-row">
+              <span className="settings-row__label" style={{ color: 'var(--text-tertiary)' }}>
+                AI 配置仅在桌面端可用。
+              </span>
+            </article>
+          ) : aiConfigLoading ? (
+            <article className="settings-row">
+              <span className="settings-row__label">正在加载 AI 配置...</span>
+            </article>
+          ) : aiConfig ? (
+            <>
+              {aiConfigError && (
+                <article className="settings-row">
+                  <span className="settings-row__label" style={{ color: 'var(--color-error)' }}>
+                    {aiConfigError}
+                  </span>
+                </article>
+              )}
+
+              <article className="settings-row">
+                <strong className="settings-row__label">已配置提供商</strong>
+                <span className="settings-row__value">
+                  {aiConfig.providers.length === 0
+                    ? '尚未配置'
+                    : aiConfig.providers
+                        .map((p) => `${p.name}${p.enabled ? '' : '（已禁用）'}`)
+                        .join('、')}
+                </span>
+              </article>
+
+              {aiConfig.providers.length > 0 && (
+                <article className="settings-row">
+                  <strong className="settings-row__label">激活提供商</strong>
+                  <span className="settings-row__value">
+                    {aiConfig.activeProviderId
+                      ? aiConfig.providers.find((p) => p.id === aiConfig.activeProviderId)
+                          ?.name ?? '未选择'
+                      : '未选择'}
+                  </span>
+                </article>
+              )}
+
+              {aiTestResult && (
+                <article className="settings-row">
+                  <strong className="settings-row__label">测试结果</strong>
+                  <span
+                    className="settings-row__value"
+                    style={{
+                      color: aiTestResult.success
+                        ? 'var(--color-success)'
+                        : 'var(--color-error)',
+                    }}
+                  >
+                    {aiTestResult.message}
+                  </span>
+                </article>
+              )}
+
+              <article className="settings-row">
+                <button
+                  type="button"
+                  className="settings-inline-button"
+                  disabled={aiTesting}
+                  onClick={() => {
+                    const name = window.prompt('提供商名称', 'DeepSeek');
+                    if (!name) return;
+                    const baseUrl = window.prompt(
+                      'API Base URL',
+                      'https://api.deepseek.com/v1',
+                    );
+                    if (!baseUrl) return;
+                    const apiKey = window.prompt('API Key');
+                    if (!apiKey) return;
+                    const model = window.prompt('默认模型', 'deepseek-chat');
+                    if (!model) return;
+
+                    void onAiProviderTest({
+                      id: undefined,
+                      name,
+                      baseUrl,
+                      apiKey,
+                      defaultModel: model,
+                      extraHeaders: {},
+                      enabled: true,
+                    });
+                  }}
+                >
+                  {aiTesting ? '测试中...' : '测试新提供商'}
+                </button>
+              </article>
+            </>
+          ) : (
+            <article className="settings-row">
+              <span className="settings-row__label">无法加载 AI 配置。</span>
+            </article>
+          )}
         </section>
       </div>
     </>

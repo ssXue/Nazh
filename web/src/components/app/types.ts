@@ -96,6 +96,13 @@ export interface SettingsPanelProps {
   projectWorkspaceIsSyncing: boolean;
   projectWorkspaceError: string | null;
   onProjectWorkspacePathChange: (path: string) => void;
+  aiConfig: import('../../types').AiConfigView | null;
+  aiConfigLoading: boolean;
+  aiConfigError: string | null;
+  onAiConfigSave: (update: import('../../types').AiConfigUpdate) => Promise<void>;
+  onAiProviderTest: (draft: import('../../types').AiProviderDraft) => Promise<void>;
+  aiTestResult: import('../../types').AiTestResult | null;
+  aiTesting: boolean;
 }
 
 export interface RuntimeManagerPanelProps {
