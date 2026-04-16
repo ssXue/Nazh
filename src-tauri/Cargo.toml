@@ -1,19 +1,15 @@
 [package]
 name = "nazh-desktop"
-version = "0.1.0"
-edition = "2021"
-rust-version = "1.94"
 description = "Tauri desktop shell for Nazh"
-license = "MIT"
-authors = ["Niu Zhihong"]
-repository = "https://github.com/zhihongniu/Nazh"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
 
-[lints.rust]
-unsafe_code = "forbid"
-
-[lints.clippy]
-unwrap_used = "deny"
-expect_used = "deny"
+[lints]
+workspace = true
 
 [lib]
 name = "nazh_desktop_lib"
@@ -23,12 +19,12 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-chrono = { version = "0.4", features = ["clock", "serde"] }
 nazh-engine = { path = ".." }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 serialport = "4"
 tauri = { version = "2", features = [] }
-tokio = { version = "1", features = ["sync", "time"] }
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

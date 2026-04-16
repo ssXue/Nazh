@@ -356,6 +356,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "connections"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "nazh-core",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "tokio",
+ "ts-rs",
+]
+
+[[package]]
 name = "const-random"
 version = "0.1.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2056,6 +2069,7 @@ dependencies = [
 name = "nazh-core"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "chrono",
  "dashmap",
  "futures-util",
@@ -2088,16 +2102,15 @@ dependencies = [
 name = "nazh-engine"
 version = "0.1.0"
 dependencies = [
- "async-trait",
- "chrono",
- "futures-util",
+ "connections",
  "nazh-core",
- "reqwest 0.12.28",
- "rhai",
+ "nodes-flow",
+ "nodes-io",
+ "pipeline",
  "rusqlite",
+ "scripting",
  "serde",
  "serde_json",
- "thiserror 1.0.69",
  "tokio",
  "tracing",
  "ts-rs",
@@ -2158,6 +2171,35 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b93853da6d84c2e3c7d730d6473e8817692dd89be387eb01b94d7f108ecb5b8c"
 dependencies = [
  "spin",
+]
+
+[[package]]
+name = "nodes-flow"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "nazh-core",
+ "rhai",
+ "scripting",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "nodes-io"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "connections",
+ "nazh-core",
+ "reqwest 0.12.28",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -2596,6 +2638,15 @@ name = "pin-project-lite"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
+
+[[package]]
+name = "pipeline"
+version = "0.1.0"
+dependencies = [
+ "nazh-core",
+ "tokio",
+ "tracing",
+]
 
 [[package]]
 name = "pkg-config"
@@ -3270,6 +3321,15 @@ name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
+
+[[package]]
+name = "scripting"
+version = "0.1.0"
+dependencies = [
+ "nazh-core",
+ "rhai",
+ "serde_json",
+]
 
 [[package]]
 name = "selectors"

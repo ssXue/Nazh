@@ -126,16 +126,16 @@ impl NodeRegistry {
     ///
     /// 同一个工厂函数被注册为多个名称时，选择最短名称作为主名称，
     /// 其余名称作为别名。
-    pub fn registered_types_with_aliases(&self) -> Vec<crate::ipc::NodeTypeEntry> {
+    pub fn registered_types_with_aliases(&self) -> Vec<crate::NodeTypeEntry> {
         let mut seen: Vec<Arc<FactoryFn>> = Vec::new();
-        let mut entries: Vec<crate::ipc::NodeTypeEntry> = Vec::new();
+        let mut entries: Vec<crate::NodeTypeEntry> = Vec::new();
 
         for (name, factory) in &self.factories {
             if let Some(pos) = seen.iter().position(|f| Arc::ptr_eq(f, factory)) {
                 entries[pos].aliases.push(name.clone());
             } else {
                 seen.push(factory.clone());
-                entries.push(crate::ipc::NodeTypeEntry {
+                entries.push(crate::NodeTypeEntry {
                     name: name.clone(),
                     aliases: vec![],
                 });

@@ -1,6 +1,14 @@
 [workspace]
-members = [".", "crates/nazh-core", "src-tauri"]
+members = [".", "crates/*", "src-tauri"]
 resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.94"
+license = "MIT"
+authors = ["ssXue", "Niu Zhihong"]
+repository = "https://github.com/ssXue/Nazh"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
@@ -13,17 +21,40 @@ module_name_repetitions = "allow"
 must_use_candidate = "allow"
 missing_errors_doc = "allow"
 
+[workspace.dependencies]
+nazh-core = { path = "crates/core" }
+pipeline = { path = "crates/pipeline" }
+connections = { path = "crates/connections" }
+scripting = { path = "crates/scripting" }
+nodes-flow = { path = "crates/nodes-flow" }
+nodes-io = { path = "crates/nodes-io" }
+async-trait = "0.1"
+chrono = { version = "0.4", features = ["clock", "serde"] }
+dashmap = "6"
+futures-util = "0.3"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+rhai = { version = "1", features = ["serde", "sync"] }
+rusqlite = { version = "0.33", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+ts-rs = { version = "10", features = ["serde-compat", "serde-json-impl", "chrono-impl", "uuid-impl"] }
+uuid = { version = "1", features = ["serde", "v4"] }
+
 [package]
 name = "nazh-engine"
-version = "0.1.0"
-edition = "2021"
-rust-version = "1.94"
 description = "Industrial edge workflow runtime prototype for Nazh"
-license = "MIT"
-authors = ["Niu Zhihong"]
-repository = "https://github.com/zhihongniu/Nazh"
 keywords = ["workflow", "edge-computing", "industrial", "dag", "orchestration"]
 categories = ["asynchronous", "embedded"]
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
 
 [lints]
 workspace = true
@@ -37,20 +68,21 @@ name = "phase1_demo"
 path = "examples/phase1_demo.rs"
 
 [dependencies]
-nazh-core = { path = "crates/nazh-core" }
-async-trait = "0.1"
-chrono = { version = "0.4", features = ["clock", "serde"] }
-futures-util = "0.3"
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
-rhai = { version = "1", features = ["serde", "sync"] }
-rusqlite = { version = "0.33", features = ["bundled"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-thiserror = "1"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
-tracing = "0.1"
-ts-rs = { version = "10", features = ["serde-compat", "serde-json-impl", "chrono-impl", "uuid-impl"] }
-uuid = { version = "1", features = ["serde", "v4"] }
+nazh-core.workspace = true
+pipeline.workspace = true
+connections.workspace = true
+scripting.workspace = true
+nodes-flow.workspace = true
+nodes-io.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+ts-rs.workspace = true
+
+[dev-dependencies]
+rusqlite.workspace = true
+uuid.workspace = true
 
 [profile.release]
 lto = true

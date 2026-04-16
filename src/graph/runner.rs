@@ -1,7 +1,7 @@
 //! 单节点异步执行循环与事件发射。
 //!
 //! [`run_node`] 在独立的 Tokio 任务中运行，持续从输入通道接收 [`ContextRef`]，
-//! 从 [`DataStore`] 读取数据，执行节点逻辑，将输出写回 DataStore，
+//! 从 [`DataStore`] 读取数据，执行节点逻辑，将输出写回 `DataStore`，
 //! 并将新的 [`ContextRef`] 分发到下游或结果流。
 //! 所有执行阶段都带有 panic 隔离和可选超时保护。
 
@@ -10,14 +10,16 @@ use std::{sync::Arc, time::Duration};
 use tokio::sync::mpsc;
 use tracing::Instrument;
 
-use super::types::DownstreamTarget;
-use crate::{
-    event::{emit_event, emit_failure, ExecutionEvent},
+use nazh_core::{
+    event::{emit_event, emit_failure},
     guard::guarded_execute,
-    ContextRef, DataStore, EngineError, NodeDispatch, NodeTrait,
+    ContextRef, DataStore, EngineError, ExecutionEvent, NodeDispatch, NodeTrait,
 };
 
-/// 单节点的异步执行循环：接收 ContextRef → 读取数据 → 执行 → 写入输出 → 分发。
+use super::types::DownstreamTarget;
+
+/// 单节点的异步执行循环：接收 [`ContextRef`] → 读取数据 → 执行 → 写入输出 → 分发。
+#[allow(clippy::too_many_lines)]
 pub(crate) async fn run_node(
     node: Arc<dyn NodeTrait>,
     timeout: Option<Duration>,

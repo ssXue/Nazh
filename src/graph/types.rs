@@ -5,7 +5,7 @@
 //! 和组合句柄 ([`WorkflowDeployment`])。
 //!
 //! 内部通道传递 [`ContextRef`]（~64 字节），实际数据存储在 [`DataStore`] 中。
-//! 外部 API（submit / next_result）仍使用 [`WorkflowContext`]，转换在边界层完成。
+//! 外部 API（`submit` / `next_result`）仍使用 [`WorkflowContext`]，转换在边界层完成。
 
 use std::{collections::HashMap, sync::Arc};
 
@@ -168,8 +168,6 @@ pub(crate) fn default_node_buffer() -> usize {
     32
 }
 
-// ── WorkflowNodeDefinition 辅助方法 ─────────────
-
 impl WorkflowNodeDefinition {
     /// 从 `config` 字段反序列化出指定类型的配置结构体。
     ///
@@ -189,10 +187,8 @@ impl WorkflowNodeDefinition {
     }
 }
 
-// ── 句柄方法 ──────────────────────────────────────
-
 impl WorkflowIngress {
-    /// 将 [`WorkflowContext`] 写入 DataStore 并向所有根节点发送 [`ContextRef`]。
+    /// 将 [`WorkflowContext`] 写入 [`DataStore`] 并向所有根节点发送 [`ContextRef`]。
     ///
     /// # Errors
     ///
@@ -275,7 +271,7 @@ impl WorkflowStreams {
         self.event_rx.recv().await
     }
 
-    /// 从结果流中取出下一个 [`ContextRef`]，从 DataStore 重建为 [`WorkflowContext`]。
+    /// 从结果流中取出下一个 [`ContextRef`]，从 [`DataStore`] 重建为 [`WorkflowContext`]。
     pub async fn next_result(&mut self) -> Option<WorkflowContext> {
         let ctx_ref = self.result_rx.recv().await?;
         let payload = self.store.read(&ctx_ref.data_id).ok()?;
@@ -287,9 +283,9 @@ impl WorkflowStreams {
         ))
     }
 
-    /// 拆分为原始接收端和 DataStore，供需要自行管理生命周期的调用者使用。
+    /// 拆分为原始接收端和 [`DataStore`]，供需要自行管理生命周期的调用者使用。
     ///
-    /// 结果流中的 [`ContextRef`] 需要调用者自行从 DataStore 重建 [`WorkflowContext`]
+    /// 结果流中的 [`ContextRef`] 需要调用者自行从 [`DataStore`] 重建 [`WorkflowContext`]
     /// 并在使用后调用 `store.release()` 释放数据引用。
     pub fn into_receivers(
         self,
@@ -326,7 +322,7 @@ impl WorkflowDeployment {
         (self.ingress, self.streams)
     }
 
-    /// 返回内部 DataStore 的引用。
+    /// 返回内部 [`DataStore`] 的引用。
     pub fn store(&self) -> &Arc<dyn DataStore> {
         &self.streams.store
     }

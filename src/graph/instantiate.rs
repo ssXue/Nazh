@@ -33,7 +33,7 @@ use crate::{
 /// - 调试工具：debugConsole
 #[allow(clippy::too_many_lines)]
 pub(crate) fn register_standard_nodes(registry: &mut NodeRegistry) {
-    // ── native / log ─────────────────────────────
+
     registry.register("native", |def, cm| {
         let mut config: NativeNodeConfig = def.parse_config()?;
         if config.connection_id.is_none() {
@@ -51,7 +51,7 @@ pub(crate) fn register_standard_nodes(registry: &mut NodeRegistry) {
     let _ = registry.alias("native/log", "native");
     let _ = registry.alias("log", "native");
 
-    // ── rhai / code ──────────────────────────────
+
     registry.register("rhai", |def, _cm| {
         let config: RhaiNodeConfig = def.parse_config()?;
         let description = def.resolve_description("使用有界 Rhai 脚本执行业务逻辑");
@@ -64,7 +64,7 @@ pub(crate) fn register_standard_nodes(registry: &mut NodeRegistry) {
     let _ = registry.alias("code", "rhai");
     let _ = registry.alias("code/rhai", "rhai");
 
-    // ── timer ────────────────────────────────────
+
     registry.register("timer", |def, _cm| {
         let config: TimerNodeConfig = def.parse_config()?;
         let description = def.resolve_description("按固定间隔触发工作流并注入计时元数据");
@@ -75,7 +75,7 @@ pub(crate) fn register_standard_nodes(registry: &mut NodeRegistry) {
         )))
     });
 
-    // ── serialTrigger ────────────────────────────
+
     registry.register("serialTrigger", |def, _cm| {
         let config: SerialTriggerNodeConfig = def.parse_config()?;
         let description =
@@ -89,7 +89,7 @@ pub(crate) fn register_standard_nodes(registry: &mut NodeRegistry) {
     let _ = registry.alias("serial/trigger", "serialTrigger");
     let _ = registry.alias("serial", "serialTrigger");
 
-    // ── modbusRead ───────────────────────────────
+
     registry.register("modbusRead", |def, cm| {
         let mut config: ModbusReadNodeConfig = def.parse_config()?;
         if config.connection_id.is_none() {
@@ -105,14 +105,14 @@ pub(crate) fn register_standard_nodes(registry: &mut NodeRegistry) {
     });
     let _ = registry.alias("modbus/read", "modbusRead");
 
-    // ── if ────────────────────────────────────────
+
     registry.register("if", |def, _cm| {
         let config: IfNodeConfig = def.parse_config()?;
         let description = def.resolve_description("求值布尔脚本并路由到 true 或 false 分支");
         Ok(Arc::new(IfNode::new(def.id.clone(), config, description)?))
     });
 
-    // ── switch ───────────────────────────────────
+
     registry.register("switch", |def, _cm| {
         let config: SwitchNodeConfig = def.parse_config()?;
         let description = def.resolve_description("求值路由脚本并分发到匹配的分支");
@@ -123,7 +123,7 @@ pub(crate) fn register_standard_nodes(registry: &mut NodeRegistry) {
         )?))
     });
 
-    // ── tryCatch ─────────────────────────────────
+
     registry.register("tryCatch", |def, _cm| {
         let config: TryCatchNodeConfig = def.parse_config()?;
         let description = def.resolve_description("执行受保护的脚本并路由到 try 或 catch 分支");
@@ -134,7 +134,7 @@ pub(crate) fn register_standard_nodes(registry: &mut NodeRegistry) {
         )?))
     });
 
-    // ── loop ─────────────────────────────────────
+
     registry.register("loop", |def, _cm| {
         let config: LoopNodeConfig = def.parse_config()?;
         let description =
@@ -146,7 +146,7 @@ pub(crate) fn register_standard_nodes(registry: &mut NodeRegistry) {
         )?))
     });
 
-    // ── httpClient ───────────────────────────────
+
     registry.register("httpClient", |def, _cm| {
         let config: HttpClientNodeConfig = def.parse_config()?;
         let description =
@@ -159,7 +159,7 @@ pub(crate) fn register_standard_nodes(registry: &mut NodeRegistry) {
     });
     let _ = registry.alias("http/client", "httpClient");
 
-    // ── sqlWriter ────────────────────────────────
+
     registry.register("sqlWriter", |def, _cm| {
         let config: SqlWriterNodeConfig = def.parse_config()?;
         let description = def.resolve_description("将当前 payload 持久化到本地 SQLite 表");
@@ -171,7 +171,7 @@ pub(crate) fn register_standard_nodes(registry: &mut NodeRegistry) {
     });
     let _ = registry.alias("sql/writer", "sqlWriter");
 
-    // ── debugConsole ─────────────────────────────
+
     registry.register("debugConsole", |def, _cm| {
         let config: DebugConsoleNodeConfig = def.parse_config()?;
         let description = def.resolve_description("将 payload 打印到调试控制台以供检查");

@@ -5,50 +5,47 @@
 //! 引擎接收前端导出的 JSON 工作流图（AST），校验其为有向无环图后，
 //! 将每个节点部署为独立的 Tokio 异步任务，节点间通过 MPSC 通道通信。
 //!
-//! ## 模块结构
+//! ## 分层架构
 //!
-//! | 模块 | 职责 |
-//! |------|------|
-//! | [`nodes`] | 节点 Trait 与全部节点实现（每种节点一个文件） |
-//! | [`graph`] | DAG 解析、校验、部署、节点工厂、运行循环 |
-//! | [`pipeline`] | 线性流水线抽象（顺序阶段执行） |
-//! | [`connection`] | 全局连接资源池（借出/归还语义） |
-//! | [`context`] | 在节点间流转的数据信封 |
-//! | [`event`] | 统一执行生命周期事件 |
-//! | [`ipc`] | Tauri IPC 响应类型（ts-rs 自动导出至前端） |
-//! | [`error`] | 引擎统一错误类型 |
-//!
-//! 所有硬件访问通过全局 [`ConnectionManager`] 中介，
-//! 每次节点执行均受超时保护与 panic 隔离，保证运行时绝不崩溃。
+//! | 层级 | Crate | 职责 |
+//! |------|-------|------|
+//! | Ring 0 | `nazh-core` | 内核原语：`NodeTrait`、`DataStore`、`ContextRef` 等 |
+//! | Ring 1 | `nazh-pipeline` | 线性流水线抽象 |
+//! | Ring 1 | `nazh-connections` | 全局连接资源池 |
+//! | Ring 1 | `nazh-scripting` | Rhai 脚本引擎基座 |
+//! | Ring 1 | `nazh-nodes-flow` | 流程控制节点（if/switch/loop/tryCatch/rhai） |
+//! | Ring 1 | `nazh-nodes-io` | I/O 节点（native/timer/serial/modbus/http/sql/debug） |
+//! | Facade | `nazh-engine`（本 crate） | 组装 Ring 0 + Ring 1，DAG 部署编排 |
 
-pub mod connection;
 pub mod graph;
-pub mod nodes;
-pub mod pipeline;
 pub mod registry;
 
-// Ring 0 类型从 nazh-core 重导出
-pub use nazh_core::{context, data, error, event, guard, ipc};
 pub use nazh_core::{
-    ArenaDataStore, ContextRef, DataId, DataStore, DeployResponse, DispatchResponse, EngineError,
-    ExecutionEvent, ListNodeTypesResponse, NodeTypeEntry, UndeployResponse, WorkflowContext,
+    into_payload_map, ArenaDataStore, ContextRef, DataId, DataStore, DeployResponse,
+    DispatchResponse, EngineError, ExecutionEvent, ListNodeTypesResponse, NodeDispatch,
+    NodeExecution, NodeOutput, NodeTrait, NodeTypeEntry, UndeployResponse, WorkflowContext,
 };
 
-pub use connection::{
+pub use connections::{
     shared_connection_manager, ConnectionDefinition, ConnectionGuard, ConnectionLease,
     ConnectionManager, ConnectionRecord, SharedConnectionManager,
 };
+
+pub use pipeline::{build_linear_pipeline, PipelineHandle, PipelineStage, StageFuture};
+
+pub use nodes_flow::{
+    IfNode, IfNodeConfig, LoopNode, LoopNodeConfig, RhaiNode, RhaiNodeConfig, SwitchBranchConfig,
+    SwitchNode, SwitchNodeConfig, TryCatchNode, TryCatchNodeConfig,
+};
+
+pub use nodes_io::{
+    DebugConsoleNode, DebugConsoleNodeConfig, HttpClientNode, HttpClientNodeConfig, ModbusReadNode,
+    ModbusReadNodeConfig, NativeNode, NativeNodeConfig, SerialTriggerNode,
+    SerialTriggerNodeConfig, SqlWriterNode, SqlWriterNodeConfig, TimerNode, TimerNodeConfig,
+};
+
 pub use graph::{
     deploy_workflow, WorkflowDeployment, WorkflowGraph, WorkflowIngress, WorkflowNodeDefinition,
     WorkflowStreams,
 };
-pub use nodes::{
-    DebugConsoleNode, DebugConsoleNodeConfig, HttpClientNode, HttpClientNodeConfig, IfNode,
-    IfNodeConfig, LoopNode, LoopNodeConfig, ModbusReadNode, ModbusReadNodeConfig, NativeNode,
-    NativeNodeConfig, NodeDispatch, NodeExecution, NodeTrait, RhaiNode, RhaiNodeConfig,
-    SerialTriggerNode, SerialTriggerNodeConfig, SqlWriterNode, SqlWriterNodeConfig,
-    SwitchBranchConfig, SwitchNode, SwitchNodeConfig, TimerNode, TimerNodeConfig, TryCatchNode,
-    TryCatchNodeConfig,
-};
-pub use pipeline::{build_linear_pipeline, PipelineHandle, PipelineStage, StageFuture};
 pub use registry::NodeRegistry;
