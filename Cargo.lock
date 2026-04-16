@@ -2066,6 +2066,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "nazh-ai-core"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+ "ts-rs",
+ "uuid",
+]
+
+[[package]]
 name = "nazh-core"
 version = "0.1.0"
 dependencies = [
