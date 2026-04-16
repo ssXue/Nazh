@@ -18,6 +18,7 @@ const SECTION_ICONS: Record<SidebarSection, typeof DashboardIcon> = {
   boards: BoardsIcon,
   runtime: HistoryIcon,
   connections: ConnectionsIcon,
+  plugins: ConnectionsIcon,
   payload: PayloadIcon,
   logs: LogsIcon,
   settings: SettingsIcon,

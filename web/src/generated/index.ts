@@ -6,6 +6,8 @@ export type { ConnectionRecord } from './ConnectionRecord';
 export type { DeployResponse } from './DeployResponse';
 export type { DispatchResponse } from './DispatchResponse';
 export type { ExecutionEvent } from './ExecutionEvent';
+export type { ListNodeTypesResponse } from './ListNodeTypesResponse';
+export type { NodeTypeEntry } from './NodeTypeEntry';
 export type { UndeployResponse } from './UndeployResponse';
 export type { WorkflowContext } from './WorkflowContext';
 export type { WorkflowEdge } from './WorkflowEdge';

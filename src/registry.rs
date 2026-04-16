@@ -162,6 +162,7 @@ impl Default for NodeRegistry {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::NodeRegistry;
 
