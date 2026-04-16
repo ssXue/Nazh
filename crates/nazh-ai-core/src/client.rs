@@ -12,8 +12,7 @@ use crate::config::{AiConfigFile, AiProviderDraft, AiProviderSecretRecord};
 use crate::error::AiError;
 use crate::service::AiService;
 use crate::types::{
-    AiCompletionRequest, AiCompletionResponse, AiMessage, AiMessageRole, AiTestResult,
-    AiTokenUsage,
+    AiCompletionRequest, AiCompletionResponse, AiMessage, AiMessageRole, AiTestResult, AiTokenUsage,
 };
 
 const DEFAULT_TIMEOUT_MS: u64 = 30_000;

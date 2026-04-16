@@ -19,8 +19,7 @@ pub use config::{
 pub use error::AiError;
 pub use service::AiService;
 pub use types::{
-    AiCompletionRequest, AiCompletionResponse, AiMessage, AiMessageRole, AiTestResult,
-    AiTokenUsage,
+    AiCompletionRequest, AiCompletionResponse, AiMessage, AiMessageRole, AiTestResult, AiTokenUsage,
 };
 
 #[cfg(test)]
@@ -32,7 +31,8 @@ mod export_bindings {
 
     #[test]
     fn export_ai_types() {
-        let _ = std::fs::create_dir_all(std::env::var("OUT_DIR").unwrap_or_else(|_| "/tmp".to_owned()));
+        let _ =
+            std::fs::create_dir_all(std::env::var("OUT_DIR").unwrap_or_else(|_| "/tmp".to_owned()));
         let _ = AiConfigView::export();
         let _ = AiConfigUpdate::export();
         let _ = AiGenerationParams::export();
