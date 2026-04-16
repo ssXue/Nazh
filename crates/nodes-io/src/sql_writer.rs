@@ -95,8 +95,8 @@ impl NodeTrait for SqlWriterNode {
         let timestamp_clone = timestamp.clone();
 
         tokio::task::spawn_blocking(move || {
-            if let Some(parent) = std::path::Path::new(&db_path_clone).parent() {
-                if !parent.as_os_str().is_empty() {
+            if let Some(parent) = std::path::Path::new(&db_path_clone).parent()
+                && !parent.as_os_str().is_empty() {
                     std::fs::create_dir_all(parent).map_err(|error| {
                         EngineError::stage_execution(
                             node_id.clone(),
@@ -105,7 +105,6 @@ impl NodeTrait for SqlWriterNode {
                         )
                     })?;
                 }
-            }
 
             let conn = rusqlite::Connection::open(&db_path_clone).map_err(|error| {
                 EngineError::stage_execution(

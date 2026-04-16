@@ -9,17 +9,14 @@
 //! | [`types`] | 所有数据结构定义与句柄方法 |
 //! | [`topology`] | DAG 校验、拓扑排序（Kahn 算法） |
 //! | [`deploy`] | 工作流部署编排 |
-//! | [`instantiate`] | 节点工厂：按类型创建节点实例 |
 //! | [`runner`] | 单节点异步执行循环与事件发射 |
 
 mod deploy;
-pub(crate) mod instantiate;
 mod runner;
 mod topology;
 pub(crate) mod types;
 
 pub use deploy::deploy_workflow;
 pub use types::{
-    WorkflowDeployment, WorkflowEdge, WorkflowGraph, WorkflowIngress, WorkflowNodeDefinition,
-    WorkflowStreams,
+    WorkflowDeployment, WorkflowEdge, WorkflowGraph, WorkflowIngress, WorkflowStreams,
 };

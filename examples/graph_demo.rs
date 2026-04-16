@@ -1,5 +1,5 @@
 use nazh_engine::{
-    deploy_workflow, shared_connection_manager, NodeRegistry, WorkflowContext, WorkflowGraph,
+    deploy_workflow, shared_connection_manager, standard_registry, WorkflowContext, WorkflowGraph,
 };
 use serde_json::json;
 
@@ -46,7 +46,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     let connection_manager = shared_connection_manager();
-    let registry = NodeRegistry::with_standard_nodes();
+    let registry = standard_registry();
     let mut deployment = deploy_workflow(graph, connection_manager, &registry).await?;
 
     deployment

@@ -5,11 +5,12 @@ use std::{
 };
 
 use nazh_engine::{
-    deploy_workflow, shared_connection_manager, ArenaDataStore, ConnectionDefinition,
-    ConnectionManager, ContextRef, DataStore, DebugConsoleNode, DebugConsoleNodeConfig, EngineError,
-    HttpClientNode, HttpClientNodeConfig, ModbusReadNode, ModbusReadNodeConfig, NodeDispatch,
-    NodeRegistry, NodeTrait, RhaiNode, RhaiNodeConfig, SerialTriggerNode, SerialTriggerNodeConfig,
-    SqlWriterNode, SqlWriterNodeConfig, TimerNode, TimerNodeConfig, WorkflowContext, WorkflowGraph,
+    deploy_workflow, shared_connection_manager, standard_registry, ArenaDataStore,
+    ConnectionDefinition, ConnectionManager, ContextRef, DataStore, DebugConsoleNode,
+    DebugConsoleNodeConfig, EngineError, HttpClientNode, HttpClientNodeConfig, ModbusReadNode,
+    ModbusReadNodeConfig, NodeDispatch, NodeTrait, RhaiNode, RhaiNodeConfig, SerialTriggerNode,
+    SerialTriggerNodeConfig, SqlWriterNode, SqlWriterNodeConfig, TimerNode, TimerNodeConfig,
+    WorkflowContext, WorkflowGraph,
 };
 use serde_json::json;
 use tokio::time::timeout;
@@ -99,7 +100,7 @@ async fn workflow_graph_executes_end_to_end() {
     };
 
     let connection_manager = shared_connection_manager();
-    let registry = NodeRegistry::with_standard_nodes();
+    let registry = standard_registry();
     let mut deployment = match deploy_workflow(graph, connection_manager.clone(), &registry).await {
         Ok(deployment) => deployment,
         Err(error) => panic!("workflow should deploy successfully: {error}"),
@@ -244,7 +245,7 @@ async fn if_node_routes_only_to_the_matching_branch() {
         Err(error) => panic!("graph JSON should parse: {error}"),
     };
 
-    let registry = NodeRegistry::with_standard_nodes();
+    let registry = standard_registry();
     let mut deployment = match deploy_workflow(graph, shared_connection_manager(), &registry).await
     {
         Ok(deployment) => deployment,
@@ -316,7 +317,7 @@ async fn switch_node_routes_using_source_ports() {
         Err(error) => panic!("graph JSON should parse: {error}"),
     };
 
-    let registry = NodeRegistry::with_standard_nodes();
+    let registry = standard_registry();
     let mut deployment = match deploy_workflow(graph, shared_connection_manager(), &registry).await
     {
         Ok(deployment) => deployment,
@@ -385,7 +386,7 @@ async fn try_catch_node_routes_runtime_errors_to_catch_branch() {
         Err(error) => panic!("graph JSON should parse: {error}"),
     };
 
-    let registry = NodeRegistry::with_standard_nodes();
+    let registry = standard_registry();
     let mut deployment = match deploy_workflow(graph, shared_connection_manager(), &registry).await
     {
         Ok(deployment) => deployment,
@@ -456,7 +457,7 @@ async fn loop_node_routes_body_iterations_and_done() {
         Err(error) => panic!("graph JSON should parse: {error}"),
     };
 
-    let registry = NodeRegistry::with_standard_nodes();
+    let registry = standard_registry();
     let mut deployment = match deploy_workflow(graph, shared_connection_manager(), &registry).await
     {
         Ok(deployment) => deployment,
@@ -652,7 +653,7 @@ async fn code_node_alias_executes_like_rhai() {
         Err(error) => panic!("graph JSON should parse: {error}"),
     };
 
-    let registry = NodeRegistry::with_standard_nodes();
+    let registry = standard_registry();
     let mut deployment = match deploy_workflow(graph, shared_connection_manager(), &registry).await
     {
         Ok(deployment) => deployment,

@@ -11,8 +11,10 @@ use super::runner::run_node;
 use super::types::{
     DownstreamTarget, WorkflowDeployment, WorkflowGraph, WorkflowIngress, WorkflowStreams,
 };
-use crate::registry::NodeRegistry;
-use crate::{ArenaDataStore, ContextRef, DataStore, EngineError, SharedConnectionManager};
+use nazh_core::{
+    ArenaDataStore, ContextRef, DataStore, EngineError, NodeRegistry, SharedResources,
+};
+use crate::SharedConnectionManager;
 
 /// 校验、实例化并将工作流图部署为并发 Tokio 任务。
 ///
@@ -57,7 +59,8 @@ pub async fn deploy_workflow(
     let (result_tx, result_rx) = mpsc::channel(event_capacity);
 
     for (node_id, node_definition) in &graph.nodes {
-        let node = registry.create(node_definition, connection_manager.clone())?;
+        let resources: SharedResources = connection_manager.clone();
+        let node = registry.create(node_definition, resources)?;
         let input_rx = receivers
             .remove(node_id)
             .ok_or_else(|| EngineError::invalid_graph("节点接收端缺失"))?;

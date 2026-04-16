@@ -11,9 +11,9 @@
 mod observability;
 
 use nazh_engine::{
-    deploy_workflow as deploy_workflow_graph, shared_connection_manager, ConnectionDefinition,
-    ConnectionRecord, DeployResponse, DispatchResponse, EngineError, ExecutionEvent,
-    ListNodeTypesResponse, NodeRegistry, SerialTriggerNodeConfig, TimerNodeConfig,
+    deploy_workflow as deploy_workflow_graph, shared_connection_manager, standard_registry,
+    ConnectionDefinition, ConnectionRecord, DeployResponse, DispatchResponse, EngineError,
+    ExecutionEvent, ListNodeTypesResponse, SerialTriggerNodeConfig, TimerNodeConfig,
     UndeployResponse, WorkflowContext, WorkflowGraph, WorkflowIngress,
 };
 use observability::{
@@ -44,16 +44,13 @@ const DEAD_LETTER_FILE: &str = "dead-letters.jsonl";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 enum RuntimeBackpressureStrategy {
+    #[default]
     Block,
     RejectNewest,
 }
 
-impl Default for RuntimeBackpressureStrategy {
-    fn default() -> Self {
-        Self::Block
-    }
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -110,12 +107,10 @@ impl WorkflowRuntimePolicy {
         Self {
             manual_queue_capacity: input
                 .manual_queue_capacity
-                .map(normalize_queue_capacity)
-                .unwrap_or(defaults.manual_queue_capacity),
+                .map_or(defaults.manual_queue_capacity, normalize_queue_capacity),
             trigger_queue_capacity: input
                 .trigger_queue_capacity
-                .map(normalize_queue_capacity)
-                .unwrap_or(defaults.trigger_queue_capacity),
+                .map_or(defaults.trigger_queue_capacity, normalize_queue_capacity),
             manual_backpressure_strategy: input
                 .manual_backpressure_strategy
                 .unwrap_or(defaults.manual_backpressure_strategy),
@@ -124,16 +119,13 @@ impl WorkflowRuntimePolicy {
                 .unwrap_or(defaults.trigger_backpressure_strategy),
             max_retry_attempts: input
                 .max_retry_attempts
-                .map(|value| value.min(8))
-                .unwrap_or(defaults.max_retry_attempts),
+                .map_or(defaults.max_retry_attempts, |value| value.min(8)),
             initial_retry_backoff_ms: input
                 .initial_retry_backoff_ms
-                .map(|value| value.clamp(25, 5_000))
-                .unwrap_or(defaults.initial_retry_backoff_ms),
+                .map_or(defaults.initial_retry_backoff_ms, |value| value.clamp(25, 5_000)),
             max_retry_backoff_ms: input
                 .max_retry_backoff_ms
-                .map(|value| value.clamp(100, 30_000))
-                .unwrap_or(defaults.max_retry_backoff_ms),
+                .map_or(defaults.max_retry_backoff_ms, |value| value.clamp(100, 30_000)),
         }
     }
 }
@@ -326,7 +318,7 @@ impl DeadLetterSink {
                     "消息进入死信队列",
                     Some(reason),
                     Some(envelope.ctx.trace_id.to_string()),
-                    Some(serde_json::to_value(record).unwrap_or_else(|_| Value::Null)),
+                    Some(serde_json::to_value(record).unwrap_or(Value::Null)),
                 )
                 .await;
         }
@@ -630,8 +622,7 @@ impl DesktopState {
         workspace_path: Option<&str>,
     ) -> Result<PathBuf, String> {
         let workspace_dir = resolve_project_workspace_dir(app, workspace_path)
-            .map(|(dir, _)| dir)
-            .map_err(|e| e)?;
+            .map(|(dir, _)| dir)?;
         Ok(workspace_dir.join("connections.json"))
     }
 
@@ -640,8 +631,7 @@ impl DesktopState {
         workspace_path: Option<&str>,
     ) -> Result<PathBuf, String> {
         let workspace_dir = resolve_project_workspace_dir(app, workspace_path)
-            .map(|(dir, _)| dir)
-            .map_err(|e| e)?;
+            .map(|(dir, _)| dir)?;
         Ok(workspace_dir.join("deployment-session.json"))
     }
 
@@ -834,7 +824,7 @@ async fn read_deployment_session_state_from_path(
 
     if value
         .get("sessions")
-        .is_some_and(|sessions| sessions.is_array())
+        .is_some_and(serde_json::Value::is_array)
     {
         let collection = serde_json::from_value::<PersistedDeploymentSessionCollection>(value)
             .map_err(|error| format!("解析 deployment-session.json 失败: {error}"))?;
@@ -966,7 +956,7 @@ async fn deploy_workflow(
         .map_err(stringify_error)?;
     let node_count = graph.nodes.len();
     let edge_count = graph.edges.len();
-    let registry = NodeRegistry::with_standard_nodes();
+    let registry = standard_registry();
     let deployment = match deploy_workflow_graph(graph, state.connection_manager.clone(), &registry).await {
         Ok(deployment) => deployment,
         Err(error) => {
@@ -1299,7 +1289,7 @@ async fn list_connections(state: State<'_, DesktopState>) -> Result<Vec<Connecti
 
 #[tauri::command]
 async fn list_node_types() -> Result<ListNodeTypesResponse, String> {
-    let registry = NodeRegistry::with_standard_nodes();
+    let registry = standard_registry();
     Ok(ListNodeTypesResponse {
         types: registry.registered_types_with_aliases(),
     })
@@ -1343,8 +1333,8 @@ async fn set_active_runtime_workflow(
         *active_workflow_id = Some(workflow_id.to_owned());
     }
 
-    if let Some(workflow) = state.workflows.lock().await.get(workflow_id) {
-        if let Some(store) = &workflow.observability {
+    if let Some(workflow) = state.workflows.lock().await.get(workflow_id)
+        && let Some(store) = &workflow.observability {
             let _ = store
                 .record_audit(
                     "info",
@@ -1356,7 +1346,6 @@ async fn set_active_runtime_workflow(
                 )
                 .await;
         }
-    }
 
     let _ = app.emit("workflow://runtime-focus", summary.clone());
     Ok(summary)
@@ -1370,7 +1359,7 @@ async fn list_dead_letters(
     limit: Option<usize>,
 ) -> Result<Vec<DeadLetterRecord>, String> {
     let (workspace_dir, _) =
-        resolve_project_workspace_dir(&app, workspace_path.as_deref()).map_err(|error| error)?;
+        resolve_project_workspace_dir(&app, workspace_path.as_deref())?;
     let file_path = workspace_dir.join(DEAD_LETTER_DIR).join(DEAD_LETTER_FILE);
     if !file_path.exists() {
         return Ok(Vec::new());
@@ -1407,7 +1396,7 @@ async fn query_observability(
     limit: Option<usize>,
 ) -> Result<ObservabilityQueryResult, String> {
     let (workspace_dir, _) =
-        resolve_project_workspace_dir(&app, workspace_path.as_deref()).map_err(|error| error)?;
+        resolve_project_workspace_dir(&app, workspace_path.as_deref())?;
     query_workspace_observability(workspace_dir, trace_id, search, limit.unwrap_or(240)).await
 }
 
@@ -1418,7 +1407,7 @@ async fn load_connection_definitions(
     workspace_path: Option<String>,
 ) -> Result<Vec<ConnectionDefinition>, String> {
     let path =
-        DesktopState::connections_file_path(&app, workspace_path.as_deref()).map_err(|e| e)?;
+        DesktopState::connections_file_path(&app, workspace_path.as_deref())?;
     if !path.exists() {
         state
             .connection_manager
@@ -1446,7 +1435,7 @@ async fn save_connection_definitions(
     definitions: Vec<ConnectionDefinition>,
 ) -> Result<(), String> {
     let path =
-        DesktopState::connections_file_path(&app, workspace_path.as_deref()).map_err(|e| e)?;
+        DesktopState::connections_file_path(&app, workspace_path.as_deref())?;
     let dir = path.parent().ok_or("无法确定连接文件目录")?;
     fs::create_dir_all(dir)
         .await
@@ -1469,7 +1458,7 @@ async fn load_deployment_session_file(
     workspace_path: Option<String>,
 ) -> Result<Option<PersistedDeploymentSession>, String> {
     let path =
-        DesktopState::deployment_session_file_path(&app, workspace_path.as_deref()).map_err(|e| e)?;
+        DesktopState::deployment_session_file_path(&app, workspace_path.as_deref())?;
     Ok(read_deployment_sessions_from_path(&path).await?.into_iter().next())
 }
 
@@ -1479,7 +1468,7 @@ async fn load_deployment_session_state_file(
     workspace_path: Option<String>,
 ) -> Result<PersistedDeploymentSessionState, String> {
     let path =
-        DesktopState::deployment_session_file_path(&app, workspace_path.as_deref()).map_err(|e| e)?;
+        DesktopState::deployment_session_file_path(&app, workspace_path.as_deref())?;
     read_deployment_session_state_from_path(&path).await
 }
 
@@ -1489,7 +1478,7 @@ async fn list_deployment_sessions_file(
     workspace_path: Option<String>,
 ) -> Result<Vec<PersistedDeploymentSession>, String> {
     let path =
-        DesktopState::deployment_session_file_path(&app, workspace_path.as_deref()).map_err(|e| e)?;
+        DesktopState::deployment_session_file_path(&app, workspace_path.as_deref())?;
     read_deployment_sessions_from_path(&path).await
 }
 
@@ -1501,7 +1490,7 @@ async fn save_deployment_session_file(
     active_project_id: Option<String>,
 ) -> Result<(), String> {
     let path =
-        DesktopState::deployment_session_file_path(&app, workspace_path.as_deref()).map_err(|e| e)?;
+        DesktopState::deployment_session_file_path(&app, workspace_path.as_deref())?;
     let mut state = read_deployment_session_state_from_path(&path).await?;
     state
         .sessions
@@ -1525,7 +1514,7 @@ async fn set_deployment_session_active_project_file(
     project_id: Option<String>,
 ) -> Result<(), String> {
     let path =
-        DesktopState::deployment_session_file_path(&app, workspace_path.as_deref()).map_err(|e| e)?;
+        DesktopState::deployment_session_file_path(&app, workspace_path.as_deref())?;
     let mut state = read_deployment_session_state_from_path(&path).await?;
     state.active_project_id = project_id
         .as_deref()
@@ -1542,7 +1531,7 @@ async fn remove_deployment_session_file(
     project_id: String,
 ) -> Result<(), String> {
     let path =
-        DesktopState::deployment_session_file_path(&app, workspace_path.as_deref()).map_err(|e| e)?;
+        DesktopState::deployment_session_file_path(&app, workspace_path.as_deref())?;
     let target_project_id = project_id.trim();
     if target_project_id.is_empty() {
         return Ok(());
@@ -1564,7 +1553,7 @@ async fn clear_deployment_session_file(
     workspace_path: Option<String>,
 ) -> Result<(), String> {
     let path =
-        DesktopState::deployment_session_file_path(&app, workspace_path.as_deref()).map_err(|e| e)?;
+        DesktopState::deployment_session_file_path(&app, workspace_path.as_deref())?;
 
     if !path.exists() {
         return Ok(());
@@ -1657,11 +1646,11 @@ async fn test_serial_connection(
     match port_result {
         Ok(_port) => Ok(TestSerialResult {
             ok: true,
-            message: format!("端口 {} 打开成功", port_path),
+            message: format!("端口 {port_path} 打开成功"),
         }),
         Err(error) => Ok(TestSerialResult {
             ok: false,
-            message: format!("端口 {} 打开失败: {}", port_path, error),
+            message: format!("端口 {port_path} 打开失败: {error}"),
         }),
     }
 }
@@ -1966,8 +1955,8 @@ fn spawn_dispatch_lane_task(
 
 async fn is_active_workflow(app: &AppHandle, workflow_id: &str) -> bool {
     let state: State<'_, DesktopState> = app.state();
-    let is_active = state.active_workflow_id.lock().await.as_deref() == Some(workflow_id);
-    is_active
+    
+    state.active_workflow_id.lock().await.as_deref() == Some(workflow_id)
 }
 
 fn expand_user_path(app: &AppHandle, raw_path: &str) -> Result<PathBuf, String> {

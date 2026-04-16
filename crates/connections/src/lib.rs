@@ -531,8 +531,8 @@ impl ConnectionManager {
                 });
             }
 
-            if let Some(circuit_open_until) = record.health.circuit_open_until {
-                if circuit_open_until > now {
+            if let Some(circuit_open_until) = record.health.circuit_open_until
+                && circuit_open_until > now {
                     return Err(EngineError::ConnectionCircuitOpen {
                         connection_id: connection_id.to_owned(),
                         retry_after_ms: remaining_ms(circuit_open_until, now),
@@ -543,16 +543,14 @@ impl ConnectionManager {
                             .unwrap_or_else(|| "连接仍处于熔断冷却期".to_owned()),
                     });
                 }
-            }
 
-            if let Some(rate_limited_until) = record.health.rate_limited_until {
-                if rate_limited_until > now {
+            if let Some(rate_limited_until) = record.health.rate_limited_until
+                && rate_limited_until > now {
                     return Err(EngineError::ConnectionRateLimited {
                         connection_id: connection_id.to_owned(),
                         retry_after_ms: remaining_ms(rate_limited_until, now),
                     });
                 }
-            }
 
             if let Err(retry_after_ms) = self.register_attempt(connection_id, &policy, now) {
                 record.health.rate_limit_hits = record.health.rate_limit_hits.saturating_add(1);
@@ -994,8 +992,8 @@ fn reconcile_timed_state(
     policy: &ConnectionGovernancePolicy,
     now: DateTime<Utc>,
 ) {
-    if let Some(rate_limited_until) = record.health.rate_limited_until {
-        if rate_limited_until <= now {
+    if let Some(rate_limited_until) = record.health.rate_limited_until
+        && rate_limited_until <= now {
             record.health.rate_limited_until = None;
             if matches!(record.health.phase, ConnectionHealthState::RateLimited) {
                 record.health.phase = ConnectionHealthState::Idle;
@@ -1005,10 +1003,9 @@ fn reconcile_timed_state(
                     Some("如仍然频繁触发，请调整节点节流策略".to_owned());
             }
         }
-    }
 
-    if let Some(circuit_open_until) = record.health.circuit_open_until {
-        if circuit_open_until <= now {
+    if let Some(circuit_open_until) = record.health.circuit_open_until
+        && circuit_open_until <= now {
             record.health.circuit_open_until = None;
             if matches!(record.health.phase, ConnectionHealthState::CircuitOpen) {
                 record.health.phase = ConnectionHealthState::Idle;
@@ -1018,10 +1015,9 @@ fn reconcile_timed_state(
                     Some("建议优先检查最近一次失败原因后再重试".to_owned());
             }
         }
-    }
 
-    if let Some(next_retry_at) = record.health.next_retry_at {
-        if next_retry_at <= now
+    if let Some(next_retry_at) = record.health.next_retry_at
+        && next_retry_at <= now
             && matches!(
                 record.health.phase,
                 ConnectionHealthState::Reconnecting | ConnectionHealthState::Timeout
@@ -1034,7 +1030,6 @@ fn reconcile_timed_state(
             record.health.diagnosis = Some("已结束退避等待，可再次尝试建连".to_owned());
             record.health.recommended_action = Some("若仍失败，请检查目标端是否可达".to_owned());
         }
-    }
 
     if !record.in_use {
         if matches!(record.health.phase, ConnectionHealthState::Connecting) {

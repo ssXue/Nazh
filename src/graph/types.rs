@@ -9,9 +9,8 @@
 
 use std::{collections::HashMap, sync::Arc};
 
-use crate::{ContextRef, DataStore, EngineError, ExecutionEvent, WorkflowContext};
+use crate::{ContextRef, DataStore, EngineError, ExecutionEvent, WorkflowContext, WorkflowNodeDefinition};
 use serde::{Deserialize, Deserializer, Serialize};
-use serde_json::Value;
 use tokio::sync::mpsc;
 use ts_rs::TS;
 
@@ -28,65 +27,6 @@ pub struct WorkflowGraph {
     pub nodes: HashMap<String, WorkflowNodeDefinition>,
     #[serde(default)]
     pub edges: Vec<WorkflowEdge>,
-}
-
-/// [`WorkflowGraph`] 中的单节点配置。
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
-pub struct WorkflowNodeDefinition {
-    #[serde(default)]
-    pub id: String,
-    #[serde(rename = "type")]
-    pub node_type: String,
-    #[serde(default)]
-    #[ts(optional)]
-    pub connection_id: Option<String>,
-    #[serde(default)]
-    pub config: Value,
-    #[serde(default)]
-    #[ts(optional)]
-    pub ai_description: Option<String>,
-    #[serde(default)]
-    #[ts(optional, type = "number")]
-    pub timeout_ms: Option<u64>,
-    #[serde(default = "default_node_buffer")]
-    pub buffer: usize,
-}
-
-impl<'de> Deserialize<'de> for WorkflowNodeDefinition {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        struct WorkflowNodeDefinitionInput {
-            #[serde(default)]
-            id: String,
-            #[serde(rename = "type", alias = "kind")]
-            node_type: String,
-            #[serde(default)]
-            connection_id: Option<String>,
-            #[serde(default)]
-            config: Value,
-            #[serde(default)]
-            ai_description: Option<String>,
-            #[serde(default)]
-            timeout_ms: Option<u64>,
-            #[serde(default = "default_node_buffer")]
-            buffer: usize,
-        }
-
-        let input = WorkflowNodeDefinitionInput::deserialize(deserializer)?;
-        Ok(Self {
-            id: input.id,
-            node_type: input.node_type,
-            connection_id: input.connection_id,
-            config: input.config,
-            ai_description: input.ai_description,
-            timeout_ms: input.timeout_ms,
-            buffer: input.buffer,
-        })
-    }
 }
 
 /// 工作流 DAG 中连接两个节点的有向边。
@@ -162,29 +102,6 @@ pub(crate) struct WorkflowTopology {
 pub(crate) struct DownstreamTarget {
     pub(crate) source_port_id: Option<String>,
     pub(crate) sender: mpsc::Sender<ContextRef>,
-}
-
-pub(crate) fn default_node_buffer() -> usize {
-    32
-}
-
-impl WorkflowNodeDefinition {
-    /// 从 `config` 字段反序列化出指定类型的配置结构体。
-    ///
-    /// # Errors
-    ///
-    /// 反序列化失败时返回 [`EngineError::NodeConfig`]。
-    pub fn parse_config<T: serde::de::DeserializeOwned>(&self) -> Result<T, crate::EngineError> {
-        serde_json::from_value(self.config.clone())
-            .map_err(|error| crate::EngineError::node_config(self.id.clone(), error.to_string()))
-    }
-
-    /// 获取节点的 AI 描述，若未配置则使用 `fallback`。
-    pub fn resolve_description(&self, fallback: &str) -> String {
-        self.ai_description
-            .clone()
-            .unwrap_or_else(|| fallback.to_owned())
-    }
 }
 
 impl WorkflowIngress {

@@ -12,6 +12,7 @@ pub mod event;
 pub mod guard;
 pub mod ipc;
 pub mod node;
+pub mod plugin;
 
 pub use context::{ContextRef, WorkflowContext};
 pub use data::{ArenaDataStore, DataId, DataStore};
@@ -22,4 +23,7 @@ pub use ipc::{
 };
 pub use node::{
     into_payload_map, NodeDispatch, NodeExecution, NodeOutput, NodeTrait,
+};
+pub use plugin::{
+    NodeRegistry, Plugin, PluginHost, PluginManifest, SharedResources, WorkflowNodeDefinition,
 };
