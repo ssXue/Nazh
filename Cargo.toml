@@ -1,5 +1,6 @@
 [workspace]
-members = [".", "crates/*", "src-tauri"]
+members = [".", "crates/core", "crates/pipeline", "crates/connections", "crates/scripting", "crates/nodes-flow", "crates/nodes-io", "crates/nazh-ai-core", "src-tauri"]
+exclude = ["crates/nazh-core"]
 resolver = "2"
 
 [workspace.package]
