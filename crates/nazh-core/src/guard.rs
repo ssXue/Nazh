@@ -8,7 +8,7 @@ use std::{future::Future, panic::AssertUnwindSafe, time::Duration};
 use futures_util::FutureExt;
 use uuid::Uuid;
 
-use crate::EngineError;
+use crate::error::EngineError;
 
 /// 在 panic 隔离和可选超时保护下执行异步任务。
 ///
@@ -16,7 +16,7 @@ use crate::EngineError;
 /// - 可选的 [`tokio::time::timeout`] 保护
 /// - panic 转换为 [`EngineError::StagePanicked`]
 /// - 超时转换为 [`EngineError::StageTimeout`]
-pub(crate) async fn guarded_execute<T, Fut>(
+pub async fn guarded_execute<T, Fut>(
     stage: &str,
     trace_id: Uuid,
     timeout: Option<Duration>,

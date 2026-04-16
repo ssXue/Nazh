@@ -22,29 +22,25 @@
 //! 每次节点执行均受超时保护与 panic 隔离，保证运行时绝不崩溃。
 
 pub mod connection;
-pub mod context;
-pub mod error;
-pub mod event;
 pub mod graph;
-mod guard;
-pub mod ipc;
 pub mod nodes;
 pub mod pipeline;
 pub mod registry;
+
+// Ring 0 类型从 nazh-core 重导出
+pub use nazh_core::{context, error, event, guard, ipc};
+pub use nazh_core::{
+    DeployResponse, DispatchResponse, EngineError, ExecutionEvent, ListNodeTypesResponse,
+    NodeTypeEntry, UndeployResponse, WorkflowContext,
+};
 
 pub use connection::{
     shared_connection_manager, ConnectionDefinition, ConnectionLease, ConnectionManager,
     ConnectionRecord, SharedConnectionManager,
 };
-pub use context::WorkflowContext;
-pub use error::EngineError;
-pub use event::ExecutionEvent;
 pub use graph::{
     deploy_workflow, WorkflowDeployment, WorkflowGraph, WorkflowIngress, WorkflowNodeDefinition,
     WorkflowStreams,
-};
-pub use ipc::{
-    DeployResponse, DispatchResponse, ListNodeTypesResponse, NodeTypeEntry, UndeployResponse,
 };
 pub use nodes::{
     DebugConsoleNode, DebugConsoleNodeConfig, HttpClientNode, HttpClientNodeConfig, IfNode,

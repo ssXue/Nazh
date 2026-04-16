@@ -8,7 +8,7 @@ use tokio::sync::mpsc;
 use ts_rs::TS;
 use uuid::Uuid;
 
-use crate::EngineError;
+use crate::error::EngineError;
 
 /// 统一的执行生命周期事件。
 ///
@@ -34,12 +34,12 @@ pub enum ExecutionEvent {
 }
 
 /// 向事件通道发送执行事件（忽略发送失败）。
-pub(crate) async fn emit_event(tx: &mpsc::Sender<ExecutionEvent>, event: ExecutionEvent) {
+pub async fn emit_event(tx: &mpsc::Sender<ExecutionEvent>, event: ExecutionEvent) {
     let _ = tx.send(event).await;
 }
 
 /// 向事件通道发送失败事件。
-pub(crate) async fn emit_failure(
+pub async fn emit_failure(
     tx: &mpsc::Sender<ExecutionEvent>,
     stage: &str,
     trace_id: Uuid,

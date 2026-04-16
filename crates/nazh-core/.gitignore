@@ -1,0 +1,2 @@
+# ts-rs 默认导出目录（正式导出使用 TS_RS_EXPORT_DIR 指向 web/src/generated）
+/bindings/
