@@ -47,9 +47,9 @@ function toDeployInfoFromSummary(summary: {
     nodeCount: summary.nodeCount,
     edgeCount: summary.edgeCount,
     rootNodes: summary.rootNodes,
-    projectId: summary.projectId ?? null,
+    projectId: summary.projectId ?? undefined,
     workflowId: summary.workflowId,
-    replacedExisting: null,
+    replacedExisting: undefined,
   };
 }
 

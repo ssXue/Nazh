@@ -71,7 +71,6 @@ impl NativeNode {
             message = %self.config.message.as_deref().unwrap_or("透传"),
             "原生节点执行"
         );
-        );
 
         Ok(Value::Object(payload_map))
     }
