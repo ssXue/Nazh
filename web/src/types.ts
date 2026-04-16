@@ -8,6 +8,8 @@ export type {
   DispatchResponse,
   ExecutionEvent,
   JsonValue,
+  ListNodeTypesResponse,
+  NodeTypeEntry,
   UndeployResponse,
   WorkflowContext,
   WorkflowEdge,

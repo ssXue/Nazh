@@ -8,6 +8,7 @@ import type {
   DeadLetterRecord,
   DeployResponse,
   DispatchResponse,
+  ListNodeTypesResponse,
   ObservabilityQueryResult,
   RuntimeBackpressureStrategy,
   RuntimeWorkflowSummary,
@@ -363,6 +364,10 @@ export async function undeployWorkflow(workflowId?: string | null): Promise<Unde
 
 export async function listConnections(): Promise<ConnectionRecord[]> {
   return invoke<ConnectionRecord[]>('list_connections');
+}
+
+export async function listNodeTypes(): Promise<ListNodeTypesResponse> {
+  return invoke<ListNodeTypesResponse>('list_node_types');
 }
 
 export async function listRuntimeWorkflows(): Promise<RuntimeWorkflowSummary[]> {
