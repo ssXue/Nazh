@@ -10,6 +10,7 @@ import { BoardsPanel, type BoardItem } from './components/app/BoardsPanel';
 import { DashboardPanel } from './components/app/DashboardPanel';
 import { LogsPanel } from './components/app/LogsPanel';
 import { PayloadPanel } from './components/app/PayloadPanel';
+import { PluginPanel } from './components/app/PluginPanel';
 import { ProjectWorkspaceHeader } from './components/app/ProjectWorkspaceHeader';
 import { RuntimeDock } from './components/app/RuntimeDock';
 import { RuntimeManagerPanel } from './components/app/RuntimeManagerPanel';
@@ -1621,6 +1622,14 @@ function App() {
                 storageError={connectionLibrary.storage.error}
                 onStatusMessage={(msg) => engine.setStatusMessage(msg)}
               />
+            </div>
+          </section>
+        );
+      case 'plugins':
+        return (
+          <section className="studio-content studio-content--panel">
+            <div className="panel studio-content__panel studio-content__panel--scroll">
+              <PluginPanel isTauriRuntime={isTauriRuntime} />
             </div>
           </section>
         );

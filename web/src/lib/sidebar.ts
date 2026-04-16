@@ -40,6 +40,12 @@ export function buildSidebarSections(
       badge: `${globalConnectionCount} 个`,
     },
     {
+      key: 'plugins',
+      group: 'main',
+      label: '插件管理',
+      badge: '节点类型',
+    },
+    {
       key: 'payload',
       group: 'main',
       label: '测试载荷',
