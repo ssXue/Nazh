@@ -43,7 +43,7 @@ pub use graph::{
     deploy_workflow, WorkflowDeployment, WorkflowGraph, WorkflowIngress, WorkflowNodeDefinition,
     WorkflowStreams,
 };
-pub use ipc::{DeployResponse, DispatchResponse, UndeployResponse};
+pub use ipc::{DeployResponse, DispatchResponse, ListNodeTypesResponse, NodeTypeEntry, UndeployResponse};
 pub use nodes::{
     DebugConsoleNode, DebugConsoleNodeConfig, HttpClientNode, HttpClientNodeConfig, IfNode,
     IfNodeConfig, LoopNode, LoopNodeConfig, ModbusReadNode, ModbusReadNodeConfig, NativeNode,

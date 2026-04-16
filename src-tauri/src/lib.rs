@@ -13,8 +13,8 @@ mod observability;
 use nazh_engine::{
     deploy_workflow as deploy_workflow_graph, shared_connection_manager, ConnectionDefinition,
     ConnectionRecord, DeployResponse, DispatchResponse, EngineError, ExecutionEvent,
-    NodeRegistry, SerialTriggerNodeConfig, TimerNodeConfig, UndeployResponse, WorkflowContext,
-    WorkflowGraph, WorkflowIngress,
+    ListNodeTypesResponse, NodeRegistry, SerialTriggerNodeConfig, TimerNodeConfig,
+    UndeployResponse, WorkflowContext, WorkflowGraph, WorkflowIngress,
 };
 use observability::{
     query_observability as query_workspace_observability, ObservabilityContextInput,
@@ -1282,6 +1282,14 @@ async fn undeploy_workflow(
 async fn list_connections(state: State<'_, DesktopState>) -> Result<Vec<ConnectionRecord>, String> {
     let connections = state.connection_manager.list().await;
     Ok(connections)
+}
+
+#[tauri::command]
+async fn list_node_types() -> Result<ListNodeTypesResponse, String> {
+    let registry = NodeRegistry::with_standard_nodes();
+    Ok(ListNodeTypesResponse {
+        types: registry.registered_types_with_aliases(),
+    })
 }
 
 #[tauri::command]
@@ -2753,6 +2761,7 @@ pub fn run() {
             dispatch_payload,
             undeploy_workflow,
             list_connections,
+            list_node_types,
             list_runtime_workflows,
             set_active_runtime_workflow,
             list_dead_letters,

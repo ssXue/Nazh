@@ -121,10 +121,87 @@ impl NodeRegistry {
     pub fn registered_types(&self) -> Vec<&str> {
         self.factories.keys().map(String::as_str).collect()
     }
+
+    /// 返回已注册节点类型的列表，按工厂函数指针去重合并别名。
+    ///
+    /// 同一个工厂函数被注册为多个名称时，选择最短名称作为主名称，
+    /// 其余名称作为别名。
+    pub fn registered_types_with_aliases(&self) -> Vec<crate::ipc::NodeTypeEntry> {
+        let mut seen: Vec<Arc<FactoryFn>> = Vec::new();
+        let mut entries: Vec<crate::ipc::NodeTypeEntry> = Vec::new();
+
+        for (name, factory) in &self.factories {
+            if let Some(pos) = seen.iter().position(|f| Arc::ptr_eq(f, factory)) {
+                entries[pos].aliases.push(name.clone());
+            } else {
+                seen.push(factory.clone());
+                entries.push(crate::ipc::NodeTypeEntry {
+                    name: name.clone(),
+                    aliases: vec![],
+                });
+            }
+        }
+
+        for entry in &mut entries {
+            let mut all = vec![entry.name.clone()];
+            all.append(&mut entry.aliases);
+            all.sort_by(|a, b| a.len().cmp(&b.len()).then(a.cmp(b)));
+            entry.name = all.remove(0);
+            entry.aliases = all;
+        }
+
+        entries.sort_by(|a, b| a.name.cmp(&b.name));
+        entries
+    }
 }
 
 impl Default for NodeRegistry {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::NodeRegistry;
+
+    fn stub_factory(
+        _def: &crate::graph::types::WorkflowNodeDefinition,
+        _cm: crate::SharedConnectionManager,
+    ) -> Result<std::sync::Arc<dyn crate::NodeTrait>, crate::EngineError> {
+        Err(crate::EngineError::unsupported_node_type("test-stub"))
+    }
+
+    #[test]
+    fn registered_types_with_aliases_groups_aliases() {
+        let mut registry = NodeRegistry::new();
+        registry.register("rhai", stub_factory);
+        let _ = registry.alias("code", "rhai");
+        let _ = registry.alias("code/rhai", "rhai");
+
+        registry.register("native", stub_factory);
+        let _ = registry.alias("log", "native");
+
+        registry.register("timer", stub_factory);
+
+        let entries = registry.registered_types_with_aliases();
+
+        assert_eq!(entries.len(), 3);
+
+        let code_entry = entries.iter().find(|e| e.name == "code").unwrap();
+        assert_eq!(code_entry.aliases, vec!["rhai", "code/rhai"]);
+
+        let log_entry = entries.iter().find(|e| e.name == "log").unwrap();
+        assert_eq!(log_entry.aliases, vec!["native"]);
+
+        let timer_entry = entries.iter().find(|e| e.name == "timer").unwrap();
+        assert!(timer_entry.aliases.is_empty());
+    }
+
+    #[test]
+    fn registered_types_with_aliases_empty_registry() {
+        let registry = NodeRegistry::new();
+        let entries = registry.registered_types_with_aliases();
+        assert!(entries.is_empty());
     }
 }

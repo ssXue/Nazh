@@ -47,3 +47,23 @@ pub struct UndeployResponse {
     #[ts(optional)]
     pub workflow_id: Option<String>,
 }
+
+/// 已注册节点类型的信息条目。
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct NodeTypeEntry {
+    /// 节点类型主名称（如 "rhai"）。
+    pub name: String,
+    /// 别名列表（如 ["code", "code/rhai"]）。
+    #[serde(default)]
+    pub aliases: Vec<String>,
+}
+
+/// `list_node_types` IPC 命令的响应。
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct ListNodeTypesResponse {
+    pub types: Vec<NodeTypeEntry>,
+}
