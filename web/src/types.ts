@@ -3,6 +3,19 @@ import type { WorkflowJSON as FlowgramWorkflowJSON } from '@flowgram.ai/free-lay
 // ── 从 Rust 引擎自动生成的 IPC 契约类型（ts-rs） ────────────
 
 export type {
+  AiCompletionRequest,
+  AiCompletionResponse,
+  AiConfigUpdate,
+  AiConfigView,
+  AiGenerationParams,
+  AiMessage,
+  AiMessageRole,
+  AiProviderDraft,
+  AiProviderUpsert,
+  AiProviderView,
+  AiSecretInput,
+  AiTestResult,
+  AiTokenUsage,
   ConnectionDefinition,
   DeployResponse,
   DispatchResponse,

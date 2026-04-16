@@ -3,6 +3,12 @@ import { listen } from '@tauri-apps/api/event';
 import { currentMonitor, getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
 
 import type {
+  AiCompletionRequest,
+  AiCompletionResponse,
+  AiConfigUpdate,
+  AiConfigView,
+  AiProviderDraft,
+  AiTestResult,
   ConnectionDefinition,
   ConnectionRecord,
   DeadLetterRecord,
@@ -597,4 +603,22 @@ export async function onRuntimeWorkflowFocus(
   return () => {
     unlisten();
   };
+}
+
+// ── AI Copilot IPC 包装函数 ────────────────────────────────
+
+export async function loadAiConfig(): Promise<AiConfigView> {
+  return invoke<AiConfigView>('load_ai_config');
+}
+
+export async function saveAiConfig(update: AiConfigUpdate): Promise<AiConfigView> {
+  return invoke<AiConfigView>('save_ai_config', { update });
+}
+
+export async function testAiProvider(draft: AiProviderDraft): Promise<AiTestResult> {
+  return invoke<AiTestResult>('test_ai_provider', { draft });
+}
+
+export async function copilotComplete(request: AiCompletionRequest): Promise<AiCompletionResponse> {
+  return invoke<AiCompletionResponse>('copilot_complete', { request });
 }
