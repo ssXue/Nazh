@@ -1,5 +1,6 @@
 import {
   AboutIcon,
+  AiIcon,
   BoardsIcon,
   ConnectionsIcon,
   DashboardIcon,
@@ -21,6 +22,7 @@ const SECTION_ICONS: Record<SidebarSection, typeof DashboardIcon> = {
   plugins: ConnectionsIcon,
   payload: PayloadIcon,
   logs: LogsIcon,
+  ai: AiIcon,
   settings: SettingsIcon,
   about: AboutIcon,
 };

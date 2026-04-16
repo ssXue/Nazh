@@ -6,6 +6,7 @@ import { useWorkflowEngine } from './hooks/use-workflow-engine';
 import { useConnectionLibrary } from './hooks/use-connection-library';
 
 import { AboutPanel } from './components/app/AboutPanel';
+import { AiConfigPanel } from './components/app/AiConfigPanel';
 import { BoardsPanel, type BoardItem } from './components/app/BoardsPanel';
 import { DashboardPanel } from './components/app/DashboardPanel';
 import { LogsPanel } from './components/app/LogsPanel';
@@ -1760,6 +1761,16 @@ function App() {
                 projectWorkspaceIsSyncing={projectLibrary.storage.isSyncing}
                 projectWorkspaceError={projectLibrary.storage.error}
                 onProjectWorkspacePathChange={settings.setProjectWorkspacePath}
+              />
+            </div>
+          </section>
+        );
+      case 'ai':
+        return (
+          <section className="studio-content studio-content--panel">
+            <div className="panel studio-content__panel studio-content__panel--scroll">
+              <AiConfigPanel
+                isTauriRuntime={isTauriRuntime}
                 aiConfig={aiConfig}
                 aiConfigLoading={aiConfigLoading}
                 aiConfigError={aiConfigError}

@@ -58,6 +58,12 @@ export function buildSidebarSections(
       badge: logCount > 0 ? `${logCount} 条` : activeBoardName ? '等待事件' : '全局会话',
     },
     {
+      key: 'ai',
+      group: 'main',
+      label: 'AI 配置',
+      badge: hasTauriRuntime() ? 'Copilot' : '预览态',
+    },
+    {
       key: 'settings',
       group: 'settings',
       label: '设置',

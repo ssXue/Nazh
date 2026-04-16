@@ -571,6 +571,19 @@ export function DeleteActionIcon(props: IconProps) {
   );
 }
 
+export function AiIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="M12 2a4 4 0 0 0-4 4v2H6a2 2 0 0 0-2 2v2a6 6 0 0 0 4.2 5.7" />
+      <path d="M12 2a4 4 0 0 1 4 4v2h2a2 2 0 0 1 2 2v2a6 6 0 0 1-4.2 5.7" />
+      <path d="M9 16.5c.7.8 1.8 1.5 3 1.5s2.3-.7 3-1.5" />
+      <circle cx="9" cy="11" r="1.2" />
+      <circle cx="15" cy="11" r="1.2" />
+      <path d="M10 21h4" />
+    </BaseIcon>
+  );
+}
+
 export function SettingsIcon(props: IconProps) {
   return (
     <BaseIcon {...props}>

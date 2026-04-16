@@ -21,6 +21,7 @@ export type SidebarSection =
   | 'plugins'
   | 'payload'
   | 'logs'
+  | 'ai'
   | 'settings'
   | 'about';
 export type SidebarGroup = 'top' | 'main' | 'settings';
@@ -96,6 +97,10 @@ export interface SettingsPanelProps {
   projectWorkspaceIsSyncing: boolean;
   projectWorkspaceError: string | null;
   onProjectWorkspacePathChange: (path: string) => void;
+}
+
+export interface AiConfigPanelProps {
+  isTauriRuntime: boolean;
   aiConfig: import('../../types').AiConfigView | null;
   aiConfigLoading: boolean;
   aiConfigError: string | null;
