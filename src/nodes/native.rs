@@ -65,11 +65,12 @@ impl NativeNode {
             insert_connection_lease(&self.id, &mut payload_map, guard.lease())?;
         }
 
-        println!(
-            "[native:{}] trace_id={} message={}",
-            self.id,
-            trace_id,
-            self.config.message.as_deref().unwrap_or("透传"),
+        tracing::info!(
+            node_id = %self.id,
+            trace_id = %trace_id,
+            message = %self.config.message.as_deref().unwrap_or("透传"),
+            "原生节点执行"
+        );
         );
 
         Ok(Value::Object(payload_map))

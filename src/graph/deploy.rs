@@ -26,6 +26,11 @@ pub async fn deploy_workflow(
     connection_manager: SharedConnectionManager,
     registry: &NodeRegistry,
 ) -> Result<WorkflowDeployment, EngineError> {
+    tracing::info!(
+        node_count = graph.nodes.len(),
+        edge_count = graph.edges.len(),
+        "开始部署工作流 DAG"
+    );
     let topology = graph.topology()?;
 
     connection_manager
@@ -97,6 +102,11 @@ pub async fn deploy_workflow(
 
     drop(result_tx);
     drop(event_tx);
+
+    tracing::info!(
+        root_count = topology.root_nodes.len(),
+        "工作流 DAG 部署完成"
+    );
 
     Ok(WorkflowDeployment {
         ingress: WorkflowIngress {

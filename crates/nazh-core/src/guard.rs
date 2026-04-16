@@ -30,18 +30,38 @@ where
     if let Some(duration) = timeout {
         match tokio::time::timeout(duration, guarded).await {
             Ok(Ok(result)) => result,
-            Ok(Err(_)) => Err(EngineError::StagePanicked {
-                stage: stage.to_owned(),
-                trace_id,
-            }),
-            Err(_) => Err(EngineError::StageTimeout {
-                stage: stage.to_owned(),
-                trace_id,
-                timeout_ms: duration.as_millis(),
-            }),
+            Ok(Err(_)) => {
+                tracing::error!(
+                    stage,
+                    trace_id = %trace_id,
+                    "异步任务发生 panic，已被安全隔离"
+                );
+                Err(EngineError::StagePanicked {
+                    stage: stage.to_owned(),
+                    trace_id,
+                })
+            }
+            Err(_) => {
+                tracing::error!(
+                    stage,
+                    trace_id = %trace_id,
+                    timeout_ms = duration.as_millis(),
+                    "阶段执行超时"
+                );
+                Err(EngineError::StageTimeout {
+                    stage: stage.to_owned(),
+                    trace_id,
+                    timeout_ms: duration.as_millis(),
+                })
+            }
         }
     } else {
         guarded.await.unwrap_or_else(|_| {
+            tracing::error!(
+                stage,
+                trace_id = %trace_id,
+                "异步任务发生 panic，已被安全隔离"
+            );
             Err(EngineError::StagePanicked {
                 stage: stage.to_owned(),
                 trace_id,

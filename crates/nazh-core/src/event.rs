@@ -45,6 +45,7 @@ pub async fn emit_failure(
     trace_id: Uuid,
     error: &EngineError,
 ) {
+    tracing::warn!(stage, trace_id = %trace_id, error = %error, "阶段执行失败");
     emit_event(
         tx,
         ExecutionEvent::Failed {

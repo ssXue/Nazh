@@ -8,6 +8,7 @@
 use std::{sync::Arc, time::Duration};
 
 use tokio::sync::mpsc;
+use tracing::Instrument;
 
 use super::types::DownstreamTarget;
 use crate::{
@@ -40,8 +41,14 @@ pub(crate) async fn run_node(
         )
         .await;
 
-        let result =
-            guarded_execute(&node_id, trace_id, timeout, node.execute(&ctx_ref, &*store)).await;
+        let span = tracing::info_span!(
+            "node.execute",
+            node_id = %node_id,
+            trace_id = %trace_id,
+        );
+        let result = guarded_execute(&node_id, trace_id, timeout, node.execute(&ctx_ref, &*store))
+            .instrument(span)
+            .await;
 
         // 释放本节点对输入数据的引用
         store.release(&ctx_ref.data_id);

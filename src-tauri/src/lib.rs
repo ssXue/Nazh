@@ -1154,6 +1154,7 @@ async fn dispatch_payload(
 
     let ctx = WorkflowContext::new(payload);
     let trace_id = ctx.trace_id.to_string();
+    tracing::info!(workflow_id = %target_workflow_id, trace_id = %trace_id, "收到测试载荷提交请求");
     if let Err(error) = dispatch_router.submit_manual(ctx, "manual-dispatch").await {
         if let Some(store) = &observability_store {
             let _ = store
@@ -1199,6 +1200,7 @@ async fn undeploy_workflow(
     workflow_id: Option<String>,
 ) -> Result<UndeployResponse, String> {
     let target_workflow_id = state.resolve_workflow_id(workflow_id.as_deref()).await?;
+    tracing::info!(workflow_id = ?target_workflow_id, "收到停止运行请求");
     let Some(target_workflow_id) = target_workflow_id else {
         let response = UndeployResponse {
             had_workflow: false,
@@ -2754,8 +2756,28 @@ mod tests {
     }
 }
 
+/// 初始化全局 tracing subscriber，输出到 stderr。
+///
+/// 通过 `RUST_LOG` 环境变量控制日志级别，默认为 `nazh_engine=info,nazh_desktop_lib=info`。
+fn init_tracing() {
+    use tracing_subscriber::EnvFilter;
+
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("nazh_engine=info,nazh_desktop_lib=info"));
+
+    tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_target(true)
+        .with_thread_ids(false)
+        .with_file(false)
+        .with_line_number(false)
+        .init();
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    init_tracing();
+
     let builder = tauri::Builder::default()
         .manage(DesktopState::default())
         .setup(|app| {
@@ -2793,6 +2815,6 @@ pub fn run() {
         ]);
 
     if let Err(error) = builder.run(tauri::generate_context!()) {
-        eprintln!("failed to run Nazh desktop shell: {error}");
+        tracing::error!("Nazh 桌面壳层运行失败: {error}");
     }
 }

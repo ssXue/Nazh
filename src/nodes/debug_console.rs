@@ -63,9 +63,12 @@ impl NodeTrait for DebugConsoleNode {
         }
         .map_err(|error| EngineError::payload_conversion(self.id.clone(), error.to_string()))?;
 
-        println!(
-            "[debug-console:{}] trace_id={} label={}\n{}",
-            self.id, ctx.trace_id, label, rendered_payload
+        tracing::info!(
+            node_id = %self.id,
+            trace_id = %ctx.trace_id,
+            label,
+            "调试控制台输出\n{}",
+            rendered_payload
         );
 
         let mut payload_map = into_payload_map((*shared_payload).clone());

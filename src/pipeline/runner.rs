@@ -5,6 +5,7 @@
 //! 所有执行阶段都带有 panic 隔离和可选超时保护。
 
 use tokio::sync::mpsc;
+use tracing::Instrument;
 
 use super::types::PipelineStage;
 use crate::{
@@ -34,8 +35,14 @@ pub(crate) async fn run_stage(
         )
         .await;
 
-        let result =
-            guarded_execute(&stage_name, trace_id, stage.timeout, (stage.handler)(ctx)).await;
+        let span = tracing::info_span!(
+            "stage.execute",
+            stage = %stage_name,
+            trace_id = %trace_id,
+        );
+        let result = guarded_execute(&stage_name, trace_id, stage.timeout, (stage.handler)(ctx))
+            .instrument(span)
+            .await;
 
         match result {
             Ok(next_ctx) => {
