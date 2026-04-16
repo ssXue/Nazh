@@ -10,6 +10,10 @@
 
 mod observability;
 
+use nazh_ai_core::{
+    AiCompletionRequest, AiCompletionResponse, AiConfigFile, AiConfigUpdate, AiConfigView,
+    AiProviderDraft, AiService, AiTestResult, OpenAiCompatibleService,
+};
 use nazh_engine::{
     deploy_workflow as deploy_workflow_graph, shared_connection_manager, standard_registry,
     ConnectionDefinition, ConnectionRecord, DeployResponse, DispatchResponse, EngineError,
@@ -24,7 +28,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::fs;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{mpsc, Mutex, RwLock};
 
 use std::{
     collections::HashMap,
@@ -604,14 +608,20 @@ struct DesktopState {
     connection_manager: nazh_engine::SharedConnectionManager,
     workflows: Mutex<HashMap<String, DesktopWorkflow>>,
     active_workflow_id: Mutex<Option<String>>,
+    ai_config: Arc<RwLock<AiConfigFile>>,
+    ai_service: Arc<dyn AiService>,
 }
 
 impl Default for DesktopState {
     fn default() -> Self {
+        let ai_config = Arc::new(RwLock::new(AiConfigFile::default()));
+        let ai_service = Arc::new(OpenAiCompatibleService::new(Arc::clone(&ai_config)));
         Self {
             connection_manager: shared_connection_manager(),
             workflows: Mutex::new(HashMap::new()),
             active_workflow_id: Mutex::new(None),
+            ai_config,
+            ai_service,
         }
     }
 }
@@ -633,6 +643,14 @@ impl DesktopState {
         let workspace_dir = resolve_project_workspace_dir(app, workspace_path)
             .map(|(dir, _)| dir)?;
         Ok(workspace_dir.join("deployment-session.json"))
+    }
+
+    fn ai_config_file_path(app: &AppHandle) -> Result<PathBuf, String> {
+        let data_dir = app
+            .path()
+            .app_local_data_dir()
+            .map_err(|error| format!("无法解析应用数据目录: {error}"))?;
+        Ok(data_dir.join("ai-config.json"))
     }
 
     async fn load_connections_from_disk(
@@ -1563,6 +1581,64 @@ async fn clear_deployment_session_file(
         .await
         .map_err(|error| format!("删除 deployment-session.json 失败: {error}"))?;
     Ok(())
+}
+
+#[tauri::command]
+async fn load_ai_config(state: State<'_, DesktopState>) -> Result<AiConfigView, String> {
+    let config = state.ai_config.read().await;
+    Ok(config.to_view())
+}
+
+#[tauri::command]
+async fn save_ai_config(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+    update: AiConfigUpdate,
+) -> Result<AiConfigView, String> {
+    let path = DesktopState::ai_config_file_path(&app)?;
+    let dir = path.parent().ok_or("无法确定 AI 配置文件目录")?;
+    fs::create_dir_all(dir)
+        .await
+        .map_err(|error| format!("创建 AI 配置目录失败: {error}"))?;
+
+    let mut config = state.ai_config.write().await;
+    config.merge_update(update);
+
+    let tmp_path = path.with_extension("json.tmp");
+    let text = serde_json::to_string_pretty(&*config)
+        .map_err(|error| format!("序列化 AI 配置失败: {error}"))?;
+    fs::write(&tmp_path, &text)
+        .await
+        .map_err(|error| format!("写入 AI 配置临时文件失败: {error}"))?;
+    fs::rename(&tmp_path, &path)
+        .await
+        .map_err(|error| format!("原子重命名 AI 配置文件失败: {error}"))?;
+
+    Ok(config.to_view())
+}
+
+#[tauri::command]
+async fn test_ai_provider(
+    state: State<'_, DesktopState>,
+    draft: AiProviderDraft,
+) -> Result<AiTestResult, String> {
+    state
+        .ai_service
+        .test_connection(draft)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn copilot_complete(
+    state: State<'_, DesktopState>,
+    request: AiCompletionRequest,
+) -> Result<AiCompletionResponse, String> {
+    state
+        .ai_service
+        .complete(request)
+        .await
+        .map_err(|error| error.to_string())
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -2773,8 +2849,24 @@ pub fn run() {
             let app_handle = app.handle().clone();
             let state: State<'_, DesktopState> = app.state();
             let manager = state.connection_manager.clone();
+            let ai_config_arc = state.ai_config.clone();
+            tauri::async_runtime::spawn({
+                let app_handle = app_handle.clone();
+                async move {
+                    DesktopState::load_connections_from_disk(&app_handle, manager, None).await;
+                }
+            });
             tauri::async_runtime::spawn(async move {
-                DesktopState::load_connections_from_disk(&app_handle, manager, None).await;
+                if let Ok(path) = DesktopState::ai_config_file_path(&app_handle) {
+                    if path.exists() {
+                        if let Ok(text) = tokio::fs::read_to_string(&path).await {
+                            if let Ok(file_config) = serde_json::from_str::<AiConfigFile>(&text) {
+                                let mut config = ai_config_arc.write().await;
+                                *config = file_config;
+                            }
+                        }
+                    }
+                }
             });
             Ok(())
         })
@@ -2800,7 +2892,11 @@ pub fn run() {
             list_serial_ports,
             test_serial_connection,
             load_project_library_file,
-            save_project_library_file
+            save_project_library_file,
+            load_ai_config,
+            save_ai_config,
+            test_ai_provider,
+            copilot_complete
         ]);
 
     if let Err(error) = builder.run(tauri::generate_context!()) {
