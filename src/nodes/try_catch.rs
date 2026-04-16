@@ -9,7 +9,7 @@ use serde_json::Value;
 
 use super::helpers::{default_max_operations, into_payload_map, RhaiNodeBase};
 use super::{NodeExecution, NodeTrait};
-use crate::{EngineError, WorkflowContext};
+use crate::{ContextRef, DataStore, EngineError};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TryCatchNodeConfig {
@@ -43,9 +43,9 @@ impl TryCatchNode {
 impl NodeTrait for TryCatchNode {
     delegate_node_base!("tryCatch");
 
-    async fn execute(&self, ctx: WorkflowContext) -> Result<NodeExecution, EngineError> {
-        let (scope, script_result) = self.base.evaluate_catching(&ctx)?;
-
+    async fn execute(&self, ctx: &ContextRef, store: &dyn DataStore) -> Result<NodeExecution, EngineError> {
+        let input_payload = store.read_mut(&ctx.data_id)?;
+        let (scope, script_result) = self.base.evaluate_catching(&input_payload)?;
         match script_result {
             Ok(result) => {
                 let payload = if result.is_unit() {
@@ -53,19 +53,16 @@ impl NodeTrait for TryCatchNode {
                 } else {
                     self.base.dynamic_to_value(&result)?
                 };
-                Ok(NodeExecution::route(ctx.with_payload(payload), ["try"]))
+                Ok(NodeExecution::route(payload, ["try"]))
             }
             Err(error_message) => {
                 let base_payload = self
                     .base
                     .payload_from_scope(&scope)
-                    .unwrap_or_else(|_| ctx.payload.clone());
+                    .unwrap_or(input_payload);
                 let mut map = into_payload_map(base_payload);
                 map.insert("_error".to_owned(), Value::String(error_message));
-                Ok(NodeExecution::route(
-                    ctx.with_payload(Value::Object(map)),
-                    ["catch"],
-                ))
+                Ok(NodeExecution::route(Value::Object(map), ["catch"]))
             }
         }
     }

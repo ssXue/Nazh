@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use super::helpers::{default_max_operations, RhaiNodeBase};
 use super::{NodeExecution, NodeTrait};
-use crate::{EngineError, WorkflowContext};
+use crate::{ContextRef, DataStore, EngineError};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IfNodeConfig {
@@ -40,18 +40,18 @@ impl IfNode {
 impl NodeTrait for IfNode {
     delegate_node_base!("if");
 
-    async fn execute(&self, ctx: WorkflowContext) -> Result<NodeExecution, EngineError> {
-        let (scope, result) = self.base.evaluate(&ctx)?;
+    async fn execute(&self, ctx: &ContextRef, store: &dyn DataStore) -> Result<NodeExecution, EngineError> {
+        let payload = store.read_mut(&ctx.data_id)?;
+        let (scope, result) = self.base.evaluate(&payload)?;
         let branch = from_dynamic::<bool>(&result).map_err(|error| {
             EngineError::payload_conversion(
                 self.base.id().to_owned(),
                 format!("If 节点脚本必须返回布尔值: {error}"),
             )
         })?;
-        let payload = self.base.payload_from_scope(&scope)?;
-
+        let new_payload = self.base.payload_from_scope(&scope)?;
         Ok(NodeExecution::route(
-            ctx.with_payload(payload),
+            new_payload,
             [if branch { "true" } else { "false" }],
         ))
     }

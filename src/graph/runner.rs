@@ -1,7 +1,8 @@
 //! 单节点异步执行循环与事件发射。
 //!
-//! [`run_node`] 在独立的 Tokio 任务中运行，持续从输入通道接收上下文，
-//! 执行节点逻辑，并根据 [`NodeDispatch`] 将输出分发到下游或结果流。
+//! [`run_node`] 在独立的 Tokio 任务中运行，持续从输入通道接收 [`ContextRef`]，
+//! 从 [`DataStore`] 读取数据，执行节点逻辑，将输出写回 DataStore，
+//! 并将新的 [`ContextRef`] 分发到下游或结果流。
 //! 所有执行阶段都带有 panic 隔离和可选超时保护。
 
 use std::{sync::Arc, time::Duration};
@@ -12,22 +13,23 @@ use super::types::DownstreamTarget;
 use crate::{
     event::{emit_event, emit_failure, ExecutionEvent},
     guard::guarded_execute,
-    EngineError, NodeDispatch, NodeTrait, WorkflowContext,
+    ContextRef, DataStore, EngineError, NodeDispatch, NodeTrait,
 };
 
-/// 单节点的异步执行循环：接收 → 执行 → 分发 → 发射事件。
+/// 单节点的异步执行循环：接收 ContextRef → 读取数据 → 执行 → 写入输出 → 分发。
 pub(crate) async fn run_node(
     node: Arc<dyn NodeTrait>,
     timeout: Option<Duration>,
-    mut input_rx: mpsc::Receiver<WorkflowContext>,
+    mut input_rx: mpsc::Receiver<ContextRef>,
     downstream_senders: Vec<DownstreamTarget>,
-    result_tx: mpsc::Sender<WorkflowContext>,
+    result_tx: mpsc::Sender<ContextRef>,
     event_tx: mpsc::Sender<ExecutionEvent>,
+    store: Arc<dyn DataStore>,
 ) {
     let node_id = node.id().to_owned();
 
-    while let Some(ctx) = input_rx.recv().await {
-        let trace_id = ctx.trace_id;
+    while let Some(ctx_ref) = input_rx.recv().await {
+        let trace_id = ctx_ref.trace_id;
 
         emit_event(
             &event_tx,
@@ -38,7 +40,11 @@ pub(crate) async fn run_node(
         )
         .await;
 
-        let result = guarded_execute(&node_id, trace_id, timeout, node.execute(ctx)).await;
+        let result =
+            guarded_execute(&node_id, trace_id, timeout, node.execute(&ctx_ref, &*store)).await;
+
+        // 释放本节点对输入数据的引用
+        store.release(&ctx_ref.data_id);
 
         match result {
             Ok(output) => {
@@ -57,8 +63,29 @@ pub(crate) async fn run_node(
                             .collect::<Vec<_>>(),
                     };
 
+                    // 将节点输出写入 DataStore，消费者数为下游目标数
+                    let consumer_count = if matching_targets.is_empty() {
+                        1 // 叶节点结果
+                    } else {
+                        matching_targets.len()
+                    };
+
+                    let data_id = match store.write(node_output.payload, consumer_count) {
+                        Ok(id) => id,
+                        Err(error) => {
+                            send_error = Some(error);
+                            break;
+                        }
+                    };
+
+                    let new_ref = ContextRef::new(
+                        trace_id,
+                        data_id,
+                        Some(node_id.clone()),
+                    );
+
                     let write_result = if matching_targets.is_empty() {
-                        result_tx.send(node_output.ctx).await.map_err(|_| {
+                        result_tx.send(new_ref).await.map_err(|_| {
                             EngineError::ChannelClosed {
                                 stage: node_id.clone(),
                             }
@@ -66,7 +93,7 @@ pub(crate) async fn run_node(
                     } else {
                         let mut downstream_error = None;
                         for target in &matching_targets {
-                            if target.sender.send(node_output.ctx.clone()).await.is_err() {
+                            if target.sender.send(new_ref.clone()).await.is_err() {
                                 downstream_error = Some(EngineError::ChannelClosed {
                                     stage: node_id.clone(),
                                 });

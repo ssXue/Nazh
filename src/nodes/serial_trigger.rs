@@ -11,7 +11,7 @@ use serde_json::{json, Map, Value};
 
 use super::helpers::into_payload_map;
 use super::{NodeExecution, NodeTrait};
-use crate::{EngineError, WorkflowContext};
+use crate::{ContextRef, DataStore, EngineError};
 
 fn default_baud_rate() -> u32 {
     9_600
@@ -147,8 +147,9 @@ fn frame_u64(frame: &Map<String, Value>, key: &str, fallback: u64) -> u64 {
 impl NodeTrait for SerialTriggerNode {
     impl_node_meta!("serialTrigger");
 
-    async fn execute(&self, ctx: WorkflowContext) -> Result<NodeExecution, EngineError> {
-        let mut payload_map = into_payload_map(ctx.payload);
+    async fn execute(&self, ctx: &ContextRef, store: &dyn DataStore) -> Result<NodeExecution, EngineError> {
+        let payload = store.read_mut(&ctx.data_id)?;
+        let mut payload_map = into_payload_map(payload);
 
         for (key, value) in &self.config.inject {
             payload_map.insert(key.clone(), value.clone());
@@ -232,10 +233,6 @@ impl NodeTrait for SerialTriggerNode {
             }),
         );
 
-        Ok(NodeExecution::broadcast(WorkflowContext::from_parts(
-            ctx.trace_id,
-            Utc::now(),
-            Value::Object(payload_map),
-        )))
+        Ok(NodeExecution::broadcast(Value::Object(payload_map)))
     }
 }

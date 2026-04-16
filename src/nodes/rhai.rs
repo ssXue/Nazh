@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use super::helpers::{default_max_operations, RhaiNodeBase};
 use super::{NodeExecution, NodeTrait};
-use crate::{EngineError, WorkflowContext};
+use crate::{ContextRef, DataStore, EngineError};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RhaiNodeConfig {
@@ -42,15 +42,14 @@ impl RhaiNode {
 impl NodeTrait for RhaiNode {
     delegate_node_base!("rhai");
 
-    async fn execute(&self, ctx: WorkflowContext) -> Result<NodeExecution, EngineError> {
-        let (scope, result) = self.base.evaluate(&ctx)?;
-
-        let payload = if result.is_unit() {
+    async fn execute(&self, ctx: &ContextRef, store: &dyn DataStore) -> Result<NodeExecution, EngineError> {
+        let payload = store.read_mut(&ctx.data_id)?;
+        let (scope, result) = self.base.evaluate(&payload)?;
+        let new_payload = if result.is_unit() {
             self.base.payload_from_scope(&scope)?
         } else {
             self.base.dynamic_to_value(&result)?
         };
-
-        Ok(NodeExecution::broadcast(ctx.with_payload(payload)))
+        Ok(NodeExecution::broadcast(new_payload))
     }
 }

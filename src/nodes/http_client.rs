@@ -12,7 +12,7 @@ use serde_json::{json, Map, Value};
 use super::helpers::into_payload_map;
 use super::template::{self, TemplateVars};
 use super::{NodeExecution, NodeTrait};
-use crate::{EngineError, WorkflowContext};
+use crate::{ContextRef, DataStore, EngineError};
 
 fn default_http_method() -> String {
     "POST".to_owned()
@@ -81,16 +81,18 @@ fn normalize_http_body_mode(value: &str, webhook_kind: &str) -> &'static str {
 fn prepare_http_request_body(
     node_id: &str,
     config: &HttpClientNodeConfig,
-    ctx: &WorkflowContext,
+    payload: &Value,
+    trace_id: &uuid::Uuid,
+    timestamp: &chrono::DateTime<Utc>,
     requested_at: &str,
 ) -> Result<(String, String, String, String), EngineError> {
     let webhook_kind = normalize_http_webhook_kind(&config.webhook_kind).to_owned();
     let body_mode = normalize_http_body_mode(&config.body_mode, &webhook_kind).to_owned();
-    let event_timestamp = ctx.timestamp.to_rfc3339();
+    let event_timestamp = timestamp.to_rfc3339();
 
     let vars = TemplateVars {
-        payload: &ctx.payload,
-        trace_id: &ctx.trace_id,
+        payload,
+        trace_id,
         node_id,
         timestamp: &event_timestamp,
         extras: &[("requested_at", requested_at)],
@@ -134,7 +136,7 @@ fn prepare_http_request_body(
                 EngineError::payload_conversion(node_id.to_owned(), error.to_string())
             })?
         }
-        _ => serde_json::to_string(&ctx.payload).map_err(|error| {
+        _ => serde_json::to_string(payload).map_err(|error| {
             EngineError::payload_conversion(node_id.to_owned(), error.to_string())
         })?,
     };
@@ -231,7 +233,8 @@ impl HttpClientNode {
 impl NodeTrait for HttpClientNode {
     impl_node_meta!("httpClient");
 
-    async fn execute(&self, ctx: WorkflowContext) -> Result<NodeExecution, EngineError> {
+    async fn execute(&self, ctx: &ContextRef, store: &dyn DataStore) -> Result<NodeExecution, EngineError> {
+        let payload = store.read_mut(&ctx.data_id)?;
         let method = self.config.method.trim().to_uppercase();
         let url = self.config.url.trim().to_owned();
         if url.is_empty() {
@@ -244,7 +247,7 @@ impl NodeTrait for HttpClientNode {
         let requested_at = Utc::now().to_rfc3339();
         let request_timeout_ms = self.config.request_timeout_ms.max(500);
         let (payload_body, content_type, webhook_kind, body_mode) =
-            prepare_http_request_body(&self.id, &self.config, &ctx, &requested_at)?;
+            prepare_http_request_body(&self.id, &self.config, &payload, &ctx.trace_id, &ctx.timestamp, &requested_at)?;
 
         let reqwest_method = method.parse::<reqwest::Method>().map_err(|error| {
             EngineError::node_config(self.id.clone(), format!("无效的 HTTP 方法: {error}"))
@@ -301,8 +304,7 @@ impl NodeTrait for HttpClientNode {
             ));
         }
 
-        let trace_id = ctx.trace_id;
-        let mut payload_map = into_payload_map(ctx.payload);
+        let mut payload_map = into_payload_map(payload);
         let http_meta = json!({
             "node_id": self.id,
             "url": url,
@@ -318,10 +320,6 @@ impl NodeTrait for HttpClientNode {
         payload_map.insert("_http".to_owned(), http_meta);
         payload_map.insert("http_response".to_owned(), response_value);
 
-        Ok(NodeExecution::broadcast(WorkflowContext::from_parts(
-            trace_id,
-            Utc::now(),
-            Value::Object(payload_map),
-        )))
+        Ok(NodeExecution::broadcast(Value::Object(payload_map)))
     }
 }

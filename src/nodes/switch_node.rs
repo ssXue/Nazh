@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use super::helpers::{default_max_operations, RhaiNodeBase};
 use super::{NodeExecution, NodeTrait};
-use crate::{EngineError, WorkflowContext};
+use crate::{ContextRef, DataStore, EngineError};
 
 fn default_switch_branch() -> String {
     "default".to_owned()
@@ -64,9 +64,10 @@ impl SwitchNode {
 impl NodeTrait for SwitchNode {
     delegate_node_base!("switch");
 
-    async fn execute(&self, ctx: WorkflowContext) -> Result<NodeExecution, EngineError> {
-        let (scope, result) = self.base.evaluate(&ctx)?;
-        let payload = self.base.payload_from_scope(&scope)?;
+    async fn execute(&self, ctx: &ContextRef, store: &dyn DataStore) -> Result<NodeExecution, EngineError> {
+        let payload = store.read_mut(&ctx.data_id)?;
+        let (scope, result) = self.base.evaluate(&payload)?;
+        let new_payload = self.base.payload_from_scope(&scope)?;
         let next_branch = if result.is_unit() {
             self.default_branch.clone()
         } else {
@@ -78,10 +79,6 @@ impl NodeTrait for SwitchNode {
                 normalized.to_owned()
             }
         };
-
-        Ok(NodeExecution::route(
-            ctx.with_payload(payload),
-            [next_branch],
-        ))
+        Ok(NodeExecution::route(new_payload, [next_branch]))
     }
 }

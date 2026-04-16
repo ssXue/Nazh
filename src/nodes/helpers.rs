@@ -5,11 +5,6 @@
 //! [`RhaiNodeBase`] 封装了 Rhai 引擎初始化、脚本编译和求值的通用逻辑。
 //! 所有基于脚本的节点（If、Switch、TryCatch、Loop、Rhai）均通过组合此基座
 //! 来复用脚本执行能力。添加新的脚本节点时只需嵌入 `RhaiNodeBase` 字段。
-//!
-//! ## `with_connection`
-//!
-//! [`with_connection`] 封装了连接的"借出 → 操作 → 释放"异步生命周期，
-//! 保证连接在操作完成后（无论成功与否）都会被正确释放。
 
 use ::rhai::{
     serde::{from_dynamic, to_dynamic},
@@ -17,7 +12,7 @@ use ::rhai::{
 };
 use serde_json::{Map, Value};
 
-use crate::{ConnectionLease, EngineError, SharedConnectionManager, WorkflowContext};
+use crate::{ConnectionLease, EngineError};
 
 /// Rhai 脚本步数上限的默认值（50,000 步）。
 pub(crate) fn default_max_operations() -> u64 {
@@ -46,47 +41,6 @@ pub(crate) fn insert_connection_lease(
         .map_err(|error| EngineError::payload_conversion(node_id.to_owned(), error.to_string()))?;
     payload_map.insert("_connection".to_owned(), lease_value);
     Ok(())
-}
-
-/// 在连接借出-释放的生命周期内执行操作。
-///
-/// 自动从 [`SharedConnectionManager`] 借出连接（若 `connection_id` 非空），
-/// 执行闭包，最后无论成功与否都释放连接。新增需要连接的节点时使用此辅助。
-///
-/// # Panic 安全
-///
-/// 节点级 panic 由 [`crate::guard::guarded_execute`] 在 runner 层统一捕获。
-/// 若闭包 panic，连接的 `in_use` 状态不会被清除——这是已知的权衡，
-/// 后续可通过 scopeguard 或 Drop guard 模式加固。
-pub(crate) async fn with_connection<F>(
-    connection_manager: &SharedConnectionManager,
-    connection_id: Option<&str>,
-    operation: F,
-) -> Result<WorkflowContext, EngineError>
-where
-    F: FnOnce(Option<&ConnectionLease>) -> Result<WorkflowContext, EngineError>,
-{
-    let lease = if let Some(conn_id) = connection_id {
-        Some(connection_manager.borrow(conn_id).await?)
-    } else {
-        None
-    };
-
-    let result = operation(lease.as_ref());
-    let operation_error = result.as_ref().err().map(std::string::ToString::to_string);
-
-    if let Some(lease) = lease.as_ref() {
-        let release_result = connection_manager
-            .release_lease(lease, result.is_ok(), operation_error.as_deref())
-            .await;
-        if let Err(error) = release_result {
-            if result.is_ok() {
-                return Err(error);
-            }
-        }
-    }
-
-    result
 }
 
 /// Rhai 脚本节点的通用基座。
@@ -137,9 +91,9 @@ impl RhaiNodeBase {
     /// 脚本运行时错误会转换为 [`EngineError::RhaiRuntime`]。
     pub(crate) fn evaluate(
         &self,
-        ctx: &WorkflowContext,
+        payload: &Value,
     ) -> Result<(Scope<'static>, Dynamic), EngineError> {
-        let payload = to_dynamic(ctx.payload.clone())
+        let payload = to_dynamic(payload.clone())
             .map_err(|error| EngineError::payload_conversion(self.id.clone(), error.to_string()))?;
         let mut scope = Scope::new();
         scope.push_dynamic("payload", payload);
@@ -155,9 +109,9 @@ impl RhaiNodeBase {
     /// 用于需要自行处理脚本错误的节点（如 [`TryCatchNode`](super::TryCatchNode)）。
     pub(crate) fn evaluate_catching(
         &self,
-        ctx: &WorkflowContext,
+        payload: &Value,
     ) -> Result<(Scope<'static>, Result<Dynamic, String>), EngineError> {
-        let payload = to_dynamic(ctx.payload.clone())
+        let payload = to_dynamic(payload.clone())
             .map_err(|error| EngineError::payload_conversion(self.id.clone(), error.to_string()))?;
         let mut scope = Scope::new();
         scope.push_dynamic("payload", payload);

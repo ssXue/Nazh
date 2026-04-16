@@ -6,12 +6,14 @@
 //! 仅提供引擎运行所需的最小类型集合。
 
 pub mod context;
+pub mod data;
 pub mod error;
 pub mod event;
 pub mod guard;
 pub mod ipc;
 
-pub use context::WorkflowContext;
+pub use context::{ContextRef, WorkflowContext};
+pub use data::{ArenaDataStore, DataId, DataStore};
 pub use error::EngineError;
 pub use event::ExecutionEvent;
 pub use ipc::{

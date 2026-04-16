@@ -10,7 +10,7 @@ use serde_json::{json, Value};
 
 use super::helpers::into_payload_map;
 use super::{NodeExecution, NodeTrait};
-use crate::{EngineError, WorkflowContext};
+use crate::{ContextRef, DataStore, EngineError};
 
 fn default_sqlite_path() -> String {
     "./nazh-local.sqlite3".to_owned()
@@ -70,7 +70,8 @@ impl SqlWriterNode {
 impl NodeTrait for SqlWriterNode {
     impl_node_meta!("sqlWriter");
 
-    async fn execute(&self, ctx: WorkflowContext) -> Result<NodeExecution, EngineError> {
+    async fn execute(&self, ctx: &ContextRef, store: &dyn DataStore) -> Result<NodeExecution, EngineError> {
+        let shared_payload = store.read(&ctx.data_id)?;
         let database_path = self.config.database_path.trim().to_owned();
         if database_path.contains("..") {
             return Err(EngineError::node_config(
@@ -86,7 +87,7 @@ impl NodeTrait for SqlWriterNode {
         })?;
         let trace_id = ctx.trace_id;
         let node_id = self.id.clone();
-        let payload_json = serde_json::to_string(&ctx.payload)
+        let payload_json = serde_json::to_string(&*shared_payload)
             .map_err(|error| EngineError::payload_conversion(self.id.clone(), error.to_string()))?;
         let timestamp = Utc::now().to_rfc3339();
         let db_path_clone = database_path.clone();
@@ -154,8 +155,7 @@ impl NodeTrait for SqlWriterNode {
             trace_id,
         })??;
 
-        let trace_id = ctx.trace_id;
-        let mut payload_map = into_payload_map(ctx.payload);
+        let mut payload_map = into_payload_map((*shared_payload).clone());
         payload_map.insert(
             "_sql_writer".to_owned(),
             json!({
@@ -165,10 +165,6 @@ impl NodeTrait for SqlWriterNode {
             }),
         );
 
-        Ok(NodeExecution::broadcast(WorkflowContext::from_parts(
-            trace_id,
-            Utc::now(),
-            Value::Object(payload_map),
-        )))
+        Ok(NodeExecution::broadcast(Value::Object(payload_map)))
     }
 }

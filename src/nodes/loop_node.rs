@@ -10,7 +10,7 @@ use serde_json::{Map, Value};
 
 use super::helpers::{default_max_operations, into_payload_map, RhaiNodeBase};
 use super::{NodeDispatch, NodeExecution, NodeOutput, NodeTrait};
-use crate::{EngineError, WorkflowContext};
+use crate::{ContextRef, DataStore, EngineError};
 
 /// Loop 节点单次执行的最大迭代数量，防止恶意脚本导致 OOM。
 const MAX_LOOP_ITERATIONS: usize = 10_000;
@@ -133,31 +133,23 @@ fn collect_loop_items(node_id: &str, result: Dynamic) -> Result<Vec<Option<Value
 impl NodeTrait for LoopNode {
     delegate_node_base!("loop");
 
-    async fn execute(&self, ctx: WorkflowContext) -> Result<NodeExecution, EngineError> {
-        let (scope, result) = self.base.evaluate(&ctx)?;
+    async fn execute(&self, ctx: &ContextRef, store: &dyn DataStore) -> Result<NodeExecution, EngineError> {
+        let input_payload = store.read_mut(&ctx.data_id)?;
+        let (scope, result) = self.base.evaluate(&input_payload)?;
         let payload = self.base.payload_from_scope(&scope)?;
         let items = collect_loop_items(self.base.id(), result)?;
         let item_count = items.len();
         let mut outputs = Vec::with_capacity(item_count + 1);
-
         for (index, item) in items.into_iter().enumerate() {
             outputs.push(NodeOutput {
-                ctx: ctx.clone().with_payload(with_loop_state(
-                    payload.clone(),
-                    "body",
-                    Some(index),
-                    item_count,
-                    item,
-                )),
+                payload: with_loop_state(payload.clone(), "body", Some(index), item_count, item),
                 dispatch: NodeDispatch::Route(vec!["body".to_owned()]),
             });
         }
-
         outputs.push(NodeOutput {
-            ctx: ctx.with_payload(with_loop_state(payload, "done", None, item_count, None)),
+            payload: with_loop_state(payload, "done", None, item_count, None),
             dispatch: NodeDispatch::Route(vec!["done".to_owned()]),
         });
-
         Ok(NodeExecution::from_outputs(outputs))
     }
 }

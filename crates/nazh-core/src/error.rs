@@ -5,6 +5,8 @@
 use thiserror::Error;
 use uuid::Uuid;
 
+use crate::data::DataId;
+
 /// 覆盖引擎所有失败模式的结构化错误类型。
 ///
 /// 每个变体都携带足够的上下文信息（节点 ID、trace ID、阶段名称），
@@ -85,6 +87,12 @@ pub enum EngineError {
 
     #[error("尚未部署任何工作流")]
     WorkflowUnavailable,
+
+    #[error("数据 `{0}` 在 DataStore 中不存在")]
+    DataNotFound(DataId),
+
+    #[error("DataStore 已达容量上限（{capacity} 条）")]
+    DataStoreCapacityExceeded { capacity: usize },
 }
 
 impl EngineError {

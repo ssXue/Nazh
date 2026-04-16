@@ -6,14 +6,14 @@
 
 use std::{
     collections::{HashMap, VecDeque},
-    sync::Arc,
+    sync::{Arc, Mutex},
 };
 
 use chrono::{DateTime, Utc};
 use reqwest::Url;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::RwLock;
 use ts_rs::TS;
 
 use crate::EngineError;
@@ -271,12 +271,133 @@ impl ConnectionGovernancePolicy {
     }
 }
 
-/// 管理具名连接资源池，采用排他借出语义。
+/// 连接借出的 RAII 守卫。
 ///
-/// 当前仍以统一治理框架为主，真实的协议驱动逐步接入：
-/// - 节点借用链路统一受连接治理控制；
-/// - 串口触发已接入真实建连 / 重连 / 心跳 / 失败回传；
-/// - 其他协议先接入校验、限流、熔断、诊断与状态回传。
+/// `Drop` 实现在任何退出路径（正常返回、错误返回、panic 展开）
+/// 都会自动释放连接，消除手动 `release_lease` 遗漏的可能性。
+///
+/// 默认假定操作失败（未显式调用 [`mark_success`](Self::mark_success)
+/// 即视为异常退出）。
+pub struct ConnectionGuard {
+    lease: ConnectionLease,
+    record: Arc<Mutex<ConnectionRecord>>,
+    outcome: ConnectionOutcome,
+}
+
+/// Guard 退出时的结果标记。
+enum ConnectionOutcome {
+    /// 未明确标记（默认），视为异常退出。
+    Pending,
+    /// 操作成功。
+    Success,
+    /// 操作失败，附带原因。
+    Failure(String),
+}
+
+impl ConnectionGuard {
+    /// 返回借出的连接租约信息。
+    pub fn lease(&self) -> &ConnectionLease {
+        &self.lease
+    }
+
+    /// 连接 ID。
+    pub fn id(&self) -> &str {
+        &self.lease.id
+    }
+
+    /// 连接元数据。
+    pub fn metadata(&self) -> &Value {
+        &self.lease.metadata
+    }
+
+    /// 标记本次操作成功。Drop 时会更新连接为 Healthy 状态。
+    pub fn mark_success(&mut self) {
+        self.outcome = ConnectionOutcome::Success;
+    }
+
+    /// 标记本次操作失败。Drop 时会更新连接为 Degraded 状态。
+    pub fn mark_failure(&mut self, reason: &str) {
+        self.outcome = ConnectionOutcome::Failure(reason.to_owned());
+    }
+}
+
+impl Drop for ConnectionGuard {
+    fn drop(&mut self) {
+        let mut record = self.record.lock().unwrap_or_else(|e| e.into_inner());
+        let now = Utc::now();
+        let policy = ConnectionGovernancePolicy::from_metadata(&record.metadata);
+
+        #[allow(clippy::cast_sign_loss)]
+        let elapsed_ms = (now - self.lease.borrowed_at).num_milliseconds().max(0) as u64;
+
+        record.in_use = false;
+        record.health.last_released_at = Some(now);
+        record.health.last_checked_at = Some(now);
+        record.health.last_latency_ms = Some(elapsed_ms);
+
+        if elapsed_ms > policy.operation_timeout_ms {
+            let timeout_reason = format!(
+                "连接占用 {elapsed_ms} ms，超过治理超时 {} ms",
+                policy.operation_timeout_ms
+            );
+            let _ = apply_runtime_failure(&mut record, &policy, now, &timeout_reason, true);
+            return;
+        }
+
+        match &self.outcome {
+            ConnectionOutcome::Success => {
+                record.health.phase = ConnectionHealthState::Healthy;
+                record.health.last_state_changed_at = Some(now);
+                record.health.last_connected_at = Some(now);
+                record.health.last_heartbeat_at = Some(now);
+                record.health.diagnosis =
+                    Some(format!("最近一次连接操作完成，用时 {elapsed_ms} ms"));
+                record.health.recommended_action =
+                    Some("连接空闲，可继续被节点复用".to_owned());
+                record.health.consecutive_failures = 0;
+                record.health.reconnect_attempts = 0;
+                record.health.next_retry_at = None;
+                record.health.rate_limited_until = None;
+                record.health.circuit_open_until = None;
+            }
+            ConnectionOutcome::Failure(reason) => {
+                if !matches!(
+                    record.health.phase,
+                    ConnectionHealthState::CircuitOpen
+                        | ConnectionHealthState::RateLimited
+                        | ConnectionHealthState::Invalid
+                        | ConnectionHealthState::Timeout
+                        | ConnectionHealthState::Reconnecting
+                ) {
+                    record.health.phase = ConnectionHealthState::Degraded;
+                    record.health.last_state_changed_at = Some(now);
+                    record.health.diagnosis = Some("节点执行失败，连接已安全释放".to_owned());
+                    record.health.recommended_action = Some(
+                        "优先检查节点业务逻辑或上游输入，连接本身未被判定为致命故障".to_owned(),
+                    );
+                    record.health.last_failure_reason = Some(reason.clone());
+                }
+            }
+            ConnectionOutcome::Pending => {
+                // 未标记结果 = 异常退出（panic / 逻辑漏洞）
+                record.health.phase = ConnectionHealthState::Degraded;
+                record.health.last_state_changed_at = Some(now);
+                record.health.diagnosis =
+                    Some("连接 Guard 未标记结果即被丢弃（可能为 panic 退出）".to_owned());
+                record.health.recommended_action =
+                    Some("检查节点执行路径是否在所有分支都调用了 mark_success/mark_failure"
+                        .to_owned());
+            }
+        }
+    }
+}
+
+/// 管理具名连接资源池，采用 RAII 排他借出语义。
+///
+/// 连接通过 [`acquire`](Self::acquire) 借出，返回 [`ConnectionGuard`]，
+/// Guard 的 Drop 实现保证在任何退出路径（包括 panic）都自动释放连接。
+///
+/// 内部使用 `std::sync::Mutex` 以支持同步 Drop 释放。
 #[derive(Debug, Default)]
 pub struct ConnectionManager {
     connections: RwLock<HashMap<String, Arc<Mutex<ConnectionRecord>>>>,
@@ -307,7 +428,7 @@ impl ConnectionManager {
         connections.insert(id.clone(), Arc::new(Mutex::new(build_record(definition))));
         drop(connections);
 
-        self.reset_attempt_window(&id).await;
+        self.reset_attempt_window(&id);
         Ok(())
     }
 
@@ -319,7 +440,7 @@ impl ConnectionManager {
         connections.insert(id.clone(), Arc::new(Mutex::new(record)));
         drop(connections);
 
-        self.reset_attempt_window(&id).await;
+        self.reset_attempt_window(&id);
     }
 
     /// 批量插入或替换连接定义。
@@ -342,7 +463,7 @@ impl ConnectionManager {
         }
         drop(connections);
 
-        self.reset_attempt_windows(next_ids).await;
+        self.reset_attempt_windows(next_ids);
     }
 
     /// 用给定定义整体替换连接资源池。
@@ -368,12 +489,10 @@ impl ConnectionManager {
         *connections = next_connections;
         drop(connections);
 
-        self.reset_attempt_windows(next_ids).await;
+        self.reset_attempt_windows(next_ids);
     }
 
     /// 按 ID 定位连接的内层 `Arc`，释放外层读锁后返回。
-    ///
-    /// 先取出内层 Arc 副本并释放外层读锁，避免持有外层锁跨 await。
     async fn entry(
         &self,
         connection_id: &str,
@@ -385,26 +504,35 @@ impl ConnectionManager {
             .ok_or_else(|| EngineError::ConnectionNotFound(connection_id.to_owned()))
     }
 
-    async fn reset_attempt_window(&self, connection_id: &str) {
-        let mut attempt_windows = self.attempt_windows.lock().await;
+    fn reset_attempt_window(&self, connection_id: &str) {
+        let mut attempt_windows = self
+            .attempt_windows
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         attempt_windows.insert(connection_id.to_owned(), VecDeque::new());
     }
 
-    async fn reset_attempt_windows(&self, connection_ids: Vec<String>) {
-        let mut attempt_windows = self.attempt_windows.lock().await;
+    fn reset_attempt_windows(&self, connection_ids: Vec<String>) {
+        let mut attempt_windows = self
+            .attempt_windows
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         *attempt_windows = connection_ids
             .into_iter()
             .map(|connection_id| (connection_id, VecDeque::new()))
             .collect();
     }
 
-    async fn register_attempt(
+    fn register_attempt(
         &self,
         connection_id: &str,
         policy: &ConnectionGovernancePolicy,
         now: DateTime<Utc>,
     ) -> Result<(), u64> {
-        let mut attempt_windows = self.attempt_windows.lock().await;
+        let mut attempt_windows = self
+            .attempt_windows
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let attempts = attempt_windows
             .entry(connection_id.to_owned())
             .or_insert_with(VecDeque::new);
@@ -425,105 +553,123 @@ impl ConnectionManager {
         Ok(())
     }
 
-    /// 排他借出一个连接。若已被借出或不存在则返回错误。
+    /// RAII 方式借出连接，返回 [`ConnectionGuard`]。
+    ///
+    /// Guard 的 [`Drop`] 实现保证在任何退出路径（包括 panic）自动释放连接，
+    /// 根据 [`mark_success`](ConnectionGuard::mark_success) 或
+    /// [`mark_failure`](ConnectionGuard::mark_failure) 的调用情况更新连接健康状态。
     ///
     /// # Errors
     ///
-    /// 连接不存在时返回 [`EngineError::ConnectionNotFound`]，
-    /// 已被借出时返回 [`EngineError::ConnectionBusy`]，
-    /// 配置无效、限流或熔断状态也会被拒绝。
-    pub async fn borrow(&self, connection_id: &str) -> Result<ConnectionLease, EngineError> {
+    /// 连接不存在、已被借出、配置无效、限流或熔断时返回错误。
+    pub async fn acquire(&self, connection_id: &str) -> Result<ConnectionGuard, EngineError> {
         let entry = self.entry(connection_id).await?;
-        let mut record = entry.lock().await;
-        let now = Utc::now();
-        let policy = ConnectionGovernancePolicy::from_metadata(&record.metadata);
+        let lease = {
+            let mut record = entry.lock().unwrap_or_else(|e| e.into_inner());
+            let now = Utc::now();
+            let policy = ConnectionGovernancePolicy::from_metadata(&record.metadata);
 
-        reconcile_timed_state(&mut record, &policy, now);
+            reconcile_timed_state(&mut record, &policy, now);
 
-        if record.in_use {
-            return Err(EngineError::ConnectionBusy(connection_id.to_owned()));
-        }
+            if record.in_use {
+                return Err(EngineError::ConnectionBusy(connection_id.to_owned()));
+            }
 
-        if let Err(reason) = validate_connection_definition(&record.kind, &record.metadata) {
-            mark_invalid(&mut record, reason.clone(), now);
-            return Err(EngineError::ConnectionInvalidConfiguration {
-                connection_id: connection_id.to_owned(),
-                reason,
-            });
-        }
-
-        if let Some(circuit_open_until) = record.health.circuit_open_until {
-            if circuit_open_until > now {
-                return Err(EngineError::ConnectionCircuitOpen {
+            if let Err(reason) = validate_connection_definition(&record.kind, &record.metadata) {
+                mark_invalid(&mut record, reason.clone(), now);
+                return Err(EngineError::ConnectionInvalidConfiguration {
                     connection_id: connection_id.to_owned(),
-                    retry_after_ms: remaining_ms(circuit_open_until, now),
-                    reason: record
-                        .health
-                        .last_failure_reason
-                        .clone()
-                        .unwrap_or_else(|| "连接仍处于熔断冷却期".to_owned()),
+                    reason,
                 });
             }
-        }
 
-        if let Some(rate_limited_until) = record.health.rate_limited_until {
-            if rate_limited_until > now {
+            if let Some(circuit_open_until) = record.health.circuit_open_until {
+                if circuit_open_until > now {
+                    return Err(EngineError::ConnectionCircuitOpen {
+                        connection_id: connection_id.to_owned(),
+                        retry_after_ms: remaining_ms(circuit_open_until, now),
+                        reason: record
+                            .health
+                            .last_failure_reason
+                            .clone()
+                            .unwrap_or_else(|| "连接仍处于熔断冷却期".to_owned()),
+                    });
+                }
+            }
+
+            if let Some(rate_limited_until) = record.health.rate_limited_until {
+                if rate_limited_until > now {
+                    return Err(EngineError::ConnectionRateLimited {
+                        connection_id: connection_id.to_owned(),
+                        retry_after_ms: remaining_ms(rate_limited_until, now),
+                    });
+                }
+            }
+
+            if let Err(retry_after_ms) = self.register_attempt(connection_id, &policy, now) {
+                record.health.rate_limit_hits = record.health.rate_limit_hits.saturating_add(1);
+                record.health.rate_limited_until = Some(now + duration_ms(retry_after_ms));
+                record.health.phase = ConnectionHealthState::RateLimited;
+                record.health.last_state_changed_at = Some(now);
+                record.health.last_checked_at = Some(now);
+                record.health.diagnosis =
+                    Some("短时间内建连次数过多，已进入限流保护".to_owned());
+                record.health.recommended_action =
+                    Some("等待冷却结束后重试，或降低节点触发频率".to_owned());
+
                 return Err(EngineError::ConnectionRateLimited {
                     connection_id: connection_id.to_owned(),
-                    retry_after_ms: remaining_ms(rate_limited_until, now),
+                    retry_after_ms,
                 });
             }
-        }
 
-        if let Err(retry_after_ms) = self.register_attempt(connection_id, &policy, now).await {
-            record.health.rate_limit_hits = record.health.rate_limit_hits.saturating_add(1);
-            record.health.rate_limited_until = Some(now + duration_ms(retry_after_ms));
-            record.health.phase = ConnectionHealthState::RateLimited;
+            let phase = if record.health.consecutive_failures > 0 {
+                ConnectionHealthState::Reconnecting
+            } else {
+                ConnectionHealthState::Connecting
+            };
+
+            record.in_use = true;
+            record.last_borrowed_at = Some(now);
+            record.health.phase = phase;
             record.health.last_state_changed_at = Some(now);
             record.health.last_checked_at = Some(now);
-            record.health.diagnosis = Some("短时间内建连次数过多，已进入限流保护".to_owned());
-            record.health.recommended_action =
-                Some("等待冷却结束后重试，或降低节点触发频率".to_owned());
-
-            return Err(EngineError::ConnectionRateLimited {
-                connection_id: connection_id.to_owned(),
-                retry_after_ms,
+            record.health.diagnosis = Some(match phase {
+                ConnectionHealthState::Reconnecting => "正在重建连接会话".to_owned(),
+                _ => "正在建立连接会话".to_owned(),
             });
-        }
+            record.health.recommended_action =
+                Some("连接已被运行态占用，完成后会自动释放".to_owned());
 
-        let phase = if record.health.consecutive_failures > 0 {
-            ConnectionHealthState::Reconnecting
-        } else {
-            ConnectionHealthState::Connecting
+            ConnectionLease {
+                id: record.id.clone(),
+                kind: record.kind.clone(),
+                metadata: record.metadata.clone(),
+                borrowed_at: now,
+            }
         };
 
-        record.in_use = true;
-        record.last_borrowed_at = Some(now);
-        record.health.phase = phase;
-        record.health.last_state_changed_at = Some(now);
-        record.health.last_checked_at = Some(now);
-        record.health.diagnosis = Some(match phase {
-            ConnectionHealthState::Reconnecting => "正在重建连接会话".to_owned(),
-            _ => "正在建立连接会话".to_owned(),
-        });
-        record.health.recommended_action = Some("连接已被运行态占用，完成后会自动释放".to_owned());
-
-        Ok(ConnectionLease {
-            id: record.id.clone(),
-            kind: record.kind.clone(),
-            metadata: record.metadata.clone(),
-            borrowed_at: now,
+        Ok(ConnectionGuard {
+            lease,
+            record: entry,
+            outcome: ConnectionOutcome::Pending,
         })
+    }
+
+    /// 排他借出一个连接（兼容旧接口）。
+    ///
+    /// 推荐使用 [`acquire`](Self::acquire) 替代，后者返回 RAII Guard。
+    pub async fn borrow(&self, connection_id: &str) -> Result<ConnectionLease, EngineError> {
+        let guard = self.acquire(connection_id).await?;
+        let lease = guard.lease.clone();
+        // 手动释放 guard 以保持 in_use=true（由调用者通过 release_lease 管理）
+        std::mem::forget(guard);
+        Ok(lease)
     }
 
     /// 根据租约结果释放连接，并回写治理诊断。
     ///
-    /// 释放不会改变既有节点行为，但会记录健康状态和失败原因，
-    /// 以便前端进行状态诊断展示。
-    ///
-    /// # Errors
-    ///
-    /// 当连接 ID 不存在或内部锁获取失败时返回 `EngineError`。
+    /// 推荐使用 [`acquire`](Self::acquire) + [`ConnectionGuard`] 替代。
     #[allow(clippy::cast_sign_loss)]
     pub async fn release_lease(
         &self,
@@ -532,7 +678,7 @@ impl ConnectionManager {
         operation_error: Option<&str>,
     ) -> Result<(), EngineError> {
         let entry = self.entry(&lease.id).await?;
-        let mut record = entry.lock().await;
+        let mut record = entry.lock().unwrap_or_else(|e| e.into_inner());
         let now = Utc::now();
         let policy = ConnectionGovernancePolicy::from_metadata(&record.metadata);
         let elapsed_ms = (now - lease.borrowed_at).num_milliseconds().max(0) as u64;
@@ -596,7 +742,7 @@ impl ConnectionManager {
     /// 连接不存在时返回 [`EngineError::ConnectionNotFound`]。
     pub async fn release(&self, connection_id: &str) -> Result<(), EngineError> {
         let entry = self.entry(connection_id).await?;
-        let mut record = entry.lock().await;
+        let mut record = entry.lock().unwrap_or_else(|e| e.into_inner());
         record.in_use = false;
         record.health.last_released_at = Some(Utc::now());
         Ok(())
@@ -606,7 +752,7 @@ impl ConnectionManager {
     ///
     /// # Errors
     ///
-    /// 当连接 ID 不存在或内部锁获取失败时返回 `EngineError`。
+    /// 当连接 ID 不存在时返回 `EngineError`。
     pub async fn record_connect_success(
         &self,
         connection_id: &str,
@@ -614,7 +760,7 @@ impl ConnectionManager {
         latency_ms: Option<u64>,
     ) -> Result<(), EngineError> {
         let entry = self.entry(connection_id).await?;
-        let mut record = entry.lock().await;
+        let mut record = entry.lock().unwrap_or_else(|e| e.into_inner());
         let now = Utc::now();
 
         record.health.phase = ConnectionHealthState::Healthy;
@@ -640,14 +786,14 @@ impl ConnectionManager {
     ///
     /// # Errors
     ///
-    /// 当连接 ID 不存在或内部锁获取失败时返回 `EngineError`。
+    /// 当连接 ID 不存在时返回 `EngineError`。
     pub async fn record_heartbeat(
         &self,
         connection_id: &str,
         diagnosis: impl Into<String>,
     ) -> Result<(), EngineError> {
         let entry = self.entry(connection_id).await?;
-        let mut record = entry.lock().await;
+        let mut record = entry.lock().unwrap_or_else(|e| e.into_inner());
         let now = Utc::now();
 
         record.health.last_heartbeat_at = Some(now);
@@ -674,14 +820,14 @@ impl ConnectionManager {
     ///
     /// # Errors
     ///
-    /// 当连接 ID 不存在或内部锁获取失败时返回 `EngineError`。
+    /// 当连接 ID 不存在时返回 `EngineError`。
     pub async fn record_connect_failure(
         &self,
         connection_id: &str,
         reason: &str,
     ) -> Result<u64, EngineError> {
         let entry = self.entry(connection_id).await?;
-        let mut record = entry.lock().await;
+        let mut record = entry.lock().unwrap_or_else(|e| e.into_inner());
         let now = Utc::now();
         let policy = ConnectionGovernancePolicy::from_metadata(&record.metadata);
         Ok(apply_runtime_failure(
@@ -697,14 +843,14 @@ impl ConnectionManager {
     ///
     /// # Errors
     ///
-    /// 当连接 ID 不存在或内部锁获取失败时返回 `EngineError`。
+    /// 当连接 ID 不存在时返回 `EngineError`。
     pub async fn record_timeout(
         &self,
         connection_id: &str,
         reason: &str,
     ) -> Result<u64, EngineError> {
         let entry = self.entry(connection_id).await?;
-        let mut record = entry.lock().await;
+        let mut record = entry.lock().unwrap_or_else(|e| e.into_inner());
         let now = Utc::now();
         let policy = ConnectionGovernancePolicy::from_metadata(&record.metadata);
         Ok(apply_runtime_failure(
@@ -720,14 +866,14 @@ impl ConnectionManager {
     ///
     /// # Errors
     ///
-    /// 当连接 ID 不存在或内部锁获取失败时返回 `EngineError`。
+    /// 当连接 ID 不存在时返回 `EngineError`。
     pub async fn mark_invalid_configuration(
         &self,
         connection_id: &str,
         reason: &str,
     ) -> Result<(), EngineError> {
         let entry = self.entry(connection_id).await?;
-        let mut record = entry.lock().await;
+        let mut record = entry.lock().unwrap_or_else(|e| e.into_inner());
         let now = Utc::now();
         mark_invalid(&mut record, reason.to_string(), now);
         Ok(())
@@ -737,14 +883,14 @@ impl ConnectionManager {
     ///
     /// # Errors
     ///
-    /// 当连接 ID 不存在或内部锁获取失败时返回 `EngineError`。
+    /// 当连接 ID 不存在时返回 `EngineError`。
     pub async fn mark_disconnected(
         &self,
         connection_id: &str,
         diagnosis: &str,
     ) -> Result<(), EngineError> {
         let entry = self.entry(connection_id).await?;
-        let mut record = entry.lock().await;
+        let mut record = entry.lock().unwrap_or_else(|e| e.into_inner());
         let now = Utc::now();
 
         record.in_use = false;
@@ -768,7 +914,7 @@ impl ConnectionManager {
         drop(connections);
 
         for entry in entries {
-            let mut record = entry.lock().await;
+            let mut record = entry.lock().unwrap_or_else(|e| e.into_inner());
             record.in_use = false;
             record.health.last_checked_at = Some(now);
             record.health.last_released_at = Some(now);
@@ -810,7 +956,7 @@ impl ConnectionManager {
     /// 返回单个连接记录的快照。
     pub async fn get(&self, connection_id: &str) -> Option<ConnectionRecord> {
         let entry = self.entry(connection_id).await.ok()?;
-        let mut record = entry.lock().await;
+        let mut record = entry.lock().unwrap_or_else(|e| e.into_inner());
         let now = Utc::now();
         let policy = ConnectionGovernancePolicy::from_metadata(&record.metadata);
         reconcile_timed_state(&mut record, &policy, now);
@@ -825,7 +971,7 @@ impl ConnectionManager {
 
         let mut result = Vec::with_capacity(entries.len());
         for entry in entries {
-            let mut record = entry.lock().await;
+            let mut record = entry.lock().unwrap_or_else(|e| e.into_inner());
             let now = Utc::now();
             let policy = ConnectionGovernancePolicy::from_metadata(&record.metadata);
             reconcile_timed_state(&mut record, &policy, now);

@@ -9,7 +9,7 @@ use serde_json::{json, Value};
 
 use super::helpers::into_payload_map;
 use super::{NodeExecution, NodeTrait};
-use crate::{EngineError, WorkflowContext};
+use crate::{ContextRef, DataStore, EngineError};
 
 fn default_debug_pretty() -> bool {
     true
@@ -48,7 +48,8 @@ impl DebugConsoleNode {
 impl NodeTrait for DebugConsoleNode {
     impl_node_meta!("debugConsole");
 
-    async fn execute(&self, ctx: WorkflowContext) -> Result<NodeExecution, EngineError> {
+    async fn execute(&self, ctx: &ContextRef, store: &dyn DataStore) -> Result<NodeExecution, EngineError> {
+        let shared_payload = store.read(&ctx.data_id)?;
         let label = self
             .config
             .label
@@ -56,9 +57,9 @@ impl NodeTrait for DebugConsoleNode {
             .filter(|label| !label.trim().is_empty())
             .unwrap_or("调试控制台");
         let rendered_payload = if self.config.pretty {
-            serde_json::to_string_pretty(&ctx.payload)
+            serde_json::to_string_pretty(&*shared_payload)
         } else {
-            serde_json::to_string(&ctx.payload)
+            serde_json::to_string(&*shared_payload)
         }
         .map_err(|error| EngineError::payload_conversion(self.id.clone(), error.to_string()))?;
 
@@ -67,8 +68,7 @@ impl NodeTrait for DebugConsoleNode {
             self.id, ctx.trace_id, label, rendered_payload
         );
 
-        let trace_id = ctx.trace_id;
-        let mut payload_map = into_payload_map(ctx.payload);
+        let mut payload_map = into_payload_map((*shared_payload).clone());
         payload_map.insert(
             "_debug_console".to_owned(),
             json!({
@@ -78,10 +78,6 @@ impl NodeTrait for DebugConsoleNode {
             }),
         );
 
-        Ok(NodeExecution::broadcast(WorkflowContext::from_parts(
-            trace_id,
-            Utc::now(),
-            Value::Object(payload_map),
-        )))
+        Ok(NodeExecution::broadcast(Value::Object(payload_map)))
     }
 }

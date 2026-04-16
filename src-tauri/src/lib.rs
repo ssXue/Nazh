@@ -987,7 +987,7 @@ async fn deploy_workflow(
     };
     let (ingress, streams) = deployment.into_parts();
     let root_nodes = ingress.root_nodes().to_vec();
-    let (mut event_rx, mut result_rx) = streams.into_receivers();
+    let (mut event_rx, mut result_rx, result_store_ref) = streams.into_receivers();
     let dead_letters = DeadLetterSink::new(workspace_dir, metadata.clone()).await?;
     let (dispatch_router, mut runtime_tasks) = create_dispatch_router(
         ingress.clone(),
@@ -1041,7 +1041,18 @@ async fn deploy_workflow(
     let result_store = observability_store.clone();
     let workflow_id_for_result = workflow_id.clone();
     runtime_tasks.push(tauri::async_runtime::spawn(async move {
-        while let Some(result) = result_rx.recv().await {
+        while let Some(ctx_ref) = result_rx.recv().await {
+            // 从 DataStore 重建 WorkflowContext
+            let payload = match result_store_ref.read(&ctx_ref.data_id) {
+                Ok(p) => p,
+                Err(_) => continue,
+            };
+            result_store_ref.release(&ctx_ref.data_id);
+            let result = nazh_engine::WorkflowContext::from_parts(
+                ctx_ref.trace_id,
+                ctx_ref.timestamp,
+                (*payload).clone(),
+            );
             if let Some(store) = &result_store {
                 let _ = store.record_result(&result).await;
             }

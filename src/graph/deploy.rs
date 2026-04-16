@@ -1,9 +1,9 @@
 //! 工作流部署编排：校验、实例化并将 DAG 部署为并发 Tokio 任务。
 //!
-//! 每个节点获得独立的任务，通过 MPSC 通道连接。叶节点将结果写入结果流；
-//! 所有节点向事件流发送执行事件。连接资源由外部共享连接管理器提供。
+//! 每个节点获得独立的任务，通过 MPSC 通道连接。通道传递 [`ContextRef`]（~64 字节），
+//! 实际数据存储在共享的 [`ArenaDataStore`] 中，实现零拷贝扇出。
 
-use std::{collections::HashMap, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use tokio::sync::mpsc;
 
@@ -12,9 +12,11 @@ use super::types::{
     DownstreamTarget, WorkflowDeployment, WorkflowGraph, WorkflowIngress, WorkflowStreams,
 };
 use crate::registry::NodeRegistry;
-use crate::{EngineError, SharedConnectionManager};
+use crate::{ArenaDataStore, ContextRef, DataStore, EngineError, SharedConnectionManager};
 
 /// 校验、实例化并将工作流图部署为并发 Tokio 任务。
+///
+/// 内部创建 [`ArenaDataStore`] 作为数据面，所有节点共享同一实例。
 ///
 /// # Errors
 ///
@@ -33,11 +35,14 @@ pub async fn deploy_workflow(
     let runtime = tokio::runtime::Handle::try_current()
         .map_err(|_| EngineError::invalid_graph("deploy_workflow 必须在 Tokio 运行时中调用"))?;
 
+    // 创建共享 DataStore（数据面）
+    let store: Arc<dyn DataStore> = Arc::new(ArenaDataStore::new());
+
     let mut senders = HashMap::new();
     let mut receivers = HashMap::new();
 
     for (node_id, node_definition) in &graph.nodes {
-        let (sender, receiver) = mpsc::channel(node_definition.buffer.max(1));
+        let (sender, receiver) = mpsc::channel::<ContextRef>(node_definition.buffer.max(1));
         senders.insert(node_id.clone(), sender);
         receivers.insert(node_id.clone(), receiver);
     }
@@ -75,6 +80,7 @@ pub async fn deploy_workflow(
             downstream_senders,
             result_tx.clone(),
             event_tx.clone(),
+            Arc::clone(&store),
         ));
     }
 
@@ -96,10 +102,12 @@ pub async fn deploy_workflow(
         ingress: WorkflowIngress {
             root_nodes: topology.root_nodes,
             root_senders,
+            store: Arc::clone(&store),
         },
         streams: WorkflowStreams {
             event_rx,
             result_rx,
+            store,
         },
     })
 }

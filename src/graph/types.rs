@@ -3,10 +3,13 @@
 //! 本文件包含所有序列化/反序列化结构体、可观测事件枚举，
 //! 以及已部署工作流的入口 ([`WorkflowIngress`])、流 ([`WorkflowStreams`])
 //! 和组合句柄 ([`WorkflowDeployment`])。
+//!
+//! 内部通道传递 [`ContextRef`]（~64 字节），实际数据存储在 [`DataStore`] 中。
+//! 外部 API（submit / next_result）仍使用 [`WorkflowContext`]，转换在边界层完成。
 
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
-use crate::{EngineError, ExecutionEvent, WorkflowContext};
+use crate::{ContextRef, DataStore, EngineError, ExecutionEvent, WorkflowContext};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use tokio::sync::mpsc;
@@ -131,13 +134,15 @@ impl<'de> Deserialize<'de> for WorkflowEdge {
 #[derive(Clone)]
 pub struct WorkflowIngress {
     pub(crate) root_nodes: Vec<String>,
-    pub(crate) root_senders: HashMap<String, mpsc::Sender<WorkflowContext>>,
+    pub(crate) root_senders: HashMap<String, mpsc::Sender<ContextRef>>,
+    pub(crate) store: Arc<dyn DataStore>,
 }
 
 /// 已部署工作流的事件流和结果流接收端。
 pub struct WorkflowStreams {
     pub(crate) event_rx: mpsc::Receiver<ExecutionEvent>,
-    pub(crate) result_rx: mpsc::Receiver<WorkflowContext>,
+    pub(crate) result_rx: mpsc::Receiver<ContextRef>,
+    pub(crate) store: Arc<dyn DataStore>,
 }
 
 /// 完整部署的工作流：入口用于提交数据，流用于观测结果。
@@ -156,7 +161,7 @@ pub(crate) struct WorkflowTopology {
 #[derive(Clone)]
 pub(crate) struct DownstreamTarget {
     pub(crate) source_port_id: Option<String>,
-    pub(crate) sender: mpsc::Sender<WorkflowContext>,
+    pub(crate) sender: mpsc::Sender<ContextRef>,
 }
 
 pub(crate) fn default_node_buffer() -> usize {
@@ -187,6 +192,8 @@ impl WorkflowNodeDefinition {
 // ── 句柄方法 ──────────────────────────────────────
 
 impl WorkflowIngress {
+    /// 将 [`WorkflowContext`] 写入 DataStore 并向所有根节点发送 [`ContextRef`]。
+    ///
     /// # Errors
     ///
     /// 无根节点发送端或通道已关闭时返回错误。
@@ -196,9 +203,15 @@ impl WorkflowIngress {
                 "已部署的工作流没有任何根节点发送端",
             ));
         }
+        let consumer_count = self.root_senders.len();
+        let trace_id = ctx.trace_id;
+        let timestamp = ctx.timestamp;
+        let data_id = self.store.write(ctx.payload, consumer_count)?;
+        let ctx_ref = ContextRef { trace_id, timestamp, data_id, source_node: None };
+
         for sender in self.root_senders.values() {
             sender
-                .send(ctx.clone())
+                .send(ctx_ref.clone())
                 .await
                 .map_err(|_| EngineError::ChannelClosed {
                     stage: "workflow-ingress".to_owned(),
@@ -207,6 +220,8 @@ impl WorkflowIngress {
         Ok(())
     }
 
+    /// 向指定根节点发送数据。
+    ///
     /// # Errors
     ///
     /// 指定节点不存在或通道已关闭时返回错误。
@@ -214,17 +229,23 @@ impl WorkflowIngress {
         let sender = self.root_senders.get(node_id).ok_or_else(|| {
             EngineError::invalid_graph(format!("根节点发送端 `{node_id}` 在已部署的工作流中不可用"))
         })?;
+        let trace_id = ctx.trace_id;
+        let timestamp = ctx.timestamp;
+        let data_id = self.store.write(ctx.payload, 1)?;
+        let ctx_ref = ContextRef { trace_id, timestamp, data_id, source_node: None };
         sender
-            .send(ctx)
+            .send(ctx_ref)
             .await
             .map_err(|_| EngineError::ChannelClosed {
                 stage: "workflow-ingress".to_owned(),
             })
     }
 
+    /// 阻塞式提交，用于同步硬件监听线程。
+    ///
     /// # Errors
     ///
-    /// 指定节点不存在或通道已关闭时返回错误。用于阻塞式硬件监听线程。
+    /// 指定节点不存在或通道已关闭时返回错误。
     pub fn blocking_submit_to(
         &self,
         node_id: &str,
@@ -233,8 +254,12 @@ impl WorkflowIngress {
         let sender = self.root_senders.get(node_id).ok_or_else(|| {
             EngineError::invalid_graph(format!("根节点发送端 `{node_id}` 在已部署的工作流中不可用"))
         })?;
+        let trace_id = ctx.trace_id;
+        let timestamp = ctx.timestamp;
+        let data_id = self.store.write(ctx.payload, 1)?;
+        let ctx_ref = ContextRef { trace_id, timestamp, data_id, source_node: None };
         sender
-            .blocking_send(ctx)
+            .blocking_send(ctx_ref)
             .map_err(|_| EngineError::ChannelClosed {
                 stage: "workflow-ingress".to_owned(),
             })
@@ -250,17 +275,30 @@ impl WorkflowStreams {
         self.event_rx.recv().await
     }
 
+    /// 从结果流中取出下一个 [`ContextRef`]，从 DataStore 重建为 [`WorkflowContext`]。
     pub async fn next_result(&mut self) -> Option<WorkflowContext> {
-        self.result_rx.recv().await
+        let ctx_ref = self.result_rx.recv().await?;
+        let payload = self.store.read(&ctx_ref.data_id).ok()?;
+        self.store.release(&ctx_ref.data_id);
+        Some(WorkflowContext::from_parts(
+            ctx_ref.trace_id,
+            ctx_ref.timestamp,
+            (*payload).clone(),
+        ))
     }
 
+    /// 拆分为原始接收端和 DataStore，供需要自行管理生命周期的调用者使用。
+    ///
+    /// 结果流中的 [`ContextRef`] 需要调用者自行从 DataStore 重建 [`WorkflowContext`]
+    /// 并在使用后调用 `store.release()` 释放数据引用。
     pub fn into_receivers(
         self,
     ) -> (
         mpsc::Receiver<ExecutionEvent>,
-        mpsc::Receiver<WorkflowContext>,
+        mpsc::Receiver<ContextRef>,
+        Arc<dyn DataStore>,
     ) {
-        (self.event_rx, self.result_rx)
+        (self.event_rx, self.result_rx, self.store)
     }
 }
 
@@ -286,5 +324,10 @@ impl WorkflowDeployment {
 
     pub fn into_parts(self) -> (WorkflowIngress, WorkflowStreams) {
         (self.ingress, self.streams)
+    }
+
+    /// 返回内部 DataStore 的引用。
+    pub fn store(&self) -> &Arc<dyn DataStore> {
+        &self.streams.store
     }
 }

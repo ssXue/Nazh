@@ -7,7 +7,7 @@ use serde_json::{json, Map, Value};
 
 use super::helpers::into_payload_map;
 use super::{NodeExecution, NodeTrait};
-use crate::{EngineError, WorkflowContext};
+use crate::{ContextRef, DataStore, EngineError};
 
 fn default_timer_interval_ms() -> u64 {
     5_000
@@ -48,8 +48,9 @@ impl TimerNode {
 impl NodeTrait for TimerNode {
     impl_node_meta!("timer");
 
-    async fn execute(&self, ctx: WorkflowContext) -> Result<NodeExecution, EngineError> {
-        let mut payload_map = into_payload_map(ctx.payload);
+    async fn execute(&self, ctx: &ContextRef, store: &dyn DataStore) -> Result<NodeExecution, EngineError> {
+        let payload = store.read_mut(&ctx.data_id)?;
+        let mut payload_map = into_payload_map(payload);
 
         for (key, value) in &self.config.inject {
             payload_map.insert(key.clone(), value.clone());
@@ -72,10 +73,6 @@ impl NodeTrait for TimerNode {
         timer_meta.insert("triggered_at".to_owned(), json!(Utc::now().to_rfc3339()));
         payload_map.insert("_timer".to_owned(), Value::Object(timer_meta));
 
-        Ok(NodeExecution::broadcast(WorkflowContext::from_parts(
-            ctx.trace_id,
-            Utc::now(),
-            Value::Object(payload_map),
-        )))
+        Ok(NodeExecution::broadcast(Value::Object(payload_map)))
     }
 }

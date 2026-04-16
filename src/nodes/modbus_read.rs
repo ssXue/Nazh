@@ -2,16 +2,16 @@
 //!
 //! 根据配置的基准值和振幅，通过正弦函数模拟传感器读数，
 //! 并将 `_modbus` 元数据写入 payload。若配置了 `connection_id`，
-//! 则通过 [`with_connection`](super::helpers::with_connection) 借出连接。
+//! 则通过 [`ConnectionGuard`](crate::ConnectionGuard) 借出连接。
 
 use async_trait::async_trait;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use super::helpers::{insert_connection_lease, into_payload_map, with_connection};
+use super::helpers::{insert_connection_lease, into_payload_map};
 use super::{NodeExecution, NodeTrait};
-use crate::{ConnectionLease, EngineError, SharedConnectionManager, WorkflowContext};
+use crate::{ConnectionGuard, ContextRef, DataStore, EngineError, SharedConnectionManager};
 
 fn default_modbus_unit_id() -> u16 {
     1
@@ -82,9 +82,9 @@ impl ModbusReadNode {
 
     fn simulate_and_build(
         &self,
-        ctx: WorkflowContext,
-        lease: Option<&ConnectionLease>,
-    ) -> Result<WorkflowContext, EngineError> {
+        payload: Value,
+        guard: Option<&ConnectionGuard>,
+    ) -> Result<Value, EngineError> {
         #[allow(clippy::cast_precision_loss)]
         let now_seconds = Utc::now().timestamp_millis() as f64 / 1000.0;
         let quantity = self.config.quantity.clamp(1, 32);
@@ -97,7 +97,7 @@ impl ModbusReadNode {
             })
             .collect::<Vec<_>>();
 
-        let mut payload_map = into_payload_map(ctx.payload);
+        let mut payload_map = into_payload_map(payload);
 
         if quantity == 1 {
             if let Some(value) = values.first() {
@@ -118,15 +118,11 @@ impl ModbusReadNode {
             }),
         );
 
-        if let Some(lease) = lease {
-            insert_connection_lease(&self.id, &mut payload_map, lease)?;
+        if let Some(guard) = guard {
+            insert_connection_lease(&self.id, &mut payload_map, guard.lease())?;
         }
 
-        Ok(WorkflowContext::from_parts(
-            ctx.trace_id,
-            Utc::now(),
-            Value::Object(payload_map),
-        ))
+        Ok(Value::Object(payload_map))
     }
 }
 
@@ -134,13 +130,17 @@ impl ModbusReadNode {
 impl NodeTrait for ModbusReadNode {
     impl_node_meta!("modbusRead");
 
-    async fn execute(&self, ctx: WorkflowContext) -> Result<NodeExecution, EngineError> {
-        let result = with_connection(
-            &self.connection_manager,
-            self.config.connection_id.as_deref(),
-            |lease| self.simulate_and_build(ctx, lease),
-        )
-        .await?;
+    async fn execute(&self, ctx: &ContextRef, store: &dyn DataStore) -> Result<NodeExecution, EngineError> {
+        let payload = store.read_mut(&ctx.data_id)?;
+        let mut guard = if let Some(conn_id) = &self.config.connection_id {
+            Some(self.connection_manager.acquire(conn_id).await?)
+        } else {
+            None
+        };
+        let result = self.simulate_and_build(payload, guard.as_ref())?;
+        if let Some(g) = &mut guard {
+            g.mark_success();
+        }
         Ok(NodeExecution::broadcast(result))
     }
 }

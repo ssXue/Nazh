@@ -4,13 +4,12 @@
 //! 借出连接，将注入字段和连接元数据写入 payload，执行完毕后释放连接。
 
 use async_trait::async_trait;
-use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use super::helpers::{insert_connection_lease, into_payload_map, with_connection};
+use super::helpers::{insert_connection_lease, into_payload_map};
 use super::{NodeExecution, NodeTrait};
-use crate::{ConnectionLease, EngineError, SharedConnectionManager, WorkflowContext};
+use crate::{ConnectionGuard, ContextRef, DataStore, EngineError, SharedConnectionManager};
 
 /// [`NativeNode`] 的配置。
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -48,10 +47,11 @@ impl NativeNode {
 
     fn build_payload(
         &self,
-        ctx: WorkflowContext,
-        lease: Option<&ConnectionLease>,
-    ) -> Result<WorkflowContext, EngineError> {
-        let mut payload_map = into_payload_map(ctx.payload);
+        trace_id: uuid::Uuid,
+        payload: Value,
+        guard: Option<&ConnectionGuard>,
+    ) -> Result<Value, EngineError> {
+        let mut payload_map = into_payload_map(payload);
 
         if let Some(message) = &self.config.message {
             payload_map.insert("_native_message".to_owned(), Value::String(message.clone()));
@@ -61,22 +61,18 @@ impl NativeNode {
             payload_map.insert(key.clone(), value.clone());
         }
 
-        if let Some(lease) = lease {
-            insert_connection_lease(&self.id, &mut payload_map, lease)?;
+        if let Some(guard) = guard {
+            insert_connection_lease(&self.id, &mut payload_map, guard.lease())?;
         }
 
         println!(
             "[native:{}] trace_id={} message={}",
             self.id,
-            ctx.trace_id,
+            trace_id,
             self.config.message.as_deref().unwrap_or("透传"),
         );
 
-        Ok(WorkflowContext::from_parts(
-            ctx.trace_id,
-            Utc::now(),
-            Value::Object(payload_map),
-        ))
+        Ok(Value::Object(payload_map))
     }
 }
 
@@ -84,13 +80,17 @@ impl NativeNode {
 impl NodeTrait for NativeNode {
     impl_node_meta!("native");
 
-    async fn execute(&self, ctx: WorkflowContext) -> Result<NodeExecution, EngineError> {
-        let result = with_connection(
-            &self.connection_manager,
-            self.config.connection_id.as_deref(),
-            |lease| self.build_payload(ctx, lease),
-        )
-        .await?;
+    async fn execute(&self, ctx: &ContextRef, store: &dyn DataStore) -> Result<NodeExecution, EngineError> {
+        let payload = store.read_mut(&ctx.data_id)?;
+        let mut guard = if let Some(conn_id) = &self.config.connection_id {
+            Some(self.connection_manager.acquire(conn_id).await?)
+        } else {
+            None
+        };
+        let result = self.build_payload(ctx.trace_id, payload, guard.as_ref())?;
+        if let Some(g) = &mut guard {
+            g.mark_success();
+        }
         Ok(NodeExecution::broadcast(result))
     }
 }

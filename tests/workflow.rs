@@ -5,11 +5,11 @@ use std::{
 };
 
 use nazh_engine::{
-    deploy_workflow, shared_connection_manager, ConnectionDefinition, ConnectionManager,
-    DebugConsoleNode, DebugConsoleNodeConfig, EngineError, HttpClientNode, HttpClientNodeConfig,
-    ModbusReadNode, ModbusReadNodeConfig, NodeDispatch, NodeRegistry, NodeTrait, RhaiNode,
-    RhaiNodeConfig, SerialTriggerNode, SerialTriggerNodeConfig, SqlWriterNode, SqlWriterNodeConfig,
-    TimerNode, TimerNodeConfig, WorkflowContext, WorkflowGraph,
+    deploy_workflow, shared_connection_manager, ArenaDataStore, ConnectionDefinition,
+    ConnectionManager, ContextRef, DataStore, DebugConsoleNode, DebugConsoleNodeConfig, EngineError,
+    HttpClientNode, HttpClientNodeConfig, ModbusReadNode, ModbusReadNodeConfig, NodeDispatch,
+    NodeRegistry, NodeTrait, RhaiNode, RhaiNodeConfig, SerialTriggerNode, SerialTriggerNodeConfig,
+    SqlWriterNode, SqlWriterNodeConfig, TimerNode, TimerNodeConfig, WorkflowContext, WorkflowGraph,
 };
 use serde_json::json;
 use tokio::time::timeout;
@@ -29,9 +29,13 @@ async fn rhai_node_can_transform_json_payload() {
         Err(error) => panic!("rhai node should compile: {error}"),
     };
 
-    let result = node
-        .execute(WorkflowContext::new(json!({ "value": 9 })))
-        .await;
+    let store = ArenaDataStore::new();
+    let ctx = WorkflowContext::new(json!({ "value": 9 }));
+    let data_id = store
+        .write(ctx.payload, 1)
+        .unwrap_or_else(|e| panic!("store write failed: {e}"));
+    let ctx_ref = ContextRef::new(ctx.trace_id, data_id, None);
+    let result = node.execute(&ctx_ref, &store).await;
 
     match result {
         Ok(execution) => match execution.first() {
@@ -40,7 +44,7 @@ async fn rhai_node_can_transform_json_payload() {
                     NodeDispatch::Broadcast => {}
                     NodeDispatch::Route(_) => panic!("plain rhai node should broadcast"),
                 }
-                assert_eq!(first_output.ctx.payload, json!({ "value": 10 }));
+                assert_eq!(first_output.payload, json!({ "value": 10 }));
             }
             None => panic!("rhai node should produce a single output"),
         },
@@ -530,21 +534,25 @@ async fn timer_node_injects_trigger_metadata() {
         "interval trigger",
     );
 
-    let result = node
-        .execute(WorkflowContext::new(json!({ "seed": "keep" })))
-        .await;
+    let store = ArenaDataStore::new();
+    let ctx = WorkflowContext::new(json!({ "seed": "keep" }));
+    let data_id = store
+        .write(ctx.payload, 1)
+        .unwrap_or_else(|e| panic!("store write failed: {e}"));
+    let ctx_ref = ContextRef::new(ctx.trace_id, data_id, None);
+    let result = node.execute(&ctx_ref, &store).await;
 
     match result {
         Ok(execution) => match execution.first() {
             Some(first_output) => {
-                assert_eq!(first_output.ctx.payload["seed"], json!("keep"));
-                assert_eq!(first_output.ctx.payload["source"], json!("timer"));
-                assert_eq!(first_output.ctx.payload["_timer"]["node_id"], json!("tick"));
+                assert_eq!(first_output.payload["seed"], json!("keep"));
+                assert_eq!(first_output.payload["source"], json!("timer"));
+                assert_eq!(first_output.payload["_timer"]["node_id"], json!("tick"));
                 assert_eq!(
-                    first_output.ctx.payload["_timer"]["interval_ms"],
+                    first_output.payload["_timer"]["interval_ms"],
                     json!(2_500)
                 );
-                assert_eq!(first_output.ctx.payload["_timer"]["immediate"], json!(true));
+                assert_eq!(first_output.payload["_timer"]["immediate"], json!(true));
             }
             None => panic!("timer node should produce one output"),
         },
@@ -577,40 +585,44 @@ async fn serial_trigger_node_normalizes_ascii_and_hex_frames() {
         "serial trigger",
     );
 
-    let result = node
-        .execute(WorkflowContext::new(json!({
-            "_serial_frame": {
-                "ascii": " RFID-42\r\n",
-                "hex": "52 46 49 44 2D 34 32",
-                "byte_len": 9,
-                "port_path": "/dev/tty.mock"
-            }
-        })))
-        .await;
+    let store = ArenaDataStore::new();
+    let ctx = WorkflowContext::new(json!({
+        "_serial_frame": {
+            "ascii": " RFID-42\r\n",
+            "hex": "52 46 49 44 2D 34 32",
+            "byte_len": 9,
+            "port_path": "/dev/tty.mock"
+        }
+    }));
+    let data_id = store
+        .write(ctx.payload, 1)
+        .unwrap_or_else(|e| panic!("store write failed: {e}"));
+    let ctx_ref = ContextRef::new(ctx.trace_id, data_id, None);
+    let result = node.execute(&ctx_ref, &store).await;
 
     match result {
         Ok(execution) => match execution.first() {
             Some(first_output) => {
-                assert_eq!(first_output.ctx.payload["source"], json!("serial"));
-                assert_eq!(first_output.ctx.payload["serial_ascii"], json!("RFID-42"));
+                assert_eq!(first_output.payload["source"], json!("serial"));
+                assert_eq!(first_output.payload["serial_ascii"], json!("RFID-42"));
                 assert_eq!(
-                    first_output.ctx.payload["serial_hex"],
+                    first_output.payload["serial_hex"],
                     json!("52 46 49 44 2D 34 32")
                 );
                 assert_eq!(
-                    first_output.ctx.payload["serial_data"],
+                    first_output.payload["serial_data"],
                     json!("52 46 49 44 2D 34 32")
                 );
                 assert_eq!(
-                    first_output.ctx.payload["_serial"]["node_id"],
+                    first_output.payload["_serial"]["node_id"],
                     json!("scan_input")
                 );
                 assert_eq!(
-                    first_output.ctx.payload["_serial"]["port_path"],
+                    first_output.payload["_serial"]["port_path"],
                     json!("/dev/tty.mock")
                 );
                 assert_eq!(
-                    first_output.ctx.payload["_serial"]["encoding"],
+                    first_output.payload["_serial"]["encoding"],
                     json!("hex")
                 );
             }
@@ -679,22 +691,28 @@ async fn modbus_read_node_emits_simulated_values() {
         shared_connection_manager(),
     );
 
-    let result = node.execute(WorkflowContext::new(json!({}))).await;
+    let store = ArenaDataStore::new();
+    let ctx = WorkflowContext::new(json!({}));
+    let data_id = store
+        .write(ctx.payload, 1)
+        .unwrap_or_else(|e| panic!("store write failed: {e}"));
+    let ctx_ref = ContextRef::new(ctx.trace_id, data_id, None);
+    let result = node.execute(&ctx_ref, &store).await;
 
     match result {
         Ok(execution) => match execution.first() {
             Some(first_output) => {
                 assert_eq!(
-                    first_output.ctx.payload["_modbus"]["simulated"],
+                    first_output.payload["_modbus"]["simulated"],
                     json!(true)
                 );
                 assert_eq!(
-                    first_output.ctx.payload["_modbus"]["register"],
+                    first_output.payload["_modbus"]["register"],
                     json!(40_001)
                 );
-                assert_eq!(first_output.ctx.payload["_modbus"]["quantity"], json!(2));
+                assert_eq!(first_output.payload["_modbus"]["quantity"], json!(2));
                 assert!(
-                    first_output.ctx.payload["values"].as_array().map(Vec::len) == Some(2),
+                    first_output.payload["values"].as_array().map(Vec::len) == Some(2),
                     "modbus read node should output two simulated values",
                 );
             }
@@ -805,19 +823,21 @@ async fn http_client_node_posts_payload_and_records_response() {
         Err(e) => panic!("HttpClientNode 创建失败: {e}"),
     };
 
-    let result = node
-        .execute(WorkflowContext::new(
-            json!({ "severity": "high", "value": 92 }),
-        ))
-        .await;
+    let store = ArenaDataStore::new();
+    let ctx = WorkflowContext::new(json!({ "severity": "high", "value": 92 }));
+    let data_id = store
+        .write(ctx.payload, 1)
+        .unwrap_or_else(|e| panic!("store write failed: {e}"));
+    let ctx_ref = ContextRef::new(ctx.trace_id, data_id, None);
+    let result = node.execute(&ctx_ref, &store).await;
 
     match result {
         Ok(execution) => match execution.first() {
             Some(first_output) => {
-                assert_eq!(first_output.ctx.payload["_http"]["status"], json!(200));
-                assert_eq!(first_output.ctx.payload["http_response"]["ok"], json!(true));
+                assert_eq!(first_output.payload["_http"]["status"], json!(200));
+                assert_eq!(first_output.payload["http_response"]["ok"], json!(true));
                 assert_eq!(
-                    first_output.ctx.payload["http_response"]["channel"],
+                    first_output.payload["http_response"]["channel"],
                     json!("dingtalk")
                 );
             }
@@ -953,28 +973,32 @@ async fn http_alarm_node_renders_dingtalk_markdown_body() {
         Err(e) => panic!("HttpClientNode 创建失败: {e}"),
     };
 
-    let result = node
-        .execute(WorkflowContext::new(json!({
-            "tag": "boiler-a",
-            "severity": "alert",
-            "temperature_c": 92
-        })))
-        .await;
+    let store = ArenaDataStore::new();
+    let ctx = WorkflowContext::new(json!({
+        "tag": "boiler-a",
+        "severity": "alert",
+        "temperature_c": 92
+    }));
+    let data_id = store
+        .write(ctx.payload, 1)
+        .unwrap_or_else(|e| panic!("store write failed: {e}"));
+    let ctx_ref = ContextRef::new(ctx.trace_id, data_id, None);
+    let result = node.execute(&ctx_ref, &store).await;
 
     match result {
         Ok(execution) => match execution.first() {
             Some(first_output) => {
-                assert_eq!(first_output.ctx.payload["_http"]["status"], json!(200));
+                assert_eq!(first_output.payload["_http"]["status"], json!(200));
                 assert_eq!(
-                    first_output.ctx.payload["_http"]["webhook_kind"],
+                    first_output.payload["_http"]["webhook_kind"],
                     json!("dingtalk")
                 );
                 assert_eq!(
-                    first_output.ctx.payload["_http"]["body_mode"],
+                    first_output.payload["_http"]["body_mode"],
                     json!("dingtalk_markdown")
                 );
                 assert_eq!(
-                    first_output.ctx.payload["http_response"]["errcode"],
+                    first_output.payload["http_response"]["errcode"],
                     json!(0)
                 );
             }
@@ -1004,17 +1028,19 @@ async fn sql_writer_node_persists_payload_into_sqlite() {
         "write sqlite log",
     );
 
-    let result = node
-        .execute(WorkflowContext::new(
-            json!({ "value": 7, "status": "stored" }),
-        ))
-        .await;
+    let store = ArenaDataStore::new();
+    let ctx = WorkflowContext::new(json!({ "value": 7, "status": "stored" }));
+    let data_id = store
+        .write(ctx.payload, 1)
+        .unwrap_or_else(|e| panic!("store write failed: {e}"));
+    let ctx_ref = ContextRef::new(ctx.trace_id, data_id, None);
+    let result = node.execute(&ctx_ref, &store).await;
 
     match result {
         Ok(execution) => match execution.first() {
             Some(first_output) => {
                 assert_eq!(
-                    first_output.ctx.payload["_sql_writer"]["table"],
+                    first_output.payload["_sql_writer"]["table"],
                     json!("workflow_logs")
                 );
             }
@@ -1048,20 +1074,24 @@ async fn debug_console_node_marks_payload_and_passes_through() {
         "debug payload",
     );
 
-    let result = node
-        .execute(WorkflowContext::new(json!({ "status": "ok" })))
-        .await;
+    let store = ArenaDataStore::new();
+    let ctx = WorkflowContext::new(json!({ "status": "ok" }));
+    let data_id = store
+        .write(ctx.payload, 1)
+        .unwrap_or_else(|e| panic!("store write failed: {e}"));
+    let ctx_ref = ContextRef::new(ctx.trace_id, data_id, None);
+    let result = node.execute(&ctx_ref, &store).await;
 
     match result {
         Ok(execution) => match execution.first() {
             Some(first_output) => {
-                assert_eq!(first_output.ctx.payload["status"], json!("ok"));
+                assert_eq!(first_output.payload["status"], json!("ok"));
                 assert_eq!(
-                    first_output.ctx.payload["_debug_console"]["label"],
+                    first_output.payload["_debug_console"]["label"],
                     json!("tap")
                 );
                 assert_eq!(
-                    first_output.ctx.payload["_debug_console"]["pretty"],
+                    first_output.payload["_debug_console"]["pretty"],
                     json!(false)
                 );
             }

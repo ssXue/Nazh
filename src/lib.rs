@@ -28,15 +28,15 @@ pub mod pipeline;
 pub mod registry;
 
 // Ring 0 类型从 nazh-core 重导出
-pub use nazh_core::{context, error, event, guard, ipc};
+pub use nazh_core::{context, data, error, event, guard, ipc};
 pub use nazh_core::{
-    DeployResponse, DispatchResponse, EngineError, ExecutionEvent, ListNodeTypesResponse,
-    NodeTypeEntry, UndeployResponse, WorkflowContext,
+    ArenaDataStore, ContextRef, DataId, DataStore, DeployResponse, DispatchResponse, EngineError,
+    ExecutionEvent, ListNodeTypesResponse, NodeTypeEntry, UndeployResponse, WorkflowContext,
 };
 
 pub use connection::{
-    shared_connection_manager, ConnectionDefinition, ConnectionLease, ConnectionManager,
-    ConnectionRecord, SharedConnectionManager,
+    shared_connection_manager, ConnectionDefinition, ConnectionGuard, ConnectionLease,
+    ConnectionManager, ConnectionRecord, SharedConnectionManager,
 };
 pub use graph::{
     deploy_workflow, WorkflowDeployment, WorkflowGraph, WorkflowIngress, WorkflowNodeDefinition,
