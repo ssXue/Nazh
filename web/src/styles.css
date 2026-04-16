@@ -7318,3 +7318,75 @@ html.is-tauri-runtime [data-window-drag-region] {
   }
 
 }
+
+/* ── 插件管理页 ───────────────────────────────────── */
+
+.plugin-panel__groups {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 4px 2px;
+}
+
+.plugin-panel__group-title {
+  font-size: var(--font-callout);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin: 0 0 8px;
+}
+
+.plugin-panel__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+}
+
+.plugin-panel__card {
+  background: var(--surface-muted);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--button-radius);
+  padding: 10px 12px;
+  transition: border-color 0.15s;
+}
+
+.plugin-panel__card:hover {
+  border-color: var(--accent-border);
+}
+
+.plugin-panel__card-name {
+  font-size: var(--font-title-3);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.plugin-panel__card-aliases {
+  font-size: var(--font-subheadline);
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.plugin-panel__card-desc {
+  font-size: var(--font-callout);
+  color: var(--text-soft);
+  margin-top: 4px;
+}
+
+.plugin-panel__loading,
+.plugin-panel__error,
+.plugin-panel__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  color: var(--muted);
+  font-size: var(--font-body);
+  text-align: center;
+  gap: 8px;
+}
+
+.plugin-panel__error {
+  color: var(--danger-ink);
+}
