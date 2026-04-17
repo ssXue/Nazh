@@ -1,5 +1,9 @@
-import { describe, expect, it } from 'vitest';
-import { buildScriptGenerationPrompt, type NodeContext } from '../script-generation';
+import { describe, expect, it, vi } from 'vitest';
+import { buildScriptGenerationPrompt, generateScript, type NodeContext } from '../script-generation';
+
+vi.mock('../../lib/tauri', () => ({
+  copilotComplete: vi.fn(),
+}));
 
 describe('buildScriptGenerationPrompt', () => {
   it('生成包含 system 和 user 两条消息', () => {
@@ -58,5 +62,39 @@ describe('buildScriptGenerationPrompt', () => {
     };
     const messages = buildScriptGenerationPrompt('需求', context);
     expect(messages[1].content).not.toContain('描述:');
+  });
+});
+
+describe('generateScript', () => {
+  const mockContext: NodeContext = {
+    current: { nodeType: 'code', label: '测试', aiDescription: '' },
+    upstream: [],
+    downstream: [],
+  };
+
+  it('调用 copilotComplete 并返回修剪后的内容', async () => {
+    const { copilotComplete } = await import('../../lib/tauri');
+    const mocked = vi.mocked(copilotComplete);
+    mocked.mockResolvedValueOnce({ content: '  let x = 1;  ', model: 'test', usage: undefined });
+
+    const result = await generateScript('需求', mockContext, { providerId: 'test-provider' });
+
+    expect(result).toBe('let x = 1;');
+    expect(mocked).toHaveBeenCalledTimes(1);
+    const request = mocked.mock.calls[0][0];
+    expect(request.providerId).toBe('test-provider');
+    expect(request.messages).toHaveLength(2);
+    expect(request.params.temperature).toBe(0.2);
+    expect(request.params.maxTokens).toBe(2048);
+  });
+
+  it('抛出异常时向上传播', async () => {
+    const { copilotComplete } = await import('../../lib/tauri');
+    const mocked = vi.mocked(copilotComplete);
+    mocked.mockRejectedValueOnce(new Error('连接失败'));
+
+    await expect(
+      generateScript('需求', mockContext, { providerId: 'p' }),
+    ).rejects.toThrow('连接失败');
   });
 });
