@@ -12,11 +12,15 @@ import {
   parseTimeoutMs,
   type FlowgramLogicBranch,
 } from './flowgram-node-library';
-import type { ConnectionDefinition } from '../../types';
+import { AiScriptGenerator } from './AiScriptGenerator';
+import { generateScript, getNodeContext } from '../../lib/script-generation';
+import type { AiProviderView, ConnectionDefinition } from '../../types';
 
 export interface FlowgramNodeSettingsPanelProps {
   nodeId: string;
   connections: ConnectionDefinition[];
+  aiProviders: AiProviderView[];
+  activeAiProviderId: string | null;
 }
 
 interface SelectedNodeDraft {
@@ -28,6 +32,14 @@ interface SelectedNodeDraft {
   timeoutMs: string;
   message: string;
   script: string;
+  aiEnabled: boolean;
+  aiProviderId: string;
+  aiModel: string;
+  aiSystemPrompt: string;
+  aiTemperature: string;
+  aiMaxTokens: string;
+  aiTopP: string;
+  aiTimeoutMs: string;
   branches: FlowgramLogicBranch[];
   timerIntervalMs: string;
   timerImmediate: boolean;
@@ -162,6 +174,10 @@ function isScriptNode(nodeType: string): boolean {
   );
 }
 
+function supportsScriptAi(nodeType: string): boolean {
+  return nodeType === 'code' || nodeType === 'rhai';
+}
+
 function usesDynamicPorts(nodeType: string): boolean {
   return (
     nodeType === 'if' ||
@@ -190,6 +206,7 @@ function readNodeDraft(node: FlowNodeEntity): SelectedNodeDraft {
   };
   const config = isRecord(rawData.config) ? rawData.config : {};
   const nodeType = String(rawData.nodeType ?? node.flowNodeType);
+  const aiConfig = isRecord(config.ai) ? config.ai : null;
   const httpUrl = readString(config.url);
   const httpWebhookKind = readString(config.webhook_kind, inferHttpWebhookKind(httpUrl));
   const httpBodyMode = normalizeHttpBodyMode(config.body_mode, httpWebhookKind);
@@ -203,6 +220,14 @@ function readNodeDraft(node: FlowNodeEntity): SelectedNodeDraft {
     timeoutMs: rawData.timeoutMs ? String(rawData.timeoutMs) : '',
     message: readString(config.message),
     script: readString(config.script),
+    aiEnabled: supportsScriptAi(nodeType) && aiConfig !== null,
+    aiProviderId: aiConfig ? readString(aiConfig.providerId) : '',
+    aiModel: aiConfig ? readString(aiConfig.model) : '',
+    aiSystemPrompt: aiConfig ? readString(aiConfig.systemPrompt) : '',
+    aiTemperature: aiConfig ? readNumberString(aiConfig.temperature, '') : '',
+    aiMaxTokens: aiConfig ? readNumberString(aiConfig.maxTokens, '') : '',
+    aiTopP: aiConfig ? readNumberString(aiConfig.topP, '') : '',
+    aiTimeoutMs: aiConfig ? readNumberString(aiConfig.timeoutMs, '') : '',
     branches: readEditableBranches(nodeType, config),
     timerIntervalMs: readNumberString(config.interval_ms, '5000'),
     timerImmediate: readBoolean(config.immediate, true),
@@ -330,6 +355,35 @@ function buildNodeConfig(draft: SelectedNodeDraft, currentConfig: NodeConfigMap)
     };
   }
 
+  if (supportsScriptAi(draft.nodeType)) {
+    const { ai: _currentAi, ...restConfig } = currentConfig;
+    const aiConfig = draft.aiEnabled
+      ? {
+          providerId: draft.aiProviderId.trim(),
+          ...(draft.aiModel.trim() ? { model: draft.aiModel.trim() } : {}),
+          ...(draft.aiSystemPrompt.trim() ? { systemPrompt: draft.aiSystemPrompt.trim() } : {}),
+          ...(parseFiniteNumber(draft.aiTemperature) !== null
+            ? { temperature: parseFiniteNumber(draft.aiTemperature) }
+            : {}),
+          ...(parsePositiveInteger(draft.aiMaxTokens) !== null
+            ? { maxTokens: parsePositiveInteger(draft.aiMaxTokens) }
+            : {}),
+          ...(parseFiniteNumber(draft.aiTopP) !== null
+            ? { topP: parseFiniteNumber(draft.aiTopP) }
+            : {}),
+          ...(parsePositiveInteger(draft.aiTimeoutMs) !== null
+            ? { timeoutMs: parsePositiveInteger(draft.aiTimeoutMs) }
+            : {}),
+        }
+      : null;
+
+    return {
+      ...restConfig,
+      script: draft.script,
+      ...(aiConfig ? { ai: aiConfig } : {}),
+    };
+  }
+
   if (isScriptNode(draft.nodeType)) {
     return {
       ...currentConfig,
@@ -343,15 +397,30 @@ function buildNodeConfig(draft: SelectedNodeDraft, currentConfig: NodeConfigMap)
 function FlowgramNodeSettingsPanel({
   nodeId,
   connections,
+  aiProviders,
+  activeAiProviderId,
 }: FlowgramNodeSettingsPanelProps) {
   const panelManager = usePanelManager();
   const { document, playground } = useClientContext();
   const node = document.getNode(nodeId) as FlowNodeEntity | undefined;
   const [draft, setDraft] = useState<SelectedNodeDraft | null>(() => (node ? readNodeDraft(node) : null));
+  const [aiGeneratorOpen, setAiGeneratorOpen] = useState(false);
+  const [aiGenerating, setAiGenerating] = useState(false);
+  const [aiGenerateError, setAiGenerateError] = useState<string | null>(null);
 
   const closePanel = useCallback(() => {
     panelManager.close(FLOWGRAM_NODE_SETTINGS_PANEL_KEY, 'right');
   }, [panelManager]);
+
+  const hasAiProvider = aiProviders.length > 0 && !!activeAiProviderId;
+
+  const handleAiGeneratorClose = useCallback(() => {
+    if (aiGenerating) {
+      return;
+    }
+    setAiGeneratorOpen(false);
+    setAiGenerateError(null);
+  }, [aiGenerating]);
 
   useEffect(() => {
     if (!node) {
@@ -419,6 +488,28 @@ function FlowgramNodeSettingsPanel({
     };
   }, [node]);
 
+  const aiProviderChoices = useMemo(() => {
+    if (aiProviders.length === 0) {
+      return [];
+    }
+
+    const activeProvider = activeAiProviderId
+      ? aiProviders.find((provider) => provider.id === activeAiProviderId) ?? null
+      : null;
+    const remainingProviders = aiProviders.filter((provider) => provider.id !== activeProvider?.id);
+
+    return activeProvider ? [activeProvider, ...remainingProviders] : aiProviders;
+  }, [activeAiProviderId, aiProviders]);
+
+  const fallbackAiProvider = useMemo(
+    () =>
+      aiProviderChoices.find((provider) => provider.id === activeAiProviderId) ??
+      aiProviderChoices.find((provider) => provider.enabled) ??
+      aiProviderChoices[0] ??
+      null,
+    [activeAiProviderId, aiProviderChoices],
+  );
+
   const diagnostics = useMemo<NodeValidation[]>(() => {
     if (!draft) {
       return [];
@@ -426,6 +517,7 @@ function FlowgramNodeSettingsPanel({
 
     const nextDiagnostics: NodeValidation[] = [];
     const selectedConnection = connections.find((connection) => connection.id === draft.connectionId);
+    const selectedAiProvider = aiProviders.find((provider) => provider.id === draft.aiProviderId) ?? null;
     const parsedTimeoutMs = parseTimeoutMs(draft.timeoutMs);
     const parsedHeaders = parseHeadersJson(draft.httpHeaders);
     const parsedRequestTimeoutMs = parsePositiveInteger(draft.httpRequestTimeoutMs);
@@ -503,6 +595,63 @@ function FlowgramNodeSettingsPanel({
         tone: 'danger',
         message: '脚本为空。',
       });
+    }
+
+    if (supportsScriptAi(draft.nodeType) && draft.aiEnabled) {
+      if (!draft.aiProviderId.trim()) {
+        nextDiagnostics.push({
+          tone: 'danger',
+          message: '启用 AI 后必须填写 providerId。',
+        });
+      } else if (aiProviders.length === 0) {
+        nextDiagnostics.push({
+          tone: 'warning',
+          message: '当前尚未配置任何 AI 提供商，运行时将无法完成 AI 调用。',
+        });
+      } else if (!selectedAiProvider) {
+        nextDiagnostics.push({
+          tone: 'danger',
+          message: `AI 提供商 ${draft.aiProviderId} 未在全局配置中注册。`,
+        });
+      } else if (!selectedAiProvider.enabled) {
+        nextDiagnostics.push({
+          tone: 'danger',
+          message: `AI 提供商 ${selectedAiProvider.name} 已被禁用。`,
+        });
+      } else {
+        nextDiagnostics.push({
+          tone: 'info',
+          message: `AI 已启用 · ${selectedAiProvider.name}${draft.aiModel.trim() ? ` · ${draft.aiModel.trim()}` : ' · 使用提供商默认模型'}`,
+        });
+      }
+
+      if (draft.aiTemperature.trim() && parseFiniteNumber(draft.aiTemperature) === null) {
+        nextDiagnostics.push({
+          tone: 'danger',
+          message: 'Temperature 必须是有效数字。',
+        });
+      }
+
+      if (draft.aiMaxTokens.trim() && parsePositiveInteger(draft.aiMaxTokens) === null) {
+        nextDiagnostics.push({
+          tone: 'danger',
+          message: 'Max tokens 必须是大于 0 的整数。',
+        });
+      }
+
+      if (draft.aiTopP.trim() && parseFiniteNumber(draft.aiTopP) === null) {
+        nextDiagnostics.push({
+          tone: 'danger',
+          message: 'Top P 必须是有效数字。',
+        });
+      }
+
+      if (draft.aiTimeoutMs.trim() && parsePositiveInteger(draft.aiTimeoutMs) === null) {
+        nextDiagnostics.push({
+          tone: 'danger',
+          message: 'AI 超时必须是大于 0 的毫秒数。',
+        });
+      }
     }
 
     if (draft.nodeType === 'switch' && draft.branches.length === 0) {
@@ -596,7 +745,7 @@ function FlowgramNodeSettingsPanel({
     }
 
     return nextDiagnostics;
-  }, [connections, draft, stats]);
+  }, [aiProviders, connections, draft, stats]);
 
   const branchSummary = useMemo(
     () =>
@@ -647,6 +796,35 @@ function FlowgramNodeSettingsPanel({
       });
     },
     [node],
+  );
+
+  const handleAiGenerate = useCallback(
+    async (requirement: string) => {
+      if (!node || !activeAiProviderId) {
+        return;
+      }
+      setAiGenerating(true);
+      setAiGenerateError(null);
+      try {
+        const context = getNodeContext(node);
+        const script = await generateScript(requirement, context, {
+          providerId: activeAiProviderId,
+        });
+        if (!script) {
+          setAiGenerateError('AI 未返回有效代码。');
+          return;
+        }
+        updateDraft({ script });
+        setAiGeneratorOpen(false);
+        setAiGenerateError(null);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        setAiGenerateError(message || '生成失败，请重试。');
+      } finally {
+        setAiGenerating(false);
+      }
+    },
+    [node, activeAiProviderId, updateDraft],
   );
 
   if (!node || !draft || playground.config.readonly) {
@@ -738,7 +916,24 @@ function FlowgramNodeSettingsPanel({
 
         {isScriptNode(draft.nodeType) ? (
           <label>
-            <span>{getPrimaryEditorLabel(draft.nodeType)}</span>
+            <span>
+              {getPrimaryEditorLabel(draft.nodeType)}
+              {(draft.nodeType === 'code' || draft.nodeType === 'rhai') ? (
+                <button
+                  type="button"
+                  className="ghost"
+                  disabled={!hasAiProvider || aiGenerating}
+                  onClick={() => {
+                    setAiGeneratorOpen(true);
+                    setAiGenerateError(null);
+                  }}
+                  title={!hasAiProvider ? '请先在 AI 配置中添加提供商' : 'AI 生成脚本'}
+                  style={{ marginLeft: '0.5em', fontSize: '0.85em', padding: '0.15em 0.5em' }}
+                >
+                  {aiGenerating ? '生成中...' : 'AI 生成'}
+                </button>
+              ) : null}
+            </span>
             <textarea value={draft.script} onChange={(event) => updateDraft({ script: event.target.value })} />
           </label>
         ) : null}
@@ -977,6 +1172,138 @@ function FlowgramNodeSettingsPanel({
         ) : null}
       </div>
 
+      {supportsScriptAi(draft.nodeType) ? (
+        <section className="flowgram-panel flowgram-panel--branches">
+          <div className="flowgram-panel__header">
+            <h4>AI 能力</h4>
+          </div>
+          <p className="flowgram-panel__subtle">
+            启用后可在脚本里调用 <code>ai_complete(prompt)</code>，返回模型生成的文本。
+          </p>
+
+          <div className="flowgram-form">
+            <label>
+              <span>启用 AI</span>
+              <select
+                value={draft.aiEnabled ? 'true' : 'false'}
+                onChange={(event) => {
+                  const nextEnabled = event.target.value === 'true';
+                  const nextProvider = nextEnabled && !draft.aiProviderId.trim() ? fallbackAiProvider : null;
+                  updateDraft({
+                    aiEnabled: nextEnabled,
+                    aiProviderId:
+                      nextEnabled && !draft.aiProviderId.trim()
+                        ? nextProvider?.id ?? ''
+                        : draft.aiProviderId,
+                    aiModel:
+                      nextEnabled && !draft.aiModel.trim()
+                        ? nextProvider?.defaultModel ?? draft.aiModel
+                        : draft.aiModel,
+                  });
+                }}
+              >
+                <option value="false">关闭</option>
+                <option value="true">启用</option>
+              </select>
+            </label>
+
+            {draft.aiEnabled ? (
+              <>
+                <label>
+                  <span>Provider</span>
+                  {aiProviderChoices.length > 0 ? (
+                    <select
+                      value={draft.aiProviderId}
+                      onChange={(event) => {
+                        const nextProviderId = event.target.value;
+                        const nextProvider =
+                          aiProviderChoices.find((provider) => provider.id === nextProviderId) ?? null;
+                        const currentProvider =
+                          aiProviderChoices.find((provider) => provider.id === draft.aiProviderId) ?? null;
+                        const shouldAdoptDefaultModel =
+                          !draft.aiModel.trim() ||
+                          (currentProvider?.defaultModel?.trim() &&
+                            draft.aiModel.trim() === currentProvider.defaultModel.trim());
+
+                        updateDraft({
+                          aiProviderId: nextProviderId,
+                          aiModel:
+                            shouldAdoptDefaultModel && nextProvider
+                              ? nextProvider.defaultModel
+                              : draft.aiModel,
+                        });
+                      }}
+                    >
+                      <option value="">请选择提供商</option>
+                      {aiProviderChoices.map((provider) => (
+                        <option key={provider.id} value={provider.id}>
+                          {provider.name} · {provider.id}
+                          {provider.enabled ? '' : '（已禁用）'}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      value={draft.aiProviderId}
+                      onChange={(event) => updateDraft({ aiProviderId: event.target.value })}
+                      placeholder="provider-id"
+                    />
+                  )}
+                </label>
+                <label>
+                  <span>模型覆盖</span>
+                  <input
+                    value={draft.aiModel}
+                    onChange={(event) => updateDraft({ aiModel: event.target.value })}
+                    placeholder="留空表示使用提供商默认模型"
+                  />
+                </label>
+                <label>
+                  <span>System Prompt</span>
+                  <textarea
+                    value={draft.aiSystemPrompt}
+                    onChange={(event) => updateDraft({ aiSystemPrompt: event.target.value })}
+                    placeholder="可选：补充角色、风格或输出约束"
+                  />
+                </label>
+                <label>
+                  <span>Temperature</span>
+                  <input
+                    value={draft.aiTemperature}
+                    onChange={(event) => updateDraft({ aiTemperature: event.target.value })}
+                    placeholder="例如 0.2"
+                  />
+                </label>
+                <label>
+                  <span>Max Tokens</span>
+                  <input
+                    value={draft.aiMaxTokens}
+                    onChange={(event) => updateDraft({ aiMaxTokens: event.target.value })}
+                    placeholder="留空使用默认值"
+                  />
+                </label>
+                <label>
+                  <span>Top P</span>
+                  <input
+                    value={draft.aiTopP}
+                    onChange={(event) => updateDraft({ aiTopP: event.target.value })}
+                    placeholder="例如 0.9"
+                  />
+                </label>
+                <label>
+                  <span>AI 超时 ms</span>
+                  <input
+                    value={draft.aiTimeoutMs}
+                    onChange={(event) => updateDraft({ aiTimeoutMs: event.target.value })}
+                    placeholder="留空使用默认值"
+                  />
+                </label>
+              </>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
+
       {draft.nodeType === 'switch' ? (
         <section className="flowgram-panel flowgram-panel--branches">
           <div className="flowgram-panel__header">
@@ -1083,6 +1410,13 @@ function FlowgramNodeSettingsPanel({
           </article>
         ))}
       </div>
+      <AiScriptGenerator
+        open={aiGeneratorOpen}
+        loading={aiGenerating}
+        error={aiGenerateError}
+        onGenerate={handleAiGenerate}
+        onClose={handleAiGeneratorClose}
+      />
     </section>
   );
 }

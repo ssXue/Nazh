@@ -10,8 +10,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
 use crate::template::{self, TemplateVars};
-use nazh_core::EngineError;
 use nazh_core::into_payload_map;
+use nazh_core::{ContextRef, DataStore, EngineError};
 use nazh_core::{NodeExecution, NodeTrait};
 
 fn default_http_method() -> String {
@@ -233,11 +233,12 @@ impl HttpClientNode {
 impl NodeTrait for HttpClientNode {
     nazh_core::impl_node_meta!("httpClient");
 
-    async fn transform(
+    async fn execute(
         &self,
-        trace_id: uuid::Uuid,
-        payload: Value,
+        ctx: &ContextRef,
+        store: &dyn DataStore,
     ) -> Result<NodeExecution, EngineError> {
+        let payload = store.read_mut(&ctx.data_id)?;
         let method = self.config.method.trim().to_uppercase();
         let url = self.config.url.trim().to_owned();
         if url.is_empty() {
@@ -247,15 +248,14 @@ impl NodeTrait for HttpClientNode {
             ));
         }
 
-        let now = Utc::now();
-        let requested_at = now.to_rfc3339();
+        let requested_at = Utc::now().to_rfc3339();
         let request_timeout_ms = self.config.request_timeout_ms.max(500);
         let (payload_body, content_type, webhook_kind, body_mode) = prepare_http_request_body(
             &self.id,
             &self.config,
             &payload,
-            &trace_id,
-            &now,
+            &ctx.trace_id,
+            &ctx.timestamp,
             &requested_at,
         )?;
 
@@ -288,7 +288,7 @@ impl NodeTrait for HttpClientNode {
         let response = request.send().await.map_err(|error| {
             EngineError::stage_execution(
                 self.id.clone(),
-                trace_id,
+                ctx.trace_id,
                 format!("HTTP 请求失败: {error}"),
             )
         })?;
@@ -297,7 +297,7 @@ impl NodeTrait for HttpClientNode {
         let response_body = response.text().await.map_err(|error| {
             EngineError::stage_execution(
                 self.id.clone(),
-                trace_id,
+                ctx.trace_id,
                 format!("读取 HTTP 响应体失败: {error}"),
             )
         })?;
@@ -306,7 +306,7 @@ impl NodeTrait for HttpClientNode {
         if status_code >= 400 {
             return Err(EngineError::stage_execution(
                 self.id.clone(),
-                trace_id,
+                ctx.trace_id,
                 format!(
                     "HTTP 请求返回错误状态码 {status_code}: {}",
                     template::truncate(&template::value_to_display_string(&response_value), 240)
@@ -315,24 +315,21 @@ impl NodeTrait for HttpClientNode {
         }
 
         let mut payload_map = into_payload_map(payload);
+        let http_meta = json!({
+            "node_id": self.id,
+            "url": url,
+            "method": method,
+            "webhook_kind": webhook_kind,
+            "body_mode": body_mode,
+            "content_type": content_type,
+            "request_timeout_ms": request_timeout_ms,
+            "status": status_code,
+            "requested_at": requested_at,
+            "request_body_preview": body_preview,
+        });
+        payload_map.insert("_http".to_owned(), http_meta);
         payload_map.insert("http_response".to_owned(), response_value);
 
-        let metadata = serde_json::Map::from_iter([(
-            "http".to_owned(),
-            json!({
-                "node_id": self.id,
-                "url": url,
-                "method": method,
-                "webhook_kind": webhook_kind,
-                "body_mode": body_mode,
-                "content_type": content_type,
-                "request_timeout_ms": request_timeout_ms,
-                "status": status_code,
-                "requested_at": requested_at,
-                "request_body_preview": body_preview,
-            }),
-        )]);
-
-        Ok(NodeExecution::broadcast(Value::Object(payload_map)).with_metadata(metadata))
+        Ok(NodeExecution::broadcast(Value::Object(payload_map)))
     }
 }

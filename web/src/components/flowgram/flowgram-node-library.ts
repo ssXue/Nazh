@@ -26,6 +26,16 @@ export interface FlowgramLogicBranch {
   fixed?: boolean;
 }
 
+export interface FlowgramScriptAiConfig {
+  providerId: string;
+  model?: string;
+  systemPrompt?: string;
+  temperature?: number;
+  maxTokens?: number;
+  topP?: number;
+  timeoutMs?: number;
+}
+
 export interface NodeSeed {
   idPrefix: string;
   kind: NazhNodeKind;
@@ -37,6 +47,7 @@ export interface NodeSeed {
   config: {
     message?: string;
     script?: string;
+    ai?: FlowgramScriptAiConfig;
     branches?: FlowgramLogicBranch[];
     interval_ms?: number;
     immediate?: boolean;
@@ -92,20 +103,21 @@ interface FlowgramNodeData {
   connectionId?: string | null;
   aiDescription?: string | null;
   timeoutMs?: number | null;
-    config?: {
-      message?: string;
-      script?: string;
-      branches?: FlowgramLogicBranch[];
-      webhook_kind?: string;
-      body_mode?: string;
-      content_type?: string;
-      request_timeout_ms?: number;
-      body_template?: string;
-      title_template?: string;
-      at_mobiles?: string[];
-      at_all?: boolean;
-      [key: string]: unknown;
-    };
+  config?: {
+    message?: string;
+    script?: string;
+    ai?: FlowgramScriptAiConfig;
+    branches?: FlowgramLogicBranch[];
+    webhook_kind?: string;
+    body_mode?: string;
+    content_type?: string;
+    request_timeout_ms?: number;
+    body_template?: string;
+    title_template?: string;
+    at_mobiles?: string[];
+    at_all?: boolean;
+    [key: string]: unknown;
+  };
 }
 
 const STANDARD_NODE_SIZE = {
@@ -323,6 +335,78 @@ const NODE_TEMPLATES: FlowgramPaletteItem[] = [
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function hasOwnKey<T extends object>(value: T, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(value, key);
+}
+
+function normalizeFiniteValue(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function normalizePositiveIntegerValue(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    return undefined;
+  }
+
+  return Math.round(value);
+}
+
+function normalizeScriptAiConfig(value: unknown): FlowgramScriptAiConfig | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const hasKnownField = (
+    [
+      'providerId',
+      'model',
+      'systemPrompt',
+      'temperature',
+      'maxTokens',
+      'topP',
+      'timeoutMs',
+    ] as const
+  ).some((key) => hasOwnKey(value, key));
+
+  if (!hasKnownField) {
+    return undefined;
+  }
+
+  const normalized: FlowgramScriptAiConfig = {
+    providerId: typeof value.providerId === 'string' ? value.providerId : '',
+  };
+
+  if (typeof value.model === 'string' && value.model.trim()) {
+    normalized.model = value.model;
+  }
+
+  if (typeof value.systemPrompt === 'string' && value.systemPrompt.trim()) {
+    normalized.systemPrompt = value.systemPrompt;
+  }
+
+  const temperature = normalizeFiniteValue(value.temperature);
+  if (temperature !== undefined) {
+    normalized.temperature = temperature;
+  }
+
+  const maxTokens = normalizePositiveIntegerValue(value.maxTokens);
+  if (maxTokens !== undefined) {
+    normalized.maxTokens = maxTokens;
+  }
+
+  const topP = normalizeFiniteValue(value.topP);
+  if (topP !== undefined) {
+    normalized.topP = topP;
+  }
+
+  const timeoutMs = normalizePositiveIntegerValue(value.timeoutMs);
+  if (timeoutMs !== undefined) {
+    normalized.timeoutMs = timeoutMs;
+  }
+
+  return normalized;
 }
 
 function normalizeNodeKind(value: unknown): NazhNodeKind {
@@ -557,6 +641,17 @@ function normalizeNodeConfig(
       ...rawConfig,
       label: typeof rawConfig.label === 'string' ? rawConfig.label : '',
       pretty: rawConfig.pretty !== false,
+    };
+  }
+
+  if (nodeType === 'rhai' || nodeType === 'code') {
+    const { ai: _unusedAi, ...restConfig } = rawConfig;
+    const ai = normalizeScriptAiConfig(rawConfig.ai);
+
+    return {
+      ...restConfig,
+      script: typeof rawConfig.script === 'string' ? rawConfig.script : 'payload',
+      ...(ai ? { ai } : {}),
     };
   }
 

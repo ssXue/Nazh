@@ -70,6 +70,7 @@ import {
 } from '../lib/flowgram';
 import { FlowDownloadFormat, FlowDownloadService } from '@flowgram.ai/export-plugin';
 import type {
+  AiProviderView,
   ConnectionDefinition,
   WorkflowGraph,
   WorkflowRuntimeState,
@@ -79,6 +80,8 @@ import type {
 interface FlowgramCanvasProps {
   graph: WorkflowGraph | null;
   connections: ConnectionDefinition[];
+  aiProviders: AiProviderView[];
+  activeAiProviderId: string | null;
   runtimeState: WorkflowRuntimeState;
   workflowStatus: WorkflowWindowStatus;
   accentHex: string;
@@ -1042,6 +1045,8 @@ function FlowgramToolbar({
 export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasProps>(function FlowgramCanvas({
   graph,
   connections,
+  aiProviders,
+  activeAiProviderId,
   runtimeState,
   workflowStatus,
   accentHex,
@@ -1299,6 +1304,8 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
             props: {
               nodeId: nextBusinessNode.id,
               connections: connectionOptions,
+              aiProviders,
+              activeAiProviderId,
             },
           });
           return;
@@ -1310,7 +1317,7 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
         return;
       }
     },
-    [connectionOptions, reportFlowgramError],
+    [activeAiProviderId, aiProviders, connectionOptions, reportFlowgramError],
   );
 
   const buildCurrentWorkflowGraph = useCallback(

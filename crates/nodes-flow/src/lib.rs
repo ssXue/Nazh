@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use nazh_ai_core::AiService;
 use nazh_core::{NodeRegistry, Plugin, PluginManifest};
 
 mod if_node;
@@ -12,7 +13,7 @@ mod try_catch;
 
 pub use if_node::{IfNode, IfNodeConfig};
 pub use loop_node::{LoopNode, LoopNodeConfig};
-pub use rhai_node::{RhaiNode, RhaiNodeConfig};
+pub use rhai_node::{RhaiNode, RhaiNodeAiConfig, RhaiNodeConfig};
 pub use switch_node::{SwitchBranchConfig, SwitchNode, SwitchNodeConfig};
 pub use try_catch::{TryCatchNode, TryCatchNodeConfig};
 
@@ -27,13 +28,15 @@ impl Plugin for FlowPlugin {
     }
 
     fn register(&self, registry: &mut NodeRegistry) {
-        registry.register("rhai", |def, _res| {
+        registry.register("rhai", |def, res| {
             let config: RhaiNodeConfig = def.parse_config()?;
             let description = def.resolve_description("使用有界 Rhai 脚本执行业务逻辑");
+            let ai_service = res.get::<Arc<dyn AiService>>();
             Ok(Arc::new(RhaiNode::new(
                 def.id.clone(),
                 config,
                 description,
+                ai_service,
             )?))
         });
         let _ = registry.alias("code", "rhai");

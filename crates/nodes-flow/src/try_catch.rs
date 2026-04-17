@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use nazh_core::{EngineError, into_payload_map};
+use nazh_core::{ContextRef, DataStore, EngineError, into_payload_map};
 use nazh_core::{NodeExecution, NodeTrait};
 use scripting::{RhaiNodeBase, default_max_operations};
 
@@ -34,7 +34,13 @@ impl TryCatchNode {
         ai_description: impl Into<String>,
     ) -> Result<Self, EngineError> {
         Ok(Self {
-            base: RhaiNodeBase::new(id, ai_description, &config.script, config.max_operations)?,
+            base: RhaiNodeBase::new(
+                id,
+                ai_description,
+                &config.script,
+                config.max_operations,
+                None,
+            )?,
         })
     }
 }
@@ -43,12 +49,13 @@ impl TryCatchNode {
 impl NodeTrait for TryCatchNode {
     scripting::delegate_node_base!("tryCatch");
 
-    async fn transform(
+    async fn execute(
         &self,
-        _trace_id: nazh_core::Uuid,
-        payload: serde_json::Value,
+        ctx: &ContextRef,
+        store: &dyn DataStore,
     ) -> Result<NodeExecution, EngineError> {
-        let (scope, script_result) = self.base.evaluate_catching(payload.clone())?;
+        let input_payload = store.read_mut(&ctx.data_id)?;
+        let (scope, script_result) = self.base.evaluate_catching(input_payload.clone())?;
         match script_result {
             Ok(result) => {
                 let payload = if result.is_unit() {
@@ -59,7 +66,10 @@ impl NodeTrait for TryCatchNode {
                 Ok(NodeExecution::route(payload, ["try"]))
             }
             Err(error_message) => {
-                let base_payload = self.base.payload_from_scope(&scope).unwrap_or(payload);
+                let base_payload = self
+                    .base
+                    .payload_from_scope(&scope)
+                    .unwrap_or(input_payload);
                 let mut map = into_payload_map(base_payload);
                 map.insert("_error".to_owned(), Value::String(error_message));
                 Ok(NodeExecution::route(Value::Object(map), ["catch"]))

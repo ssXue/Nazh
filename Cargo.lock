@@ -2118,7 +2118,9 @@ dependencies = [
 name = "nazh-engine"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "connections",
+ "nazh-ai-core",
  "nazh-core",
  "nodes-flow",
  "nodes-io",
@@ -2194,6 +2196,7 @@ name = "nodes-flow"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "nazh-ai-core",
  "nazh-core",
  "rhai",
  "scripting",
@@ -3342,9 +3345,11 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 name = "scripting"
 version = "0.1.0"
 dependencies = [
+ "nazh-ai-core",
  "nazh-core",
  "rhai",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]

@@ -13,6 +13,7 @@ workspace = true
 
 [dependencies]
 nazh-core.workspace = true
+nazh-ai-core.workspace = true
 scripting.workspace = true
 async-trait.workspace = true
 rhai.workspace = true

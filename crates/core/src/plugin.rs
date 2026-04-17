@@ -4,7 +4,7 @@
 //! [`NodeRegistry`] 管理节点类型名称到工厂函数的映射。
 //! 每个 Ring 1 crate 实现 `Plugin` 并在 `register()` 中注册自己的节点工厂。
 
-use std::any::Any;
+use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -14,8 +14,51 @@ use ts_rs::TS;
 
 use crate::{EngineError, NodeTrait};
 
-/// 部署时传递给节点工厂的共享资源（通过 downcast 访问具体类型）。
-pub type SharedResources = Arc<dyn Any + Send + Sync>;
+/// 部署时传递给节点工厂的共享资源包。
+///
+/// 资源按具体类型存取，避免不同节点插件之间耦合到同一个聚合结构。
+#[derive(Default)]
+pub struct RuntimeResources {
+    entries: HashMap<TypeId, Box<dyn Any + Send + Sync>>,
+}
+
+impl RuntimeResources {
+    /// 创建一个空的运行时资源包。
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// 插入一个可克隆的资源，并返回自身以便链式构建。
+    pub fn with_resource<T>(mut self, resource: T) -> Self
+    where
+        T: Any + Clone + Send + Sync,
+    {
+        self.insert(resource);
+        self
+    }
+
+    /// 插入一个可克隆的资源。
+    pub fn insert<T>(&mut self, resource: T)
+    where
+        T: Any + Clone + Send + Sync,
+    {
+        self.entries.insert(TypeId::of::<T>(), Box::new(resource));
+    }
+
+    /// 按类型读取资源副本；若不存在则返回 `None`。
+    pub fn get<T>(&self) -> Option<T>
+    where
+        T: Any + Clone + Send + Sync,
+    {
+        self.entries
+            .get(&TypeId::of::<T>())
+            .and_then(|entry| entry.downcast_ref::<T>())
+            .cloned()
+    }
+}
+
+/// 部署时传递给节点工厂的共享资源句柄。
+pub type SharedResources = Arc<RuntimeResources>;
 
 fn default_node_buffer() -> usize {
     32
@@ -243,7 +286,7 @@ impl Default for PluginHost {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::NodeExecution;
+    use crate::{ContextRef, DataStore, NodeExecution};
     use async_trait::async_trait;
 
     struct StubNode {
@@ -262,10 +305,10 @@ mod tests {
         fn ai_description(&self) -> &str {
             ""
         }
-        async fn transform(
+        async fn execute(
             &self,
-            _trace_id: uuid::Uuid,
-            _payload: serde_json::Value,
+            _ctx: &ContextRef,
+            _store: &dyn DataStore,
         ) -> Result<NodeExecution, EngineError> {
             Ok(NodeExecution::broadcast(serde_json::Value::Null))
         }
@@ -313,7 +356,7 @@ mod tests {
     }
 
     fn stub_resources() -> SharedResources {
-        Arc::new(())
+        Arc::new(RuntimeResources::new())
     }
 
     fn node_def(id: &str, node_type: &str) -> WorkflowNodeDefinition {
@@ -382,13 +425,14 @@ mod tests {
     }
 
     #[test]
-    fn 资源通过_downcast_传递到工厂() {
+    fn 资源通过类型读取传递到工厂() {
+        #[derive(Clone)]
         struct Marker(u64);
 
         let mut registry = NodeRegistry::new();
         registry.register("check", |def, res| {
             let marker = res
-                .downcast_ref::<Marker>()
+                .get::<Marker>()
                 .ok_or_else(|| EngineError::invalid_graph("downcast 失败"))?;
             Ok(Arc::new(StubNode {
                 id: format!("{}:{}", def.id, marker.0),
@@ -396,10 +440,26 @@ mod tests {
             }))
         });
 
-        let resources: SharedResources = Arc::new(Marker(42));
+        let resources: SharedResources =
+            Arc::new(RuntimeResources::new().with_resource(Marker(42)));
         let node = registry
             .create(&node_def("n1", "check"), resources)
             .unwrap();
         assert_eq!(node.id(), "n1:42");
+    }
+
+    #[test]
+    fn 资源包可同时携带多种资源() {
+        #[derive(Clone)]
+        struct MarkerA(&'static str);
+        #[derive(Clone)]
+        struct MarkerB(u64);
+
+        let resources = RuntimeResources::new()
+            .with_resource(MarkerA("alpha"))
+            .with_resource(MarkerB(7));
+
+        assert_eq!(resources.get::<MarkerA>().unwrap().0, "alpha");
+        assert_eq!(resources.get::<MarkerB>().unwrap().0, 7);
     }
 }

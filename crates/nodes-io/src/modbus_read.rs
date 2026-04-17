@@ -7,12 +7,11 @@
 use async_trait::async_trait;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value, json};
-use uuid::Uuid;
+use serde_json::{Value, json};
 
-use connections::SharedConnectionManager;
-use nazh_core::EngineError;
+use connections::{ConnectionGuard, SharedConnectionManager, insert_connection_lease};
 use nazh_core::into_payload_map;
+use nazh_core::{ContextRef, DataStore, EngineError};
 use nazh_core::{NodeExecution, NodeTrait};
 
 fn default_modbus_unit_id() -> u16 {
@@ -82,7 +81,11 @@ impl ModbusReadNode {
         }
     }
 
-    fn simulate_and_build(&self, payload: Value) -> Value {
+    fn simulate_and_build(
+        &self,
+        payload: Value,
+        guard: Option<&ConnectionGuard>,
+    ) -> Result<Value, EngineError> {
         #[allow(clippy::cast_precision_loss)]
         let now_seconds = Utc::now().timestamp_millis() as f64 / 1000.0;
         let quantity = self.config.quantity.clamp(1, 32);
@@ -105,7 +108,22 @@ impl ModbusReadNode {
             payload_map.insert("values".to_owned(), Value::Array(values));
         }
 
-        Value::Object(payload_map)
+        payload_map.insert(
+            "_modbus".to_owned(),
+            json!({
+                "simulated": true,
+                "unit_id": self.config.unit_id,
+                "register": self.config.register,
+                "quantity": quantity,
+                "sampled_at": Utc::now().to_rfc3339(),
+            }),
+        );
+
+        if let Some(guard) = guard {
+            insert_connection_lease(&self.id, &mut payload_map, guard.lease())?;
+        }
+
+        Ok(Value::Object(payload_map))
     }
 }
 
@@ -113,36 +131,21 @@ impl ModbusReadNode {
 impl NodeTrait for ModbusReadNode {
     nazh_core::impl_node_meta!("modbusRead");
 
-    async fn transform(
+    async fn execute(
         &self,
-        _trace_id: Uuid,
-        payload: Value,
+        ctx: &ContextRef,
+        store: &dyn DataStore,
     ) -> Result<NodeExecution, EngineError> {
+        let payload = store.read_mut(&ctx.data_id)?;
         let mut guard = if let Some(conn_id) = &self.config.connection_id {
             Some(self.connection_manager.acquire(conn_id).await?)
         } else {
             None
         };
-        let result = self.simulate_and_build(payload);
-
-        let mut metadata = Map::from_iter([(
-            "modbus".to_owned(),
-            json!({
-                "simulated": true,
-                "unit_id": self.config.unit_id,
-                "register": self.config.register,
-                "quantity": self.config.quantity.clamp(1, 32),
-                "sampled_at": Utc::now().to_rfc3339(),
-            }),
-        )]);
-        if let Some(guard) = guard.as_ref() {
-            let (key, value) = connections::connection_metadata(&self.id, guard.lease())?;
-            metadata.insert(key, value);
-        }
+        let result = self.simulate_and_build(payload, guard.as_ref())?;
         if let Some(g) = &mut guard {
             g.mark_success();
         }
-
-        Ok(NodeExecution::broadcast(result).with_metadata(metadata))
+        Ok(NodeExecution::broadcast(result))
     }
 }

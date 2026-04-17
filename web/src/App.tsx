@@ -1590,6 +1590,8 @@ function App() {
             ref={flowgramCanvasRef}
             graph={graphState.graph}
             connections={connectionLibrary.connections}
+            aiProviders={aiConfig?.providers ?? []}
+            activeAiProviderId={aiConfig?.activeProviderId ?? null}
             runtimeState={engine.runtimeState}
             workflowStatus={workflowStatus}
             accentHex={settings.accentHex}

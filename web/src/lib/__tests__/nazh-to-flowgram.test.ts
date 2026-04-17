@@ -17,7 +17,18 @@ function baseGraph(): WorkflowGraph {
       },
       b: {
         type: 'rhai',
-        config: { script: 'payload' },
+        config: {
+          script: 'payload["reply"] = ai_complete("hello"); payload',
+          ai: {
+            providerId: 'deepseek',
+            model: 'deepseek-chat',
+            systemPrompt: '你是测试助手',
+            temperature: 0.2,
+            maxTokens: 256,
+            topP: 0.9,
+            timeoutMs: 4000,
+          },
+        },
         meta: { position: { x: 320, y: 0 } },
       },
     },
@@ -42,6 +53,20 @@ describe('toFlowgramWorkflowJson', () => {
     const nodeB = result.nodes.find((n) => n.id === 'b');
     expect((nodeA?.data as { nodeType?: string })?.nodeType).toBe('native');
     expect((nodeB?.data as { nodeType?: string })?.nodeType).toBe('rhai');
+  });
+
+  it('脚本节点的 AI 配置会被映射到 FlowGram data.config', () => {
+    const result = toFlowgramWorkflowJson(baseGraph());
+    const nodeB = result.nodes.find((n) => n.id === 'b');
+    expect((nodeB?.data as { config?: { ai?: unknown } })?.config?.ai).toEqual({
+      providerId: 'deepseek',
+      model: 'deepseek-chat',
+      systemPrompt: '你是测试助手',
+      temperature: 0.2,
+      maxTokens: 256,
+      topP: 0.9,
+      timeoutMs: 4000,
+    });
   });
 
   it('边将 from/to 映射为 sourceNodeID/targetNodeID', () => {

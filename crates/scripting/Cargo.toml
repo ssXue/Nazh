@@ -13,5 +13,7 @@ workspace = true
 
 [dependencies]
 nazh-core.workspace = true
+nazh-ai-core.workspace = true
 rhai.workspace = true
 serde_json.workspace = true
+tokio.workspace = true

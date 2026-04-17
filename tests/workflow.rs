@@ -1,19 +1,65 @@
 use std::{
     io::{Read, Write},
     net::TcpListener,
+    sync::Arc,
     time::Duration,
 };
 
+use async_trait::async_trait;
+use nazh_ai_core::{
+    AiCompletionRequest, AiCompletionResponse, AiError, AiMessageRole, AiProviderDraft, AiService,
+    AiTestResult,
+};
 use nazh_engine::{
-    ConnectionDefinition, ConnectionManager, DebugConsoleNode, DebugConsoleNodeConfig, EngineError,
-    HttpClientNode, HttpClientNodeConfig, ModbusReadNode, ModbusReadNodeConfig, NodeDispatch,
-    NodeTrait, RhaiNode, RhaiNodeConfig, SerialTriggerNode, SerialTriggerNodeConfig, SqlWriterNode,
-    SqlWriterNodeConfig, TimerNode, TimerNodeConfig, WorkflowContext, WorkflowGraph,
-    deploy_workflow, shared_connection_manager, standard_registry,
+    ArenaDataStore, ConnectionDefinition, ConnectionManager, ContextRef, DataStore,
+    DebugConsoleNode, DebugConsoleNodeConfig, EngineError, HttpClientNode, HttpClientNodeConfig,
+    ModbusReadNode, ModbusReadNodeConfig, NodeDispatch, NodeTrait, RhaiNode, RhaiNodeConfig,
+    SerialTriggerNode, SerialTriggerNodeConfig, SqlWriterNode, SqlWriterNodeConfig, TimerNode,
+    TimerNodeConfig, WorkflowContext, WorkflowGraph, deploy_workflow, deploy_workflow_with_ai,
+    shared_connection_manager, standard_registry,
 };
 use serde_json::json;
 use tokio::time::timeout;
 use uuid::Uuid;
+
+struct StubAiService;
+
+#[async_trait]
+impl AiService for StubAiService {
+    async fn complete(
+        &self,
+        request: AiCompletionRequest,
+    ) -> Result<AiCompletionResponse, AiError> {
+        let system_prompt = request
+            .messages
+            .iter()
+            .find(|message| matches!(message.role, AiMessageRole::System))
+            .map(|message| message.content.clone())
+            .unwrap_or_default();
+        let user_prompt = request
+            .messages
+            .iter()
+            .find(|message| matches!(message.role, AiMessageRole::User))
+            .map(|message| message.content.clone())
+            .unwrap_or_default();
+
+        Ok(AiCompletionResponse {
+            content: format!(
+                "provider={} model={} system={} user={}",
+                request.provider_id,
+                request.model.unwrap_or_else(|| "default-model".to_owned()),
+                system_prompt,
+                user_prompt
+            ),
+            usage: None,
+            model: "stub-model".to_owned(),
+        })
+    }
+
+    async fn test_connection(&self, _draft: AiProviderDraft) -> Result<AiTestResult, AiError> {
+        panic!("workflow tests should not call test_connection");
+    }
+}
 
 #[tokio::test]
 async fn rhai_node_can_transform_json_payload() {
@@ -22,15 +68,22 @@ async fn rhai_node_can_transform_json_payload() {
         RhaiNodeConfig {
             script: "payload[\"value\"] = payload[\"value\"] + 1; payload".to_owned(),
             max_operations: 10_000,
+            ai: None,
         },
         "increment payload",
+        None,
     ) {
         Ok(node) => node,
         Err(error) => panic!("rhai node should compile: {error}"),
     };
 
+    let store = ArenaDataStore::new();
     let ctx = WorkflowContext::new(json!({ "value": 9 }));
-    let result = node.transform(ctx.trace_id, ctx.payload).await;
+    let data_id = store
+        .write(ctx.payload, 1)
+        .unwrap_or_else(|e| panic!("store write failed: {e}"));
+    let ctx_ref = ContextRef::new(ctx.trace_id, data_id, None);
+    let result = node.execute(&ctx_ref, &store).await;
 
     match result {
         Ok(execution) => match execution.first() {
@@ -44,6 +97,108 @@ async fn rhai_node_can_transform_json_payload() {
             None => panic!("rhai node should produce a single output"),
         },
         Err(error) => panic!("rhai node should execute successfully: {error}"),
+    }
+}
+
+#[tokio::test]
+async fn workflow_script_node_can_call_ai_complete() {
+    let graph = match WorkflowGraph::from_json(
+        &json!({
+            "nodes": {
+                "script": {
+                    "type": "rhai",
+                    "config": {
+                        "script": "payload[\"reply\"] = ai_complete(\"请回复:\" + payload[\"text\"]); payload",
+                        "ai": {
+                            "providerId": "stub-provider",
+                            "model": "gpt-script",
+                            "systemPrompt": "你是脚本测试助手",
+                            "temperature": 0.2,
+                            "maxTokens": 128,
+                            "topP": 0.9,
+                            "timeoutMs": 5_000
+                        }
+                    }
+                }
+            },
+            "edges": []
+        })
+        .to_string(),
+    ) {
+        Ok(graph) => graph,
+        Err(error) => panic!("graph JSON should parse: {error}"),
+    };
+
+    let registry = standard_registry();
+    let ai_service: Arc<dyn AiService> = Arc::new(StubAiService);
+    let mut deployment = match deploy_workflow_with_ai(
+        graph,
+        shared_connection_manager(),
+        Some(ai_service),
+        &registry,
+    )
+    .await
+    {
+        Ok(deployment) => deployment,
+        Err(error) => panic!("workflow should deploy successfully: {error}"),
+    };
+
+    let submit_result = deployment
+        .submit(WorkflowContext::new(json!({ "text": "测试脚本节点" })))
+        .await;
+    assert!(submit_result.is_ok(), "workflow should accept payload");
+
+    let result = timeout(Duration::from_secs(1), deployment.next_result()).await;
+    match result {
+        Ok(Some(ctx)) => {
+            assert_eq!(
+                ctx.payload,
+                json!({
+                    "text": "测试脚本节点",
+                    "reply": "provider=stub-provider model=gpt-script system=你是脚本测试助手 user=请回复:测试脚本节点"
+                })
+            );
+        }
+        Ok(None) => panic!("result stream closed unexpectedly"),
+        Err(elapsed) => panic!("workflow did not produce a result in time: {elapsed}"),
+    }
+}
+
+#[tokio::test]
+async fn workflow_rejects_script_ai_config_without_ai_service() {
+    let graph = match WorkflowGraph::from_json(
+        &json!({
+            "nodes": {
+                "script": {
+                    "type": "rhai",
+                    "config": {
+                        "script": "payload[\"reply\"] = ai_complete(\"hello\"); payload",
+                        "ai": {
+                            "providerId": "stub-provider"
+                        }
+                    }
+                }
+            },
+            "edges": []
+        })
+        .to_string(),
+    ) {
+        Ok(graph) => graph,
+        Err(error) => panic!("graph JSON should parse: {error}"),
+    };
+
+    let registry = standard_registry();
+    let result = deploy_workflow_with_ai(graph, shared_connection_manager(), None, &registry).await;
+
+    match result {
+        Ok(_) => panic!("workflow deployment should fail without ai service"),
+        Err(EngineError::InvalidGraph(message)) => {
+            assert!(
+                message.contains("AiService"),
+                "error should mention missing AiService"
+            );
+        }
+        Err(error) => panic!("unexpected error: {error}"),
     }
 }
 
@@ -108,10 +263,19 @@ async fn workflow_graph_executes_end_to_end() {
     let result = timeout(Duration::from_secs(1), deployment.next_result()).await;
     match result {
         Ok(Some(ctx)) => {
-            // payload 只包含业务数据，不含执行元数据（_connection 通过事件通道传递）
             assert_eq!(
                 ctx.payload,
                 json!({
+                    "_connection": {
+                        "borrowed_at": ctx.payload["_connection"]["borrowed_at"],
+                        "id": "mqtt-main",
+                        "kind": "mqtt",
+                        "metadata": {
+                            "host": "127.0.0.1",
+                            "port": 1883,
+                            "topic": "test/topic"
+                        }
+                    },
                     "_native_message": "ingest",
                     "line": "A01",
                     "value": 42
@@ -520,17 +684,22 @@ async fn timer_node_injects_trigger_metadata() {
         "interval trigger",
     );
 
+    let store = ArenaDataStore::new();
     let ctx = WorkflowContext::new(json!({ "seed": "keep" }));
-    let result = node.transform(ctx.trace_id, ctx.payload).await;
+    let data_id = store
+        .write(ctx.payload, 1)
+        .unwrap_or_else(|e| panic!("store write failed: {e}"));
+    let ctx_ref = ContextRef::new(ctx.trace_id, data_id, None);
+    let result = node.execute(&ctx_ref, &store).await;
 
     match result {
         Ok(execution) => match execution.first() {
             Some(first_output) => {
                 assert_eq!(first_output.payload["seed"], json!("keep"));
                 assert_eq!(first_output.payload["source"], json!("timer"));
-                assert_eq!(first_output.metadata["timer"]["node_id"], json!("tick"));
-                assert_eq!(first_output.metadata["timer"]["interval_ms"], json!(2_500));
-                assert_eq!(first_output.metadata["timer"]["immediate"], json!(true));
+                assert_eq!(first_output.payload["_timer"]["node_id"], json!("tick"));
+                assert_eq!(first_output.payload["_timer"]["interval_ms"], json!(2_500));
+                assert_eq!(first_output.payload["_timer"]["immediate"], json!(true));
             }
             None => panic!("timer node should produce one output"),
         },
@@ -563,6 +732,7 @@ async fn serial_trigger_node_normalizes_ascii_and_hex_frames() {
         "serial trigger",
     );
 
+    let store = ArenaDataStore::new();
     let ctx = WorkflowContext::new(json!({
         "_serial_frame": {
             "ascii": " RFID-42\r\n",
@@ -571,7 +741,11 @@ async fn serial_trigger_node_normalizes_ascii_and_hex_frames() {
             "port_path": "/dev/tty.mock"
         }
     }));
-    let result = node.transform(ctx.trace_id, ctx.payload).await;
+    let data_id = store
+        .write(ctx.payload, 1)
+        .unwrap_or_else(|e| panic!("store write failed: {e}"));
+    let ctx_ref = ContextRef::new(ctx.trace_id, data_id, None);
+    let result = node.execute(&ctx_ref, &store).await;
 
     match result {
         Ok(execution) => match execution.first() {
@@ -587,14 +761,14 @@ async fn serial_trigger_node_normalizes_ascii_and_hex_frames() {
                     json!("52 46 49 44 2D 34 32")
                 );
                 assert_eq!(
-                    first_output.metadata["serial"]["node_id"],
+                    first_output.payload["_serial"]["node_id"],
                     json!("scan_input")
                 );
                 assert_eq!(
-                    first_output.metadata["serial"]["port_path"],
+                    first_output.payload["_serial"]["port_path"],
                     json!("/dev/tty.mock")
                 );
-                assert_eq!(first_output.metadata["serial"]["encoding"], json!("hex"));
+                assert_eq!(first_output.payload["_serial"]["encoding"], json!("hex"));
             }
             None => panic!("serial trigger node should produce one output"),
         },
@@ -661,15 +835,20 @@ async fn modbus_read_node_emits_simulated_values() {
         shared_connection_manager(),
     );
 
+    let store = ArenaDataStore::new();
     let ctx = WorkflowContext::new(json!({}));
-    let result = node.transform(ctx.trace_id, ctx.payload).await;
+    let data_id = store
+        .write(ctx.payload, 1)
+        .unwrap_or_else(|e| panic!("store write failed: {e}"));
+    let ctx_ref = ContextRef::new(ctx.trace_id, data_id, None);
+    let result = node.execute(&ctx_ref, &store).await;
 
     match result {
         Ok(execution) => match execution.first() {
             Some(first_output) => {
-                assert_eq!(first_output.metadata["modbus"]["simulated"], json!(true));
-                assert_eq!(first_output.metadata["modbus"]["register"], json!(40_001));
-                assert_eq!(first_output.metadata["modbus"]["quantity"], json!(2));
+                assert_eq!(first_output.payload["_modbus"]["simulated"], json!(true));
+                assert_eq!(first_output.payload["_modbus"]["register"], json!(40_001));
+                assert_eq!(first_output.payload["_modbus"]["quantity"], json!(2));
                 assert!(
                     first_output.payload["values"].as_array().map(Vec::len) == Some(2),
                     "modbus read node should output two simulated values",
@@ -740,10 +919,10 @@ async fn http_client_node_posts_payload_and_records_response() {
                 }
             }
 
-            if let Some(total_len) = expected_len
-                && request_bytes.len() >= total_len
-            {
-                break;
+            if let Some(total_len) = expected_len {
+                if request_bytes.len() >= total_len {
+                    break;
+                }
             }
         }
 
@@ -782,13 +961,18 @@ async fn http_client_node_posts_payload_and_records_response() {
         Err(e) => panic!("HttpClientNode 创建失败: {e}"),
     };
 
+    let store = ArenaDataStore::new();
     let ctx = WorkflowContext::new(json!({ "severity": "high", "value": 92 }));
-    let result = node.transform(ctx.trace_id, ctx.payload).await;
+    let data_id = store
+        .write(ctx.payload, 1)
+        .unwrap_or_else(|e| panic!("store write failed: {e}"));
+    let ctx_ref = ContextRef::new(ctx.trace_id, data_id, None);
+    let result = node.execute(&ctx_ref, &store).await;
 
     match result {
         Ok(execution) => match execution.first() {
             Some(first_output) => {
-                assert_eq!(first_output.metadata["http"]["status"], json!(200));
+                assert_eq!(first_output.payload["_http"]["status"], json!(200));
                 assert_eq!(first_output.payload["http_response"]["ok"], json!(true));
                 assert_eq!(
                     first_output.payload["http_response"]["channel"],
@@ -859,10 +1043,10 @@ async fn http_alarm_node_renders_dingtalk_markdown_body() {
                 }
             }
 
-            if let Some(total_len) = expected_len
-                && request_bytes.len() >= total_len
-            {
-                break;
+            if let Some(total_len) = expected_len {
+                if request_bytes.len() >= total_len {
+                    break;
+                }
             }
         }
 
@@ -927,23 +1111,28 @@ async fn http_alarm_node_renders_dingtalk_markdown_body() {
         Err(e) => panic!("HttpClientNode 创建失败: {e}"),
     };
 
+    let store = ArenaDataStore::new();
     let ctx = WorkflowContext::new(json!({
         "tag": "boiler-a",
         "severity": "alert",
         "temperature_c": 92
     }));
-    let result = node.transform(ctx.trace_id, ctx.payload).await;
+    let data_id = store
+        .write(ctx.payload, 1)
+        .unwrap_or_else(|e| panic!("store write failed: {e}"));
+    let ctx_ref = ContextRef::new(ctx.trace_id, data_id, None);
+    let result = node.execute(&ctx_ref, &store).await;
 
     match result {
         Ok(execution) => match execution.first() {
             Some(first_output) => {
-                assert_eq!(first_output.metadata["http"]["status"], json!(200));
+                assert_eq!(first_output.payload["_http"]["status"], json!(200));
                 assert_eq!(
-                    first_output.metadata["http"]["webhook_kind"],
+                    first_output.payload["_http"]["webhook_kind"],
                     json!("dingtalk")
                 );
                 assert_eq!(
-                    first_output.metadata["http"]["body_mode"],
+                    first_output.payload["_http"]["body_mode"],
                     json!("dingtalk_markdown")
                 );
                 assert_eq!(first_output.payload["http_response"]["errcode"], json!(0));
@@ -974,14 +1163,19 @@ async fn sql_writer_node_persists_payload_into_sqlite() {
         "write sqlite log",
     );
 
+    let store = ArenaDataStore::new();
     let ctx = WorkflowContext::new(json!({ "value": 7, "status": "stored" }));
-    let result = node.transform(ctx.trace_id, ctx.payload).await;
+    let data_id = store
+        .write(ctx.payload, 1)
+        .unwrap_or_else(|e| panic!("store write failed: {e}"));
+    let ctx_ref = ContextRef::new(ctx.trace_id, data_id, None);
+    let result = node.execute(&ctx_ref, &store).await;
 
     match result {
         Ok(execution) => match execution.first() {
             Some(first_output) => {
                 assert_eq!(
-                    first_output.metadata["sql_writer"]["table"],
+                    first_output.payload["_sql_writer"]["table"],
                     json!("workflow_logs")
                 );
             }
@@ -1015,19 +1209,24 @@ async fn debug_console_node_marks_payload_and_passes_through() {
         "debug payload",
     );
 
+    let store = ArenaDataStore::new();
     let ctx = WorkflowContext::new(json!({ "status": "ok" }));
-    let result = node.transform(ctx.trace_id, ctx.payload).await;
+    let data_id = store
+        .write(ctx.payload, 1)
+        .unwrap_or_else(|e| panic!("store write failed: {e}"));
+    let ctx_ref = ContextRef::new(ctx.trace_id, data_id, None);
+    let result = node.execute(&ctx_ref, &store).await;
 
     match result {
         Ok(execution) => match execution.first() {
             Some(first_output) => {
                 assert_eq!(first_output.payload["status"], json!("ok"));
                 assert_eq!(
-                    first_output.metadata["debug_console"]["label"],
+                    first_output.payload["_debug_console"]["label"],
                     json!("tap")
                 );
                 assert_eq!(
-                    first_output.metadata["debug_console"]["pretty"],
+                    first_output.payload["_debug_console"]["pretty"],
                     json!(false)
                 );
             }

@@ -5,6 +5,7 @@
 
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
+use nazh_ai_core::AiService;
 use tokio::sync::mpsc;
 
 use super::runner::run_node;
@@ -13,7 +14,8 @@ use super::types::{
 };
 use crate::SharedConnectionManager;
 use nazh_core::{
-    ArenaDataStore, ContextRef, DataStore, EngineError, NodeRegistry, SharedResources,
+    ArenaDataStore, ContextRef, DataStore, EngineError, NodeRegistry, RuntimeResources,
+    SharedResources,
 };
 
 /// 校验、实例化并将工作流图部署为并发 Tokio 任务。
@@ -26,6 +28,20 @@ use nazh_core::{
 pub async fn deploy_workflow(
     graph: WorkflowGraph,
     connection_manager: SharedConnectionManager,
+    registry: &NodeRegistry,
+) -> Result<WorkflowDeployment, EngineError> {
+    deploy_workflow_with_ai(graph, connection_manager, None, registry).await
+}
+
+/// 校验、实例化并将工作流图部署为并发 Tokio 任务，并可选注入 AI 服务。
+///
+/// # Errors
+///
+/// DAG 校验失败、节点实例化失败或不在 Tokio 运行时中调用时返回错误。
+pub async fn deploy_workflow_with_ai(
+    graph: WorkflowGraph,
+    connection_manager: SharedConnectionManager,
+    ai_service: Option<Arc<dyn AiService>>,
     registry: &NodeRegistry,
 ) -> Result<WorkflowDeployment, EngineError> {
     tracing::info!(
@@ -58,8 +74,14 @@ pub async fn deploy_workflow(
     let (event_tx, event_rx) = mpsc::channel(event_capacity);
     let (result_tx, result_rx) = mpsc::channel(event_capacity);
 
+    let mut resource_bag = RuntimeResources::new().with_resource(connection_manager.clone());
+    if let Some(ai_service) = ai_service {
+        resource_bag.insert(ai_service);
+    }
+    let shared_resources: SharedResources = Arc::new(resource_bag);
+
     for (node_id, node_definition) in &graph.nodes {
-        let resources: SharedResources = connection_manager.clone();
+        let resources = shared_resources.clone();
         let node = registry.create(node_definition, resources)?;
         let input_rx = receivers
             .remove(node_id)

@@ -1,6 +1,11 @@
 import { useState } from 'react';
 
 import type { AiConfigPanelProps } from './types';
+import type {
+  AiConfigUpdate,
+  AiProviderUpsert,
+  AiSecretInput,
+} from '../../types';
 
 interface ProviderFormState {
   name: string;
@@ -15,6 +20,23 @@ const EMPTY_FORM: ProviderFormState = {
   apiKey: '',
   defaultModel: '',
 };
+
+interface ProviderPreset {
+  label: string;
+  name: string;
+  baseUrl: string;
+  defaultModel: string;
+}
+
+const PROVIDER_PRESETS: ProviderPreset[] = [
+  { label: 'DeepSeek', name: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', defaultModel: 'deepseek-chat' },
+  { label: 'OpenAI', name: 'OpenAI', baseUrl: 'https://api.openai.com/v1', defaultModel: 'gpt-4o-mini' },
+  { label: '月之暗面', name: 'Moonshot', baseUrl: 'https://api.moonshot.cn/v1', defaultModel: 'moonshot-v1-8k' },
+  { label: '智谱', name: 'Zhipu', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', defaultModel: 'glm-4-flash' },
+  { label: '通义千问', name: 'Qwen', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', defaultModel: 'qwen-turbo' },
+  { label: '硅基流动', name: 'SiliconFlow', baseUrl: 'https://api.siliconflow.cn/v1', defaultModel: 'Qwen/Qwen2.5-7B-Instruct' },
+  { label: 'Ollama 本地', name: 'Ollama', baseUrl: 'http://localhost:11434/v1', defaultModel: 'qwen2.5:7b' },
+];
 
 export function AiConfigPanel({
   isTauriRuntime,
@@ -33,6 +55,15 @@ export function AiConfigPanel({
     setForm((prev) => ({ ...prev, [field]: value }));
   }
 
+  function handleSelectPreset(preset: ProviderPreset) {
+    setForm((prev) => ({
+      ...prev,
+      name: preset.name,
+      baseUrl: preset.baseUrl,
+      defaultModel: preset.defaultModel,
+    }));
+  }
+
   function handleSubmitTest() {
     void onAiProviderTest({
       id: undefined,
@@ -43,6 +74,43 @@ export function AiConfigPanel({
       extraHeaders: {},
       enabled: true,
     });
+  }
+
+  function handleConfirmAdd() {
+    if (!aiConfig) return;
+
+    const newId = crypto.randomUUID();
+
+    const existingUpserts: AiProviderUpsert[] = aiConfig.providers.map((p) => ({
+      id: p.id,
+      name: p.name,
+      baseUrl: p.baseUrl,
+      defaultModel: p.defaultModel,
+      extraHeaders: p.extraHeaders,
+      enabled: p.enabled,
+      apiKey: { kind: 'keep' } as AiSecretInput,
+    }));
+
+    const newProvider: AiProviderUpsert = {
+      id: newId,
+      name: form.name.trim(),
+      baseUrl: form.baseUrl.trim(),
+      defaultModel: form.defaultModel.trim(),
+      extraHeaders: {},
+      enabled: true,
+      apiKey: { kind: 'set', value: form.apiKey.trim() } as AiSecretInput,
+    };
+
+    const update: AiConfigUpdate = {
+      version: aiConfig.version,
+      providers: [...existingUpserts, newProvider],
+      activeProviderId: aiConfig.activeProviderId ?? newId,
+      copilotParams: aiConfig.copilotParams,
+    };
+
+    void onAiConfigSave(update);
+    setForm(EMPTY_FORM);
+    setShowForm(false);
   }
 
   function handleResetForm() {
@@ -104,27 +172,31 @@ export function AiConfigPanel({
                 </article>
               )}
 
-              <article className="settings-row">
-                <strong className="settings-row__label">已配置提供商</strong>
-                <span className="settings-row__value">
-                  {aiConfig.providers.length === 0
-                    ? '尚未配置'
-                    : aiConfig.providers
+              {aiConfig.providers.length === 0 ? (
+                <article className="settings-row">
+                  <span className="settings-row__label">尚未配置任何提供商。</span>
+                </article>
+              ) : (
+                <>
+                  <article className="settings-row">
+                    <strong className="settings-row__label">已配置提供商</strong>
+                    <span className="settings-row__value">
+                      {aiConfig.providers
                         .map((p) => `${p.name}${p.enabled ? '' : '（已禁用）'}`)
                         .join('、')}
-                </span>
-              </article>
+                    </span>
+                  </article>
 
-              {aiConfig.providers.length > 0 && (
-                <article className="settings-row">
-                  <strong className="settings-row__label">激活提供商</strong>
-                  <span className="settings-row__value">
-                    {aiConfig.activeProviderId
-                      ? aiConfig.providers.find((p) => p.id === aiConfig.activeProviderId)
-                          ?.name ?? '未选择'
-                      : '未选择'}
-                  </span>
-                </article>
+                  <article className="settings-row">
+                    <strong className="settings-row__label">激活提供商</strong>
+                    <span className="settings-row__value">
+                      {aiConfig.activeProviderId
+                        ? aiConfig.providers.find((p) => p.id === aiConfig.activeProviderId)
+                            ?.name ?? '未选择'
+                        : '未选择'}
+                    </span>
+                  </article>
+                </>
               )}
             </section>
 
@@ -166,6 +238,31 @@ export function AiConfigPanel({
                 </article>
               ) : (
                 <>
+                  <article className="settings-row settings-row--stacked">
+                    <strong className="settings-row__label">快速选择厂商</strong>
+                    <div className="settings-accent-inline" role="group" aria-label="预置厂商">
+                      {PROVIDER_PRESETS.map((preset) => {
+                        const isActive =
+                          form.name === preset.name &&
+                          form.baseUrl === preset.baseUrl;
+                        return (
+                          <button
+                            key={preset.label}
+                            type="button"
+                            className={
+                              isActive
+                                ? 'settings-accent-chip is-active'
+                                : 'settings-accent-chip'
+                            }
+                            onClick={() => handleSelectPreset(preset)}
+                          >
+                            <span>{preset.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </article>
+
                   <article className="settings-row settings-row--stacked">
                     <label className="settings-row__label" htmlFor="ai-provider-name">
                       提供商名称
@@ -224,6 +321,14 @@ export function AiConfigPanel({
 
                   <article className="settings-row">
                     <div className="settings-path-actions">
+                      <button
+                        type="button"
+                        className="settings-inline-button"
+                        disabled={!isFormValid}
+                        onClick={handleConfirmAdd}
+                      >
+                        确认添加
+                      </button>
                       <button
                         type="button"
                         className="settings-inline-button"

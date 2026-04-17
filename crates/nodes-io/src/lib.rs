@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use connections::{ConnectionManager, SharedConnectionManager};
+use connections::SharedConnectionManager;
 use nazh_core::{EngineError, NodeRegistry, Plugin, PluginManifest, SharedResources};
 
 pub mod template;
@@ -27,9 +27,8 @@ fn downcast_connection_manager(
     resources: &SharedResources,
 ) -> Result<SharedConnectionManager, EngineError> {
     resources
-        .clone()
-        .downcast::<ConnectionManager>()
-        .map_err(|_| EngineError::invalid_graph("部署资源中缺少 ConnectionManager"))
+        .get::<SharedConnectionManager>()
+        .ok_or_else(|| EngineError::invalid_graph("部署资源中缺少 ConnectionManager"))
 }
 
 pub struct IoPlugin;

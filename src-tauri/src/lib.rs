@@ -18,7 +18,7 @@ use nazh_engine::{
     ConnectionDefinition, ConnectionRecord, DeployResponse, DispatchResponse, EngineError,
     ExecutionEvent, ListNodeTypesResponse, SerialTriggerNodeConfig, TimerNodeConfig,
     UndeployResponse, WorkflowContext, WorkflowGraph, WorkflowIngress,
-    deploy_workflow as deploy_workflow_graph, shared_connection_manager, standard_registry,
+    deploy_workflow_with_ai as deploy_workflow_graph, shared_connection_manager, standard_registry,
 };
 use observability::{
     ObservabilityContextInput, ObservabilityQueryResult, ObservabilityStore,
@@ -994,25 +994,31 @@ async fn deploy_workflow(
     let node_count = graph.nodes.len();
     let edge_count = graph.edges.len();
     let registry = standard_registry();
-    let deployment =
-        match deploy_workflow_graph(graph, state.connection_manager.clone(), &registry).await {
-            Ok(deployment) => deployment,
-            Err(error) => {
-                if let Some(store) = &observability_store {
-                    let _ = store
-                        .record_audit(
-                            "error",
-                            "workflow",
-                            "部署失败",
-                            Some(error.to_string()),
-                            None,
-                            None,
-                        )
-                        .await;
-                }
-                return Err(stringify_error(error));
+    let deployment = match deploy_workflow_graph(
+        graph,
+        state.connection_manager.clone(),
+        Some(Arc::clone(&state.ai_service)),
+        &registry,
+    )
+    .await
+    {
+        Ok(deployment) => deployment,
+        Err(error) => {
+            if let Some(store) = &observability_store {
+                let _ = store
+                    .record_audit(
+                        "error",
+                        "workflow",
+                        "部署失败",
+                        Some(error.to_string()),
+                        None,
+                        None,
+                    )
+                    .await;
             }
-        };
+            return Err(stringify_error(error));
+        }
+    };
     let (ingress, streams) = deployment.into_parts();
     let root_nodes = ingress.root_nodes().to_vec();
     let (mut event_rx, mut result_rx, result_store_ref) = streams.into_receivers();

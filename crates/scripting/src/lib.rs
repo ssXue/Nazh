@@ -4,8 +4,11 @@
 //! 所有基于脚本的节点（If、Switch、TryCatch、Loop、Rhai）均通过组合此基座
 //! 来复用脚本执行能力。添加新的脚本节点时只需嵌入 `RhaiNodeBase` 字段。
 
+use std::sync::Arc;
+
+use nazh_ai_core::{AiCompletionRequest, AiGenerationParams, AiMessage, AiMessageRole, AiService};
 use rhai::{
-    AST, Dynamic, Engine, Scope,
+    AST, Dynamic, Engine, EvalAltResult, Position, Scope,
     serde::{from_dynamic, to_dynamic},
 };
 use serde_json::Value;
@@ -48,6 +51,139 @@ pub struct RhaiNodeBase {
     ast: AST,
 }
 
+/// 脚本节点的 AI 运行时配置。
+#[derive(Clone)]
+pub struct RhaiAiRuntime {
+    node_id: String,
+    service: Arc<dyn AiService>,
+    provider_id: String,
+    system_prompt: Option<String>,
+    model: Option<String>,
+    params: AiGenerationParams,
+    timeout_ms: Option<u64>,
+}
+
+impl RhaiAiRuntime {
+    /// 构造脚本节点的 AI 调用器。
+    pub fn new(
+        node_id: impl Into<String>,
+        service: Arc<dyn AiService>,
+        provider_id: impl Into<String>,
+        system_prompt: Option<String>,
+        model: Option<String>,
+        params: AiGenerationParams,
+        timeout_ms: Option<u64>,
+    ) -> Result<Self, EngineError> {
+        let node_id = node_id.into();
+        let provider_id = provider_id.into();
+        if provider_id.trim().is_empty() {
+            return Err(EngineError::node_config(node_id, "AI provider_id 不能为空"));
+        }
+
+        Ok(Self {
+            node_id,
+            service,
+            provider_id,
+            system_prompt,
+            model,
+            params,
+            timeout_ms,
+        })
+    }
+
+    fn build_request(&self, prompt: String) -> AiCompletionRequest {
+        let mut messages = Vec::with_capacity(2);
+        if let Some(system_prompt) = self
+            .system_prompt
+            .as_ref()
+            .map(String::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            messages.push(AiMessage {
+                role: AiMessageRole::System,
+                content: system_prompt.to_owned(),
+            });
+        }
+        messages.push(AiMessage {
+            role: AiMessageRole::User,
+            content: prompt,
+        });
+
+        AiCompletionRequest {
+            provider_id: self.provider_id.clone(),
+            model: self.model.clone(),
+            messages,
+            params: self.params.clone(),
+            timeout_ms: self.timeout_ms,
+        }
+    }
+
+    fn complete(&self, prompt: String) -> Result<String, Box<EvalAltResult>> {
+        if prompt.trim().is_empty() {
+            return Err(to_rhai_error("AI prompt 不能为空"));
+        }
+
+        let request = self.build_request(prompt);
+        let service = Arc::clone(&self.service);
+        let node_id = self.node_id.clone();
+        let join_result = std::thread::spawn(move || {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|error| format!("节点 `{node_id}` 无法创建 AI 调用运行时: {error}"))?
+                .block_on(async move {
+                    service
+                        .complete(request)
+                        .await
+                        .map(|response| response.content)
+                        .map_err(|error| error.to_string())
+                })
+        })
+        .join();
+
+        match join_result {
+            Ok(Ok(content)) => Ok(content),
+            Ok(Err(message)) => Err(to_rhai_error(message)),
+            Err(_) => Err(to_rhai_error(format!(
+                "节点 `{}` 的 AI 调用线程发生 panic",
+                self.node_id
+            ))),
+        }
+    }
+}
+
+#[derive(Clone)]
+enum RhaiAiBinding {
+    Enabled(Arc<RhaiAiRuntime>),
+    Disabled(String),
+}
+
+impl RhaiAiBinding {
+    fn complete(&self, prompt: String) -> Result<String, Box<EvalAltResult>> {
+        match self {
+            Self::Enabled(runtime) => runtime.complete(prompt),
+            Self::Disabled(message) => Err(to_rhai_error(message.clone())),
+        }
+    }
+}
+
+fn to_rhai_error(message: impl Into<String>) -> Box<EvalAltResult> {
+    EvalAltResult::ErrorRuntime(message.into().into(), Position::NONE).into()
+}
+
+fn register_ai_complete(engine: &mut Engine, node_id: &str, ai: Option<RhaiAiRuntime>) {
+    let binding = Arc::new(ai.map_or_else(
+        || RhaiAiBinding::Disabled(format!("脚本节点 `{node_id}` 未启用 AI 能力")),
+        |runtime| RhaiAiBinding::Enabled(Arc::new(runtime)),
+    ));
+
+    engine.register_fn(
+        "ai_complete",
+        move |prompt: String| -> Result<String, Box<EvalAltResult>> { binding.complete(prompt) },
+    );
+}
+
 impl RhaiNodeBase {
     /// 创建基座：编译脚本并设置步数上限。
     pub fn new(
@@ -55,10 +191,12 @@ impl RhaiNodeBase {
         ai_description: impl Into<String>,
         script: &str,
         max_operations: u64,
+        ai: Option<RhaiAiRuntime>,
     ) -> Result<Self, EngineError> {
         let id = id.into();
         let mut engine = Engine::new();
         engine.set_max_operations(max_operations);
+        register_ai_complete(&mut engine, &id, ai);
         let ast = engine
             .compile(script)
             .map_err(|error| EngineError::rhai_compile(id.clone(), error.to_string()))?;

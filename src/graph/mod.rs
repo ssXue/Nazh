@@ -1,7 +1,8 @@
 //! 基于 DAG 的工作流图：解析、校验与异步部署。
 //!
 //! 本模块将前端画布导出的 JSON AST 解析为 [`WorkflowGraph`]，
-//! 校验其为有向无环图后，通过 [`deploy_workflow`] 将每个节点实例化为
+//! 校验其为有向无环图后，通过 [`deploy_workflow`] / [`deploy_workflow_with_ai`]
+//! 将每个节点实例化为
 //! Tokio 任务，并通过 MPSC 通道连接。
 //!
 //! | 子模块 | 职责 |
@@ -16,7 +17,7 @@ mod runner;
 mod topology;
 pub(crate) mod types;
 
-pub use deploy::deploy_workflow;
+pub use deploy::{deploy_workflow, deploy_workflow_with_ai};
 pub use types::{
     WorkflowDeployment, WorkflowEdge, WorkflowGraph, WorkflowIngress, WorkflowStreams,
 };

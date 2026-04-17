@@ -7390,3 +7390,33 @@ html.is-tauri-runtime [data-window-drag-region] {
 .plugin-panel__error {
   color: var(--danger-ink);
 }
+
+.flowgram-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999;
+}
+
+.flowgram-modal {
+  background: var(--color-surface, #fff);
+  border-radius: 8px;
+  padding: 1rem;
+  min-width: 360px;
+  max-width: 480px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.15);
+}
+
+.flowgram-modal__header {
+  margin-bottom: 0.75rem;
+}
+
+.flowgram-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}

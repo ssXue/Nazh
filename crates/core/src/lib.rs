@@ -23,6 +23,7 @@ pub use ipc::{
 };
 pub use node::{NodeDispatch, NodeExecution, NodeOutput, NodeTrait, into_payload_map};
 pub use plugin::{
-    NodeRegistry, Plugin, PluginHost, PluginManifest, SharedResources, WorkflowNodeDefinition,
+    NodeRegistry, Plugin, PluginHost, PluginManifest, RuntimeResources, SharedResources,
+    WorkflowNodeDefinition,
 };
 pub use uuid::Uuid;

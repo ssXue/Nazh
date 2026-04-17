@@ -24,6 +24,7 @@ missing_errors_doc = "allow"
 
 [workspace.dependencies]
 nazh-core = { path = "crates/core" }
+nazh-ai-core = { path = "crates/nazh-ai-core" }
 pipeline = { path = "crates/pipeline" }
 connections = { path = "crates/connections" }
 scripting = { path = "crates/scripting" }
@@ -70,6 +71,7 @@ path = "examples/phase1_demo.rs"
 
 [dependencies]
 nazh-core.workspace = true
+nazh-ai-core.workspace = true
 pipeline.workspace = true
 connections.workspace = true
 scripting.workspace = true
@@ -82,6 +84,7 @@ tracing.workspace = true
 ts-rs.workspace = true
 
 [dev-dependencies]
+async-trait.workspace = true
 rusqlite.workspace = true
 uuid.workspace = true
 

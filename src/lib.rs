@@ -23,8 +23,8 @@ mod registry;
 pub use nazh_core::{
     ArenaDataStore, ContextRef, DataId, DataStore, DeployResponse, DispatchResponse, EngineError,
     ExecutionEvent, ListNodeTypesResponse, NodeDispatch, NodeExecution, NodeOutput, NodeRegistry,
-    NodeTrait, NodeTypeEntry, Plugin, PluginHost, PluginManifest, SharedResources,
-    UndeployResponse, Uuid, WorkflowContext, WorkflowNodeDefinition, into_payload_map,
+    NodeTrait, NodeTypeEntry, Plugin, PluginHost, PluginManifest, RuntimeResources,
+    SharedResources, UndeployResponse, WorkflowContext, WorkflowNodeDefinition, into_payload_map,
 };
 
 pub use connections::{
@@ -35,8 +35,9 @@ pub use connections::{
 pub use pipeline::{PipelineHandle, PipelineStage, StageFuture, build_linear_pipeline};
 
 pub use nodes_flow::{
-    FlowPlugin, IfNode, IfNodeConfig, LoopNode, LoopNodeConfig, RhaiNode, RhaiNodeConfig,
-    SwitchBranchConfig, SwitchNode, SwitchNodeConfig, TryCatchNode, TryCatchNodeConfig,
+    FlowPlugin, IfNode, IfNodeConfig, LoopNode, LoopNodeConfig, RhaiNode, RhaiNodeAiConfig,
+    RhaiNodeConfig, SwitchBranchConfig, SwitchNode, SwitchNodeConfig, TryCatchNode,
+    TryCatchNodeConfig,
 };
 
 pub use nodes_io::{
@@ -47,6 +48,7 @@ pub use nodes_io::{
 
 pub use graph::{
     WorkflowDeployment, WorkflowGraph, WorkflowIngress, WorkflowStreams, deploy_workflow,
+    deploy_workflow_with_ai,
 };
 
 /// 加载全部标准库插件，返回就绪的节点注册表。

@@ -24,7 +24,7 @@ function extractNodeInfo(node: FlowNodeEntity): NodeContextInfo {
     aiDescription?: string | null;
   };
   return {
-    nodeType: extInfo.nodeType ?? node.flowNodeType,
+    nodeType: extInfo.nodeType ?? String(node.flowNodeType),
     label: extInfo.label ?? node.id,
     aiDescription: extInfo.aiDescription ?? '',
   };
@@ -113,7 +113,7 @@ export async function generateScript(
     model: options.model,
     messages,
     params,
-    timeoutMs: options.timeoutMs ?? BigInt(60000),
+    timeoutMs: options.timeoutMs != null ? BigInt(options.timeoutMs) : BigInt(60000),
   };
   const response = await copilotComplete(request);
   return response.content.trim();

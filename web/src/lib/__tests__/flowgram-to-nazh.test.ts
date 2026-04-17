@@ -10,7 +10,21 @@ function baseGraph(): WorkflowGraph {
   return {
     nodes: {
       a: { type: 'native', config: { message: 'hello' } },
-      b: { type: 'rhai', config: { script: 'payload' } },
+      b: {
+        type: 'rhai',
+        config: {
+          script: 'payload["reply"] = ai_complete("hello"); payload',
+          ai: {
+            providerId: 'deepseek',
+            model: 'deepseek-chat',
+            systemPrompt: '你是测试助手',
+            temperature: 0.2,
+            maxTokens: 256,
+            topP: 0.9,
+            timeoutMs: 4000,
+          },
+        },
+      },
     },
     edges: [{ from: 'a', to: 'b' }],
   } as WorkflowGraph;
@@ -78,7 +92,18 @@ describe('toNazhWorkflowGraph', () => {
     const result = toNazhWorkflowGraph(flowgramJson, graph);
     // config 通过 flowgram data.config 传递，应与原始值一致
     expect(result.nodes['a']?.config).toEqual({ message: 'hello' });
-    expect(result.nodes['b']?.config).toEqual({ script: 'payload' });
+    expect(result.nodes['b']?.config).toEqual({
+      script: 'payload["reply"] = ai_complete("hello"); payload',
+      ai: {
+        providerId: 'deepseek',
+        model: 'deepseek-chat',
+        systemPrompt: '你是测试助手',
+        temperature: 0.2,
+        maxTokens: 256,
+        topP: 0.9,
+        timeoutMs: 4000,
+      },
+    });
   });
 
   it('边的 from/to 映射正确还原为 Nazh 格式', () => {
