@@ -4,9 +4,10 @@ use async_trait::async_trait;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
+use uuid::Uuid;
 
+use nazh_core::EngineError;
 use nazh_core::into_payload_map;
-use nazh_core::{ContextRef, DataStore, EngineError};
 use nazh_core::{NodeExecution, NodeTrait};
 
 fn default_timer_interval_ms() -> u64 {
@@ -48,35 +49,27 @@ impl TimerNode {
 impl NodeTrait for TimerNode {
     nazh_core::impl_node_meta!("timer");
 
-    async fn execute(
+    async fn transform(
         &self,
-        ctx: &ContextRef,
-        store: &dyn DataStore,
+        _trace_id: Uuid,
+        payload: Value,
     ) -> Result<NodeExecution, EngineError> {
-        let payload = store.read_mut(&ctx.data_id)?;
         let mut payload_map = into_payload_map(payload);
 
         for (key, value) in &self.config.inject {
             payload_map.insert(key.clone(), value.clone());
         }
 
-        let existing_timer = payload_map
-            .remove("_timer")
-            .and_then(|value| match value {
-                Value::Object(map) => Some(map),
-                _ => None,
-            })
-            .unwrap_or_default();
-        let mut timer_meta = existing_timer;
-        timer_meta.insert("node_id".to_owned(), json!(self.id));
-        timer_meta.insert(
-            "interval_ms".to_owned(),
-            json!(self.config.interval_ms.max(1)),
-        );
-        timer_meta.insert("immediate".to_owned(), json!(self.config.immediate));
-        timer_meta.insert("triggered_at".to_owned(), json!(Utc::now().to_rfc3339()));
-        payload_map.insert("_timer".to_owned(), Value::Object(timer_meta));
+        let metadata = Map::from_iter([(
+            "timer".to_owned(),
+            json!({
+                "node_id": self.id,
+                "interval_ms": self.config.interval_ms.max(1),
+                "immediate": self.config.immediate,
+                "triggered_at": Utc::now().to_rfc3339(),
+            }),
+        )]);
 
-        Ok(NodeExecution::broadcast(Value::Object(payload_map)))
+        Ok(NodeExecution::broadcast(Value::Object(payload_map)).with_metadata(metadata))
     }
 }

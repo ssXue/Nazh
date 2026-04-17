@@ -67,6 +67,7 @@ pub(crate) async fn run_stage(
                             ExecutionEvent::Completed {
                                 stage: stage_name.clone(),
                                 trace_id,
+                                metadata: None,
                             },
                         );
 

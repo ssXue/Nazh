@@ -6,10 +6,11 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+use uuid::Uuid;
 
-use connections::{ConnectionGuard, SharedConnectionManager, insert_connection_lease};
+use connections::SharedConnectionManager;
+use nazh_core::EngineError;
 use nazh_core::into_payload_map;
-use nazh_core::{ContextRef, DataStore, EngineError};
 use nazh_core::{NodeExecution, NodeTrait};
 
 /// [`NativeNode`] 的配置。
@@ -46,12 +47,7 @@ impl NativeNode {
         }
     }
 
-    fn build_payload(
-        &self,
-        trace_id: uuid::Uuid,
-        payload: Value,
-        guard: Option<&ConnectionGuard>,
-    ) -> Result<Value, EngineError> {
+    fn build_payload(&self, payload: Value) -> Value {
         let mut payload_map = into_payload_map(payload);
 
         if let Some(message) = &self.config.message {
@@ -62,8 +58,33 @@ impl NativeNode {
             payload_map.insert(key.clone(), value.clone());
         }
 
-        if let Some(guard) = guard {
-            insert_connection_lease(&self.id, &mut payload_map, guard.lease())?;
+        Value::Object(payload_map)
+    }
+}
+
+#[async_trait]
+impl NodeTrait for NativeNode {
+    nazh_core::impl_node_meta!("native");
+
+    async fn transform(
+        &self,
+        trace_id: Uuid,
+        payload: Value,
+    ) -> Result<NodeExecution, EngineError> {
+        let mut guard = if let Some(conn_id) = &self.config.connection_id {
+            Some(self.connection_manager.acquire(conn_id).await?)
+        } else {
+            None
+        };
+        let result = self.build_payload(payload);
+
+        let mut metadata = Map::new();
+        if let Some(guard) = guard.as_ref() {
+            let (key, value) = connections::connection_metadata(&self.id, guard.lease())?;
+            metadata.insert(key, value);
+        }
+        if let Some(g) = &mut guard {
+            g.mark_success();
         }
 
         tracing::info!(
@@ -73,29 +94,6 @@ impl NativeNode {
             "原生节点执行"
         );
 
-        Ok(Value::Object(payload_map))
-    }
-}
-
-#[async_trait]
-impl NodeTrait for NativeNode {
-    nazh_core::impl_node_meta!("native");
-
-    async fn execute(
-        &self,
-        ctx: &ContextRef,
-        store: &dyn DataStore,
-    ) -> Result<NodeExecution, EngineError> {
-        let payload = store.read_mut(&ctx.data_id)?;
-        let mut guard = if let Some(conn_id) = &self.config.connection_id {
-            Some(self.connection_manager.acquire(conn_id).await?)
-        } else {
-            None
-        };
-        let result = self.build_payload(ctx.trace_id, payload, guard.as_ref())?;
-        if let Some(g) = &mut guard {
-            g.mark_success();
-        }
-        Ok(NodeExecution::broadcast(result))
+        Ok(NodeExecution::broadcast(result).with_metadata(metadata))
     }
 }

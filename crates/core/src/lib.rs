@@ -25,3 +25,4 @@ pub use node::{NodeDispatch, NodeExecution, NodeOutput, NodeTrait, into_payload_
 pub use plugin::{
     NodeRegistry, Plugin, PluginHost, PluginManifest, SharedResources, WorkflowNodeDefinition,
 };
+pub use uuid::Uuid;

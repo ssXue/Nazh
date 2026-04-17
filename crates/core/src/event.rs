@@ -7,6 +7,7 @@
 //! 通道满或关闭时通过 `tracing::error!` 报告——事件丢失即丢帧，不可接受。
 
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 use tokio::sync::mpsc;
 use ts_rs::TS;
 use uuid::Uuid;
@@ -17,13 +18,21 @@ use crate::error::EngineError;
 ///
 /// DAG 工作流和线性流水线共享同一事件类型，
 /// 前端只需注册一个事件监听器即可处理所有执行模式。
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[ts(export)]
 pub enum ExecutionEvent {
     /// 阶段/节点开始执行。
     Started { stage: String, trace_id: Uuid },
-    /// 阶段/节点执行完成。
-    Completed { stage: String, trace_id: Uuid },
+    /// 阶段/节点执行完成，附带该节点的执行元数据。
+    Completed {
+        stage: String,
+        trace_id: Uuid,
+        /// 节点执行元数据（协议参数、连接信息等），与业务 payload 完全分离。
+        /// 无元数据时为 `None`，序列化时省略该字段。
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        metadata: Option<Map<String, Value>>,
+    },
     /// 阶段/节点执行失败。
     Failed {
         stage: String,

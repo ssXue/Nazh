@@ -64,16 +64,14 @@ pub struct ConnectionLease {
     pub borrowed_at: DateTime<Utc>,
 }
 
-/// 将连接租约信息序列化后写入 payload map 的 `_connection` 字段。
-pub fn insert_connection_lease(
+/// 将连接租约序列化为元数据键值对 `("connection", Value)`。
+pub fn connection_metadata(
     node_id: &str,
-    payload_map: &mut serde_json::Map<String, serde_json::Value>,
     lease: &ConnectionLease,
-) -> Result<(), EngineError> {
-    let lease_value = serde_json::to_value(lease)
+) -> Result<(String, serde_json::Value), EngineError> {
+    let value = serde_json::to_value(lease)
         .map_err(|error| EngineError::payload_conversion(node_id.to_owned(), error.to_string()))?;
-    payload_map.insert("_connection".to_owned(), lease_value);
-    Ok(())
+    Ok(("connection".to_owned(), value))
 }
 
 /// 连接健康阶段。

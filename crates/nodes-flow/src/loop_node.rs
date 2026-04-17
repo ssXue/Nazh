@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use nazh_core::{ContextRef, DataStore, EngineError};
+use nazh_core::EngineError;
 use nazh_core::{NodeDispatch, NodeExecution, NodeOutput, NodeTrait, into_payload_map};
 use scripting::{RhaiNodeBase, default_max_operations};
 
@@ -133,13 +133,12 @@ fn collect_loop_items(node_id: &str, result: Dynamic) -> Result<Vec<Option<Value
 impl NodeTrait for LoopNode {
     scripting::delegate_node_base!("loop");
 
-    async fn execute(
+    async fn transform(
         &self,
-        ctx: &ContextRef,
-        store: &dyn DataStore,
+        _trace_id: nazh_core::Uuid,
+        payload: serde_json::Value,
     ) -> Result<NodeExecution, EngineError> {
-        let input_payload = store.read_mut(&ctx.data_id)?;
-        let (scope, result) = self.base.evaluate(input_payload)?;
+        let (scope, result) = self.base.evaluate(payload)?;
         let payload = self.base.payload_from_scope(&scope)?;
         let items = collect_loop_items(self.base.id(), result)?;
         let item_count = items.len();
@@ -147,11 +146,13 @@ impl NodeTrait for LoopNode {
         for (index, item) in items.into_iter().enumerate() {
             outputs.push(NodeOutput {
                 payload: with_loop_state(payload.clone(), "body", Some(index), item_count, item),
+                metadata: serde_json::Map::new(),
                 dispatch: NodeDispatch::Route(vec!["body".to_owned()]),
             });
         }
         outputs.push(NodeOutput {
             payload: with_loop_state(payload, "done", None, item_count, None),
+            metadata: serde_json::Map::new(),
             dispatch: NodeDispatch::Route(vec!["done".to_owned()]),
         });
         Ok(NodeExecution::from_outputs(outputs))

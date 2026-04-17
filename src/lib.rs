@@ -24,7 +24,7 @@ pub use nazh_core::{
     ArenaDataStore, ContextRef, DataId, DataStore, DeployResponse, DispatchResponse, EngineError,
     ExecutionEvent, ListNodeTypesResponse, NodeDispatch, NodeExecution, NodeOutput, NodeRegistry,
     NodeTrait, NodeTypeEntry, Plugin, PluginHost, PluginManifest, SharedResources,
-    UndeployResponse, WorkflowContext, WorkflowNodeDefinition, into_payload_map,
+    UndeployResponse, Uuid, WorkflowContext, WorkflowNodeDefinition, into_payload_map,
 };
 
 pub use connections::{

@@ -4,7 +4,7 @@ use ::rhai::serde::from_dynamic;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-use nazh_core::{ContextRef, DataStore, EngineError};
+use nazh_core::EngineError;
 use nazh_core::{NodeExecution, NodeTrait};
 use scripting::{RhaiNodeBase, default_max_operations};
 
@@ -40,12 +40,11 @@ impl IfNode {
 impl NodeTrait for IfNode {
     scripting::delegate_node_base!("if");
 
-    async fn execute(
+    async fn transform(
         &self,
-        ctx: &ContextRef,
-        store: &dyn DataStore,
+        _trace_id: nazh_core::Uuid,
+        payload: serde_json::Value,
     ) -> Result<NodeExecution, EngineError> {
-        let payload = store.read_mut(&ctx.data_id)?;
         let (scope, result) = self.base.evaluate(payload)?;
         let branch = from_dynamic::<bool>(&result).map_err(|error| {
             EngineError::payload_conversion(

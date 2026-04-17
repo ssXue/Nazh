@@ -9,8 +9,8 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
+use nazh_core::EngineError;
 use nazh_core::into_payload_map;
-use nazh_core::{ContextRef, DataStore, EngineError};
 use nazh_core::{NodeExecution, NodeTrait};
 
 fn default_baud_rate() -> u32 {
@@ -147,12 +147,11 @@ fn frame_u64(frame: &Map<String, Value>, key: &str, fallback: u64) -> u64 {
 impl NodeTrait for SerialTriggerNode {
     nazh_core::impl_node_meta!("serialTrigger");
 
-    async fn execute(
+    async fn transform(
         &self,
-        ctx: &ContextRef,
-        store: &dyn DataStore,
+        _trace_id: nazh_core::Uuid,
+        payload: serde_json::Value,
     ) -> Result<NodeExecution, EngineError> {
-        let payload = store.read_mut(&ctx.data_id)?;
         let mut payload_map = into_payload_map(payload);
 
         for (key, value) in &self.config.inject {
@@ -220,8 +219,9 @@ impl NodeTrait for SerialTriggerNode {
         payload_map.insert("serial_data".to_owned(), json!(serial_data));
         payload_map.insert("serial_ascii".to_owned(), json!(ascii));
         payload_map.insert("serial_hex".to_owned(), json!(hex));
-        payload_map.insert(
-            "_serial".to_owned(),
+
+        let metadata = Map::from_iter([(
+            "serial".to_owned(),
             json!({
                 "node_id": self.id.as_str(),
                 "port_path": port_path,
@@ -235,8 +235,8 @@ impl NodeTrait for SerialTriggerNode {
                 "byte_len": byte_len,
                 "received_at": received_at,
             }),
-        );
+        )]);
 
-        Ok(NodeExecution::broadcast(Value::Object(payload_map)))
+        Ok(NodeExecution::broadcast(Value::Object(payload_map)).with_metadata(metadata))
     }
 }

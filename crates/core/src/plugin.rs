@@ -243,7 +243,7 @@ impl Default for PluginHost {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::{ContextRef, DataStore, NodeExecution};
+    use crate::NodeExecution;
     use async_trait::async_trait;
 
     struct StubNode {
@@ -262,10 +262,10 @@ mod tests {
         fn ai_description(&self) -> &str {
             ""
         }
-        async fn execute(
+        async fn transform(
             &self,
-            _ctx: &ContextRef,
-            _store: &dyn DataStore,
+            _trace_id: uuid::Uuid,
+            _payload: serde_json::Value,
         ) -> Result<NodeExecution, EngineError> {
             Ok(NodeExecution::broadcast(serde_json::Value::Null))
         }

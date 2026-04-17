@@ -8,8 +8,8 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
+use nazh_core::EngineError;
 use nazh_core::into_payload_map;
-use nazh_core::{ContextRef, DataStore, EngineError};
 use nazh_core::{NodeExecution, NodeTrait};
 
 fn default_sqlite_path() -> String {
@@ -70,12 +70,11 @@ impl SqlWriterNode {
 impl NodeTrait for SqlWriterNode {
     nazh_core::impl_node_meta!("sqlWriter");
 
-    async fn execute(
+    async fn transform(
         &self,
-        ctx: &ContextRef,
-        store: &dyn DataStore,
+        trace_id: uuid::Uuid,
+        payload: Value,
     ) -> Result<NodeExecution, EngineError> {
-        let shared_payload = store.read(&ctx.data_id)?;
         let database_path = self.config.database_path.trim().to_owned();
         if database_path.contains("..") {
             return Err(EngineError::node_config(
@@ -89,9 +88,8 @@ impl NodeTrait for SqlWriterNode {
                 "SQL Writer 表名只能包含字母、数字和下划线，且不能以数字开头",
             )
         })?;
-        let trace_id = ctx.trace_id;
         let node_id = self.id.clone();
-        let payload_json = serde_json::to_string(&*shared_payload)
+        let payload_json = serde_json::to_string(&payload)
             .map_err(|error| EngineError::payload_conversion(self.id.clone(), error.to_string()))?;
         let timestamp = Utc::now().to_rfc3339();
         let db_path_clone = database_path.clone();
@@ -159,16 +157,16 @@ impl NodeTrait for SqlWriterNode {
             trace_id,
         })??;
 
-        let mut payload_map = into_payload_map((*shared_payload).clone());
-        payload_map.insert(
-            "_sql_writer".to_owned(),
+        let payload_map = into_payload_map(payload);
+        let metadata = serde_json::Map::from_iter([(
+            "sql_writer".to_owned(),
             json!({
                 "database_path": database_path,
                 "table": table,
                 "written_at": timestamp,
             }),
-        );
+        )]);
 
-        Ok(NodeExecution::broadcast(Value::Object(payload_map)))
+        Ok(NodeExecution::broadcast(Value::Object(payload_map)).with_metadata(metadata))
     }
 }
