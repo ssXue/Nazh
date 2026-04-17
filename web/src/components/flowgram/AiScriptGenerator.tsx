@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 export interface AiScriptGeneratorProps {
   open: boolean;
@@ -16,6 +16,12 @@ export function AiScriptGenerator({
   onClose,
 }: AiScriptGeneratorProps) {
   const [requirement, setRequirement] = useState('');
+
+  useEffect(() => {
+    if (open) {
+      setRequirement('');
+    }
+  }, [open]);
 
   const handleGenerate = useCallback(() => {
     const trimmed = requirement.trim();

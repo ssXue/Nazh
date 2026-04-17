@@ -921,14 +921,13 @@ function FlowgramNodeSettingsPanel({
               {(draft.nodeType === 'code' || draft.nodeType === 'rhai') ? (
                 <button
                   type="button"
-                  className="ghost"
+                  className="ghost flowgram-btn-ai"
                   disabled={!hasAiProvider || aiGenerating}
                   onClick={() => {
                     setAiGeneratorOpen(true);
                     setAiGenerateError(null);
                   }}
                   title={!hasAiProvider ? '请先在 AI 配置中添加提供商' : 'AI 生成脚本'}
-                  style={{ marginLeft: '0.5em', fontSize: '0.85em', padding: '0.15em 0.5em' }}
                 >
                   {aiGenerating ? '生成中...' : 'AI 生成'}
                 </button>

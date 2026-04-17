@@ -3714,37 +3714,6 @@ h3 {
   color: var(--muted);
 }
 
-.flowgram-overlay {
-  position: absolute;
-  top: 10px;
-  left: 10px;
-  z-index: var(--z-content);
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, max-content));
-  justify-content: start;
-  align-content: start;
-  gap: 6px;
-  max-width: min(460px, calc(100% - 28px));
-  pointer-events: none;
-}
-
-.flowgram-overlay span {
-  display: inline-flex;
-  align-items: center;
-  min-height: 24px;
-  max-width: 220px;
-  border-radius: 999px;
-  padding: 0.3rem 0.58rem;
-  background: var(--overlay-surface);
-  border: 1px solid var(--line-strong);
-  color: var(--muted);
-  font-size: var(--font-caption);
-  line-height: 1;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 .flowgram-card {
   width: 214px;
   border-radius: 16px;
@@ -7389,6 +7358,12 @@ html.is-tauri-runtime [data-window-drag-region] {
 
 .plugin-panel__error {
   color: var(--danger-ink);
+}
+
+.flowgram-btn-ai {
+  margin-left: 0.5em;
+  font-size: 0.85em;
+  padding: 0.15em 0.5em;
 }
 
 .flowgram-overlay {
