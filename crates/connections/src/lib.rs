@@ -281,6 +281,24 @@ impl ConnectionGovernancePolicy {
     }
 }
 
+#[cfg(test)]
+mod export_bindings {
+    //! ts-rs 类型导出入口，通过 `cargo test --workspace --lib export_bindings` 触发生成。
+
+    use super::*;
+    use ts_rs::TS;
+
+    #[test]
+    fn export_connection_types() {
+        let _ =
+            std::fs::create_dir_all(std::env::var("OUT_DIR").unwrap_or_else(|_| "/tmp".to_owned()));
+        let _ = ConnectionDefinition::export();
+        let _ = ConnectionHealthSnapshot::export();
+        let _ = ConnectionHealthState::export();
+        let _ = ConnectionRecord::export();
+    }
+}
+
 /// 连接借出的 RAII 守卫。
 ///
 /// `Drop` 实现在任何退出路径（正常返回、错误返回、panic 展开）

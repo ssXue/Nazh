@@ -1,8 +1,11 @@
 // ts-rs 自动生成的类型统一导出。
-// 运行 `TS_RS_EXPORT_DIR=web/src/generated cargo test --lib export_bindings` 重新生成。
+// 运行 `cargo test --workspace --lib export_bindings` 重新生成。
 
 export type { ConnectionDefinition } from './ConnectionDefinition';
+export type { ConnectionHealthSnapshot } from './ConnectionHealthSnapshot';
+export type { ConnectionHealthState } from './ConnectionHealthState';
 export type { ConnectionRecord } from './ConnectionRecord';
+export type { CompletedExecutionEvent } from './CompletedExecutionEvent';
 export type { DeployResponse } from './DeployResponse';
 export type { DispatchResponse } from './DispatchResponse';
 export type { ExecutionEvent } from './ExecutionEvent';
@@ -16,6 +19,7 @@ export type { WorkflowNodeDefinition } from './WorkflowNodeDefinition';
 export type { JsonValue } from './serde_json/JsonValue';
 export type { AiCompletionRequest } from './AiCompletionRequest';
 export type { AiCompletionResponse } from './AiCompletionResponse';
+export type { AiAgentSettings } from './AiAgentSettings';
 export type { AiConfigUpdate } from './AiConfigUpdate';
 export type { AiConfigView } from './AiConfigView';
 export type { AiGenerationParams } from './AiGenerationParams';

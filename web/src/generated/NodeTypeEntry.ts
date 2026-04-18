@@ -9,6 +9,6 @@ export type NodeTypeEntry = {
  */
 name: string, 
 /**
- * 别名列表（如 ["code", "code/rhai"]）。
+ * 别名列表（如 `["code", "code/rhai"]`）。
  */
 aliases: Array<string>, };

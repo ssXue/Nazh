@@ -2,6 +2,6 @@
 import type { JsonValue } from "./serde_json/JsonValue";
 
 /**
- * [`WorkflowGraph`] 中的单节点配置。
+ * 工作流图中的单节点配置。
  */
 export type WorkflowNodeDefinition = { id: string, type: string, connection_id?: string, config: JsonValue, ai_description?: string, timeout_ms?: number, buffer: number, };

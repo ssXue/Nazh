@@ -48,6 +48,10 @@ import {
 import { buildSidebarSections } from './lib/sidebar';
 import { ACCENT_PRESET_OPTIONS } from './lib/theme';
 import {
+  applyGlobalAiConfigToWorkflowGraph,
+  stripWorkflowNodeLocalAiConfig,
+} from './lib/workflow-ai';
+import {
   clearDeploymentSessionFile,
   deployWorkflow,
   dispatchPayload,
@@ -439,7 +443,7 @@ function App() {
       };
     }
 
-    const nextAstText = formatWorkflowGraph(currentGraph);
+    const nextAstText = formatWorkflowGraph(stripWorkflowNodeLocalAiConfig(currentGraph));
     const nextGraphState = parseWorkflowGraph(nextAstText);
     if (nextGraphState.error || !nextGraphState.graph) {
       return {
@@ -732,7 +736,9 @@ function App() {
       connectionLibrary.connections,
       getActiveEnvironment(activeProject),
     );
-    const runtimeAstText = formatWorkflowGraph(runtimeGraph);
+    const runtimeAstText = formatWorkflowGraph(
+      applyGlobalAiConfigToWorkflowGraph(runtimeGraph, aiConfig),
+    );
     const nextGraphState = parseWorkflowGraph(runtimeAstText);
     if (nextGraphState.error || !nextGraphState.graph) {
       return {

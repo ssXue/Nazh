@@ -2878,7 +2878,8 @@ pub fn run() {
                 if let Ok(path) = DesktopState::ai_config_file_path(&app_handle) {
                     if path.exists() {
                         if let Ok(text) = tokio::fs::read_to_string(&path).await {
-                            if let Ok(file_config) = serde_json::from_str::<AiConfigFile>(&text) {
+                            if let Ok(mut file_config) = serde_json::from_str::<AiConfigFile>(&text) {
+                                file_config.normalize();
                                 let mut config = ai_config_arc.write().await;
                                 *config = file_config;
                             }

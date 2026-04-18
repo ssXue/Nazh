@@ -86,24 +86,15 @@ describe('toNazhWorkflowGraph', () => {
     expect(result.editor_graph).toBe(flowgramJson);
   });
 
-  it('从 previousGraph 继承节点级别的 config', () => {
+  it('从 previousGraph 继承节点级别的 config，并清理脚本节点本地 AI 配置', () => {
     const graph = baseGraph();
     const flowgramJson = toFlowgramWorkflowJson(graph);
     const result = toNazhWorkflowGraph(flowgramJson, graph);
-    // config 通过 flowgram data.config 传递，应与原始值一致
     expect(result.nodes['a']?.config).toEqual({ message: 'hello' });
     expect(result.nodes['b']?.config).toEqual({
       script: 'payload["reply"] = ai_complete("hello"); payload',
-      ai: {
-        providerId: 'deepseek',
-        model: 'deepseek-chat',
-        systemPrompt: '你是测试助手',
-        temperature: 0.2,
-        maxTokens: 256,
-        topP: 0.9,
-        timeoutMs: 4000,
-      },
     });
+    expect((result.nodes['b']?.config as { ai?: unknown })?.ai).toBeUndefined();
   });
 
   it('边的 from/to 映射正确还原为 Nazh 格式', () => {

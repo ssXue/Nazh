@@ -11,6 +11,7 @@ use nazh_engine::{ExecutionEvent, WorkflowContext};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 use tokio::sync::Mutex;
+use uuid::Uuid;
 
 const OBSERVABILITY_DIR: &str = "observability";
 const EVENTS_FILE: &str = "events.jsonl";
@@ -201,13 +202,16 @@ impl ObservabilityStore {
                     false,
                 )
             }
-            ExecutionEvent::Completed { stage, trace_id, metadata } => {
+            ExecutionEvent::Completed(completed) => {
+                let stage = &completed.stage;
+                let trace_id = completed.trace_id;
+                let metadata = &completed.metadata;
                 let duration_ms = state
                     .active_spans
                     .get(&span_key(trace_id, stage))
                     .map(|started_at| (now - *started_at).num_milliseconds().max(0) as u64);
                 if let Some(meta) = metadata.as_ref().and_then(|m| m.get("http")).and_then(Value::as_object) {
-                    if let Some(alert) = build_alert_delivery(&self.session, stage, *trace_id, meta, now) {
+                    if let Some(alert) = build_alert_delivery(&self.session, stage, trace_id, meta, now) {
                         let _ = append_jsonl(self.root_dir.join(ALERTS_FILE), &alert).await;
                     }
                 }
@@ -302,8 +306,12 @@ impl ObservabilityStore {
 
         if clear_span {
             match event {
-                ExecutionEvent::Completed { stage, trace_id, .. }
-                | ExecutionEvent::Failed {
+                ExecutionEvent::Completed(completed) => {
+                    state
+                        .active_spans
+                        .remove(&span_key(completed.trace_id, &completed.stage));
+                }
+                ExecutionEvent::Failed {
                     stage, trace_id, ..
                 } => {
                     state.active_spans.remove(&span_key(trace_id, stage));
@@ -641,7 +649,7 @@ fn alert_to_entry(alert: &AlertDeliveryRecord) -> ObservabilityEntry {
 
 fn build_alert_delivery(
     session: &ObservabilitySession,
-    stage: &str,
+    _stage: &str,
     trace_id: Uuid,
     http_meta: &serde_json::Map<String, Value>,
     timestamp: DateTime<Utc>,

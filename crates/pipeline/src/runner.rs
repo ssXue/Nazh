@@ -64,11 +64,11 @@ pub(crate) async fn run_stage(
                     Ok(()) => {
                         emit_event(
                             &event_tx,
-                            ExecutionEvent::Completed {
+                            ExecutionEvent::Completed(nazh_core::CompletedExecutionEvent {
                                 stage: stage_name.clone(),
                                 trace_id,
                                 metadata: None,
-                            },
+                            }),
                         );
 
                         if output_tx.is_none() {

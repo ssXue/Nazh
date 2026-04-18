@@ -13,8 +13,8 @@ pub mod types;
 
 pub use client::OpenAiCompatibleService;
 pub use config::{
-    AiConfigFile, AiConfigUpdate, AiConfigView, AiGenerationParams, AiProviderDraft,
-    AiProviderSecretRecord, AiProviderUpsert, AiProviderView, AiSecretInput,
+    AiAgentSettings, AiConfigFile, AiConfigUpdate, AiConfigView, AiGenerationParams,
+    AiProviderDraft, AiProviderSecretRecord, AiProviderUpsert, AiProviderView, AiSecretInput,
 };
 pub use error::AiError;
 pub use service::AiService;
@@ -33,6 +33,7 @@ mod export_bindings {
     fn export_ai_types() {
         let _ =
             std::fs::create_dir_all(std::env::var("OUT_DIR").unwrap_or_else(|_| "/tmp".to_owned()));
+        let _ = AiAgentSettings::export();
         let _ = AiConfigView::export();
         let _ = AiConfigUpdate::export();
         let _ = AiGenerationParams::export();

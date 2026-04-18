@@ -160,7 +160,7 @@ pub(crate) async fn run_node(
 
                 emit_event(
                     &event_tx,
-                    ExecutionEvent::Completed {
+                    ExecutionEvent::Completed(crate::CompletedExecutionEvent {
                         stage: node_id.clone(),
                         trace_id,
                         metadata: if merged_metadata.is_empty() {
@@ -168,7 +168,7 @@ pub(crate) async fn run_node(
                         } else {
                             Some(merged_metadata)
                         },
-                    },
+                    }),
                 );
             }
             Err(error) => {

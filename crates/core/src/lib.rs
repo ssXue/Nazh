@@ -18,6 +18,7 @@ pub use context::{ContextRef, WorkflowContext};
 pub use data::{ArenaDataStore, DataId, DataStore};
 pub use error::EngineError;
 pub use event::ExecutionEvent;
+pub use event::CompletedExecutionEvent;
 pub use ipc::{
     DeployResponse, DispatchResponse, ListNodeTypesResponse, NodeTypeEntry, UndeployResponse,
 };
@@ -27,3 +28,26 @@ pub use plugin::{
     WorkflowNodeDefinition,
 };
 pub use uuid::Uuid;
+
+#[cfg(test)]
+mod export_bindings {
+    //! ts-rs 类型导出入口，通过 `cargo test --workspace --lib export_bindings` 触发生成。
+
+    use super::*;
+    use ts_rs::TS;
+
+    #[test]
+    fn export_core_types() {
+        let _ =
+            std::fs::create_dir_all(std::env::var("OUT_DIR").unwrap_or_else(|_| "/tmp".to_owned()));
+        let _ = CompletedExecutionEvent::export();
+        let _ = DeployResponse::export();
+        let _ = DispatchResponse::export();
+        let _ = ExecutionEvent::export();
+        let _ = ListNodeTypesResponse::export();
+        let _ = NodeTypeEntry::export();
+        let _ = UndeployResponse::export();
+        let _ = WorkflowContext::export();
+        let _ = WorkflowNodeDefinition::export();
+    }
+}

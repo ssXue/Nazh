@@ -3500,6 +3500,13 @@ h3 {
   isolation: isolate;
 }
 
+.flowgram-floating-panel--node {
+  margin-left: auto;
+  margin-right: 0;
+  width: min(332px, calc(100vw - 48px));
+  max-width: 332px;
+}
+
 .gedit-flow-panel-layer {
   z-index: calc(var(--z-popup) + 20) !important;
 }
@@ -3508,6 +3515,26 @@ h3 {
 .gedit-flow-panel-layer .right-area,
 .gedit-flow-panel-layer .float-panel-wrap {
   overflow: visible;
+}
+
+.gedit-flow-panel-layer .right-area {
+  width: auto !important;
+  min-width: 0;
+  flex-grow: 0 !important;
+  flex-shrink: 0 !important;
+  margin-left: auto;
+  justify-content: flex-end;
+  pointer-events: none;
+}
+
+.gedit-flow-panel-layer .right-area .float-panel-wrap {
+  width: auto !important;
+  flex: 0 0 auto;
+  pointer-events: none;
+}
+
+.gedit-flow-panel-layer .right-area .float-panel-wrap > * {
+  pointer-events: auto;
 }
 
 .gedit-flow-panel-layer .panel-layer,

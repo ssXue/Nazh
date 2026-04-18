@@ -1,6 +1,7 @@
 import type { WorkflowJSON as FlowgramWorkflowJSON } from '@flowgram.ai/free-layout-editor';
 
 import { layoutGraph } from './graph';
+import { stripNodeLocalAiConfig } from './workflow-ai';
 import type { WorkflowGraph, WorkflowNodeDefinition } from '../types';
 
 interface FlowgramNodeData {
@@ -194,18 +195,20 @@ export function toNazhWorkflowGraph(
     const hasConfig = hasOwnKey(rawData, 'config');
     const hasAiDescription = hasOwnKey(rawData, 'aiDescription');
     const hasTimeoutMs = hasOwnKey(rawData, 'timeoutMs');
+    const nodeType = String(
+      (hasNodeType ? rawData.nodeType : undefined) ?? previousNode?.type ?? node.type,
+    );
+    const nextConfig = hasConfig
+      ? ((rawData.config as WorkflowNodeDefinition['config']) ?? {})
+      : previousNode?.config ?? {};
 
     acc[node.id] = {
       id: node.id,
-      type: String(
-        (hasNodeType ? rawData.nodeType : undefined) ?? previousNode?.type ?? node.type,
-      ),
+      type: nodeType,
       connection_id: hasConnectionId
         ? rawData.connectionId ?? undefined
         : previousNode?.connection_id,
-      config: hasConfig
-        ? ((rawData.config as WorkflowNodeDefinition['config']) ?? {})
-        : previousNode?.config ?? {},
+      config: stripNodeLocalAiConfig(nodeType, nextConfig),
       ai_description: hasAiDescription
         ? rawData.aiDescription ?? undefined
         : previousNode?.ai_description,

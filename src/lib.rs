@@ -21,10 +21,11 @@ pub mod graph;
 mod registry;
 
 pub use nazh_core::{
-    ArenaDataStore, ContextRef, DataId, DataStore, DeployResponse, DispatchResponse, EngineError,
-    ExecutionEvent, ListNodeTypesResponse, NodeDispatch, NodeExecution, NodeOutput, NodeRegistry,
-    NodeTrait, NodeTypeEntry, Plugin, PluginHost, PluginManifest, RuntimeResources,
-    SharedResources, UndeployResponse, WorkflowContext, WorkflowNodeDefinition, into_payload_map,
+    ArenaDataStore, CompletedExecutionEvent, ContextRef, DataId, DataStore, DeployResponse,
+    DispatchResponse, EngineError, ExecutionEvent, ListNodeTypesResponse, NodeDispatch,
+    NodeExecution, NodeOutput, NodeRegistry, NodeTrait, NodeTypeEntry, Plugin, PluginHost,
+    PluginManifest, RuntimeResources, SharedResources, UndeployResponse, WorkflowContext,
+    WorkflowNodeDefinition, into_payload_map,
 };
 
 pub use connections::{
@@ -57,4 +58,21 @@ pub fn standard_registry() -> NodeRegistry {
     host.load(&FlowPlugin);
     host.load(&IoPlugin);
     host.into_registry()
+}
+
+#[cfg(test)]
+mod export_bindings {
+    //! ts-rs 类型导出入口，通过 `cargo test --workspace --lib export_bindings` 触发生成。
+
+    use super::*;
+    use crate::graph::WorkflowEdge;
+    use ts_rs::TS;
+
+    #[test]
+    fn export_engine_types() {
+        let _ =
+            std::fs::create_dir_all(std::env::var("OUT_DIR").unwrap_or_else(|_| "/tmp".to_owned()));
+        let _ = WorkflowEdge::export();
+        let _ = WorkflowGraph::export();
+    }
 }

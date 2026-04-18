@@ -22,7 +22,7 @@ cargo test
 cargo check --manifest-path src-tauri/Cargo.toml
 
 # Regenerate TypeScript types from Rust (ts-rs)
-TS_RS_EXPORT_DIR=web/src/generated cargo test --workspace --lib export_bindings
+cargo test --workspace --lib export_bindings
 
 # Run frontend unit tests (Vitest)
 npm --prefix web run test

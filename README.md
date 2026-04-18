@@ -333,7 +333,7 @@ npm --prefix web run build                    # 前端构建
 | 前端单元测试 | `npm --prefix web run test` |
 | 前端 E2E 测试 | `npm --prefix web run test:e2e` |
 | 前端构建 | `npm --prefix web run build` |
-| 导出 ts-rs 类型 | `TS_RS_EXPORT_DIR=web/src/generated cargo test --lib export_bindings` |
+| 导出 ts-rs 类型 | `cargo test --workspace --lib export_bindings` |
 | 代码格式检查 | `cargo fmt --all -- --check` |
 | Clippy 检查 | `cargo clippy --all-targets -- -D warnings` |
 | 运行示例 | `cargo run --example phase1_demo` |

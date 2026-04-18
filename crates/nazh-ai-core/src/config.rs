@@ -27,6 +27,8 @@ pub struct AiConfigFile {
     pub active_provider_id: Option<String>,
     #[serde(default)]
     pub copilot_params: AiGenerationParams,
+    #[serde(default)]
+    pub agent_settings: AiAgentSettings,
 }
 
 impl Default for AiConfigFile {
@@ -36,6 +38,7 @@ impl Default for AiConfigFile {
             providers: Vec::new(),
             active_provider_id: None,
             copilot_params: AiGenerationParams::default(),
+            agent_settings: AiAgentSettings::default(),
         }
     }
 }
@@ -52,6 +55,7 @@ impl AiConfigFile {
                 .collect(),
             active_provider_id: self.active_provider_id.clone(),
             copilot_params: self.copilot_params.clone(),
+            agent_settings: self.agent_settings.clone(),
         }
     }
 
@@ -60,6 +64,7 @@ impl AiConfigFile {
         self.version = update.version;
         self.active_provider_id = update.active_provider_id;
         self.copilot_params = update.copilot_params;
+        self.agent_settings = update.agent_settings;
 
         let existing_map: HashMap<String, AiProviderSecretRecord> = {
             let mut map = HashMap::new();
@@ -77,7 +82,31 @@ impl AiConfigFile {
                 merge_provider_upsert(existing, upsert)
             })
             .collect();
+
+        self.normalize();
     }
+
+    /// 规范化全局 AI：任意时刻最多只有一个启用的 provider。
+    pub fn normalize(&mut self) {
+        self.active_provider_id =
+            normalize_active_provider_id(self.active_provider_id.clone(), &mut self.providers);
+    }
+}
+
+fn normalize_active_provider_id(
+    requested_active_provider_id: Option<String>,
+    providers: &mut [AiProviderSecretRecord],
+) -> Option<String> {
+    let resolved_active_provider_id = requested_active_provider_id
+        .filter(|id| providers.iter().any(|provider| provider.id == *id))
+        .or_else(|| providers.first().map(|provider| provider.id.clone()));
+
+    for provider in providers {
+        provider.enabled =
+            resolved_active_provider_id.as_deref() == Some(provider.id.as_str());
+    }
+
+    resolved_active_provider_id
 }
 
 fn merge_provider_upsert(
@@ -115,6 +144,8 @@ pub struct AiConfigView {
     pub active_provider_id: Option<String>,
     #[serde(default)]
     pub copilot_params: AiGenerationParams,
+    #[serde(default)]
+    pub agent_settings: AiAgentSettings,
 }
 
 /// 前端保存配置时使用的写入模型。
@@ -130,6 +161,21 @@ pub struct AiConfigUpdate {
     pub active_provider_id: Option<String>,
     #[serde(default)]
     pub copilot_params: AiGenerationParams,
+    #[serde(default)]
+    pub agent_settings: AiAgentSettings,
+}
+
+/// 全局脚本 AI 代理设置。
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct AiAgentSettings {
+    #[serde(default)]
+    #[ts(optional)]
+    pub system_prompt: Option<String>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub timeout_ms: Option<u64>,
 }
 
 /// 磁盘中的单个 AI 提供商记录（含密钥）。
@@ -307,6 +353,7 @@ mod tests {
             providers: vec![record],
             active_provider_id: Some("p1".to_owned()),
             copilot_params: AiGenerationParams::default(),
+            agent_settings: AiAgentSettings::default(),
         };
         let view = file.to_view();
         assert_eq!(view.providers.len(), 1);
@@ -322,6 +369,7 @@ mod tests {
             providers: vec![record],
             active_provider_id: None,
             copilot_params: AiGenerationParams::default(),
+            agent_settings: AiAgentSettings::default(),
         };
         let view = file.to_view();
         assert!(!view.providers[0].has_api_key);
@@ -335,6 +383,7 @@ mod tests {
             providers: vec![record],
             active_provider_id: None,
             copilot_params: AiGenerationParams::default(),
+            agent_settings: AiAgentSettings::default(),
         };
         file.merge_update(AiConfigUpdate {
             version: 1,
@@ -349,6 +398,7 @@ mod tests {
             }],
             active_provider_id: Some("p1".to_owned()),
             copilot_params: AiGenerationParams::default(),
+            agent_settings: AiAgentSettings::default(),
         });
         assert_eq!(file.providers[0].api_key, "sk-old-key");
         assert_eq!(file.providers[0].name, "新名称");
@@ -363,6 +413,7 @@ mod tests {
             providers: vec![record],
             active_provider_id: None,
             copilot_params: AiGenerationParams::default(),
+            agent_settings: AiAgentSettings::default(),
         };
         file.merge_update(AiConfigUpdate {
             version: 1,
@@ -377,6 +428,7 @@ mod tests {
             }],
             active_provider_id: None,
             copilot_params: AiGenerationParams::default(),
+            agent_settings: AiAgentSettings::default(),
         });
         assert!(file.providers[0].api_key.is_empty());
     }
@@ -397,8 +449,98 @@ mod tests {
             }],
             active_provider_id: None,
             copilot_params: AiGenerationParams::default(),
+            agent_settings: AiAgentSettings::default(),
         });
         assert_eq!(file.providers[0].api_key, "sk-brand-new");
+    }
+
+    #[test]
+    fn merge_update_only_keeps_one_enabled_provider() {
+        let mut file = AiConfigFile::default();
+        file.merge_update(AiConfigUpdate {
+            version: 1,
+            providers: vec![
+                AiProviderUpsert {
+                    id: "p1".to_owned(),
+                    name: "主提供商".to_owned(),
+                    base_url: "https://api.example.com/v1".to_owned(),
+                    default_model: "model-a".to_owned(),
+                    extra_headers: HashMap::new(),
+                    enabled: true,
+                    api_key: AiSecretInput::Set("sk-a".to_owned()),
+                },
+                AiProviderUpsert {
+                    id: "p2".to_owned(),
+                    name: "备选提供商".to_owned(),
+                    base_url: "https://api.example.org/v1".to_owned(),
+                    default_model: "model-b".to_owned(),
+                    extra_headers: HashMap::new(),
+                    enabled: true,
+                    api_key: AiSecretInput::Set("sk-b".to_owned()),
+                },
+            ],
+            active_provider_id: Some("p2".to_owned()),
+            copilot_params: AiGenerationParams::default(),
+            agent_settings: AiAgentSettings::default(),
+        });
+
+        assert_eq!(file.active_provider_id.as_deref(), Some("p2"));
+        assert!(!file.providers[0].enabled);
+        assert!(file.providers[1].enabled);
+    }
+
+    #[test]
+    fn merge_update_without_active_provider_falls_back_to_first_provider() {
+        let mut file = AiConfigFile::default();
+        file.merge_update(AiConfigUpdate {
+            version: 1,
+            providers: vec![
+                AiProviderUpsert {
+                    id: "p1".to_owned(),
+                    name: "主提供商".to_owned(),
+                    base_url: "https://api.example.com/v1".to_owned(),
+                    default_model: "model-a".to_owned(),
+                    extra_headers: HashMap::new(),
+                    enabled: false,
+                    api_key: AiSecretInput::Set("sk-a".to_owned()),
+                },
+                AiProviderUpsert {
+                    id: "p2".to_owned(),
+                    name: "备选提供商".to_owned(),
+                    base_url: "https://api.example.org/v1".to_owned(),
+                    default_model: "model-b".to_owned(),
+                    extra_headers: HashMap::new(),
+                    enabled: true,
+                    api_key: AiSecretInput::Set("sk-b".to_owned()),
+                },
+            ],
+            active_provider_id: None,
+            copilot_params: AiGenerationParams::default(),
+            agent_settings: AiAgentSettings::default(),
+        });
+
+        assert_eq!(file.active_provider_id.as_deref(), Some("p1"));
+        assert!(file.providers[0].enabled);
+        assert!(!file.providers[1].enabled);
+    }
+
+    #[test]
+    fn to_view_includes_agent_settings() {
+        let file = AiConfigFile {
+            version: 1,
+            providers: vec![sample_provider_record("p1", "sk-secret-123")],
+            active_provider_id: Some("p1".to_owned()),
+            copilot_params: AiGenerationParams::default(),
+            agent_settings: AiAgentSettings {
+                system_prompt: Some("你是全局代理".to_owned()),
+                timeout_ms: Some(12_000),
+            },
+        };
+
+        let view = file.to_view();
+
+        assert_eq!(view.agent_settings.system_prompt.as_deref(), Some("你是全局代理"));
+        assert_eq!(view.agent_settings.timeout_ms, Some(12_000));
     }
 
     #[test]
