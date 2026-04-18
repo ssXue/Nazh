@@ -29,6 +29,7 @@ impl RuntimeResources {
     }
 
     /// 插入一个可克隆的资源，并返回自身以便链式构建。
+    #[must_use]
     pub fn with_resource<T>(mut self, resource: T) -> Self
     where
         T: Any + Clone + Send + Sync,

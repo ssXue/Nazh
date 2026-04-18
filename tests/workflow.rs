@@ -919,10 +919,10 @@ async fn http_client_node_posts_payload_and_records_response() {
                 }
             }
 
-            if let Some(total_len) = expected_len {
-                if request_bytes.len() >= total_len {
-                    break;
-                }
+            if let Some(total_len) = expected_len
+                && request_bytes.len() >= total_len
+            {
+                break;
             }
         }
 
@@ -1043,10 +1043,10 @@ async fn http_alarm_node_renders_dingtalk_markdown_body() {
                 }
             }
 
-            if let Some(total_len) = expected_len {
-                if request_bytes.len() >= total_len {
-                    break;
-                }
+            if let Some(total_len) = expected_len
+                && request_bytes.len() >= total_len
+            {
+                break;
             }
         }
 

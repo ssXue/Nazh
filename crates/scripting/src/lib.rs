@@ -95,8 +95,7 @@ impl RhaiAiRuntime {
         let mut messages = Vec::with_capacity(2);
         if let Some(system_prompt) = self
             .system_prompt
-            .as_ref()
-            .map(String::as_str)
+            .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
         {
@@ -168,8 +167,10 @@ impl RhaiAiBinding {
     }
 }
 
+// Rhai register_fn 要求 Box<EvalAltResult> 返回类型
+#[allow(clippy::unnecessary_box_returns)]
 fn to_rhai_error(message: impl Into<String>) -> Box<EvalAltResult> {
-    EvalAltResult::ErrorRuntime(message.into().into(), Position::NONE).into()
+    Box::new(EvalAltResult::ErrorRuntime(message.into().into(), Position::NONE))
 }
 
 fn register_ai_complete(engine: &mut Engine, node_id: &str, ai: Option<RhaiAiRuntime>) {

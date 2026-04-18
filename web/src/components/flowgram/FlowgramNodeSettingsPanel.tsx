@@ -12,15 +12,15 @@ import {
   parseTimeoutMs,
   type FlowgramLogicBranch,
 } from './flowgram-node-library';
-import { AiScriptGenerator } from './AiScriptGenerator';
 import { generateScript, getNodeContext } from '../../lib/script-generation';
-import type { AiProviderView, ConnectionDefinition } from '../../types';
+import type { AiGenerationParams, AiProviderView, ConnectionDefinition } from '../../types';
 
 export interface FlowgramNodeSettingsPanelProps {
   nodeId: string;
   connections: ConnectionDefinition[];
   aiProviders: AiProviderView[];
   activeAiProviderId: string | null;
+  copilotParams: AiGenerationParams;
 }
 
 interface SelectedNodeDraft {
@@ -176,6 +176,10 @@ function isScriptNode(nodeType: string): boolean {
 
 function supportsScriptAi(nodeType: string): boolean {
   return nodeType === 'code' || nodeType === 'rhai';
+}
+
+function isUsableAiProvider(provider: AiProviderView | null | undefined): provider is AiProviderView {
+  return Boolean(provider?.enabled && provider.hasApiKey);
 }
 
 function usesDynamicPorts(nodeType: string): boolean {
@@ -399,28 +403,18 @@ function FlowgramNodeSettingsPanel({
   connections,
   aiProviders,
   activeAiProviderId,
+  copilotParams,
 }: FlowgramNodeSettingsPanelProps) {
   const panelManager = usePanelManager();
   const { document, playground } = useClientContext();
   const node = document.getNode(nodeId) as FlowNodeEntity | undefined;
   const [draft, setDraft] = useState<SelectedNodeDraft | null>(() => (node ? readNodeDraft(node) : null));
-  const [aiGeneratorOpen, setAiGeneratorOpen] = useState(false);
   const [aiGenerating, setAiGenerating] = useState(false);
   const [aiGenerateError, setAiGenerateError] = useState<string | null>(null);
 
   const closePanel = useCallback(() => {
     panelManager.close(FLOWGRAM_NODE_SETTINGS_PANEL_KEY, 'right');
   }, [panelManager]);
-
-  const hasAiProvider = aiProviders.length > 0 && !!activeAiProviderId;
-
-  const handleAiGeneratorClose = useCallback(() => {
-    if (aiGenerating) {
-      return;
-    }
-    setAiGeneratorOpen(false);
-    setAiGenerateError(null);
-  }, [aiGenerating]);
 
   useEffect(() => {
     if (!node) {
@@ -509,6 +503,50 @@ function FlowgramNodeSettingsPanel({
       null,
     [activeAiProviderId, aiProviderChoices],
   );
+
+  const activeCopilotProvider = useMemo(
+    () =>
+      activeAiProviderId
+        ? aiProviders.find((provider) => provider.id === activeAiProviderId) ?? null
+        : null,
+    [activeAiProviderId, aiProviders],
+  );
+
+  const preferredCopilotProvider = useMemo(() => {
+    if (isUsableAiProvider(activeCopilotProvider)) {
+      return activeCopilotProvider;
+    }
+
+    return aiProviders.find((provider) => isUsableAiProvider(provider)) ?? null;
+  }, [activeCopilotProvider, aiProviders]);
+
+  const aiGenerateButtonTitle = useMemo(() => {
+    if (!draft?.aiDescription.trim()) {
+      return '请先填写 AI 描述';
+    }
+
+    if (preferredCopilotProvider) {
+      return `使用 ${preferredCopilotProvider.name} 生成 Rhai 脚本`;
+    }
+
+    if (aiProviders.length === 0) {
+      return '请先在 AI 配置中添加提供商';
+    }
+
+    if (activeCopilotProvider && !activeCopilotProvider.enabled) {
+      return `激活提供商 ${activeCopilotProvider.name} 已被禁用`;
+    }
+
+    if (activeCopilotProvider && !activeCopilotProvider.hasApiKey) {
+      return `请先为 ${activeCopilotProvider.name} 配置 API Key`;
+    }
+
+    if (aiProviders.some((provider) => provider.enabled)) {
+      return '请先为可用的 AI 提供商配置 API Key';
+    }
+
+    return '请先启用一个 AI 提供商';
+  }, [activeCopilotProvider, aiProviders, draft?.aiDescription, preferredCopilotProvider]);
 
   const diagnostics = useMemo<NodeValidation[]>(() => {
     if (!draft) {
@@ -617,6 +655,11 @@ function FlowgramNodeSettingsPanel({
         nextDiagnostics.push({
           tone: 'danger',
           message: `AI 提供商 ${selectedAiProvider.name} 已被禁用。`,
+        });
+      } else if (!selectedAiProvider.hasApiKey) {
+        nextDiagnostics.push({
+          tone: 'danger',
+          message: `AI 提供商 ${selectedAiProvider.name} 尚未配置 API Key。`,
         });
       } else {
         nextDiagnostics.push({
@@ -799,23 +842,31 @@ function FlowgramNodeSettingsPanel({
   );
 
   const handleAiGenerate = useCallback(
-    async (requirement: string) => {
-      if (!node || !activeAiProviderId) {
+    async () => {
+      if (!node || !draft || !preferredCopilotProvider) {
         return;
       }
+
+      const requirement = draft.aiDescription.trim();
+      if (!requirement) {
+        setAiGenerateError('请先填写 AI 描述，再生成脚本。');
+        return;
+      }
+
       setAiGenerating(true);
       setAiGenerateError(null);
       try {
         const context = getNodeContext(node);
         const script = await generateScript(requirement, context, {
-          providerId: activeAiProviderId,
+          providerId: preferredCopilotProvider.id,
+          model: preferredCopilotProvider.defaultModel,
+          params: copilotParams,
         });
         if (!script) {
           setAiGenerateError('AI 未返回有效代码。');
           return;
         }
         updateDraft({ script });
-        setAiGeneratorOpen(false);
         setAiGenerateError(null);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -824,7 +875,7 @@ function FlowgramNodeSettingsPanel({
         setAiGenerating(false);
       }
     },
-    [node, activeAiProviderId, updateDraft],
+    [copilotParams, draft, node, preferredCopilotProvider, updateDraft],
   );
 
   if (!node || !draft || playground.config.readonly) {
@@ -895,7 +946,10 @@ function FlowgramNodeSettingsPanel({
           <span>AI 描述</span>
           <textarea
             value={draft.aiDescription}
-            onChange={(event) => updateDraft({ aiDescription: event.target.value })}
+            onChange={(event) => {
+              setAiGenerateError(null);
+              updateDraft({ aiDescription: event.target.value });
+            }}
           />
         </label>
         <label>
@@ -922,12 +976,11 @@ function FlowgramNodeSettingsPanel({
                 <button
                   type="button"
                   className="ghost flowgram-btn-ai"
-                  disabled={!hasAiProvider || aiGenerating}
+                  disabled={!preferredCopilotProvider || aiGenerating || !draft.aiDescription.trim()}
                   onClick={() => {
-                    setAiGeneratorOpen(true);
-                    setAiGenerateError(null);
+                    void handleAiGenerate();
                   }}
-                  title={!hasAiProvider ? '请先在 AI 配置中添加提供商' : 'AI 生成脚本'}
+                  title={aiGenerateButtonTitle}
                 >
                   {aiGenerating ? '生成中...' : 'AI 生成'}
                 </button>
@@ -1408,14 +1461,10 @@ function FlowgramNodeSettingsPanel({
             {note.message}
           </article>
         ))}
+        {aiGenerateError ? (
+          <article className="flowgram-note flowgram-note--danger">{aiGenerateError}</article>
+        ) : null}
       </div>
-      <AiScriptGenerator
-        open={aiGeneratorOpen}
-        loading={aiGenerating}
-        error={aiGenerateError}
-        onGenerate={handleAiGenerate}
-        onClose={handleAiGeneratorClose}
-      />
     </section>
   );
 }

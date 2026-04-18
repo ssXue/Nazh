@@ -17,6 +17,14 @@ export interface NodeContext {
   downstream: NodeContextInfo[];
 }
 
+const DEFAULT_SCRIPT_GENERATION_PARAMS: AiGenerationParams = {
+  temperature: 0.7,
+  maxTokens: 2048,
+  topP: 1,
+};
+
+const DEFAULT_SCRIPT_GENERATION_TIMEOUT_MS = 60_000;
+
 function extractNodeInfo(node: FlowNodeEntity): NodeContextInfo {
   const extInfo = (node.getExtInfo() ?? {}) as {
     label?: string;
@@ -40,14 +48,19 @@ export function getNodeContext(node: FlowNodeEntity): NodeContext {
   };
 }
 
-const SYSTEM_PROMPT = `你是工业边缘计算工作流的脚本编写助手。根据用户需求生成 Rhai 脚本代码。
+const SYSTEM_PROMPT = `你是工业边缘计算工作流的脚本编写助手。根据用户需求生成可直接在 Nazh 中运行的 Rhai 脚本代码。
 规则：
-- 只输出可执行的 Rhai 脚本，不要输出解释文字
-- 脚本可通过 ctx.payload() 获取输入数据
-- 脚本可通过 ctx.set_output(value) 设置输出
-- 如需调用 AI，使用 ai_complete("prompt") 函数
-- 不要使用 print() 等调试语句
-- 保持简洁，专注于数据处理和转换逻辑`;
+- 只输出可执行的 Rhai 脚本，不要输出解释、标题或 Markdown 代码块
+- 输入数据直接来自变量 payload
+- 如果需要修改输入，请直接修改 payload，并在最后返回 payload
+- 如果需要返回新的值或对象，直接把该值作为脚本最后一行返回
+- 如需调用 AI，使用 ai_complete("prompt") 函数，它会返回字符串
+- 不要使用 ctx、print()、console.log() 或其他不存在的 API
+- 优先使用 payload["field"] 这种字段访问方式，保持脚本简洁
+
+示例：
+payload["normalized"] = true;
+payload`;
 
 export function buildScriptGenerationPrompt(
   requirement: string,
@@ -93,8 +106,56 @@ ${requirement}`;
 
 export interface GenerateScriptOptions {
   providerId: string;
-  model?: string;
-  timeoutMs?: number;
+  model?: string | null;
+  params?: AiGenerationParams;
+  timeoutMs?: number | null;
+}
+
+function resolveGenerationParams(params?: AiGenerationParams): AiGenerationParams {
+  return {
+    temperature: params?.temperature ?? DEFAULT_SCRIPT_GENERATION_PARAMS.temperature,
+    maxTokens: params?.maxTokens ?? DEFAULT_SCRIPT_GENERATION_PARAMS.maxTokens,
+    topP: params?.topP ?? DEFAULT_SCRIPT_GENERATION_PARAMS.topP,
+  };
+}
+
+const NL_PREFIX_PATTERNS = [
+  /^(?:这是|以下是|下面是|这是生成的|这是你的|here\s+is|below\s+is|the\s+following\s+is|sure!?\s*here'?s?|certainly!?\s*here'?s?)\s*.+/i,
+];
+
+export function sanitizeGeneratedScript(content: string): string {
+  const trimmed = content.trim();
+  if (!trimmed) {
+    return '';
+  }
+
+  const codeBlockRegex = /```(?:rhai|rust|javascript|js|typescript|ts)?\s*([\s\S]*?)```/gi;
+  let lastMatch: string | null = null;
+  let match: RegExpExecArray | null;
+  while ((match = codeBlockRegex.exec(trimmed)) !== null) {
+    if (match[1]?.trim()) {
+      lastMatch = match[1].trim();
+    }
+  }
+  if (lastMatch) {
+    return lastMatch;
+  }
+
+  const lines = trimmed.split('\n');
+  while (lines.length > 0) {
+    const firstLine = lines[0].trim();
+    if (!firstLine) {
+      lines.shift();
+      continue;
+    }
+    if (NL_PREFIX_PATTERNS.some((pattern) => pattern.test(firstLine))) {
+      lines.shift();
+      continue;
+    }
+    break;
+  }
+
+  return lines.join('\n').trim();
 }
 
 export async function generateScript(
@@ -103,18 +164,13 @@ export async function generateScript(
   options: GenerateScriptOptions,
 ): Promise<string> {
   const messages = buildScriptGenerationPrompt(requirement, context);
-  const params: AiGenerationParams = {
-    temperature: 0.2,
-    maxTokens: 2048,
-    topP: 0.9,
-  };
   const request: AiCompletionRequest = {
     providerId: options.providerId,
-    model: options.model,
+    model: options.model ?? undefined,
     messages,
-    params,
-    timeoutMs: options.timeoutMs != null ? BigInt(options.timeoutMs) : BigInt(60000),
+    params: resolveGenerationParams(options.params),
+    timeoutMs: BigInt(options.timeoutMs ?? DEFAULT_SCRIPT_GENERATION_TIMEOUT_MS),
   };
   const response = await copilotComplete(request);
-  return response.content.trim();
+  return sanitizeGeneratedScript(response.content);
 }

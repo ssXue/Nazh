@@ -1592,6 +1592,7 @@ function App() {
             connections={connectionLibrary.connections}
             aiProviders={aiConfig?.providers ?? []}
             activeAiProviderId={aiConfig?.activeProviderId ?? null}
+            copilotParams={aiConfig?.copilotParams ?? {}}
             runtimeState={engine.runtimeState}
             workflowStatus={workflowStatus}
             accentHex={settings.accentHex}
