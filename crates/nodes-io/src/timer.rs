@@ -5,9 +5,9 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
-use nazh_core::into_payload_map;
-use nazh_core::{ContextRef, DataStore, EngineError};
-use nazh_core::{NodeExecution, NodeTrait};
+use uuid::Uuid;
+
+use nazh_core::{EngineError, NodeExecution, NodeTrait, into_payload_map};
 
 fn default_timer_interval_ms() -> u64 {
     5_000
@@ -48,12 +48,11 @@ impl TimerNode {
 impl NodeTrait for TimerNode {
     nazh_core::impl_node_meta!("timer");
 
-    async fn execute(
+    async fn transform(
         &self,
-        ctx: &ContextRef,
-        store: &dyn DataStore,
+        _trace_id: Uuid,
+        payload: Value,
     ) -> Result<NodeExecution, EngineError> {
-        let payload = store.read_mut(&ctx.data_id)?;
         let mut payload_map = into_payload_map(payload);
 
         for (key, value) in &self.config.inject {

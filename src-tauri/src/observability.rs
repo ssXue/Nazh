@@ -201,7 +201,7 @@ impl ObservabilityStore {
                     false,
                 )
             }
-            ExecutionEvent::Completed { stage, trace_id } => {
+            ExecutionEvent::Completed { stage, trace_id, .. } => {
                 let duration_ms = state
                     .active_spans
                     .get(&span_key(trace_id, stage))
@@ -297,7 +297,7 @@ impl ObservabilityStore {
 
         if clear_span {
             match event {
-                ExecutionEvent::Completed { stage, trace_id }
+                ExecutionEvent::Completed { stage, trace_id, .. }
                 | ExecutionEvent::Failed {
                     stage, trace_id, ..
                 } => {

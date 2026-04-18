@@ -11,12 +11,12 @@ use nazh_ai_core::{
     AiTestResult,
 };
 use nazh_engine::{
-    ArenaDataStore, ConnectionDefinition, ConnectionManager, ContextRef, DataStore,
-    DebugConsoleNode, DebugConsoleNodeConfig, EngineError, HttpClientNode, HttpClientNodeConfig,
-    ModbusReadNode, ModbusReadNodeConfig, NodeDispatch, NodeTrait, RhaiNode, RhaiNodeConfig,
-    SerialTriggerNode, SerialTriggerNodeConfig, SqlWriterNode, SqlWriterNodeConfig, TimerNode,
-    TimerNodeConfig, WorkflowContext, WorkflowGraph, deploy_workflow, deploy_workflow_with_ai,
-    shared_connection_manager, standard_registry,
+    ConnectionDefinition, ConnectionManager, DebugConsoleNode, DebugConsoleNodeConfig,
+    EngineError, HttpClientNode, HttpClientNodeConfig, ModbusReadNode, ModbusReadNodeConfig,
+    NodeDispatch, NodeTrait, RhaiNode, RhaiNodeConfig, SerialTriggerNode, SerialTriggerNodeConfig,
+    SqlWriterNode, SqlWriterNodeConfig, TimerNode, TimerNodeConfig, WorkflowContext,
+    WorkflowGraph, deploy_workflow, deploy_workflow_with_ai, shared_connection_manager,
+    standard_registry,
 };
 use serde_json::json;
 use tokio::time::timeout;
@@ -77,13 +77,8 @@ async fn rhai_node_can_transform_json_payload() {
         Err(error) => panic!("rhai node should compile: {error}"),
     };
 
-    let store = ArenaDataStore::new();
-    let ctx = WorkflowContext::new(json!({ "value": 9 }));
-    let data_id = store
-        .write(ctx.payload, 1)
-        .unwrap_or_else(|e| panic!("store write failed: {e}"));
-    let ctx_ref = ContextRef::new(ctx.trace_id, data_id, None);
-    let result = node.execute(&ctx_ref, &store).await;
+    let trace_id = Uuid::new_v4();
+    let result = node.transform(trace_id, json!({ "value": 9 })).await;
 
     match result {
         Ok(execution) => match execution.first() {
@@ -266,16 +261,6 @@ async fn workflow_graph_executes_end_to_end() {
             assert_eq!(
                 ctx.payload,
                 json!({
-                    "_connection": {
-                        "borrowed_at": ctx.payload["_connection"]["borrowed_at"],
-                        "id": "mqtt-main",
-                        "kind": "mqtt",
-                        "metadata": {
-                            "host": "127.0.0.1",
-                            "port": 1883,
-                            "topic": "test/topic"
-                        }
-                    },
                     "_native_message": "ingest",
                     "line": "A01",
                     "value": 42
@@ -684,13 +669,8 @@ async fn timer_node_injects_trigger_metadata() {
         "interval trigger",
     );
 
-    let store = ArenaDataStore::new();
-    let ctx = WorkflowContext::new(json!({ "seed": "keep" }));
-    let data_id = store
-        .write(ctx.payload, 1)
-        .unwrap_or_else(|e| panic!("store write failed: {e}"));
-    let ctx_ref = ContextRef::new(ctx.trace_id, data_id, None);
-    let result = node.execute(&ctx_ref, &store).await;
+    let trace_id = Uuid::new_v4();
+    let result = node.transform(trace_id, json!({ "seed": "keep" })).await;
 
     match result {
         Ok(execution) => match execution.first() {
@@ -732,20 +712,20 @@ async fn serial_trigger_node_normalizes_ascii_and_hex_frames() {
         "serial trigger",
     );
 
-    let store = ArenaDataStore::new();
-    let ctx = WorkflowContext::new(json!({
-        "_serial_frame": {
-            "ascii": " RFID-42\r\n",
-            "hex": "52 46 49 44 2D 34 32",
-            "byte_len": 9,
-            "port_path": "/dev/tty.mock"
-        }
-    }));
-    let data_id = store
-        .write(ctx.payload, 1)
-        .unwrap_or_else(|e| panic!("store write failed: {e}"));
-    let ctx_ref = ContextRef::new(ctx.trace_id, data_id, None);
-    let result = node.execute(&ctx_ref, &store).await;
+    let trace_id = Uuid::new_v4();
+    let result = node
+        .transform(
+            trace_id,
+            json!({
+                "_serial_frame": {
+                    "ascii": " RFID-42\r\n",
+                    "hex": "52 46 49 44 2D 34 32",
+                    "byte_len": 9,
+                    "port_path": "/dev/tty.mock"
+                }
+            }),
+        )
+        .await;
 
     match result {
         Ok(execution) => match execution.first() {
@@ -835,13 +815,8 @@ async fn modbus_read_node_emits_simulated_values() {
         shared_connection_manager(),
     );
 
-    let store = ArenaDataStore::new();
-    let ctx = WorkflowContext::new(json!({}));
-    let data_id = store
-        .write(ctx.payload, 1)
-        .unwrap_or_else(|e| panic!("store write failed: {e}"));
-    let ctx_ref = ContextRef::new(ctx.trace_id, data_id, None);
-    let result = node.execute(&ctx_ref, &store).await;
+    let trace_id = Uuid::new_v4();
+    let result = node.transform(trace_id, json!({})).await;
 
     match result {
         Ok(execution) => match execution.first() {
@@ -961,13 +936,10 @@ async fn http_client_node_posts_payload_and_records_response() {
         Err(e) => panic!("HttpClientNode 创建失败: {e}"),
     };
 
-    let store = ArenaDataStore::new();
-    let ctx = WorkflowContext::new(json!({ "severity": "high", "value": 92 }));
-    let data_id = store
-        .write(ctx.payload, 1)
-        .unwrap_or_else(|e| panic!("store write failed: {e}"));
-    let ctx_ref = ContextRef::new(ctx.trace_id, data_id, None);
-    let result = node.execute(&ctx_ref, &store).await;
+    let trace_id = Uuid::new_v4();
+    let result = node
+        .transform(trace_id, json!({ "severity": "high", "value": 92 }))
+        .await;
 
     match result {
         Ok(execution) => match execution.first() {
@@ -1111,17 +1083,17 @@ async fn http_alarm_node_renders_dingtalk_markdown_body() {
         Err(e) => panic!("HttpClientNode 创建失败: {e}"),
     };
 
-    let store = ArenaDataStore::new();
-    let ctx = WorkflowContext::new(json!({
-        "tag": "boiler-a",
-        "severity": "alert",
-        "temperature_c": 92
-    }));
-    let data_id = store
-        .write(ctx.payload, 1)
-        .unwrap_or_else(|e| panic!("store write failed: {e}"));
-    let ctx_ref = ContextRef::new(ctx.trace_id, data_id, None);
-    let result = node.execute(&ctx_ref, &store).await;
+    let trace_id = Uuid::new_v4();
+    let result = node
+        .transform(
+            trace_id,
+            json!({
+                "tag": "boiler-a",
+                "severity": "alert",
+                "temperature_c": 92
+            }),
+        )
+        .await;
 
     match result {
         Ok(execution) => match execution.first() {
@@ -1163,13 +1135,10 @@ async fn sql_writer_node_persists_payload_into_sqlite() {
         "write sqlite log",
     );
 
-    let store = ArenaDataStore::new();
-    let ctx = WorkflowContext::new(json!({ "value": 7, "status": "stored" }));
-    let data_id = store
-        .write(ctx.payload, 1)
-        .unwrap_or_else(|e| panic!("store write failed: {e}"));
-    let ctx_ref = ContextRef::new(ctx.trace_id, data_id, None);
-    let result = node.execute(&ctx_ref, &store).await;
+    let trace_id = Uuid::new_v4();
+    let result = node
+        .transform(trace_id, json!({ "value": 7, "status": "stored" }))
+        .await;
 
     match result {
         Ok(execution) => match execution.first() {
@@ -1209,13 +1178,10 @@ async fn debug_console_node_marks_payload_and_passes_through() {
         "debug payload",
     );
 
-    let store = ArenaDataStore::new();
-    let ctx = WorkflowContext::new(json!({ "status": "ok" }));
-    let data_id = store
-        .write(ctx.payload, 1)
-        .unwrap_or_else(|e| panic!("store write failed: {e}"));
-    let ctx_ref = ContextRef::new(ctx.trace_id, data_id, None);
-    let result = node.execute(&ctx_ref, &store).await;
+    let trace_id = Uuid::new_v4();
+    let result = node
+        .transform(trace_id, json!({ "status": "ok" }))
+        .await;
 
     match result {
         Ok(execution) => match execution.first() {

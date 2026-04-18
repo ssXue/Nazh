@@ -9,10 +9,10 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
+use uuid::Uuid;
+
 use crate::template::{self, TemplateVars};
-use nazh_core::into_payload_map;
-use nazh_core::{ContextRef, DataStore, EngineError};
-use nazh_core::{NodeExecution, NodeTrait};
+use nazh_core::{EngineError, NodeExecution, NodeTrait, into_payload_map};
 
 fn default_http_method() -> String {
     "POST".to_owned()
@@ -233,12 +233,11 @@ impl HttpClientNode {
 impl NodeTrait for HttpClientNode {
     nazh_core::impl_node_meta!("httpClient");
 
-    async fn execute(
+    async fn transform(
         &self,
-        ctx: &ContextRef,
-        store: &dyn DataStore,
+        trace_id: Uuid,
+        payload: Value,
     ) -> Result<NodeExecution, EngineError> {
-        let payload = store.read_mut(&ctx.data_id)?;
         let method = self.config.method.trim().to_uppercase();
         let url = self.config.url.trim().to_owned();
         if url.is_empty() {
@@ -254,8 +253,8 @@ impl NodeTrait for HttpClientNode {
             &self.id,
             &self.config,
             &payload,
-            &ctx.trace_id,
-            &ctx.timestamp,
+            &trace_id,
+            &Utc::now(),
             &requested_at,
         )?;
 
@@ -288,7 +287,7 @@ impl NodeTrait for HttpClientNode {
         let response = request.send().await.map_err(|error| {
             EngineError::stage_execution(
                 self.id.clone(),
-                ctx.trace_id,
+                trace_id,
                 format!("HTTP 请求失败: {error}"),
             )
         })?;
@@ -297,7 +296,7 @@ impl NodeTrait for HttpClientNode {
         let response_body = response.text().await.map_err(|error| {
             EngineError::stage_execution(
                 self.id.clone(),
-                ctx.trace_id,
+                trace_id,
                 format!("读取 HTTP 响应体失败: {error}"),
             )
         })?;
@@ -306,7 +305,7 @@ impl NodeTrait for HttpClientNode {
         if status_code >= 400 {
             return Err(EngineError::stage_execution(
                 self.id.clone(),
-                ctx.trace_id,
+                trace_id,
                 format!(
                     "HTTP 请求返回错误状态码 {status_code}: {}",
                     template::truncate(&template::value_to_display_string(&response_value), 240)

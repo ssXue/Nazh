@@ -6,7 +6,10 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-use nazh_core::{ContextRef, DataStore, EngineError};
+use serde_json::Value;
+use uuid::Uuid;
+
+use nazh_core::EngineError;
 use nazh_core::{NodeExecution, NodeTrait};
 use scripting::{RhaiNodeBase, default_max_operations};
 
@@ -70,12 +73,11 @@ impl SwitchNode {
 impl NodeTrait for SwitchNode {
     scripting::delegate_node_base!("switch");
 
-    async fn execute(
+    async fn transform(
         &self,
-        ctx: &ContextRef,
-        store: &dyn DataStore,
+        _trace_id: Uuid,
+        payload: Value,
     ) -> Result<NodeExecution, EngineError> {
-        let payload = store.read_mut(&ctx.data_id)?;
         let (scope, result) = self.base.evaluate(payload)?;
         let new_payload = self.base.payload_from_scope(&scope)?;
         let next_branch = if result.is_unit() {

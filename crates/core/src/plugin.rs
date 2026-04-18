@@ -287,8 +287,10 @@ impl Default for PluginHost {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::{ContextRef, DataStore, NodeExecution};
+    use crate::{EngineError, NodeExecution};
     use async_trait::async_trait;
+    use serde_json::Value;
+    use uuid::Uuid;
 
     struct StubNode {
         id: String,
@@ -306,12 +308,12 @@ mod tests {
         fn ai_description(&self) -> &str {
             ""
         }
-        async fn execute(
+        async fn transform(
             &self,
-            _ctx: &ContextRef,
-            _store: &dyn DataStore,
+            _trace_id: Uuid,
+            _payload: Value,
         ) -> Result<NodeExecution, EngineError> {
-            Ok(NodeExecution::broadcast(serde_json::Value::Null))
+            Ok(NodeExecution::broadcast(Value::Null))
         }
     }
 

@@ -7,9 +7,9 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use nazh_core::into_payload_map;
-use nazh_core::{ContextRef, DataStore, EngineError};
-use nazh_core::{NodeExecution, NodeTrait};
+use uuid::Uuid;
+
+use nazh_core::{EngineError, NodeExecution, NodeTrait, into_payload_map};
 
 fn default_debug_pretty() -> bool {
     true
@@ -48,12 +48,11 @@ impl DebugConsoleNode {
 impl NodeTrait for DebugConsoleNode {
     nazh_core::impl_node_meta!("debugConsole");
 
-    async fn execute(
+    async fn transform(
         &self,
-        ctx: &ContextRef,
-        store: &dyn DataStore,
+        _trace_id: Uuid,
+        payload: Value,
     ) -> Result<NodeExecution, EngineError> {
-        let shared_payload = store.read(&ctx.data_id)?;
         let label = self
             .config
             .label
@@ -61,21 +60,21 @@ impl NodeTrait for DebugConsoleNode {
             .filter(|label| !label.trim().is_empty())
             .unwrap_or("调试控制台");
         let rendered_payload = if self.config.pretty {
-            serde_json::to_string_pretty(&*shared_payload)
+            serde_json::to_string_pretty(&payload)
         } else {
-            serde_json::to_string(&*shared_payload)
+            serde_json::to_string(&payload)
         }
         .map_err(|error| EngineError::payload_conversion(self.id.clone(), error.to_string()))?;
 
         tracing::info!(
             node_id = %self.id,
-            trace_id = %ctx.trace_id,
+            trace_id = %_trace_id,
             label,
             "调试控制台输出\n{}",
             rendered_payload
         );
 
-        let mut payload_map = into_payload_map((*shared_payload).clone());
+        let mut payload_map = into_payload_map(payload.clone());
         payload_map.insert(
             "_debug_console".to_owned(),
             json!({

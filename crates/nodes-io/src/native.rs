@@ -7,10 +7,10 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use connections::{ConnectionGuard, SharedConnectionManager, insert_connection_lease};
-use nazh_core::into_payload_map;
-use nazh_core::{ContextRef, DataStore, EngineError};
-use nazh_core::{NodeExecution, NodeTrait};
+use connections::{SharedConnectionManager, connection_metadata};
+use uuid::Uuid;
+
+use nazh_core::{EngineError, NodeExecution, NodeTrait, into_payload_map};
 
 /// [`NativeNode`] 的配置。
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -48,10 +48,9 @@ impl NativeNode {
 
     fn build_payload(
         &self,
-        trace_id: uuid::Uuid,
+        trace_id: Uuid,
         payload: Value,
-        guard: Option<&ConnectionGuard>,
-    ) -> Result<Value, EngineError> {
+    ) -> Value {
         let mut payload_map = into_payload_map(payload);
 
         if let Some(message) = &self.config.message {
@@ -62,10 +61,6 @@ impl NativeNode {
             payload_map.insert(key.clone(), value.clone());
         }
 
-        if let Some(guard) = guard {
-            insert_connection_lease(&self.id, &mut payload_map, guard.lease())?;
-        }
-
         tracing::info!(
             node_id = %self.id,
             trace_id = %trace_id,
@@ -73,7 +68,7 @@ impl NativeNode {
             "原生节点执行"
         );
 
-        Ok(Value::Object(payload_map))
+        Value::Object(payload_map)
     }
 }
 
@@ -81,21 +76,25 @@ impl NativeNode {
 impl NodeTrait for NativeNode {
     nazh_core::impl_node_meta!("native");
 
-    async fn execute(
+    async fn transform(
         &self,
-        ctx: &ContextRef,
-        store: &dyn DataStore,
+        trace_id: Uuid,
+        payload: Value,
     ) -> Result<NodeExecution, EngineError> {
-        let payload = store.read_mut(&ctx.data_id)?;
         let mut guard = if let Some(conn_id) = &self.config.connection_id {
             Some(self.connection_manager.acquire(conn_id).await?)
         } else {
             None
         };
-        let result = self.build_payload(ctx.trace_id, payload, guard.as_ref())?;
+        let result = self.build_payload(trace_id, payload);
+        let mut metadata = Map::new();
+        if let Some(g) = guard.as_ref() {
+            let (key, value) = connection_metadata(&self.id, g.lease())?;
+            metadata.insert(key, value);
+        }
         if let Some(g) = &mut guard {
             g.mark_success();
         }
-        Ok(NodeExecution::broadcast(result))
+        Ok(NodeExecution::broadcast(result).with_metadata(metadata))
     }
 }

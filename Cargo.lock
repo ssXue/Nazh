@@ -2202,6 +2202,7 @@ dependencies = [
  "scripting",
  "serde",
  "serde_json",
+ "uuid",
 ]
 
 [[package]]
