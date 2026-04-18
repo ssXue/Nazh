@@ -59,23 +59,16 @@ impl NodeTrait for TimerNode {
             payload_map.insert(key.clone(), value.clone());
         }
 
-        let existing_timer = payload_map
-            .remove("_timer")
-            .and_then(|value| match value {
-                Value::Object(map) => Some(map),
-                _ => None,
-            })
-            .unwrap_or_default();
-        let mut timer_meta = existing_timer;
-        timer_meta.insert("node_id".to_owned(), json!(self.id));
-        timer_meta.insert(
-            "interval_ms".to_owned(),
-            json!(self.config.interval_ms.max(1)),
-        );
-        timer_meta.insert("immediate".to_owned(), json!(self.config.immediate));
-        timer_meta.insert("triggered_at".to_owned(), json!(Utc::now().to_rfc3339()));
-        payload_map.insert("_timer".to_owned(), Value::Object(timer_meta));
+        let metadata = Map::from_iter([(
+            "timer".to_owned(),
+            json!({
+                "node_id": self.id,
+                "interval_ms": self.config.interval_ms.max(1),
+                "immediate": self.config.immediate,
+                "triggered_at": Utc::now().to_rfc3339(),
+            }),
+        )]);
 
-        Ok(NodeExecution::broadcast(Value::Object(payload_map)))
+        Ok(NodeExecution::broadcast(Value::Object(payload_map)).with_metadata(metadata))
     }
 }

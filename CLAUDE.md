@@ -136,6 +136,8 @@ These come from the project's industrial reliability requirements (see `AI-Conte
 - **Channel-based message passing over shared state.** Use Tokio MPSC channels for inter-node data flow. The only shared mutable state is `ConnectionManager` behind `Arc<RwLock<...>>`.
 - **Rhai scripts must have step limits** (`max_operations`) to prevent infinite loops in user-provided code.
 - **Every node has an `ai_description` field** for future LLM-driven script generation.
+- **NodeTrait signature is `transform(trace_id, payload)` → `NodeExecution`.** Nodes must not touch `DataStore`. The Runner is solely responsible for store reads/writes.
+- **Execution metadata must not leak into payload.** Metadata (timer ticks, HTTP request info, Modbus samples, serial frame details, SQL write info, debug console logs, connection info) must be returned via `NodeOutput::metadata` + `with_metadata()`, using non-underscore keys (e.g. `"timer"`, `"http"`, `"modbus"`, `"serial"`, `"sql_writer"`, `"debug_console"`, `"connection"`). The Runner merges metadata into `ExecutionEvent::Completed` events. Only routing context (`_loop`, `_error`) is allowed to remain in the payload.
 
 ## Testing
 

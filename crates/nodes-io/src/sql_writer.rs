@@ -75,7 +75,6 @@ impl NodeTrait for SqlWriterNode {
         trace_id: Uuid,
         payload: Value,
     ) -> Result<NodeExecution, EngineError> {
-        let shared_payload = payload;
         let database_path = self.config.database_path.trim().to_owned();
         if database_path.contains("..") {
             return Err(EngineError::node_config(
@@ -90,7 +89,7 @@ impl NodeTrait for SqlWriterNode {
             )
         })?;
         let node_id = self.id.clone();
-        let payload_json = serde_json::to_string(&shared_payload)
+        let payload_json = serde_json::to_string(&payload)
             .map_err(|error| EngineError::payload_conversion(self.id.clone(), error.to_string()))?;
         let timestamp = Utc::now().to_rfc3339();
         let db_path_clone = database_path.clone();
@@ -158,16 +157,16 @@ impl NodeTrait for SqlWriterNode {
             trace_id,
         })??;
 
-        let mut payload_map = into_payload_map(shared_payload);
-        payload_map.insert(
-            "_sql_writer".to_owned(),
+        let payload_map = into_payload_map(payload);
+        let metadata = serde_json::Map::from_iter([(
+            "sql_writer".to_owned(),
             json!({
                 "database_path": database_path,
                 "table": table,
                 "written_at": timestamp,
             }),
-        );
+        )]);
 
-        Ok(NodeExecution::broadcast(Value::Object(payload_map)))
+        Ok(NodeExecution::broadcast(Value::Object(payload_map)).with_metadata(metadata))
     }
 }

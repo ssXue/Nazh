@@ -419,6 +419,8 @@ npm --prefix web run build                    # 前端构建
 - **通道优先**：节点间数据流使用 Tokio MPSC 通道，`ConnectionManager` 是唯一的共享可变状态。
 - **脚本步数上限**：Rhai 节点设置 `max_operations`（默认 50k），防止死循环。
 - **中文注释**：所有代码注释、文档注释、错误信息、日志消息使用中文。
+- **元数据与载荷分离**：节点执行元数据（定时触发、HTTP 请求、Modbus 采样、串口帧、SQLite 写入、调试输出、连接信息等）必须通过 `NodeOutput::metadata` + `with_metadata()` 返回，使用无下划线前缀的键名（如 `"timer"`、`"http"`、`"modbus"`），由 Runner 合并到 `ExecutionEvent::Completed` 事件通道独立传递，不得混入业务 payload。仅路由上下文（`_loop`、`_error`）允许保留在 payload 中。
+- **NodeTrait 签名**：`transform(trace_id, payload) → NodeExecution`，节点不得接触 `DataStore`，Runner 全权负责 store 读写。
 
 ## 测试
 

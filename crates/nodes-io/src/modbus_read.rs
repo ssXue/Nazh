@@ -1,7 +1,7 @@
 //! Modbus 寄存器读取节点（当前为模拟实现）。
 //!
 //! 根据配置的基准值和振幅，通过正弦函数模拟传感器读数，
-//! 并将 `_modbus` 元数据写入 payload。若配置了 `connection_id`，
+//! 并将模拟元数据通过 [`NodeExecution::with_metadata`] 返回。若配置了 `connection_id`，
 //! 则通过 [`ConnectionGuard`](connections::ConnectionGuard) 借出连接。
 
 use async_trait::async_trait;
@@ -107,17 +107,6 @@ impl ModbusReadNode {
             payload_map.insert("values".to_owned(), Value::Array(values));
         }
 
-        payload_map.insert(
-            "_modbus".to_owned(),
-            json!({
-                "simulated": true,
-                "unit_id": self.config.unit_id,
-                "register": self.config.register,
-                "quantity": quantity,
-                "sampled_at": Utc::now().to_rfc3339(),
-            }),
-        );
-
         Value::Object(payload_map)
     }
 }
@@ -137,9 +126,19 @@ impl NodeTrait for ModbusReadNode {
             None
         };
         let result = self.simulate_and_build(payload);
-        let mut metadata = Map::new();
-        if let Some(g) = guard.as_ref() {
-            let (key, value) = connection_metadata(&self.id, g.lease())?;
+
+        let mut metadata = Map::from_iter([(
+            "modbus".to_owned(),
+            json!({
+                "simulated": true,
+                "unit_id": self.config.unit_id,
+                "register": self.config.register,
+                "quantity": self.config.quantity.clamp(1, 32),
+                "sampled_at": Utc::now().to_rfc3339(),
+            }),
+        )]);
+        if let Some(guard) = guard.as_ref() {
+            let (key, value) = connection_metadata(&self.id, guard.lease())?;
             metadata.insert(key, value);
         }
         if let Some(g) = &mut guard {

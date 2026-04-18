@@ -247,14 +247,15 @@ impl NodeTrait for HttpClientNode {
             ));
         }
 
-        let requested_at = Utc::now().to_rfc3339();
+        let now = Utc::now();
+        let requested_at = now.to_rfc3339();
         let request_timeout_ms = self.config.request_timeout_ms.max(500);
         let (payload_body, content_type, webhook_kind, body_mode) = prepare_http_request_body(
             &self.id,
             &self.config,
             &payload,
             &trace_id,
-            &Utc::now(),
+            &now,
             &requested_at,
         )?;
 
@@ -314,21 +315,24 @@ impl NodeTrait for HttpClientNode {
         }
 
         let mut payload_map = into_payload_map(payload);
-        let http_meta = json!({
-            "node_id": self.id,
-            "url": url,
-            "method": method,
-            "webhook_kind": webhook_kind,
-            "body_mode": body_mode,
-            "content_type": content_type,
-            "request_timeout_ms": request_timeout_ms,
-            "status": status_code,
-            "requested_at": requested_at,
-            "request_body_preview": body_preview,
-        });
-        payload_map.insert("_http".to_owned(), http_meta);
         payload_map.insert("http_response".to_owned(), response_value);
 
-        Ok(NodeExecution::broadcast(Value::Object(payload_map)))
+        let metadata = serde_json::Map::from_iter([(
+            "http".to_owned(),
+            json!({
+                "node_id": self.id,
+                "url": url,
+                "method": method,
+                "webhook_kind": webhook_kind,
+                "body_mode": body_mode,
+                "content_type": content_type,
+                "request_timeout_ms": request_timeout_ms,
+                "status": status_code,
+                "requested_at": requested_at,
+                "request_body_preview": body_preview,
+            }),
+        )]);
+
+        Ok(NodeExecution::broadcast(Value::Object(payload_map)).with_metadata(metadata))
     }
 }

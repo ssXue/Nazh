@@ -5,7 +5,7 @@
 use async_trait::async_trait;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 
 use uuid::Uuid;
 
@@ -74,16 +74,16 @@ impl NodeTrait for DebugConsoleNode {
             rendered_payload
         );
 
-        let mut payload_map = into_payload_map(payload.clone());
-        payload_map.insert(
-            "_debug_console".to_owned(),
+        let payload_map = into_payload_map(payload);
+        let metadata = Map::from_iter([(
+            "debug_console".to_owned(),
             json!({
                 "label": label,
                 "pretty": self.config.pretty,
                 "logged_at": Utc::now().to_rfc3339(),
             }),
-        );
+        )]);
 
-        Ok(NodeExecution::broadcast(Value::Object(payload_map)))
+        Ok(NodeExecution::broadcast(Value::Object(payload_map)).with_metadata(metadata))
     }
 }

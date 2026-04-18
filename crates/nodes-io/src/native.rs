@@ -46,11 +46,7 @@ impl NativeNode {
         }
     }
 
-    fn build_payload(
-        &self,
-        trace_id: Uuid,
-        payload: Value,
-    ) -> Value {
+    fn build_payload(&self, payload: Value) -> Value {
         let mut payload_map = into_payload_map(payload);
 
         if let Some(message) = &self.config.message {
@@ -60,13 +56,6 @@ impl NativeNode {
         for (key, value) in &self.config.inject {
             payload_map.insert(key.clone(), value.clone());
         }
-
-        tracing::info!(
-            node_id = %self.id,
-            trace_id = %trace_id,
-            message = %self.config.message.as_deref().unwrap_or("透传"),
-            "原生节点执行"
-        );
 
         Value::Object(payload_map)
     }
@@ -86,15 +75,23 @@ impl NodeTrait for NativeNode {
         } else {
             None
         };
-        let result = self.build_payload(trace_id, payload);
+        let result = self.build_payload(payload);
         let mut metadata = Map::new();
-        if let Some(g) = guard.as_ref() {
-            let (key, value) = connection_metadata(&self.id, g.lease())?;
+        if let Some(guard) = guard.as_ref() {
+            let (key, value) = connection_metadata(&self.id, guard.lease())?;
             metadata.insert(key, value);
         }
         if let Some(g) = &mut guard {
             g.mark_success();
         }
+
+        tracing::info!(
+            node_id = %self.id,
+            trace_id = %trace_id,
+            message = %self.config.message.as_deref().unwrap_or("透传"),
+            "原生节点执行"
+        );
+
         Ok(NodeExecution::broadcast(result).with_metadata(metadata))
     }
 }

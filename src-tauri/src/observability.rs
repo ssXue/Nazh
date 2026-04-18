@@ -201,11 +201,16 @@ impl ObservabilityStore {
                     false,
                 )
             }
-            ExecutionEvent::Completed { stage, trace_id, .. } => {
+            ExecutionEvent::Completed { stage, trace_id, metadata } => {
                 let duration_ms = state
                     .active_spans
                     .get(&span_key(trace_id, stage))
                     .map(|started_at| (now - *started_at).num_milliseconds().max(0) as u64);
+                if let Some(meta) = metadata.as_ref().and_then(|m| m.get("http")).and_then(Value::as_object) {
+                    if let Some(alert) = build_alert_delivery(&self.session, stage, *trace_id, meta, now) {
+                        let _ = append_jsonl(self.root_dir.join(ALERTS_FILE), &alert).await;
+                    }
+                }
                 (
                     {
                         let mut e = self.build_entry(
@@ -327,10 +332,6 @@ impl ObservabilityStore {
             now,
         );
         append_jsonl(self.root_dir.join(EVENTS_FILE), &result_entry).await?;
-
-        if let Some(alert) = build_alert_delivery(&self.session, result, now) {
-            append_jsonl(self.root_dir.join(ALERTS_FILE), &alert).await?;
-        }
 
         Ok(())
     }
@@ -640,11 +641,11 @@ fn alert_to_entry(alert: &AlertDeliveryRecord) -> ObservabilityEntry {
 
 fn build_alert_delivery(
     session: &ObservabilitySession,
-    result: &WorkflowContext,
+    stage: &str,
+    trace_id: Uuid,
+    http_meta: &serde_json::Map<String, Value>,
     timestamp: DateTime<Utc>,
 ) -> Option<AlertDeliveryRecord> {
-    let payload = result.payload.as_object()?;
-    let http_meta = payload.get("_http")?.as_object()?;
     let node_id = http_meta.get("node_id")?.as_str()?.to_owned();
     let url = http_meta.get("url")?.as_str()?.to_owned();
     let method = http_meta
@@ -660,7 +661,7 @@ fn build_alert_delivery(
     Some(AlertDeliveryRecord {
         id: build_record_id("alert", &timestamp),
         timestamp: timestamp.to_rfc3339(),
-        trace_id: result.trace_id.to_string(),
+        trace_id: trace_id.to_string(),
         node_id,
         project_id: session.project_id.clone(),
         project_name: session.project_name.clone(),
