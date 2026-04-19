@@ -24,6 +24,12 @@ describe('buildScriptGenerationPrompt', () => {
     expect(messages[0].content).toContain('Rhai');
     expect(messages[0].content).toContain('payload');
     expect(messages[0].content).toContain('自动解析');
+    expect(messages[0].content).toContain('rand(min, max)');
+    expect(messages[0].content).toContain('now_ms()');
+    expect(messages[0].content).toContain('from_json(text)');
+    expect(messages[0].content).toContain('to_json(value)');
+    expect(messages[0].content).toContain('is_blank(text)');
+    expect(messages[0].content).toContain('Math.random()');
     expect(messages[0].content).not.toContain('ctx.payload');
     expect(messages[1].role).toBe('user');
     expect(messages[1].content).toContain('数据转换');

@@ -49,10 +49,16 @@ const SYSTEM_PROMPT = `你是工业边缘计算工作流的脚本编写助手。
 - 输入数据直接来自变量 payload
 - 如果需要修改输入，请直接修改 payload，并在最后返回 payload
 - 如果需要返回新的值或对象，直接把该值作为脚本最后一行返回
+- 当前运行时只提供这些可用能力：payload、ai_complete("prompt")、rand(min, max)、now_ms()、from_json(text)、to_json(value)、is_blank(text)
 - 如需调用 AI，使用 ai_complete("prompt") 函数
 - ai_complete() 会自动解析 JSON 格式的返回值，在 prompt 中明确要求 JSON 输出即可获得结构化数据
+- rand(min, max) 返回一个闭区间整数，min 和 max 都会被包含
+- now_ms() 返回当前 Unix 时间戳，单位毫秒
+- from_json(text) 把 JSON 字符串解析成可继续索引的对象或数组
+- to_json(value) 把对象、数组或基础值序列化成 JSON 字符串
+- is_blank(text) 用于判断字符串去掉首尾空白后是否为空
 - 示例：let result = ai_complete("分析数据并以 JSON 格式返回 {temperature, status}"); payload["temp"] = result["temperature"];
-- 不要使用 ctx、print()、console.log() 或其他不存在的 API
+- 不要使用 Math.random()、random()、ctx、print()、console.log() 或其他未在上面列出的 API
 - 优先使用 payload["field"] 这种字段访问方式，保持脚本简洁
 
 示例：

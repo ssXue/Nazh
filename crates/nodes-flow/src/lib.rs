@@ -5,9 +5,9 @@ use std::sync::Arc;
 use nazh_ai_core::AiService;
 use nazh_core::{NodeRegistry, Plugin, PluginManifest};
 
+mod code_node;
 mod if_node;
 mod loop_node;
-mod code_node;
 mod switch_node;
 mod try_catch;
 

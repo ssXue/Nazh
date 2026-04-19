@@ -9,11 +9,16 @@ use std::sync::Arc;
 use nazh_ai_core::{AiCompletionRequest, AiGenerationParams, AiMessage, AiMessageRole, AiService};
 use rhai::{
     AST, Dynamic, Engine, EvalAltResult, Position, Scope,
+    packages::Package,
     serde::{from_dynamic, to_dynamic},
 };
 use serde_json::Value;
 
 use nazh_core::EngineError;
+
+mod package;
+
+pub use package::NazhScriptPackage;
 
 /// Rhai 脚本步数上限的默认值（50,000 步）。
 pub fn default_max_operations() -> u64 {
@@ -221,6 +226,7 @@ impl ScriptNodeBase {
         let id = id.into();
         let mut engine = Engine::new();
         engine.set_max_operations(max_operations);
+        NazhScriptPackage::new().register_into_engine(&mut engine);
         register_ai_complete(&mut engine, &id, ai);
         let ast = engine
             .compile(script)

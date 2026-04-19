@@ -14,9 +14,8 @@ use nazh_engine::{
     CodeNode, CodeNodeConfig, ConnectionDefinition, ConnectionManager, DebugConsoleNode,
     DebugConsoleNodeConfig, EngineError, HttpClientNode, HttpClientNodeConfig, ModbusReadNode,
     ModbusReadNodeConfig, NodeDispatch, NodeTrait, SerialTriggerNode, SerialTriggerNodeConfig,
-    SqlWriterNode, SqlWriterNodeConfig, TimerNode, TimerNodeConfig, WorkflowContext,
-    WorkflowGraph, deploy_workflow, deploy_workflow_with_ai, shared_connection_manager,
-    standard_registry,
+    SqlWriterNode, SqlWriterNodeConfig, TimerNode, TimerNodeConfig, WorkflowContext, WorkflowGraph,
+    deploy_workflow, deploy_workflow_with_ai, shared_connection_manager, standard_registry,
 };
 use serde_json::json;
 use tokio::time::timeout;
@@ -117,6 +116,104 @@ async fn code_node_can_transform_json_payload() {
                     NodeDispatch::Route(_) => panic!("plain code node should broadcast"),
                 }
                 assert_eq!(first_output.payload, json!({ "value": 10 }));
+            }
+            None => panic!("code node should produce a single output"),
+        },
+        Err(error) => panic!("code node should execute successfully: {error}"),
+    }
+}
+
+#[tokio::test]
+async fn code_node_can_generate_random_integer_in_range() {
+    let node = match CodeNode::new(
+        "code-rand",
+        CodeNodeConfig {
+            script: "payload[\"value\"] = rand(3, 7); payload".to_owned(),
+            max_operations: 10_000,
+            ai: None,
+        },
+        None,
+    ) {
+        Ok(node) => node,
+        Err(error) => panic!("code node should compile: {error}"),
+    };
+
+    for _ in 0..32 {
+        let trace_id = Uuid::new_v4();
+        let result = node.transform(trace_id, json!({})).await;
+
+        match result {
+            Ok(execution) => match execution.first() {
+                Some(first_output) => {
+                    let value = match first_output.payload.get("value").and_then(|v| v.as_i64()) {
+                        Some(value) => value,
+                        None => panic!("random result should be an integer"),
+                    };
+                    assert!(
+                        (3..=7).contains(&value),
+                        "random result should stay within the configured range"
+                    );
+                }
+                None => panic!("code node should produce a single output"),
+            },
+            Err(error) => panic!("code node should execute successfully: {error}"),
+        }
+    }
+}
+
+#[tokio::test]
+async fn code_node_can_use_builtin_helper_package() {
+    let node = match CodeNode::new(
+        "code-helpers",
+        CodeNodeConfig {
+            script: r#"
+                let parsed = from_json("{\"status\":\"ok\",\"value\":12}");
+                payload["status"] = parsed["status"];
+                payload["value"] = parsed["value"];
+                payload["serialized"] = to_json(parsed);
+                payload["blank"] = is_blank("   ");
+                payload["timestamp"] = now_ms();
+                payload
+            "#
+            .to_owned(),
+            max_operations: 10_000,
+            ai: None,
+        },
+        None,
+    ) {
+        Ok(node) => node,
+        Err(error) => panic!("code node should compile: {error}"),
+    };
+
+    let trace_id = Uuid::new_v4();
+    let result = node.transform(trace_id, json!({})).await;
+
+    match result {
+        Ok(execution) => match execution.first() {
+            Some(first_output) => {
+                assert_eq!(first_output.payload["status"], json!("ok"));
+                assert_eq!(first_output.payload["value"], json!(12));
+                assert_eq!(first_output.payload["blank"], json!(true));
+                assert!(
+                    first_output.payload["timestamp"]
+                        .as_i64()
+                        .unwrap_or_default()
+                        > 0
+                );
+
+                let serialized = match first_output
+                    .payload
+                    .get("serialized")
+                    .and_then(|value| value.as_str())
+                {
+                    Some(serialized) => serialized,
+                    None => panic!("serialized payload should be a JSON string"),
+                };
+                let roundtrip: serde_json::Value = match serde_json::from_str(serialized) {
+                    Ok(value) => value,
+                    Err(error) => panic!("serialized payload should be valid JSON: {error}"),
+                };
+                assert_eq!(roundtrip, json!({ "status": "ok", "value": 12 }));
             }
             None => panic!("code node should produce a single output"),
         },

@@ -34,6 +34,7 @@ async-trait = "0.1"
 chrono = { version = "0.4", features = ["clock", "serde"] }
 dashmap = "6"
 futures-util = "0.3"
+fastrand = "2"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 rhai = { version = "1", features = ["serde", "sync"] }
 rusqlite = { version = "0.33", features = ["bundled"] }
