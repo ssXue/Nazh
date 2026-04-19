@@ -16,6 +16,17 @@ import {
   toProviderFormState,
   type ProviderFormState,
 } from '../../lib/ai-config';
+import {
+  CheckCircleIcon,
+  DeleteActionIcon,
+  PencilIcon,
+  PlusIcon,
+  ResetIcon,
+  SaveIcon,
+  SignalIcon,
+  SlidersIcon,
+  XCloseIcon,
+} from './AppIcons';
 
 interface AgentSettingsFormState {
   systemPrompt: string;
@@ -159,6 +170,7 @@ export function AiConfigPanel({
   const [agentSettingsForm, setAgentSettingsForm] = useState<AgentSettingsFormState>(
     EMPTY_AGENT_SETTINGS_FORM,
   );
+  const [showAgentDialog, setShowAgentDialog] = useState(false);
 
   useEffect(() => {
     setAgentSettingsForm(toAgentSettingsForm(aiConfig));
@@ -379,6 +391,26 @@ export function AiConfigPanel({
     setShowForm(false);
   }
 
+  function handleDeleteProvider(providerId: string) {
+    if (!aiConfig) return;
+
+    const remaining = aiConfig.providers.filter((p) => p.id !== providerId);
+    const nextActiveId: string | null =
+      aiConfig.activeProviderId === providerId
+        ? remaining[0]?.id ?? null
+        : aiConfig.activeProviderId ?? null;
+
+    void onAiConfigSave(
+      buildConfigUpdate(aiConfig, {
+        activeProviderId: nextActiveId,
+        providers: buildProviderUpserts(
+          { ...aiConfig, providers: remaining },
+          nextActiveId,
+        ),
+      }),
+    );
+  }
+
   function handleResetAgentSettings() {
     setAgentSettingsForm(toAgentSettingsForm(aiConfig));
   }
@@ -389,10 +421,32 @@ export function AiConfigPanel({
         className="panel__header panel__header--desktop window-safe-header"
         data-window-drag-region
       >
-        <div>
+        <div className="ai-config-panel__header-info">
           <h2>AI 配置</h2>
+          {activeProvider && (
+            <span className="ai-config-panel__header-active">
+              {activeProvider.name} · {activeProvider.defaultModel}
+            </span>
+          )}
         </div>
-        <span className="panel__badge">{isTauriRuntime ? 'Copilot' : '预览态'}</span>
+        <div className="ai-config-panel__header-actions" data-no-window-drag>
+          <button
+            type="button"
+            className="ai-config-panel__action"
+            onClick={() => setShowAgentDialog(true)}
+          >
+            <SlidersIcon />
+            <span>Agent 参数</span>
+          </button>
+          <button
+            type="button"
+            className="ai-config-panel__action"
+            onClick={handleStartAddProvider}
+          >
+            <PlusIcon />
+            <span>添加连接</span>
+          </button>
+        </div>
       </div>
 
       <div className="ai-config-panel__scroll">
@@ -419,136 +473,325 @@ export function AiConfigPanel({
           </section>
         ) : aiConfig ? (
           <>
-            <section className="settings-group ai-config-panel__summary-group">
-              <div className="settings-group__header">
-                <h3>状态概览</h3>
-              </div>
-
-              {aiConfigError ? (
-                <article className="ai-config-panel__notice ai-config-panel__notice--error">
-                  <span style={{ color: 'var(--color-error)' }}>
-                    {aiConfigError}
-                  </span>
-                </article>
-              ) : null}
-
-              <div className="ai-config-panel__summary-hero">
-                <strong>当前默认</strong>
-                <span>
-                  {activeProvider ? `${activeProvider.name} · ${activeProvider.defaultModel}` : '未配置'}
+            {aiConfigError ? (
+              <article className="ai-config-panel__notice ai-config-panel__notice--error">
+                <span style={{ color: 'var(--color-error)' }}>
+                  {aiConfigError}
                 </span>
-              </div>
+              </article>
+            ) : null}
 
-              <div className="ai-config-panel__summary-grid">
-                <article className="ai-config-panel__summary-metric">
-                  <span>Provider</span>
-                  <strong>{aiConfig.providers.length}</strong>
+            {aiTestResult ? (
+              <article
+                className={
+                  aiTestResult.success
+                    ? 'ai-config-panel__notice ai-config-panel__notice--success'
+                    : 'ai-config-panel__notice ai-config-panel__notice--error'
+                }
+              >
+                <strong>连接测试</strong>
+                <span>
+                  {aiTestResult.message}
+                </span>
+              </article>
+            ) : null}
+
+            <div className="ai-config-panel__section">
+              {aiConfig.providers.length === 0 ? (
+                <p className="ai-config-panel__hint">尚未配置任何提供商。</p>
+              ) : (
+                <div className="ai-config-panel__card-list">
+                  {aiConfig.providers.map((provider) => {
+                    const isGlobalProvider = provider.id === activeProvider?.id;
+                    return (
+                      <article
+                        key={provider.id}
+                        className={`ai-provider-card${isGlobalProvider ? ' ai-provider-card--active' : ''}`}
+                      >
+                        <div className="ai-provider-card__top">
+                          <strong className="ai-provider-card__name">{provider.name}</strong>
+                          <span className={`ai-provider-card__status${isGlobalProvider ? ' ai-provider-card__status--active' : ''}`}>
+                            <span className="ai-provider-card__status-dot" />
+                            {isGlobalProvider ? '生效中' : '待命'}
+                          </span>
+                        </div>
+                        <div className="ai-provider-card__detail">
+                          <span>{provider.baseUrl}</span>
+                          <span className="ai-provider-card__sep">·</span>
+                          <span>{provider.defaultModel}</span>
+                          <span className="ai-provider-card__sep">·</span>
+                          <span>{provider.hasApiKey ? 'Key 已配置' : 'Key 未配置'}</span>
+                        </div>
+                        <div className="ai-provider-card__actions">
+                          <button
+                            type="button"
+                            className="settings-inline-button"
+                            disabled={isGlobalProvider}
+                            onClick={() => handleSetGlobalProvider(provider.id)}
+                          >
+                            <CheckCircleIcon className="ai-btn-icon" />
+                            {isGlobalProvider ? '当前全局' : '设为全局'}
+                          </button>
+                          <button
+                            type="button"
+                            className="settings-inline-button settings-inline-button--ghost"
+                            disabled={aiTesting}
+                            onClick={() => handleTestSavedProvider(provider.id)}
+                          >
+                            <SignalIcon className="ai-btn-icon" />
+                            {aiTesting ? '测试中...' : '测试'}
+                          </button>
+                          <button
+                            type="button"
+                            className="settings-inline-button settings-inline-button--ghost"
+                            onClick={() => handleStartEditProvider(provider.id)}
+                          >
+                            <PencilIcon className="ai-btn-icon" />
+                            编辑
+                          </button>
+                          <button
+                            type="button"
+                            className="settings-inline-button settings-inline-button--ghost settings-inline-button--danger"
+                            onClick={() => handleDeleteProvider(provider.id)}
+                          >
+                            <DeleteActionIcon className="ai-btn-icon" />
+                          </button>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </>
+        ) : (
+          <section className="settings-group">
+            <div className="settings-group__header">
+              <h3>加载失败</h3>
+            </div>
+            <article className="settings-row">
+              <span className="settings-row__label">无法加载 AI 配置。</span>
+            </article>
+          </section>
+        )}
+        </div>
+      </div>
+
+      {showForm && (
+        <div className="ai-drawer-overlay" onClick={handleResetForm}>
+          <div className="ai-drawer" onClick={(e) => e.stopPropagation()}>
+            <div className="ai-drawer__header">
+              <h3>{isEditingProvider ? '编辑提供商' : '添加提供商'}</h3>
+              <button
+                type="button"
+                className="ai-drawer__close"
+                onClick={handleResetForm}
+              >
+                <XCloseIcon className="ai-btn-icon" />
+              </button>
+            </div>
+
+            <div className="ai-drawer__body">
+              <article className="ai-config-panel__notice">
+                <strong>
+                  {isEditingProvider ? `正在编辑：${editingProvider?.name}` : '正在新增提供商'}
+                </strong>
+                <span>
+                  {isEditingProvider
+                    ? '保存后会覆盖当前 provider 配置，现有全局启用状态会自动保留。'
+                    : '保存后会追加到提供商列表中。'}
+                </span>
+              </article>
+
+              <article className="settings-row settings-row--stacked">
+                <strong className="settings-row__label">快速选择厂商</strong>
+                <div className="settings-accent-inline" role="group" aria-label="预置厂商">
+                  {PROVIDER_PRESETS.map((preset) => {
+                    const isActive =
+                      form.name === preset.name &&
+                      form.baseUrl === preset.baseUrl;
+                    return (
+                      <button
+                        key={preset.label}
+                        type="button"
+                        className={
+                          isActive
+                            ? 'settings-accent-chip is-active'
+                            : 'settings-accent-chip'
+                        }
+                        onClick={() => handleSelectPreset(preset)}
+                      >
+                        <span>{preset.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </article>
+
+              <div className="ai-config-panel__field-grid">
+                <article className="settings-row settings-row--stacked">
+                  <label className="settings-row__label" htmlFor="ai-provider-name">
+                    提供商名称
+                  </label>
+                  <input
+                    id="ai-provider-name"
+                    className="settings-path-input"
+                    type="text"
+                    placeholder="例如：DeepSeek"
+                    value={form.name}
+                    onChange={(e) => handleFormChange('name', e.target.value)}
+                  />
                 </article>
-                <article className="ai-config-panel__summary-metric">
-                  <span>默认模型</span>
-                  <strong>{activeProvider?.defaultModel || '未配置'}</strong>
+
+                <article className="settings-row settings-row--stacked">
+                  <label className="settings-row__label" htmlFor="ai-provider-url">
+                    API Base URL
+                  </label>
+                  <input
+                    id="ai-provider-url"
+                    className="settings-path-input"
+                    type="text"
+                    placeholder="例如：https://api.deepseek.com/v1"
+                    value={form.baseUrl}
+                    onChange={(e) => handleFormChange('baseUrl', e.target.value)}
+                  />
                 </article>
-                <article className="ai-config-panel__summary-metric">
-                  <span>可用密钥</span>
-                  <strong>
-                    {aiConfig.providers.filter((provider) => provider.hasApiKey).length}
-                  </strong>
+
+                <article className="settings-row settings-row--stacked">
+                  <label className="settings-row__label" htmlFor="ai-provider-model">
+                    默认模型
+                  </label>
+                  <input
+                    id="ai-provider-model"
+                    className="settings-path-input"
+                    type="text"
+                    placeholder="例如：deepseek-chat"
+                    value={form.defaultModel}
+                    onChange={(e) => handleFormChange('defaultModel', e.target.value)}
+                  />
+                </article>
+
+                <article className="settings-row settings-row--stacked ai-config-panel__field--wide">
+                  <label className="settings-row__label" htmlFor="ai-provider-key">
+                    API Key
+                  </label>
+                  {isEditingProvider ? (
+                    <>
+                      <div className="settings-accent-inline" role="group" aria-label="API Key 处理方式">
+                        <button
+                          type="button"
+                          className={
+                            providerApiKeyMode === 'keep'
+                              ? 'settings-accent-chip is-active'
+                              : 'settings-accent-chip'
+                          }
+                          onClick={() => {
+                            setClearSavedApiKey(false);
+                            setForm((prev) => ({ ...prev, apiKey: '' }));
+                          }}
+                        >
+                          <span>保持现有 Key</span>
+                        </button>
+                        <button
+                          type="button"
+                          className={
+                            providerApiKeyMode === 'clear'
+                              ? 'settings-accent-chip is-active'
+                              : 'settings-accent-chip'
+                          }
+                          onClick={() => {
+                            setClearSavedApiKey(true);
+                            setForm((prev) => ({ ...prev, apiKey: '' }));
+                          }}
+                        >
+                          <span>清空已保存 Key</span>
+                        </button>
+                      </div>
+                      <span className="settings-row__value" style={{ color: 'var(--text-tertiary)' }}>
+                        {providerApiKeyMode === 'set'
+                          ? '检测到新的 API Key，保存后会覆盖当前密钥。'
+                          : providerApiKeyMode === 'clear'
+                            ? '当前将清空已保存 API Key。若要替换成新密钥，直接在下方输入即可。'
+                            : editingProvider?.hasApiKey
+                              ? '当前已保存 API Key。留空会保持不变，输入新值会覆盖。'
+                              : '当前未保存 API Key。可直接输入新的密钥。'}
+                      </span>
+                    </>
+                  ) : null}
+                  <input
+                    id="ai-provider-key"
+                    className="settings-path-input"
+                    type="password"
+                    placeholder={
+                      isEditingProvider ? '留空保持当前值，输入新值则覆盖' : 'sk-...'
+                    }
+                    value={form.apiKey}
+                    onChange={(e) => handleFormChange('apiKey', e.target.value)}
+                  />
                 </article>
               </div>
 
               <p className="ai-config-panel__hint">
-                AI 配置页仅允许一个 provider 作为全局配置。`code` 节点默认使用这里选中的 AI。
+                {isEditingProvider
+                  ? '编辑现有 provider 时会保留其全局启用状态；如需切换默认 AI，请在上方"全局 AI"里选择。'
+                  : '如果当前已经有全局 AI，新 provider 会先作为待命配置保存；如需切换默认 AI，请在上方"全局 AI"里选择。'}
               </p>
-            </section>
+            </div>
 
-            {aiTestResult ? (
-              <section className="settings-group">
-                <div className="settings-group__header">
-                  <h3>最近测试结果</h3>
-                </div>
-                <article
-                  className={
-                    aiTestResult.success
-                      ? 'ai-config-panel__notice ai-config-panel__notice--success'
-                      : 'ai-config-panel__notice ai-config-panel__notice--error'
-                  }
+            <div className="ai-drawer__footer">
+              <div className="settings-path-actions">
+                <button
+                  type="button"
+                  className="settings-inline-button"
+                  disabled={!isFormValid || (isEditingProvider && !hasPendingProviderEdits)}
+                  onClick={handleConfirmAdd}
                 >
-                  <strong>连接测试</strong>
-                  <span>
-                    {aiTestResult.message}
-                  </span>
-                </article>
-              </section>
-            ) : null}
-
-            <section className="settings-group">
-              <div className="settings-group__header">
-                <h3>全局 AI</h3>
+                  <SaveIcon className="ai-btn-icon" />
+                  {isEditingProvider ? '保存修改' : '确认添加'}
+                </button>
+                <button
+                  type="button"
+                  className="settings-inline-button"
+                  disabled={!canTestFormProvider || aiTesting}
+                  onClick={handleSubmitTest}
+                >
+                  <SignalIcon className="ai-btn-icon" />
+                  {aiTesting ? '测试中...' : '测试连接'}
+                </button>
+                <button
+                  type="button"
+                  className="settings-inline-button settings-inline-button--ghost"
+                  onClick={handleResetForm}
+                >
+                  <XCloseIcon className="ai-btn-icon" />
+                  取消
+                </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
 
-              {aiConfig.providers.length === 0 ? (
-                <article className="settings-row">
-                  <span className="settings-row__label">尚未配置任何提供商。</span>
-                </article>
-              ) : (
-                aiConfig.providers.map((provider) => {
-                  const isGlobalProvider = provider.id === activeProvider?.id;
-                  return (
-                    <article
-                      key={provider.id}
-                      className="settings-row settings-row--stacked ai-provider-card"
-                    >
-                      <div className="ai-provider-card__top">
-                        <strong className="settings-row__label">{provider.name}</strong>
-                        <span className="ai-provider-card__badge">
-                          {isGlobalProvider ? '全局生效' : '待命'}
-                        </span>
-                      </div>
-                      <div className="ai-provider-card__meta">
-                        <span>{provider.baseUrl}</span>
-                        <span>模型 · {provider.defaultModel}</span>
-                        <span>API Key · {provider.hasApiKey ? '已配置' : '未配置'}</span>
-                      </div>
-                      <div className="settings-path-actions ai-provider-card__actions">
-                        <button
-                          type="button"
-                          className="settings-inline-button"
-                          disabled={isGlobalProvider}
-                          onClick={() => handleSetGlobalProvider(provider.id)}
-                        >
-                          {isGlobalProvider ? '当前全局 AI' : '设为全局 AI'}
-                        </button>
-                        <button
-                          type="button"
-                          className="settings-inline-button settings-inline-button--ghost"
-                          disabled={aiTesting}
-                          onClick={() => handleTestSavedProvider(provider.id)}
-                        >
-                          {aiTesting ? '测试中...' : '测试连接'}
-                        </button>
-                        <button
-                          type="button"
-                          className="settings-inline-button settings-inline-button--ghost"
-                          onClick={() => handleStartEditProvider(provider.id)}
-                        >
-                          编辑
-                        </button>
-                      </div>
-                    </article>
-                  );
-                })
-              )}
-            </section>
+      {showAgentDialog && (
+        <div className="ai-drawer-overlay" onClick={() => setShowAgentDialog(false)}>
+          <div className="ai-agent-dialog" onClick={(e) => e.stopPropagation()}>
+            <div className="ai-drawer__header">
+              <h3>全局 Agent 参数</h3>
+              <button
+                type="button"
+                className="ai-drawer__close"
+                onClick={() => setShowAgentDialog(false)}
+              >
+                <XCloseIcon className="ai-btn-icon" />
+              </button>
+            </div>
 
-            <section className="settings-group">
-              <div className="settings-group__header">
-                <h3>全局 Agent 参数</h3>
-              </div>
+            <div className="ai-drawer__body">
               <p className="ai-config-panel__hint">
                 `code` 节点调用 `ai_complete(prompt)` 时默认使用这里的系统提示词、采样参数和超时设置。
               </p>
 
-              <div className="ai-config-panel__field-grid ai-config-panel__field-grid--compact">
+              <div className="ai-agent-dialog__fields">
                 <article className="settings-row settings-row--stacked">
                   <label className="settings-row__label" htmlFor="ai-agent-temperature">
                     Temperature
@@ -611,7 +854,7 @@ export function AiConfigPanel({
                   />
                 </article>
 
-                <article className="settings-row settings-row--stacked ai-config-panel__field--wide">
+                <article className="settings-row settings-row--stacked">
                   <label className="settings-row__label" htmlFor="ai-agent-system-prompt">
                     System Prompt
                   </label>
@@ -634,234 +877,33 @@ export function AiConfigPanel({
                   </span>
                 </article>
               ) : null}
-
-              <article className="settings-row">
-                <div className="settings-path-actions">
-                  <button
-                    type="button"
-                    className="settings-inline-button"
-                    disabled={!hasPendingAgentSettings || !isAgentSettingsValid}
-                    onClick={handleSaveAgentSettings}
-                  >
-                    保存全局参数
-                  </button>
-                  <button
-                    type="button"
-                    className="settings-inline-button settings-inline-button--ghost"
-                    disabled={!hasPendingAgentSettings}
-                    onClick={handleResetAgentSettings}
-                  >
-                    还原
-                  </button>
-                </div>
-              </article>
-            </section>
-
-            <section className="settings-group">
-              <div className="settings-group__header">
-                <h3>{isEditingProvider ? '编辑提供商' : '添加提供商'}</h3>
-              </div>
-
-              {!showForm ? (
-                <article className="settings-row">
-                  <button
-                    type="button"
-                    className="settings-inline-button"
-                    onClick={handleStartAddProvider}
-                  >
-                    添加新提供商
-                  </button>
-                </article>
-              ) : (
-                <>
-                  <article className="ai-config-panel__notice">
-                    <strong>
-                      {isEditingProvider ? `正在编辑：${editingProvider.name}` : '正在新增提供商'}
-                    </strong>
-                    <span>
-                      {isEditingProvider
-                        ? '保存后会覆盖当前 provider 配置，现有全局启用状态会自动保留。'
-                        : '保存后会追加到提供商列表中。'}
-                    </span>
-                  </article>
-
-                  <article className="settings-row settings-row--stacked">
-                    <strong className="settings-row__label">快速选择厂商</strong>
-                    <div className="settings-accent-inline" role="group" aria-label="预置厂商">
-                      {PROVIDER_PRESETS.map((preset) => {
-                        const isActive =
-                          form.name === preset.name &&
-                          form.baseUrl === preset.baseUrl;
-                        return (
-                          <button
-                            key={preset.label}
-                            type="button"
-                            className={
-                              isActive
-                                ? 'settings-accent-chip is-active'
-                                : 'settings-accent-chip'
-                            }
-                            onClick={() => handleSelectPreset(preset)}
-                          >
-                            <span>{preset.label}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </article>
-
-                  <div className="ai-config-panel__field-grid">
-                    <article className="settings-row settings-row--stacked">
-                      <label className="settings-row__label" htmlFor="ai-provider-name">
-                        提供商名称
-                      </label>
-                      <input
-                        id="ai-provider-name"
-                        className="settings-path-input"
-                        type="text"
-                        placeholder="例如：DeepSeek"
-                        value={form.name}
-                        onChange={(e) => handleFormChange('name', e.target.value)}
-                      />
-                    </article>
-
-                    <article className="settings-row settings-row--stacked">
-                      <label className="settings-row__label" htmlFor="ai-provider-url">
-                        API Base URL
-                      </label>
-                      <input
-                        id="ai-provider-url"
-                        className="settings-path-input"
-                        type="text"
-                        placeholder="例如：https://api.deepseek.com/v1"
-                        value={form.baseUrl}
-                        onChange={(e) => handleFormChange('baseUrl', e.target.value)}
-                      />
-                    </article>
-
-                    <article className="settings-row settings-row--stacked">
-                      <label className="settings-row__label" htmlFor="ai-provider-model">
-                        默认模型
-                      </label>
-                      <input
-                        id="ai-provider-model"
-                        className="settings-path-input"
-                        type="text"
-                        placeholder="例如：deepseek-chat"
-                        value={form.defaultModel}
-                        onChange={(e) => handleFormChange('defaultModel', e.target.value)}
-                      />
-                    </article>
-
-                    <article className="settings-row settings-row--stacked ai-config-panel__field--wide">
-                    <label className="settings-row__label" htmlFor="ai-provider-key">
-                      API Key
-                    </label>
-                    {isEditingProvider ? (
-                      <>
-                        <div className="settings-accent-inline" role="group" aria-label="API Key 处理方式">
-                          <button
-                            type="button"
-                            className={
-                              providerApiKeyMode === 'keep'
-                                ? 'settings-accent-chip is-active'
-                                : 'settings-accent-chip'
-                            }
-                            onClick={() => {
-                              setClearSavedApiKey(false);
-                              setForm((prev) => ({ ...prev, apiKey: '' }));
-                            }}
-                          >
-                            <span>保持现有 Key</span>
-                          </button>
-                          <button
-                            type="button"
-                            className={
-                              providerApiKeyMode === 'clear'
-                                ? 'settings-accent-chip is-active'
-                                : 'settings-accent-chip'
-                            }
-                            onClick={() => {
-                              setClearSavedApiKey(true);
-                              setForm((prev) => ({ ...prev, apiKey: '' }));
-                            }}
-                          >
-                            <span>清空已保存 Key</span>
-                          </button>
-                        </div>
-                        <span className="settings-row__value" style={{ color: 'var(--text-tertiary)' }}>
-                          {providerApiKeyMode === 'set'
-                            ? '检测到新的 API Key，保存后会覆盖当前密钥。'
-                            : providerApiKeyMode === 'clear'
-                              ? '当前将清空已保存 API Key。若要替换成新密钥，直接在下方输入即可。'
-                              : editingProvider.hasApiKey
-                                ? '当前已保存 API Key。留空会保持不变，输入新值会覆盖。'
-                                : '当前未保存 API Key。可直接输入新的密钥。'}
-                        </span>
-                      </>
-                    ) : null}
-                    <input
-                      id="ai-provider-key"
-                      className="settings-path-input"
-                      type="password"
-                      placeholder={
-                        isEditingProvider ? '留空保持当前值，输入新值则覆盖' : 'sk-...'
-                      }
-                      value={form.apiKey}
-                      onChange={(e) => handleFormChange('apiKey', e.target.value)}
-                    />
-                    </article>
-                  </div>
-
-                  <p className="ai-config-panel__hint">
-                      {isEditingProvider
-                        ? '编辑现有 provider 时会保留其全局启用状态；如需切换默认 AI，请在上方“全局 AI”里选择。'
-                        : '如果当前已经有全局 AI，新 provider 会先作为待命配置保存；如需切换默认 AI，请在上方“全局 AI”里选择。'}
-                  </p>
-
-                  <article className="settings-row">
-                    <div className="settings-path-actions">
-                      <button
-                        type="button"
-                        className="settings-inline-button"
-                        disabled={!isFormValid || (isEditingProvider && !hasPendingProviderEdits)}
-                        onClick={handleConfirmAdd}
-                      >
-                        {isEditingProvider ? '保存修改' : '确认添加'}
-                      </button>
-                      <button
-                        type="button"
-                        className="settings-inline-button"
-                        disabled={!canTestFormProvider || aiTesting}
-                        onClick={handleSubmitTest}
-                      >
-                        {aiTesting ? '测试中...' : '测试连接'}
-                      </button>
-                      <button
-                        type="button"
-                        className="settings-inline-button settings-inline-button--ghost"
-                        onClick={handleResetForm}
-                      >
-                        取消
-                      </button>
-                    </div>
-                  </article>
-                </>
-              )}
-            </section>
-          </>
-        ) : (
-          <section className="settings-group">
-            <div className="settings-group__header">
-              <h3>加载失败</h3>
             </div>
-            <article className="settings-row">
-              <span className="settings-row__label">无法加载 AI 配置。</span>
-            </article>
-          </section>
-        )}
+
+            <div className="ai-drawer__footer">
+              <div className="settings-path-actions">
+                <button
+                  type="button"
+                  className="settings-inline-button"
+                  disabled={!hasPendingAgentSettings || !isAgentSettingsValid}
+                  onClick={handleSaveAgentSettings}
+                >
+                  <SaveIcon className="ai-btn-icon" />
+                  保存参数
+                </button>
+                <button
+                  type="button"
+                  className="settings-inline-button settings-inline-button--ghost"
+                  disabled={!hasPendingAgentSettings}
+                  onClick={handleResetAgentSettings}
+                >
+                  <ResetIcon className="ai-btn-icon" />
+                  还原
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

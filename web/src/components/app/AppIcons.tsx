@@ -671,3 +671,68 @@ export function WindowCloseIcon(props: IconProps) {
     </BaseIcon>
   );
 }
+
+export function PencilIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="M15.5 4.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4Z" />
+    </BaseIcon>
+  );
+}
+
+export function SignalIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="M2 20h2" />
+      <path d="M6 20h2" />
+      <path d="M10 20h2" />
+      <path d="M14 20h2" />
+      <path d="M18 20h2" />
+      <path d="M5 16a7 7 0 0 1 14 0" />
+      <path d="M8.5 16a3.5 3.5 0 0 1 7 0" />
+    </BaseIcon>
+  );
+}
+
+export function SlidersIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="M4 21v-7" />
+      <path d="M4 10V3" />
+      <path d="M12 21v-9" />
+      <path d="M12 8V3" />
+      <path d="M20 21v-5" />
+      <path d="M20 12V3" />
+      <line x1="2" y1="14" x2="6" y2="14" />
+      <line x1="10" y1="8" x2="14" y2="8" />
+      <line x1="18" y1="16" x2="22" y2="16" />
+    </BaseIcon>
+  );
+}
+
+export function CheckCircleIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <circle cx="12" cy="12" r="8" />
+      <path d="m9 12 2 2 4-4" />
+    </BaseIcon>
+  );
+}
+
+export function ResetIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="M3 12a9 9 0 1 0 9-9 9.7 9.7 0 0 0-6.7 2.8" />
+      <path d="M3 3v5h5" />
+    </BaseIcon>
+  );
+}
+
+export function XCloseIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="m7 7 10 10" />
+      <path d="m17 7-10 10" />
+    </BaseIcon>
+  );
+}
