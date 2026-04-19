@@ -622,3 +622,39 @@ export async function testAiProvider(draft: AiProviderDraft): Promise<AiTestResu
 export async function copilotComplete(request: AiCompletionRequest): Promise<AiCompletionResponse> {
   return invoke<AiCompletionResponse>('copilot_complete', { request });
 }
+
+export async function copilotCompleteStream(
+  request: AiCompletionRequest,
+  onDelta: (text: string) => void,
+  onThinking?: (text: string) => void,
+): Promise<string> {
+  const streamId: string = await invoke<string>('copilot_complete_stream', { request });
+  const eventName = `copilot://stream/${streamId}`;
+
+  return new Promise((resolve, reject) => {
+    let accumulated = '';
+    let thinkingAccumulated = '';
+
+    void listen<{ delta?: string; thinking?: string; done?: boolean; error?: string }>(
+      eventName,
+      (event) => {
+        const payload = event.payload;
+        if (payload.error) {
+          reject(new Error(payload.error));
+          return;
+        }
+        if (payload.thinking && onThinking) {
+          thinkingAccumulated += payload.thinking;
+          onThinking(thinkingAccumulated);
+        }
+        if (payload.delta) {
+          accumulated += payload.delta;
+          onDelta(accumulated);
+        }
+        if (payload.done) {
+          resolve(accumulated);
+        }
+      },
+    );
+  });
+}

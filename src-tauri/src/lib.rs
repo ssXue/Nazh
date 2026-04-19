@@ -1669,6 +1669,54 @@ async fn copilot_complete(
         .map_err(|error| error.to_string())
 }
 
+/// 流式 copilot completion，通过 Tauri 事件逐 token 发送到前端。
+#[tauri::command]
+async fn copilot_complete_stream(
+    app: tauri::AppHandle,
+    state: State<'_, DesktopState>,
+    request: AiCompletionRequest,
+) -> Result<String, String> {
+    let service = Arc::clone(&state.ai_service);
+
+    let mut rx = service
+        .stream_complete(request)
+        .await
+        .map_err(|error| error.to_string())?;
+
+    let event_id = uuid::Uuid::new_v4().to_string();
+    let event_name = format!("copilot://stream/{event_id}");
+
+    app.emit("copilot://stream/init", &event_id)
+        .map_err(|error| error.to_string())?;
+
+    let app_clone = app.clone();
+    tokio::spawn(async move {
+        while let Some(chunk_result) = rx.recv().await {
+            match chunk_result {
+                Ok(chunk) => {
+                    let is_done = chunk.done;
+                    let payload: serde_json::Value =
+                        serde_json::to_value(&chunk).unwrap_or_default();
+                    let _ = app_clone.emit(&event_name, payload);
+                    if is_done {
+                        break;
+                    }
+                }
+                Err(error) => {
+                    let payload: serde_json::Value = serde_json::json!({
+                        "error": error.to_string(),
+                        "done": true
+                    });
+                    let _ = app_clone.emit(&event_name, payload);
+                    break;
+                }
+            }
+        }
+    });
+
+    Ok(event_id)
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SerialPortInfo {
@@ -2916,7 +2964,8 @@ pub fn run() {
             load_ai_config,
             save_ai_config,
             test_ai_provider,
-            copilot_complete
+            copilot_complete,
+            copilot_complete_stream
         ]);
 
     if let Err(error) = builder.run(tauri::generate_context!()) {

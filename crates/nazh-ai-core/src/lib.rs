@@ -11,7 +11,7 @@ pub mod error;
 pub mod service;
 pub mod types;
 
-pub use client::OpenAiCompatibleService;
+pub use client::{OpenAiCompatibleService, StreamChunk};
 pub use config::{
     AiAgentSettings, AiConfigFile, AiConfigUpdate, AiConfigView, AiGenerationParams,
     AiProviderDraft, AiProviderSecretRecord, AiProviderUpsert, AiProviderView, AiSecretInput,

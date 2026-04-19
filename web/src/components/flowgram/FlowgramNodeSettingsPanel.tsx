@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { type FlowNodeEntity, useClientContext } from '@flowgram.ai/free-layout-editor';
 import { type PanelFactory, usePanelManager } from '@flowgram.ai/panel-manager-plugin';
@@ -13,7 +13,7 @@ import {
   parseTimeoutMs,
   type FlowgramLogicBranch,
 } from './flowgram-node-library';
-import { generateScript, getNodeContext } from '../../lib/script-generation';
+import { generateScriptStream, getNodeContext } from '../../lib/script-generation';
 import type { AiGenerationParams, AiProviderView, ConnectionDefinition } from '../../types';
 
 export interface FlowgramNodeSettingsPanelProps {
@@ -357,6 +357,21 @@ function buildNodeConfig(draft: SelectedNodeDraft, currentConfig: NodeConfigMap)
   return currentConfig;
 }
 
+function ThinkingBody({ text }: { text: string }) {
+  const ref = useRef<HTMLPreElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (el) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [text]);
+
+  return (
+    <pre ref={ref} className="flowgram-ai-dialog__thinking-body"><code>{text}</code></pre>
+  );
+}
+
 function FlowgramNodeSettingsPanel({
   nodeId,
   connections,
@@ -372,6 +387,8 @@ function FlowgramNodeSettingsPanel({
   const [aiDialogRequirement, setAiDialogRequirement] = useState('');
   const [aiGenerating, setAiGenerating] = useState(false);
   const [aiGenerateError, setAiGenerateError] = useState<string | null>(null);
+  const [aiStreamPreview, setAiStreamPreview] = useState<string | null>(null);
+  const [aiThinkingPreview, setAiThinkingPreview] = useState<string | null>(null);
 
   const closePanel = useCallback(() => {
     panelManager.close(FLOWGRAM_NODE_SETTINGS_PANEL_KEY, 'right');
@@ -757,19 +774,29 @@ function FlowgramNodeSettingsPanel({
 
       setAiGenerating(true);
       setAiGenerateError(null);
+      setAiStreamPreview('');
+      setAiThinkingPreview('');
       try {
         const context = getNodeContext(node);
-        const script = await generateScript(requirement, context, {
-          providerId: preferredCopilotProvider.id,
-          model: preferredCopilotProvider.defaultModel,
-          params: copilotParams,
-        });
+        const script = await generateScriptStream(
+          requirement,
+          context,
+          {
+            providerId: preferredCopilotProvider.id,
+            model: preferredCopilotProvider.defaultModel,
+            params: copilotParams,
+          },
+          (rawText) => setAiStreamPreview(rawText),
+          (thinkingText) => setAiThinkingPreview(thinkingText),
+        );
         if (!script) {
           setAiGenerateError('AI 未返回有效代码。');
           return;
         }
         updateDraft({ script });
         setAiGenerateError(null);
+        setAiStreamPreview(null);
+        setAiThinkingPreview(null);
         setAiDialogOpen(false);
         setAiDialogRequirement('');
       } catch (err) {
@@ -1239,6 +1266,8 @@ function FlowgramNodeSettingsPanel({
               setAiDialogOpen(false);
               setAiDialogRequirement('');
               setAiGenerateError(null);
+              setAiStreamPreview(null);
+              setAiThinkingPreview(null);
             }
           }}
         >
@@ -1265,6 +1294,18 @@ function FlowgramNodeSettingsPanel({
             {aiGenerateError ? (
               <article className="flowgram-note flowgram-note--danger">{aiGenerateError}</article>
             ) : null}
+            {aiThinkingPreview !== null && aiThinkingPreview.length > 0 ? (
+              <details className="flowgram-ai-dialog__thinking" open={aiStreamPreview === '' || aiStreamPreview === null}>
+                <summary className="flowgram-ai-dialog__thinking-toggle">
+                  <span>思考过程</span>
+                  <span className="flowgram-ai-dialog__thinking-badge">{aiStreamPreview ? '完成' : '思考中...'}</span>
+                </summary>
+                <ThinkingBody text={aiThinkingPreview} />
+              </details>
+            ) : null}
+            {aiStreamPreview !== null && aiStreamPreview.length > 0 ? (
+              <pre className="flowgram-ai-dialog__preview"><code>{aiStreamPreview}</code></pre>
+            ) : null}
             <div className="flowgram-ai-dialog__actions">
               <button
                 type="button"
@@ -1274,6 +1315,8 @@ function FlowgramNodeSettingsPanel({
                   setAiDialogOpen(false);
                   setAiDialogRequirement('');
                   setAiGenerateError(null);
+                  setAiStreamPreview(null);
+                  setAiThinkingPreview(null);
                 }}
               >
                 取消

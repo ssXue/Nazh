@@ -15,6 +15,19 @@ use crate::types::{
     AiCompletionRequest, AiCompletionResponse, AiMessage, AiMessageRole, AiTestResult, AiTokenUsage,
 };
 
+/// 流式传输的每个 chunk。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StreamChunk {
+    /// 本次 chunk 的文本片段。
+    pub delta: String,
+    /// 本次 chunk 的思考过程片段（DeepSeek 等模型的 reasoning_content）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thinking: Option<String>,
+    /// 是否为最后一个 chunk。
+    pub done: bool,
+}
+
 const DEFAULT_TIMEOUT_MS: u64 = 30_000;
 const TEST_MAX_TOKENS: u32 = 1;
 
@@ -86,6 +99,7 @@ impl OpenAiCompatibleService {
     }
 }
 
+
 struct ResolvedProvider {
     base_url: String,
     api_key: String,
@@ -103,6 +117,8 @@ struct ChatCompletionPayload {
     max_tokens: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     top_p: Option<f32>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    stream: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -135,6 +151,24 @@ struct ChatUsage {
     prompt_tokens: u32,
     completion_tokens: u32,
     total_tokens: u32,
+}
+
+#[derive(Debug, Deserialize)]
+struct StreamApiResponse {
+    choices: Vec<StreamChoice>,
+}
+
+#[derive(Debug, Deserialize)]
+struct StreamChoice {
+    delta: StreamDelta,
+}
+
+#[derive(Debug, Deserialize)]
+struct StreamDelta {
+    #[serde(default)]
+    content: Option<String>,
+    #[serde(default, alias = "reasoning_content")]
+    thinking: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -206,6 +240,7 @@ impl AiService for OpenAiCompatibleService {
             temperature: request.params.temperature,
             max_tokens: request.params.max_tokens,
             top_p: request.params.top_p,
+            stream: false,
         };
 
         let url = build_url(&provider.base_url, "/chat/completions")?;
@@ -256,6 +291,124 @@ impl AiService for OpenAiCompatibleService {
         })
     }
 
+    /// 流式 chat completion，逐 chunk 通过 channel 返回。
+    async fn stream_complete(
+        &self,
+        request: AiCompletionRequest,
+    ) -> Result<tokio::sync::mpsc::Receiver<Result<StreamChunk, AiError>>, AiError> {
+        let provider = self.resolve_provider(&request.provider_id).await?;
+        if provider.api_key.trim().is_empty() {
+            return Err(AiError::InvalidConfig(format!(
+                "提供商 `{}` 未配置 API Key",
+                request.provider_id
+            )));
+        }
+
+        let model = request.model.clone().unwrap_or(provider.default_model.clone());
+        let timeout_ms = request.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS);
+
+        let body = ChatCompletionPayload {
+            model,
+            messages: build_chat_messages(&request.messages),
+            temperature: request.params.temperature,
+            max_tokens: request.params.max_tokens,
+            top_p: request.params.top_p,
+            stream: true,
+        };
+
+        let url = build_url(&provider.base_url, "/chat/completions")?;
+
+        let mut builder = self
+            .http
+            .post(&url)
+            .bearer_auth(&provider.api_key)
+            .json(&body);
+
+        for (key, value) in &provider.extra_headers {
+            builder = builder.header(key.as_str(), value.as_str());
+        }
+
+        let response = tokio::time::timeout(Duration::from_millis(timeout_ms), builder.send())
+            .await
+            .map_err(|_| AiError::RequestTimeout(timeout_ms))?
+            .map_err(|error| AiError::NetworkError(error.to_string()))?;
+
+        let status = response.status().as_u16();
+        if !response.status().is_success() {
+            let body = response.text().await.unwrap_or_default();
+            return Err(parse_api_error(status, &body));
+        }
+
+        let (tx, rx) = tokio::sync::mpsc::channel(32);
+
+        tokio::spawn(async move {
+            let mut stream = response.bytes_stream();
+            use futures_util::StreamExt;
+            let mut buffer = String::new();
+            let newline = char::from(10);
+
+            while let Some(chunk_result) = stream.next().await {
+                let chunk = match chunk_result {
+                    Ok(bytes) => bytes,
+                    Err(error) => {
+                        let _ = tx
+                            .send(Err(AiError::NetworkError(error.to_string())))
+                            .await;
+                        return;
+                    }
+                };
+
+                buffer.push_str(&String::from_utf8_lossy(&chunk));
+
+                while let Some(nl_pos) = buffer.find(newline) {
+                    let line = buffer[..nl_pos].trim().to_owned();
+                    buffer = buffer[nl_pos + 1..].to_owned();
+
+                    if line.is_empty() || line == ":" {
+                        continue;
+                    }
+
+                    if line == "data: [DONE]" {
+                        let _ = tx.send(Ok(StreamChunk { delta: String::new(), thinking: None, done: true })).await;
+                        return;
+                    }
+
+                    if let Some(data) = line.strip_prefix("data: ") {
+                        let parsed: StreamApiResponse = match serde_json::from_str(data) {
+                            Ok(value) => value,
+                            Err(_) => continue,
+                        };
+
+                        if let Some(choice) = parsed.choices.first() {
+                            let content_delta = choice.delta.content.clone().unwrap_or_default();
+                            let thinking_delta = choice.delta.thinking.clone();
+                            let has_content = !content_delta.is_empty();
+                            let has_thinking = thinking_delta.as_ref().is_some_and(|s| !s.is_empty());
+
+                            if has_content || has_thinking {
+                                if tx
+                                    .send(Ok(StreamChunk {
+                                        delta: content_delta,
+                                        thinking: if has_thinking { thinking_delta } else { None },
+                                        done: false,
+                                    }))
+                                    .await
+                                    .is_err()
+                                {
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            let _ = tx.send(Ok(StreamChunk { delta: String::new(), thinking: None, done: true })).await;
+        });
+
+        Ok(rx)
+    }
+
     async fn test_connection(&self, draft: AiProviderDraft) -> Result<AiTestResult, AiError> {
         let provider = self.resolve_draft(&draft).await?;
         if provider.api_key.trim().is_empty() {
@@ -275,6 +428,7 @@ impl AiService for OpenAiCompatibleService {
             temperature: Some(0.0),
             max_tokens: Some(TEST_MAX_TOKENS),
             top_p: None,
+            stream: false,
         };
 
         let mut builder = self

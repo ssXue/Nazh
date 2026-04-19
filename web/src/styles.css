@@ -8022,6 +8022,93 @@ html.is-tauri-runtime [data-window-drag-region] {
   pointer-events: none;
 }
 
+.flowgram-ai-dialog__preview {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  background: var(--panel);
+  max-height: 260px;
+  overflow-y: auto;
+  font-size: var(--font-subheadline);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-secondary);
+  tab-size: 2;
+}
+
+.flowgram-ai-dialog__preview code {
+  font-family: inherit;
+}
+
+@keyframes flowgram-ai-cursor {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.flowgram-ai-dialog__preview::after {
+  content: "▍";
+  color: var(--accent);
+  animation: flowgram-ai-cursor 0.8s ease-in-out infinite;
+}
+
+/* --- AI 思考过程展示 --- */
+.flowgram-ai-dialog__thinking {
+  border: 1px solid var(--line-faint);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-muted) 60%, transparent);
+}
+
+.flowgram-ai-dialog__thinking-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: var(--font-caption);
+  color: var(--text-secondary);
+  list-style: none;
+}
+
+.flowgram-ai-dialog__thinking-toggle::-webkit-details-marker {
+  display: none;
+}
+
+.flowgram-ai-dialog__thinking-toggle::before {
+  content: "▸";
+  margin-right: 6px;
+  font-size: 10px;
+  transition: transform 0.15s;
+}
+
+.flowgram-ai-dialog__thinking[open] > .flowgram-ai-dialog__thinking-toggle::before {
+  transform: rotate(90deg);
+}
+
+.flowgram-ai-dialog__thinking-badge {
+  font-size: var(--font-caption);
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+
+.flowgram-ai-dialog__thinking-body {
+  margin: 0;
+  padding: 6px 10px 8px;
+  border-top: 1px solid var(--line-faint);
+  max-height: 160px;
+  overflow-y: auto;
+  font-size: var(--font-caption);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-tertiary);
+}
+
+.flowgram-ai-dialog__thinking-body code {
+  font-family: inherit;
+}
+
 @keyframes flowgram-ai-dialog-fade {
   from {
     opacity: 0;
