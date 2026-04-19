@@ -8,7 +8,6 @@ import { copilotComplete } from './tauri';
 export interface NodeContextInfo {
   nodeType: string;
   label: string;
-  aiDescription: string;
 }
 
 export interface NodeContext {
@@ -29,12 +28,10 @@ function extractNodeInfo(node: FlowNodeEntity): NodeContextInfo {
   const extInfo = (node.getExtInfo() ?? {}) as {
     label?: string;
     nodeType?: string;
-    aiDescription?: string | null;
   };
   return {
     nodeType: extInfo.nodeType ?? String(node.flowNodeType),
     label: extInfo.label ?? node.id,
-    aiDescription: extInfo.aiDescription ?? '',
   };
 }
 
@@ -54,7 +51,9 @@ const SYSTEM_PROMPT = `你是工业边缘计算工作流的脚本编写助手。
 - 输入数据直接来自变量 payload
 - 如果需要修改输入，请直接修改 payload，并在最后返回 payload
 - 如果需要返回新的值或对象，直接把该值作为脚本最后一行返回
-- 如需调用 AI，使用 ai_complete("prompt") 函数，它会返回字符串
+- 如需调用 AI，使用 ai_complete("prompt") 函数
+- ai_complete() 会自动解析 JSON 格式的返回值，在 prompt 中明确要求 JSON 输出即可获得结构化数据
+- 示例：let result = ai_complete("分析数据并以 JSON 格式返回 {temperature, status}"); payload["temp"] = result["temperature"];
 - 不要使用 ctx、print()、console.log() 或其他不存在的 API
 - 优先使用 payload["field"] 这种字段访问方式，保持脚本简洁
 
@@ -71,7 +70,7 @@ export function buildScriptGenerationPrompt(
       ? context.upstream
           .map(
             (n) =>
-              `  - ${n.label}（类型: ${n.nodeType}${n.aiDescription ? `，描述: ${n.aiDescription}` : ''}）`,
+              `  - ${n.label}（类型: ${n.nodeType}）`,
           )
           .join('\n')
       : '  无';
@@ -80,14 +79,13 @@ export function buildScriptGenerationPrompt(
       ? context.downstream
           .map(
             (n) =>
-              `  - ${n.label}（类型: ${n.nodeType}${n.aiDescription ? `，描述: ${n.aiDescription}` : ''}）`,
+              `  - ${n.label}（类型: ${n.nodeType}）`,
           )
           .join('\n')
       : '  无';
 
   const userMessage = `节点类型：${context.current.nodeType}
 节点名称：${context.current.label}
-节点描述：${context.current.aiDescription || '无'}
 
 上下游信息：
 - 上游节点：
