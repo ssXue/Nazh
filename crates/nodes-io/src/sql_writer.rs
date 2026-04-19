@@ -48,19 +48,13 @@ pub struct SqlWriterNodeConfig {
 /// `SQLite` 持久化写入节点。
 pub struct SqlWriterNode {
     id: String,
-    ai_description: String,
     config: SqlWriterNodeConfig,
 }
 
 impl SqlWriterNode {
-    pub fn new(
-        id: impl Into<String>,
-        config: SqlWriterNodeConfig,
-        ai_description: impl Into<String>,
-    ) -> Self {
+    pub fn new(id: impl Into<String>, config: SqlWriterNodeConfig) -> Self {
         Self {
             id: id.into(),
-            ai_description: ai_description.into(),
             config,
         }
     }

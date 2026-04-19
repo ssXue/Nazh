@@ -285,8 +285,7 @@ mod tests {
             }
         });
 
-        let event: ExecutionEvent =
-            serde_json::from_value(value).expect("事件应可反序列化");
+        let event: ExecutionEvent = serde_json::from_value(value).expect("事件应可反序列化");
 
         assert_eq!(
             event,

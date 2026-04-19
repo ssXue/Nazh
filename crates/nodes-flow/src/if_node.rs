@@ -28,19 +28,9 @@ impl IfNode {
     ///
     /// Rhai 脚本编译失败时返回 [`EngineError::RhaiCompile`]。
     #[allow(clippy::needless_pass_by_value)]
-    pub fn new(
-        id: impl Into<String>,
-        config: IfNodeConfig,
-        ai_description: impl Into<String>,
-    ) -> Result<Self, EngineError> {
+    pub fn new(id: impl Into<String>, config: IfNodeConfig) -> Result<Self, EngineError> {
         Ok(Self {
-            base: RhaiNodeBase::new(
-                id,
-                ai_description,
-                &config.script,
-                config.max_operations,
-                None,
-            )?,
+            base: RhaiNodeBase::new(id, &config.script, config.max_operations, None)?,
         })
     }
 }

@@ -197,7 +197,6 @@ impl Default for HttpClientNodeConfig {
 /// 构造时创建 reqwest 客户端，支持 webhook 模板渲染和请求超时。
 pub struct HttpClientNode {
     id: String,
-    ai_description: String,
     config: HttpClientNodeConfig,
     client: reqwest::Client,
 }
@@ -208,11 +207,7 @@ impl HttpClientNode {
     /// # Errors
     ///
     /// 当 `reqwest::Client` 构建失败时返回 `EngineError`（例如 TLS 后端初始化异常）。
-    pub fn new(
-        id: impl Into<String>,
-        config: HttpClientNodeConfig,
-        ai_description: impl Into<String>,
-    ) -> Result<Self, EngineError> {
+    pub fn new(id: impl Into<String>, config: HttpClientNodeConfig) -> Result<Self, EngineError> {
         let id = id.into();
         let client = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::limited(10))
@@ -220,12 +215,7 @@ impl HttpClientNode {
             .map_err(|error| {
                 EngineError::node_config(id.clone(), format!("HTTP 客户端初始化失败: {error}"))
             })?;
-        Ok(Self {
-            id,
-            ai_description: ai_description.into(),
-            config,
-            client,
-        })
+        Ok(Self { id, config, client })
     }
 }
 

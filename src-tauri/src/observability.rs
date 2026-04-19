@@ -210,8 +210,14 @@ impl ObservabilityStore {
                     .active_spans
                     .get(&span_key(trace_id, stage))
                     .map(|started_at| (now - *started_at).num_milliseconds().max(0) as u64);
-                if let Some(meta) = metadata.as_ref().and_then(|m| m.get("http")).and_then(Value::as_object) {
-                    if let Some(alert) = build_alert_delivery(&self.session, stage, trace_id, meta, now) {
+                if let Some(meta) = metadata
+                    .as_ref()
+                    .and_then(|m| m.get("http"))
+                    .and_then(Value::as_object)
+                {
+                    if let Some(alert) =
+                        build_alert_delivery(&self.session, stage, trace_id, meta, now)
+                    {
                         let _ = append_jsonl(self.root_dir.join(ALERTS_FILE), &alert).await;
                     }
                 }

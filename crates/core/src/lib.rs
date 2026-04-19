@@ -17,8 +17,8 @@ pub mod plugin;
 pub use context::{ContextRef, WorkflowContext};
 pub use data::{ArenaDataStore, DataId, DataStore};
 pub use error::EngineError;
-pub use event::ExecutionEvent;
 pub use event::CompletedExecutionEvent;
+pub use event::ExecutionEvent;
 pub use ipc::{
     DeployResponse, DispatchResponse, ListNodeTypesResponse, NodeTypeEntry, UndeployResponse,
 };

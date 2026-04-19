@@ -61,7 +61,6 @@ pub struct ModbusReadNodeConfig {
 /// Modbus 寄存器读取节点。
 pub struct ModbusReadNode {
     id: String,
-    ai_description: String,
     config: ModbusReadNodeConfig,
     connection_manager: SharedConnectionManager,
 }
@@ -70,21 +69,16 @@ impl ModbusReadNode {
     pub fn new(
         id: impl Into<String>,
         config: ModbusReadNodeConfig,
-        ai_description: impl Into<String>,
         connection_manager: SharedConnectionManager,
     ) -> Self {
         Self {
             id: id.into(),
-            ai_description: ai_description.into(),
             config,
             connection_manager,
         }
     }
 
-    fn simulate_and_build(
-        &self,
-        payload: Value,
-    ) -> Value {
+    fn simulate_and_build(&self, payload: Value) -> Value {
         #[allow(clippy::cast_precision_loss)]
         let now_seconds = Utc::now().timestamp_millis() as f64 / 1000.0;
         let quantity = self.config.quantity.clamp(1, 32);

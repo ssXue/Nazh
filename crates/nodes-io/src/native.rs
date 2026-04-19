@@ -26,7 +26,6 @@ pub struct NativeNodeConfig {
 /// 纯 Rust 原生节点。
 pub struct NativeNode {
     id: String,
-    ai_description: String,
     config: NativeNodeConfig,
     connection_manager: SharedConnectionManager,
 }
@@ -35,12 +34,10 @@ impl NativeNode {
     pub fn new(
         id: impl Into<String>,
         config: NativeNodeConfig,
-        ai_description: impl Into<String>,
         connection_manager: SharedConnectionManager,
     ) -> Self {
         Self {
             id: id.into(),
-            ai_description: ai_description.into(),
             config,
             connection_manager,
         }

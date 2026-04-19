@@ -97,19 +97,13 @@ pub struct SerialTriggerNodeConfig {
 /// 串口触发节点。
 pub struct SerialTriggerNode {
     id: String,
-    ai_description: String,
     config: SerialTriggerNodeConfig,
 }
 
 impl SerialTriggerNode {
-    pub fn new(
-        id: impl Into<String>,
-        config: SerialTriggerNodeConfig,
-        ai_description: impl Into<String>,
-    ) -> Self {
+    pub fn new(id: impl Into<String>, config: SerialTriggerNodeConfig) -> Self {
         Self {
             id: id.into(),
-            ai_description: ai_description.into(),
             config,
         }
     }

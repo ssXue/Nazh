@@ -55,7 +55,6 @@ impl RhaiNode {
     pub fn new(
         id: impl Into<String>,
         config: RhaiNodeConfig,
-        ai_description: impl Into<String>,
         ai_service: Option<Arc<dyn AiService>>,
     ) -> Result<Self, EngineError> {
         let id = id.into();
@@ -90,7 +89,7 @@ impl RhaiNode {
         };
 
         Ok(Self {
-            base: RhaiNodeBase::new(id, ai_description, &script, max_operations, ai)?,
+            base: RhaiNodeBase::new(id, &script, max_operations, ai)?,
         })
     }
 }

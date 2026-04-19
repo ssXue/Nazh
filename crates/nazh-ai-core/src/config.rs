@@ -102,8 +102,7 @@ fn normalize_active_provider_id(
         .or_else(|| providers.first().map(|provider| provider.id.clone()));
 
     for provider in providers {
-        provider.enabled =
-            resolved_active_provider_id.as_deref() == Some(provider.id.as_str());
+        provider.enabled = resolved_active_provider_id.as_deref() == Some(provider.id.as_str());
     }
 
     resolved_active_provider_id
@@ -539,7 +538,10 @@ mod tests {
 
         let view = file.to_view();
 
-        assert_eq!(view.agent_settings.system_prompt.as_deref(), Some("你是全局代理"));
+        assert_eq!(
+            view.agent_settings.system_prompt.as_deref(),
+            Some("你是全局代理")
+        );
         assert_eq!(view.agent_settings.timeout_ms, Some(12_000));
     }
 

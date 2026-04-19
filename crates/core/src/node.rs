@@ -117,8 +117,6 @@ pub trait NodeTrait: Send + Sync {
     fn id(&self) -> &str;
     /// 返回节点类型标识（如 `"native"`、`"rhai"`、`"timer"` 等）。
     fn kind(&self) -> &'static str;
-    /// 供 LLM 代码生成使用的自然语言描述。
-    fn ai_description(&self) -> &str;
     /// 执行节点逻辑：接收业务数据，返回变换后的 payload 与执行元数据。
     ///
     /// `payload` 由 Runner 从 `DataStore` 读出（`read_mut`，已是 owned 副本），
@@ -140,7 +138,7 @@ pub fn into_payload_map(payload: Value) -> Map<String, Value> {
     }
 }
 
-/// 为持有 `id` 和 `ai_description` 字段的非脚本节点实现 [`NodeTrait`] 元数据方法。
+/// 为持有 `id` 字段的非脚本节点实现 [`NodeTrait`] 元数据方法。
 #[macro_export]
 macro_rules! impl_node_meta {
     ($kind:expr) => {
@@ -149,9 +147,6 @@ macro_rules! impl_node_meta {
         }
         fn kind(&self) -> &'static str {
             $kind
-        }
-        fn ai_description(&self) -> &str {
-            &self.ai_description
         }
     };
 }

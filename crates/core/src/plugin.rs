@@ -80,9 +80,6 @@ pub struct WorkflowNodeDefinition {
     pub config: Value,
     #[serde(default)]
     #[ts(optional)]
-    pub ai_description: Option<String>,
-    #[serde(default)]
-    #[ts(optional, type = "number")]
     pub timeout_ms: Option<u64>,
     #[serde(default = "default_node_buffer")]
     pub buffer: usize,
@@ -104,8 +101,6 @@ impl<'de> Deserialize<'de> for WorkflowNodeDefinition {
             #[serde(default)]
             config: Value,
             #[serde(default)]
-            ai_description: Option<String>,
-            #[serde(default)]
             timeout_ms: Option<u64>,
             #[serde(default = "default_node_buffer")]
             buffer: usize,
@@ -117,7 +112,6 @@ impl<'de> Deserialize<'de> for WorkflowNodeDefinition {
             node_type: input.node_type,
             connection_id: input.connection_id,
             config: input.config,
-            ai_description: input.ai_description,
             timeout_ms: input.timeout_ms,
             buffer: input.buffer,
         })
@@ -125,17 +119,9 @@ impl<'de> Deserialize<'de> for WorkflowNodeDefinition {
 }
 
 impl WorkflowNodeDefinition {
-    /// 从 `config` 字段反序列化出指定类型的配置结构体。
     pub fn parse_config<T: serde::de::DeserializeOwned>(&self) -> Result<T, EngineError> {
         serde_json::from_value(self.config.clone())
             .map_err(|error| EngineError::node_config(self.id.clone(), error.to_string()))
-    }
-
-    /// 获取节点的 AI 描述，若未配置则使用 `fallback`。
-    pub fn resolve_description(&self, fallback: &str) -> String {
-        self.ai_description
-            .clone()
-            .unwrap_or_else(|| fallback.to_owned())
     }
 }
 
@@ -305,9 +291,6 @@ mod tests {
         fn kind(&self) -> &'static str {
             self.kind
         }
-        fn ai_description(&self) -> &str {
-            ""
-        }
         async fn transform(
             &self,
             _trace_id: Uuid,
@@ -368,7 +351,6 @@ mod tests {
             node_type: node_type.to_owned(),
             connection_id: None,
             config: serde_json::Value::Object(Default::default()),
-            ai_description: None,
             timeout_ms: None,
             buffer: 32,
         }

@@ -26,19 +26,13 @@ pub struct TimerNodeConfig {
 /// 定时触发节点，将 `_timer` 元数据和自定义注入字段写入 payload。
 pub struct TimerNode {
     id: String,
-    ai_description: String,
     config: TimerNodeConfig,
 }
 
 impl TimerNode {
-    pub fn new(
-        id: impl Into<String>,
-        config: TimerNodeConfig,
-        ai_description: impl Into<String>,
-    ) -> Self {
+    pub fn new(id: impl Into<String>, config: TimerNodeConfig) -> Self {
         Self {
             id: id.into(),
-            ai_description: ai_description.into(),
             config,
         }
     }

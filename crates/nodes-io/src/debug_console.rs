@@ -26,19 +26,13 @@ pub struct DebugConsoleNodeConfig {
 /// 调试输出节点。
 pub struct DebugConsoleNode {
     id: String,
-    ai_description: String,
     config: DebugConsoleNodeConfig,
 }
 
 impl DebugConsoleNode {
-    pub fn new(
-        id: impl Into<String>,
-        config: DebugConsoleNodeConfig,
-        ai_description: impl Into<String>,
-    ) -> Self {
+    pub fn new(id: impl Into<String>, config: DebugConsoleNodeConfig) -> Self {
         Self {
             id: id.into(),
-            ai_description: ai_description.into(),
             config,
         }
     }

@@ -214,7 +214,6 @@ impl RhaiNodeBase {
     /// 创建基座：编译脚本并设置步数上限。
     pub fn new(
         id: impl Into<String>,
-        _ai_description: impl Into<String>,
         script: &str,
         max_operations: u64,
         ai: Option<RhaiAiRuntime>,
