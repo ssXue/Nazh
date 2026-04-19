@@ -264,9 +264,7 @@ async fn ai_complete_auto_parses_json_object_response() {
         Err(error) => panic!("workflow should deploy successfully: {error}"),
     };
 
-    let submit_result = deployment
-        .submit(WorkflowContext::new(json!({})))
-        .await;
+    let submit_result = deployment.submit(WorkflowContext::new(json!({}))).await;
     assert!(submit_result.is_ok(), "workflow should accept payload");
 
     let result = timeout(Duration::from_secs(1), deployment.next_result()).await;
@@ -309,9 +307,8 @@ async fn ai_complete_keeps_plain_text_as_string() {
     };
 
     let registry = standard_registry();
-    let ai_service: Arc<dyn AiService> = Arc::new(JsonStubAiService::new(
-        "你好，这是一段自然语言回复",
-    ));
+    let ai_service: Arc<dyn AiService> =
+        Arc::new(JsonStubAiService::new("你好，这是一段自然语言回复"));
     let mut deployment = match deploy_workflow_with_ai(
         graph,
         shared_connection_manager(),
@@ -324,9 +321,7 @@ async fn ai_complete_keeps_plain_text_as_string() {
         Err(error) => panic!("workflow should deploy successfully: {error}"),
     };
 
-    let submit_result = deployment
-        .submit(WorkflowContext::new(json!({})))
-        .await;
+    let submit_result = deployment.submit(WorkflowContext::new(json!({}))).await;
     assert!(submit_result.is_ok(), "workflow should accept payload");
 
     let result = timeout(Duration::from_secs(1), deployment.next_result()).await;
@@ -381,9 +376,7 @@ async fn ai_complete_auto_parses_json_array_response() {
         Err(error) => panic!("workflow should deploy successfully: {error}"),
     };
 
-    let submit_result = deployment
-        .submit(WorkflowContext::new(json!({})))
-        .await;
+    let submit_result = deployment.submit(WorkflowContext::new(json!({}))).await;
     assert!(submit_result.is_ok(), "workflow should accept payload");
 
     let result = timeout(Duration::from_secs(1), deployment.next_result()).await;
