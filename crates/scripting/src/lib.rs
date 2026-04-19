@@ -32,9 +32,6 @@ macro_rules! delegate_node_base {
         fn kind(&self) -> &'static str {
             $kind
         }
-        fn ai_description(&self) -> &str {
-            self.base.ai_description()
-        }
     };
 }
 
@@ -46,7 +43,6 @@ macro_rules! delegate_node_base {
 /// [`evaluate_catching`](RhaiNodeBase::evaluate_catching) 即可。
 pub struct RhaiNodeBase {
     id: String,
-    ai_description: String,
     engine: Engine,
     ast: AST,
 }
@@ -101,7 +97,9 @@ impl RhaiAiRuntime {
         {
             messages.push(AiMessage {
                 role: AiMessageRole::System,
-                content: system_prompt.to_owned(),
+                content: format!(
+                    "[格式要求]\n如果用户要求结构化数据输出，请直接输出合法 JSON（无 Markdown 代码块包裹），不要附加解释性文字。\n如果用户未明确要求格式，则自由回复。\n\n{system_prompt}"
+                ),
             });
         }
         messages.push(AiMessage {
@@ -118,7 +116,7 @@ impl RhaiAiRuntime {
         }
     }
 
-    fn complete(&self, prompt: String) -> Result<String, Box<EvalAltResult>> {
+    fn complete(&self, prompt: String) -> Result<Dynamic, Box<EvalAltResult>> {
         if prompt.trim().is_empty() {
             return Err(to_rhai_error("AI prompt 不能为空"));
         }
@@ -142,7 +140,7 @@ impl RhaiAiRuntime {
         .join();
 
         match join_result {
-            Ok(Ok(content)) => Ok(content),
+            Ok(Ok(content)) => Ok(parse_ai_response(content)),
             Ok(Err(message)) => Err(to_rhai_error(message)),
             Err(_) => Err(to_rhai_error(format!(
                 "节点 `{}` 的 AI 调用线程发生 panic",
@@ -159,7 +157,7 @@ enum RhaiAiBinding {
 }
 
 impl RhaiAiBinding {
-    fn complete(&self, prompt: String) -> Result<String, Box<EvalAltResult>> {
+    fn complete(&self, prompt: String) -> Result<Dynamic, Box<EvalAltResult>> {
         match self {
             Self::Enabled(runtime) => runtime.complete(prompt),
             Self::Disabled(message) => Err(to_rhai_error(message.clone())),
@@ -170,7 +168,34 @@ impl RhaiAiBinding {
 // Rhai register_fn 要求 Box<EvalAltResult> 返回类型
 #[allow(clippy::unnecessary_box_returns)]
 fn to_rhai_error(message: impl Into<String>) -> Box<EvalAltResult> {
-    Box::new(EvalAltResult::ErrorRuntime(message.into().into(), Position::NONE))
+    Box::new(EvalAltResult::ErrorRuntime(
+        message.into().into(),
+        Position::NONE,
+    ))
+}
+
+fn strip_markdown_fences(s: &str) -> &str {
+    let trimmed = s.trim();
+    if let Some(rest) = trimmed
+        .strip_prefix("```json")
+        .or_else(|| trimmed.strip_prefix("```JSON"))
+        .or_else(|| trimmed.strip_prefix("```"))
+        && let Some(body) = rest.strip_suffix("```")
+    {
+        return body.trim();
+    }
+    trimmed
+}
+
+fn parse_ai_response(content: String) -> Dynamic {
+    let cleaned = strip_markdown_fences(&content);
+    if cleaned.is_empty() {
+        return Dynamic::UNIT;
+    }
+    match serde_json::from_str::<Value>(cleaned) {
+        Ok(value) => to_dynamic(value).unwrap_or_else(|_| Dynamic::from(content)),
+        Err(_) => Dynamic::from(content),
+    }
 }
 
 fn register_ai_complete(engine: &mut Engine, node_id: &str, ai: Option<RhaiAiRuntime>) {
@@ -181,7 +206,7 @@ fn register_ai_complete(engine: &mut Engine, node_id: &str, ai: Option<RhaiAiRun
 
     engine.register_fn(
         "ai_complete",
-        move |prompt: String| -> Result<String, Box<EvalAltResult>> { binding.complete(prompt) },
+        move |prompt: String| -> Result<Dynamic, Box<EvalAltResult>> { binding.complete(prompt) },
     );
 }
 
@@ -189,7 +214,7 @@ impl RhaiNodeBase {
     /// 创建基座：编译脚本并设置步数上限。
     pub fn new(
         id: impl Into<String>,
-        ai_description: impl Into<String>,
+        _ai_description: impl Into<String>,
         script: &str,
         max_operations: u64,
         ai: Option<RhaiAiRuntime>,
@@ -201,20 +226,11 @@ impl RhaiNodeBase {
         let ast = engine
             .compile(script)
             .map_err(|error| EngineError::rhai_compile(id.clone(), error.to_string()))?;
-        Ok(Self {
-            id,
-            ai_description: ai_description.into(),
-            engine,
-            ast,
-        })
+        Ok(Self { id, engine, ast })
     }
 
     pub fn id(&self) -> &str {
         &self.id
-    }
-
-    pub fn ai_description(&self) -> &str {
-        &self.ai_description
     }
 
     /// 将 JSON payload 转换为 Rhai 作用域。

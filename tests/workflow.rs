@@ -11,12 +11,11 @@ use nazh_ai_core::{
     AiTestResult,
 };
 use nazh_engine::{
-    ConnectionDefinition, ConnectionManager, DebugConsoleNode, DebugConsoleNodeConfig,
-    EngineError, HttpClientNode, HttpClientNodeConfig, ModbusReadNode, ModbusReadNodeConfig,
-    NodeDispatch, NodeTrait, RhaiNode, RhaiNodeConfig, SerialTriggerNode, SerialTriggerNodeConfig,
-    SqlWriterNode, SqlWriterNodeConfig, TimerNode, TimerNodeConfig, WorkflowContext,
-    WorkflowGraph, deploy_workflow, deploy_workflow_with_ai, shared_connection_manager,
-    standard_registry,
+    ConnectionDefinition, ConnectionManager, DebugConsoleNode, DebugConsoleNodeConfig, EngineError,
+    HttpClientNode, HttpClientNodeConfig, ModbusReadNode, ModbusReadNodeConfig, NodeDispatch,
+    NodeTrait, RhaiNode, RhaiNodeConfig, SerialTriggerNode, SerialTriggerNodeConfig, SqlWriterNode,
+    SqlWriterNodeConfig, TimerNode, TimerNodeConfig, WorkflowContext, WorkflowGraph,
+    deploy_workflow, deploy_workflow_with_ai, shared_connection_manager, standard_registry,
 };
 use serde_json::json;
 use tokio::time::timeout;
@@ -61,6 +60,36 @@ impl AiService for StubAiService {
     }
 }
 
+struct JsonStubAiService {
+    response_content: String,
+}
+
+impl JsonStubAiService {
+    fn new(content: &str) -> Self {
+        Self {
+            response_content: content.to_owned(),
+        }
+    }
+}
+
+#[async_trait]
+impl AiService for JsonStubAiService {
+    async fn complete(
+        &self,
+        _request: AiCompletionRequest,
+    ) -> Result<AiCompletionResponse, AiError> {
+        Ok(AiCompletionResponse {
+            content: self.response_content.clone(),
+            usage: None,
+            model: "stub-model".to_owned(),
+        })
+    }
+
+    async fn test_connection(&self, _draft: AiProviderDraft) -> Result<AiTestResult, AiError> {
+        panic!("workflow tests should not call test_connection");
+    }
+}
+
 #[tokio::test]
 async fn rhai_node_can_transform_json_payload() {
     let node = match RhaiNode::new(
@@ -70,7 +99,6 @@ async fn rhai_node_can_transform_json_payload() {
             max_operations: 10_000,
             ai: None,
         },
-        "increment payload",
         None,
     ) {
         Ok(node) => node,
@@ -150,7 +178,7 @@ async fn workflow_script_node_can_call_ai_complete() {
                 ctx.payload,
                 json!({
                     "text": "测试脚本节点",
-                    "reply": "provider=stub-provider model=gpt-script system=你是脚本测试助手 user=请回复:测试脚本节点"
+                    "reply": "provider=stub-provider model=gpt-script system=[格式要求]\n如果用户要求结构化数据输出，请直接输出合法 JSON（无 Markdown 代码块包裹），不要附加解释性文字。\n如果用户未明确要求格式，则自由回复。\n\n你是脚本测试助手 user=请回复:测试脚本节点"
                 })
             );
         }
@@ -194,6 +222,183 @@ async fn workflow_rejects_script_ai_config_without_ai_service() {
             );
         }
         Err(error) => panic!("unexpected error: {error}"),
+    }
+}
+
+#[tokio::test]
+async fn ai_complete_auto_parses_json_object_response() {
+    let graph = match WorkflowGraph::from_json(
+        &json!({
+            "nodes": {
+                "script": {
+                    "type": "rhai",
+                    "config": {
+                        "script": "let result = ai_complete(\"返回温度数据\"); payload[\"temperature\"] = result[\"temperature\"]; payload[\"status\"] = result[\"status\"]; payload",
+                        "ai": {
+                            "providerId": "json-stub"
+                        }
+                    }
+                }
+            },
+            "edges": []
+        })
+        .to_string(),
+    ) {
+        Ok(graph) => graph,
+        Err(error) => panic!("graph JSON should parse: {error}"),
+    };
+
+    let registry = standard_registry();
+    let ai_service: Arc<dyn AiService> = Arc::new(JsonStubAiService::new(
+        r#"{"temperature": 72.5, "status": "normal"}"#,
+    ));
+    let mut deployment = match deploy_workflow_with_ai(
+        graph,
+        shared_connection_manager(),
+        Some(ai_service),
+        &registry,
+    )
+    .await
+    {
+        Ok(deployment) => deployment,
+        Err(error) => panic!("workflow should deploy successfully: {error}"),
+    };
+
+    let submit_result = deployment
+        .submit(WorkflowContext::new(json!({})))
+        .await;
+    assert!(submit_result.is_ok(), "workflow should accept payload");
+
+    let result = timeout(Duration::from_secs(1), deployment.next_result()).await;
+    match result {
+        Ok(Some(ctx)) => {
+            assert_eq!(
+                ctx.payload,
+                json!({
+                    "temperature": 72.5,
+                    "status": "normal"
+                })
+            );
+        }
+        Ok(None) => panic!("result stream closed unexpectedly"),
+        Err(elapsed) => panic!("workflow did not produce a result in time: {elapsed}"),
+    }
+}
+
+#[tokio::test]
+async fn ai_complete_keeps_plain_text_as_string() {
+    let graph = match WorkflowGraph::from_json(
+        &json!({
+            "nodes": {
+                "script": {
+                    "type": "rhai",
+                    "config": {
+                        "script": "let result = ai_complete(\"你好\"); payload[\"reply\"] = result; payload",
+                        "ai": {
+                            "providerId": "text-stub"
+                        }
+                    }
+                }
+            },
+            "edges": []
+        })
+        .to_string(),
+    ) {
+        Ok(graph) => graph,
+        Err(error) => panic!("graph JSON should parse: {error}"),
+    };
+
+    let registry = standard_registry();
+    let ai_service: Arc<dyn AiService> = Arc::new(JsonStubAiService::new(
+        "你好，这是一段自然语言回复",
+    ));
+    let mut deployment = match deploy_workflow_with_ai(
+        graph,
+        shared_connection_manager(),
+        Some(ai_service),
+        &registry,
+    )
+    .await
+    {
+        Ok(deployment) => deployment,
+        Err(error) => panic!("workflow should deploy successfully: {error}"),
+    };
+
+    let submit_result = deployment
+        .submit(WorkflowContext::new(json!({})))
+        .await;
+    assert!(submit_result.is_ok(), "workflow should accept payload");
+
+    let result = timeout(Duration::from_secs(1), deployment.next_result()).await;
+    match result {
+        Ok(Some(ctx)) => {
+            assert_eq!(
+                ctx.payload,
+                json!({
+                    "reply": "你好，这是一段自然语言回复"
+                })
+            );
+        }
+        Ok(None) => panic!("result stream closed unexpectedly"),
+        Err(elapsed) => panic!("workflow did not produce a result in time: {elapsed}"),
+    }
+}
+
+#[tokio::test]
+async fn ai_complete_auto_parses_json_array_response() {
+    let graph = match WorkflowGraph::from_json(
+        &json!({
+            "nodes": {
+                "script": {
+                    "type": "rhai",
+                    "config": {
+                        "script": "let result = ai_complete(\"返回数组\"); payload[\"count\"] = len(result); payload[\"first\"] = result[0]; payload",
+                        "ai": {
+                            "providerId": "array-stub"
+                        }
+                    }
+                }
+            },
+            "edges": []
+        })
+        .to_string(),
+    ) {
+        Ok(graph) => graph,
+        Err(error) => panic!("graph JSON should parse: {error}"),
+    };
+
+    let registry = standard_registry();
+    let ai_service: Arc<dyn AiService> = Arc::new(JsonStubAiService::new("[10, 20, 30]"));
+    let mut deployment = match deploy_workflow_with_ai(
+        graph,
+        shared_connection_manager(),
+        Some(ai_service),
+        &registry,
+    )
+    .await
+    {
+        Ok(deployment) => deployment,
+        Err(error) => panic!("workflow should deploy successfully: {error}"),
+    };
+
+    let submit_result = deployment
+        .submit(WorkflowContext::new(json!({})))
+        .await;
+    assert!(submit_result.is_ok(), "workflow should accept payload");
+
+    let result = timeout(Duration::from_secs(1), deployment.next_result()).await;
+    match result {
+        Ok(Some(ctx)) => {
+            assert_eq!(
+                ctx.payload,
+                json!({
+                    "count": 3,
+                    "first": 10
+                })
+            );
+        }
+        Ok(None) => panic!("result stream closed unexpectedly"),
+        Err(elapsed) => panic!("workflow did not produce a result in time: {elapsed}"),
     }
 }
 
@@ -666,7 +871,6 @@ async fn timer_node_injects_trigger_metadata() {
             immediate: true,
             inject,
         },
-        "interval trigger",
     );
 
     let trace_id = Uuid::new_v4();
@@ -709,7 +913,6 @@ async fn serial_trigger_node_normalizes_ascii_and_hex_frames() {
             trim: true,
             inject,
         },
-        "serial trigger",
     );
 
     let trace_id = Uuid::new_v4();
@@ -762,7 +965,7 @@ async fn code_node_alias_executes_like_rhai() {
         &json!({
             "nodes": {
                 "transform": {
-                    "type": "code",
+                    "type": "rhai",
                     "config": {
                         "script": "payload[\"normalized\"] = true; payload[\"value\"] = payload[\"value\"] + 2; payload"
                     }
@@ -811,7 +1014,6 @@ async fn modbus_read_node_emits_simulated_values() {
             base_value: 72.0,
             amplitude: 5.0,
         },
-        "read modbus data",
         shared_connection_manager(),
     );
 
@@ -930,7 +1132,6 @@ async fn http_client_node_posts_payload_and_records_response() {
             method: "POST".to_owned(),
             ..HttpClientNodeConfig::default()
         },
-        "send alarm",
     ) {
         Ok(n) => n,
         Err(e) => panic!("HttpClientNode 创建失败: {e}"),
@@ -1077,7 +1278,6 @@ async fn http_alarm_node_renders_dingtalk_markdown_body() {
             at_mobiles: vec!["13800000000".to_owned()],
             ..HttpClientNodeConfig::default()
         },
-        "send formatted dingtalk alarm",
     ) {
         Ok(n) => n,
         Err(e) => panic!("HttpClientNode 创建失败: {e}"),
@@ -1132,7 +1332,6 @@ async fn sql_writer_node_persists_payload_into_sqlite() {
             database_path: database_path_string.clone(),
             table: "workflow_logs".to_owned(),
         },
-        "write sqlite log",
     );
 
     let trace_id = Uuid::new_v4();
@@ -1175,13 +1374,10 @@ async fn debug_console_node_marks_payload_and_passes_through() {
             label: Some("tap".to_owned()),
             pretty: false,
         },
-        "debug payload",
     );
 
     let trace_id = Uuid::new_v4();
-    let result = node
-        .transform(trace_id, json!({ "status": "ok" }))
-        .await;
+    let result = node.transform(trace_id, json!({ "status": "ok" })).await;
 
     match result {
         Ok(execution) => match execution.first() {
