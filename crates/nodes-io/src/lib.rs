@@ -50,8 +50,6 @@ impl Plugin for IoPlugin {
             let cm = downcast_connection_manager(&res)?;
             Ok(Arc::new(NativeNode::new(def.id.clone(), config, cm)))
         });
-        let _ = registry.alias("native/log", "native");
-        let _ = registry.alias("log", "native");
 
         registry.register("timer", |def, _res| {
             let config: TimerNodeConfig = def.parse_config()?;
@@ -62,8 +60,6 @@ impl Plugin for IoPlugin {
             let config: SerialTriggerNodeConfig = def.parse_config()?;
             Ok(Arc::new(SerialTriggerNode::new(def.id.clone(), config)))
         });
-        let _ = registry.alias("serial/trigger", "serialTrigger");
-        let _ = registry.alias("serial", "serialTrigger");
 
         registry.register("modbusRead", |def, res| {
             let mut config: ModbusReadNodeConfig = def.parse_config()?;
@@ -73,24 +69,20 @@ impl Plugin for IoPlugin {
             let cm = downcast_connection_manager(&res)?;
             Ok(Arc::new(ModbusReadNode::new(def.id.clone(), config, cm)))
         });
-        let _ = registry.alias("modbus/read", "modbusRead");
 
         registry.register("httpClient", |def, _res| {
             let config: HttpClientNodeConfig = def.parse_config()?;
             Ok(Arc::new(HttpClientNode::new(def.id.clone(), config)?))
         });
-        let _ = registry.alias("http/client", "httpClient");
 
         registry.register("sqlWriter", |def, _res| {
             let config: SqlWriterNodeConfig = def.parse_config()?;
             Ok(Arc::new(SqlWriterNode::new(def.id.clone(), config)))
         });
-        let _ = registry.alias("sql/writer", "sqlWriter");
 
         registry.register("debugConsole", |def, _res| {
             let config: DebugConsoleNodeConfig = def.parse_config()?;
             Ok(Arc::new(DebugConsoleNode::new(def.id.clone(), config)))
         });
-        let _ = registry.alias("debug/console", "debugConsole");
     }
 }

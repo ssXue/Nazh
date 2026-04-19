@@ -10,7 +10,6 @@ interface PluginPanelProps {
 
 interface PluginDisplayEntry {
   name: string;
-  aliases: string[];
   category: string;
   description: string;
 }
@@ -38,7 +37,6 @@ export function PluginPanel({ isTauriRuntime }: PluginPanelProps) {
             const meta = NODE_CATEGORY_MAP[nodeType.name];
             return {
               name: nodeType.name,
-              aliases: nodeType.aliases,
               category: meta?.category ?? '其他',
               description: meta?.description ?? '',
             };
@@ -150,11 +148,6 @@ export function PluginPanel({ isTauriRuntime }: PluginPanelProps) {
                 {group.items.map((item) => (
                   <div key={item.name} className="plugin-panel__card">
                     <div className="plugin-panel__card-name">{item.name}</div>
-                    {item.aliases.length > 0 && (
-                      <div className="plugin-panel__card-aliases">
-                        别名: {item.aliases.join(', ')}
-                      </div>
-                    )}
                     {item.description && (
                       <div className="plugin-panel__card-desc">
                         {item.description}

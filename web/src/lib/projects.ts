@@ -321,7 +321,6 @@ function buildIndustrialAlarmExample(boardName: string): WorkflowGraph {
         },
         {
           connection_id: 'plc-main',
-          ai_description: 'Read a simulated Modbus register from the main PLC.',
           timeout_ms: 1000,
         },
       ),
@@ -335,7 +334,6 @@ function buildIndustrialAlarmExample(boardName: string): WorkflowGraph {
             'let value = payload["value"]; payload["temperature_c"] = value; payload["temperature_f"] = (value * 1.8) + 32.0; payload["severity"] = value > 120 ? "alert" : "nominal"; payload["route"] = payload["severity"]; payload["tag"] = `${payload["gateway"]}:boiler-a`; payload',
         },
         {
-          ai_description: 'Normalize PLC values and derive route-ready severity fields.',
           timeout_ms: 1000,
         },
       ),
@@ -352,7 +350,6 @@ function buildIndustrialAlarmExample(boardName: string): WorkflowGraph {
           ],
         },
         {
-          ai_description: 'Route nominal telemetry into SQLite and alert telemetry into DingTalk.',
           timeout_ms: 1000,
         },
       ),
@@ -366,7 +363,6 @@ function buildIndustrialAlarmExample(boardName: string): WorkflowGraph {
           table: 'temperature_audit',
         },
         {
-          ai_description: 'Persist nominal telemetry into a local SQLite audit table.',
           timeout_ms: 1500,
         },
       ),
@@ -392,7 +388,6 @@ function buildIndustrialAlarmExample(boardName: string): WorkflowGraph {
           },
         },
         {
-          ai_description: 'Send high severity telemetry to a DingTalk robot webhook.',
           timeout_ms: 1500,
         },
       ),
@@ -406,7 +401,6 @@ function buildIndustrialAlarmExample(boardName: string): WorkflowGraph {
           pretty: true,
         },
         {
-          ai_description: 'Mirror the final payload into the debug console.',
           timeout_ms: 500,
         },
       ),
@@ -456,7 +450,6 @@ function buildDataPipelineExample(boardName: string): WorkflowGraph {
         },
         {
           connection_id: 'serial-ingress',
-          ai_description: 'Receive scanner payload from an industrial serial device.',
         },
       ),
       clean_payload: createNode(
@@ -469,7 +462,6 @@ function buildDataPipelineExample(boardName: string): WorkflowGraph {
             'payload["barcode"] = String(payload["value"] ?? payload["raw"] ?? "").trim(); payload["line"] = "packing"; payload["received_at"] = timestamp; payload',
         },
         {
-          ai_description: 'Normalize barcode frames before persistence and fan-out.',
         },
       ),
       persist_raw: createNode(
@@ -482,7 +474,6 @@ function buildDataPipelineExample(boardName: string): WorkflowGraph {
           table: 'barcode_events',
         },
         {
-          ai_description: 'Persist barcode scans into the local audit table.',
         },
       ),
       forward_http: createNode(
@@ -501,7 +492,6 @@ function buildDataPipelineExample(boardName: string): WorkflowGraph {
         },
         {
           connection_id: 'warehouse-http',
-          ai_description: 'Forward normalized barcode payload into the cloud API.',
         },
       ),
       console_tap: createNode(
@@ -514,7 +504,6 @@ function buildDataPipelineExample(boardName: string): WorkflowGraph {
           pretty: true,
         },
         {
-          ai_description: 'Preview the final normalized barcode payload.',
         },
       ),
     },

@@ -42,7 +42,6 @@ export interface NodeSeed {
   displayType?: NazhNodeDisplayType;
   label: string;
   connectionId?: string | null;
-  aiDescription?: string | null;
   timeoutMs?: number | null;
   config: {
     message?: string;
@@ -101,7 +100,6 @@ interface FlowgramNodeData {
   nodeType?: NazhNodeKind;
   displayType?: NazhNodeDisplayType;
   connectionId?: string | null;
-  aiDescription?: string | null;
   timeoutMs?: number | null;
   config?: {
     message?: string;
@@ -175,7 +173,6 @@ const NODE_TEMPLATES: FlowgramPaletteItem[] = [
       kind: 'timer',
       displayType: 'timer',
       label: 'Timer Trigger',
-      aiDescription: 'Trigger the workflow on a fixed interval for polling or heartbeat tasks.',
       timeoutMs: null,
       config: {
         interval_ms: 5000,
@@ -196,7 +193,6 @@ const NODE_TEMPLATES: FlowgramPaletteItem[] = [
       kind: 'serialTrigger',
       displayType: 'serialTrigger',
       label: 'Serial Trigger',
-      aiDescription: 'Passively receive ASCII or HEX frames from serial devices.',
       timeoutMs: null,
       config: {
         inject: {
@@ -215,7 +211,6 @@ const NODE_TEMPLATES: FlowgramPaletteItem[] = [
       kind: 'modbusRead',
       displayType: 'modbusRead',
       label: 'Modbus Read',
-      aiDescription: 'Read simulated PLC telemetry from the configured Modbus connection.',
       timeoutMs: 1000,
       config: {
         unit_id: 1,
@@ -237,7 +232,6 @@ const NODE_TEMPLATES: FlowgramPaletteItem[] = [
       displayType: 'switch',
       label: 'Switch Router',
       connectionId: null,
-      aiDescription: 'Resolve a route key and dispatch the payload to the matched branch.',
       timeoutMs: 1000,
       config: {
         script: 'payload["status"]',
@@ -258,7 +252,6 @@ const NODE_TEMPLATES: FlowgramPaletteItem[] = [
       kind: 'code',
       displayType: 'code',
       label: 'Code Clean',
-      aiDescription: 'Clean the payload schema and derive alarm-related fields with Rhai.',
       timeoutMs: 1000,
       config: {
         script:
@@ -276,7 +269,6 @@ const NODE_TEMPLATES: FlowgramPaletteItem[] = [
       kind: 'httpClient',
       displayType: 'httpClient',
       label: 'HTTP Alert',
-      aiDescription: 'Send the payload to DingTalk robot or any HTTP alarm webhook.',
       timeoutMs: 1000,
       config: {
         method: 'POST',
@@ -305,7 +297,6 @@ const NODE_TEMPLATES: FlowgramPaletteItem[] = [
       kind: 'sqlWriter',
       displayType: 'sqlWriter',
       label: 'SQL Writer',
-      aiDescription: 'Persist the payload into a local SQLite table for audit or trace retention.',
       timeoutMs: 1500,
       config: {
         database_path: './data/nazh.sqlite3',
@@ -323,7 +314,6 @@ const NODE_TEMPLATES: FlowgramPaletteItem[] = [
       kind: 'debugConsole',
       displayType: 'debugConsole',
       label: 'Debug Console',
-      aiDescription: 'Print the payload into the desktop debug console for visual inspection.',
       timeoutMs: 500,
       config: {
         label: 'runtime-tap',
@@ -739,7 +729,6 @@ export function buildDefaultNodeSeed(kind: NazhNodeKind): NodeSeed {
         kind: 'native',
         displayType: 'native',
         label: '',
-        aiDescription: 'Native node for protocol IO and resource-bound operations.',
         timeoutMs: null,
         config: {
           message: 'New native node',
@@ -752,7 +741,6 @@ export function buildDefaultNodeSeed(kind: NazhNodeKind): NodeSeed {
         kind,
         displayType: 'code',
         label: '',
-        aiDescription: 'Code node for Rhai-based business logic and payload cleanup.',
         timeoutMs: 1000,
         config: {
           script: 'payload',
@@ -764,7 +752,6 @@ export function buildDefaultNodeSeed(kind: NazhNodeKind): NodeSeed {
         kind: 'timer',
         displayType: 'timer',
         label: '',
-        aiDescription: 'Trigger the workflow on a fixed interval.',
         timeoutMs: null,
         config: {
           interval_ms: 5000,
@@ -778,7 +765,6 @@ export function buildDefaultNodeSeed(kind: NazhNodeKind): NodeSeed {
         kind: 'serialTrigger',
         displayType: 'serialTrigger',
         label: '',
-        aiDescription: 'Passively receive ASCII or HEX frames from serial devices.',
         timeoutMs: null,
         config: {
           inject: {},
@@ -790,7 +776,6 @@ export function buildDefaultNodeSeed(kind: NazhNodeKind): NodeSeed {
         kind: 'modbusRead',
         displayType: 'modbusRead',
         label: '',
-        aiDescription: 'Read simulated Modbus telemetry from the configured PLC connection.',
         timeoutMs: 1000,
         config: {
           unit_id: 1,
@@ -806,7 +791,6 @@ export function buildDefaultNodeSeed(kind: NazhNodeKind): NodeSeed {
         kind: 'if',
         displayType: 'if',
         label: '',
-        aiDescription: 'Evaluate a boolean script and route to true or false.',
         timeoutMs: 1000,
         config: {
           script: 'payload["value"] > 0',
@@ -818,7 +802,6 @@ export function buildDefaultNodeSeed(kind: NazhNodeKind): NodeSeed {
         kind: 'switch',
         displayType: 'switch',
         label: '',
-        aiDescription: 'Evaluate a route script and dispatch to one of the configured branches.',
         timeoutMs: 1000,
         config: {
           script: 'payload["route"]',
@@ -834,7 +817,6 @@ export function buildDefaultNodeSeed(kind: NazhNodeKind): NodeSeed {
         kind: 'tryCatch',
         displayType: 'tryCatch',
         label: '',
-        aiDescription: 'Execute a guarded script and dispatch to try or catch.',
         timeoutMs: 1000,
         config: {
           script: 'payload',
@@ -846,7 +828,6 @@ export function buildDefaultNodeSeed(kind: NazhNodeKind): NodeSeed {
         kind: 'loop',
         displayType: 'loop',
         label: '',
-        aiDescription: 'Iterate an array or count and route each body step before done.',
         timeoutMs: 1000,
         config: {
           script: '[payload]',
@@ -858,7 +839,6 @@ export function buildDefaultNodeSeed(kind: NazhNodeKind): NodeSeed {
         kind: 'httpClient',
         displayType: 'httpClient',
         label: '',
-        aiDescription: 'Send the payload to a remote HTTP endpoint such as DingTalk alarms.',
         timeoutMs: 1000,
         config: {
           url: '',
@@ -880,7 +860,6 @@ export function buildDefaultNodeSeed(kind: NazhNodeKind): NodeSeed {
         kind: 'sqlWriter',
         displayType: 'sqlWriter',
         label: '',
-        aiDescription: 'Persist the payload into a local SQLite database table.',
         timeoutMs: 1500,
         config: {
           database_path: './nazh-local.sqlite3',
@@ -893,7 +872,6 @@ export function buildDefaultNodeSeed(kind: NazhNodeKind): NodeSeed {
         kind: 'debugConsole',
         displayType: 'debugConsole',
         label: '',
-        aiDescription: 'Print the payload to the debug console for inspection.',
         timeoutMs: 500,
         config: {
           label: '',
@@ -970,7 +948,6 @@ export function resolveNodeData(
     nodeType: seed.kind,
     displayType: normalizeDisplayType(seed.displayType, seed.kind),
     connectionId,
-    aiDescription: seed.aiDescription ?? null,
     timeoutMs: seed.timeoutMs ?? null,
     config: normalizeNodeConfig(seed.kind, seed.config),
   };
@@ -1022,10 +999,6 @@ export function normalizeFlowgramNodeJson(
         rawData.connectionId === undefined
           ? resolveDefaultConnectionId(nodeType, connectionDefaults)
           : rawData.connectionId ?? null,
-      aiDescription:
-        typeof rawData.aiDescription === 'string' && rawData.aiDescription.trim()
-          ? rawData.aiDescription
-          : null,
       timeoutMs: normalizeTimeoutValue(rawData.timeoutMs),
       config: normalizeNodeConfig(nodeType, rawData.config),
     },

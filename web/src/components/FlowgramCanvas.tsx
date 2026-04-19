@@ -499,7 +499,6 @@ function FlowgramNodeCard(props: FlowgramNodeMaterialProps) {
         nodeType?: string;
         displayType?: string;
         connectionId?: string | null;
-        aiDescription?: string | null;
         timeoutMs?: number | null;
         config?: {
           message?: string;
@@ -619,7 +618,6 @@ function FlowgramNodeCard(props: FlowgramNodeMaterialProps) {
           <span>{rawData?.connectionId ? `conn: ${rawData.connectionId}` : 'logic-only node'}</span>
           <span>{rawData?.timeoutMs ? `${rawData.timeoutMs} ms timeout` : 'no timeout'}</span>
         </div>
-        {rawData?.aiDescription ? <p className="flowgram-card__hint">{rawData.aiDescription}</p> : null}
       </div>
     </WorkflowNodeRenderer>
   );

@@ -55,9 +55,6 @@ pub struct UndeployResponse {
 pub struct NodeTypeEntry {
     /// 节点类型主名称（如 "rhai"）。
     pub name: String,
-    /// 别名列表（如 `["code", "code/rhai"]`）。
-    #[serde(default)]
-    pub aliases: Vec<String>,
 }
 
 /// `list_node_types` IPC 命令的响应。

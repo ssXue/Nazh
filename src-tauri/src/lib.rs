@@ -1342,7 +1342,7 @@ async fn list_connections(state: State<'_, DesktopState>) -> Result<Vec<Connecti
 async fn list_node_types() -> Result<ListNodeTypesResponse, String> {
     let registry = standard_registry();
     Ok(ListNodeTypesResponse {
-        types: registry.registered_types_with_aliases(),
+        types: registry.registered_types_list(),
     })
 }
 

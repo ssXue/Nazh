@@ -33,8 +33,6 @@ impl Plugin for FlowPlugin {
             let ai_service = res.get::<Arc<dyn AiService>>();
             Ok(Arc::new(RhaiNode::new(def.id.clone(), config, ai_service)?))
         });
-        let _ = registry.alias("code", "rhai");
-        let _ = registry.alias("code/rhai", "rhai");
 
         registry.register("if", |def, _res| {
             let config: IfNodeConfig = def.parse_config()?;

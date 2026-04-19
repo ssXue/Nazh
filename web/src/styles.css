@@ -3485,6 +3485,12 @@ h3 {
   border-radius: 999px;
 }
 
+.flowgram-settings-host {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
 .flowgram-floating-panel {
   position: relative;
   pointer-events: auto;
@@ -7422,4 +7428,131 @@ html.is-tauri-runtime [data-window-drag-region] {
   margin-left: 0.5em;
   font-size: 0.85em;
   padding: 0.15em 0.5em;
+}
+
+.flowgram-ai-dialog-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: color-mix(in srgb, var(--surface) 74%, transparent);
+  animation: flowgram-ai-dialog-fade 180ms ease;
+}
+
+.flowgram-ai-dialog {
+  width: min(400px, 100%);
+  display: grid;
+  gap: 10px;
+  padding: 18px 18px 16px;
+  border: 1px solid var(--line-soft);
+  border-radius: 18px;
+  background: linear-gradient(180deg, var(--dialog-surface-strong), var(--dialog-surface));
+  box-shadow:
+    0 20px 44px rgba(0, 0, 0, 0.1),
+    0 2px 10px rgba(0, 0, 0, 0.06);
+  animation: flowgram-ai-dialog-rise 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.flowgram-ai-dialog strong {
+  font-size: var(--font-title-3);
+  line-height: 1.24;
+}
+
+.flowgram-ai-dialog__hint {
+  color: var(--muted);
+  font-size: var(--font-callout);
+  line-height: 1.45;
+  margin: 0;
+}
+
+.flowgram-ai-dialog__textarea {
+  width: 100%;
+  min-height: 96px;
+  resize: vertical;
+  padding: 8px 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--font-callout);
+  line-height: 1.45;
+}
+
+.flowgram-ai-dialog__textarea:focus {
+  outline: none;
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.flowgram-ai-dialog__textarea:disabled {
+  opacity: 0.6;
+}
+
+.flowgram-ai-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.flowgram-ai-dialog__action {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: var(--panel-strong);
+  color: var(--text);
+  box-shadow: none;
+  transform: none;
+}
+
+.flowgram-ai-dialog__action:hover,
+.flowgram-ai-dialog__action:focus-visible {
+  border-color: var(--accent-border);
+  background: var(--surface-muted);
+  box-shadow: none;
+  transform: none;
+}
+
+.flowgram-ai-dialog__action--primary {
+  border-color: var(--accent-border);
+  background: color-mix(in srgb, var(--accent-soft) 92%, var(--panel) 8%);
+  color: var(--accent-ink);
+}
+
+.flowgram-ai-dialog__action--primary:hover,
+.flowgram-ai-dialog__action--primary:focus-visible {
+  border-color: var(--accent-border);
+  background: color-mix(in srgb, var(--accent-soft) 82%, var(--accent) 18%);
+  color: var(--accent-ink);
+}
+
+.flowgram-ai-dialog__action:disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+@keyframes flowgram-ai-dialog-fade {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes flowgram-ai-dialog-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }

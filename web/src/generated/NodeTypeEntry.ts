@@ -7,8 +7,4 @@ export type NodeTypeEntry = {
 /**
  * 节点类型主名称（如 "rhai"）。
  */
-name: string, 
-/**
- * 别名列表（如 `["code", "code/rhai"]`）。
- */
-aliases: Array<string>, };
+name: string, };

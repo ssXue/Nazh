@@ -9,7 +9,6 @@ interface FlowgramNodeData {
   nodeType: string;
   displayType?: string;
   connectionId: string | null;
-  aiDescription: string | null;
   timeoutMs: number | null;
   config: unknown;
   parentID?: string;
@@ -72,7 +71,6 @@ function buildBaseFlowgramWorkflowJson(graph: WorkflowGraph): FlowgramWorkflowJS
         nodeType: definition?.type ?? 'unknown',
         displayType: definition?.type ?? 'unknown',
         connectionId: definition?.connection_id ?? null,
-        aiDescription: definition?.ai_description ?? null,
         timeoutMs: definition?.timeout_ms ?? null,
         config: definition?.config ?? {},
       };
@@ -193,7 +191,6 @@ export function toNazhWorkflowGraph(
     const hasNodeType = hasOwnKey(rawData, 'nodeType');
     const hasConnectionId = hasOwnKey(rawData, 'connectionId');
     const hasConfig = hasOwnKey(rawData, 'config');
-    const hasAiDescription = hasOwnKey(rawData, 'aiDescription');
     const hasTimeoutMs = hasOwnKey(rawData, 'timeoutMs');
     const nodeType = String(
       (hasNodeType ? rawData.nodeType : undefined) ?? previousNode?.type ?? node.type,
@@ -209,13 +206,8 @@ export function toNazhWorkflowGraph(
         ? rawData.connectionId ?? undefined
         : previousNode?.connection_id,
       config: stripNodeLocalAiConfig(nodeType, nextConfig),
-      ai_description: hasAiDescription
-        ? rawData.aiDescription ?? undefined
-        : previousNode?.ai_description,
       timeout_ms: hasTimeoutMs
-        ? typeof rawData.timeoutMs === 'number'
-          ? rawData.timeoutMs
-          : undefined
+        ? rawData.timeoutMs ?? undefined
         : previousNode?.timeout_ms,
       buffer: previousNode?.buffer,
       meta: position

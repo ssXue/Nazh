@@ -79,7 +79,7 @@ pub struct WorkflowNodeDefinition {
     #[serde(default)]
     pub config: Value,
     #[serde(default)]
-    #[ts(optional)]
+    #[ts(optional, type = "number")]
     pub timeout_ms: Option<u64>,
     #[serde(default = "default_node_buffer")]
     pub buffer: usize,
@@ -154,17 +154,6 @@ impl NodeRegistry {
         self.factories.insert(node_type.into(), Arc::new(factory));
     }
 
-    /// 为已注册的节点类型添加别名（共享同一个工厂函数实例）。
-    pub fn alias(&mut self, alias: impl Into<String>, canonical: &str) -> Result<(), EngineError> {
-        let factory = self
-            .factories
-            .get(canonical)
-            .ok_or_else(|| EngineError::unsupported_node_type(canonical))?
-            .clone();
-        self.factories.insert(alias.into(), factory);
-        Ok(())
-    }
-
     /// 根据节点定义中的 `node_type` 查找工厂并创建节点实例。
     pub fn create(
         &self,
@@ -178,38 +167,21 @@ impl NodeRegistry {
         factory(definition, resources)
     }
 
-    /// 返回所有已注册的节点类型名称（含别名）。
+    /// 返回所有已注册的节点类型名称。
     pub fn registered_types(&self) -> Vec<&str> {
         self.factories.keys().map(String::as_str).collect()
     }
 
-    /// 返回已注册节点类型的列表，按工厂函数指针去重合并别名。
-    pub fn registered_types_with_aliases(&self) -> Vec<crate::NodeTypeEntry> {
-        let mut seen: Vec<Arc<FactoryFn>> = Vec::new();
-        let mut entries: Vec<crate::NodeTypeEntry> = Vec::new();
-
-        for (name, factory) in &self.factories {
-            if let Some(pos) = seen.iter().position(|f| Arc::ptr_eq(f, factory)) {
-                entries[pos].aliases.push(name.clone());
-            } else {
-                seen.push(factory.clone());
-                entries.push(crate::NodeTypeEntry {
-                    name: name.clone(),
-                    aliases: vec![],
-                });
-            }
-        }
-
-        for entry in &mut entries {
-            let mut all = vec![entry.name.clone()];
-            all.append(&mut entry.aliases);
-            all.sort_by(|a, b| a.len().cmp(&b.len()).then(a.cmp(b)));
-            entry.name = all.remove(0);
-            entry.aliases = all;
-        }
-
-        entries.sort_by(|a, b| a.name.cmp(&b.name));
-        entries
+    /// 返回已注册节点类型的列表。
+    pub fn registered_types_list(&self) -> Vec<crate::NodeTypeEntry> {
+        let mut names: Vec<&str> = self.factories.keys().map(String::as_str).collect();
+        names.sort_unstable();
+        names
+            .into_iter()
+            .map(|name| crate::NodeTypeEntry {
+                name: name.to_owned(),
+            })
+            .collect()
     }
 }
 
@@ -317,7 +289,6 @@ mod tests {
                     kind: "alpha",
                 }))
             });
-            let _ = registry.alias("a", "alpha");
         }
     }
 
@@ -366,18 +337,6 @@ mod tests {
             .create(&node_def("n1", "alpha"), stub_resources())
             .unwrap();
         assert_eq!(node.id(), "n1");
-        assert_eq!(node.kind(), "alpha");
-    }
-
-    #[test]
-    fn 插件注册的别名可解析到同一工厂() {
-        let mut host = PluginHost::new();
-        host.load(&TestPlugin);
-        let registry = host.into_registry();
-
-        let node = registry
-            .create(&node_def("n2", "a"), stub_resources())
-            .unwrap();
         assert_eq!(node.kind(), "alpha");
     }
 

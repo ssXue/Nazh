@@ -28,7 +28,6 @@ interface SelectedNodeDraft {
   nodeType: string;
   label: string;
   connectionId: string;
-  aiDescription: string;
   timeoutMs: string;
   message: string;
   script: string;
@@ -196,7 +195,6 @@ function readNodeDraft(node: FlowNodeEntity): SelectedNodeDraft {
     label?: string;
     nodeType?: string;
     connectionId?: string | null;
-    aiDescription?: string | null;
     timeoutMs?: number | null;
     config?: unknown;
   };
@@ -211,7 +209,6 @@ function readNodeDraft(node: FlowNodeEntity): SelectedNodeDraft {
     nodeType,
     label: rawData.label ?? node.id,
     connectionId: rawData.connectionId ?? '',
-    aiDescription: rawData.aiDescription ?? '',
     timeoutMs: rawData.timeoutMs ? String(rawData.timeoutMs) : '',
     message: readString(config.message),
     script: readString(config.script),
@@ -372,6 +369,8 @@ function FlowgramNodeSettingsPanel({
   const { document, playground } = useClientContext();
   const node = document.getNode(nodeId) as FlowNodeEntity | undefined;
   const [draft, setDraft] = useState<SelectedNodeDraft | null>(() => (node ? readNodeDraft(node) : null));
+  const [aiDialogOpen, setAiDialogOpen] = useState(false);
+  const [aiDialogRequirement, setAiDialogRequirement] = useState('');
   const [aiGenerating, setAiGenerating] = useState(false);
   const [aiGenerateError, setAiGenerateError] = useState<string | null>(null);
 
@@ -459,10 +458,6 @@ function FlowgramNodeSettingsPanel({
   }, [aiProviders, resolvedGlobalAiProvider]);
 
   const aiGenerateButtonTitle = useMemo(() => {
-    if (!draft?.aiDescription.trim()) {
-      return '请先填写 AI 描述';
-    }
-
     if (preferredCopilotProvider) {
       return `使用 ${preferredCopilotProvider.name} 生成 Rhai 脚本`;
     }
@@ -484,7 +479,7 @@ function FlowgramNodeSettingsPanel({
     }
 
     return '请先启用一个 AI 提供商';
-  }, [activeCopilotProvider, aiProviders, draft?.aiDescription, preferredCopilotProvider]);
+  }, [activeCopilotProvider, aiProviders, preferredCopilotProvider]);
 
   const diagnostics = useMemo<NodeValidation[]>(() => {
     if (!draft) {
@@ -731,7 +726,6 @@ function FlowgramNodeSettingsPanel({
           label: nextDraft.label || nextDraft.id,
           nodeType: nextDraft.nodeType,
           connectionId: nextDraft.connectionId.trim() || null,
-          aiDescription: nextDraft.aiDescription.trim() || null,
           timeoutMs: parseTimeoutMs(nextDraft.timeoutMs),
           config: buildNodeConfig(nextDraft, currentConfig),
         };
@@ -756,9 +750,9 @@ function FlowgramNodeSettingsPanel({
         return;
       }
 
-      const requirement = draft.aiDescription.trim();
+      const requirement = aiDialogRequirement.trim();
       if (!requirement) {
-        setAiGenerateError('请先填写 AI 描述，再生成脚本。');
+        setAiGenerateError('请输入生成需求。');
         return;
       }
 
@@ -777,6 +771,8 @@ function FlowgramNodeSettingsPanel({
         }
         updateDraft({ script });
         setAiGenerateError(null);
+        setAiDialogOpen(false);
+        setAiDialogRequirement('');
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         setAiGenerateError(message || '生成失败，请重试。');
@@ -784,7 +780,7 @@ function FlowgramNodeSettingsPanel({
         setAiGenerating(false);
       }
     },
-    [copilotParams, draft, node, preferredCopilotProvider, updateDraft],
+    [aiDialogRequirement, copilotParams, draft, node, preferredCopilotProvider, updateDraft],
   );
 
   if (!node || !draft || playground.config.readonly) {
@@ -792,7 +788,8 @@ function FlowgramNodeSettingsPanel({
   }
 
   return (
-    <section className="flowgram-floating-panel flowgram-floating-panel--node">
+    <div className="flowgram-settings-host">
+      <section className="flowgram-floating-panel flowgram-floating-panel--node">
       <div className="flowgram-floating-panel__header">
         <h3>节点设置</h3>
         <button type="button" className="ghost flowgram-floating-panel__close" onClick={closePanel}>
@@ -852,16 +849,6 @@ function FlowgramNodeSettingsPanel({
           </label>
         ) : null}
         <label>
-          <span>AI 描述</span>
-          <textarea
-            value={draft.aiDescription}
-            onChange={(event) => {
-              setAiGenerateError(null);
-              updateDraft({ aiDescription: event.target.value });
-            }}
-          />
-        </label>
-        <label>
           <span>超时 ms</span>
           <input
             value={draft.timeoutMs}
@@ -885,9 +872,10 @@ function FlowgramNodeSettingsPanel({
                 <button
                   type="button"
                   className="ghost flowgram-btn-ai"
-                  disabled={!preferredCopilotProvider || aiGenerating || !draft.aiDescription.trim()}
+                  disabled={!preferredCopilotProvider || aiGenerating}
                   onClick={() => {
-                    void handleAiGenerate();
+                    setAiGenerateError(null);
+                    setAiDialogOpen(true);
                   }}
                   title={aiGenerateButtonTitle}
                 >
@@ -1133,22 +1121,6 @@ function FlowgramNodeSettingsPanel({
         ) : null}
       </div>
 
-      {supportsScriptAi(draft.nodeType) ? (
-        <section className="flowgram-panel flowgram-panel--branches">
-          <div className="flowgram-panel__header">
-            <h4>AI 运行</h4>
-          </div>
-          <p className="flowgram-panel__subtle">
-            {resolvedGlobalAiProvider
-              ? `当前默认使用 AI 配置页中的全局 AI：${resolvedGlobalAiProvider.name}${resolvedGlobalAiProvider.defaultModel.trim() ? ` · ${resolvedGlobalAiProvider.defaultModel.trim()}` : ''}。`
-              : '当前节点会默认使用 AI 配置页中的全局 AI。'}
-          </p>
-          <p className="flowgram-panel__subtle">
-            如需调整 provider、system prompt、采样参数或超时，请前往 AI 配置页。脚本内可直接调用 <code>ai_complete(prompt)</code>。
-          </p>
-        </section>
-      ) : null}
-
       {draft.nodeType === 'switch' ? (
         <section className="flowgram-panel flowgram-panel--branches">
           <div className="flowgram-panel__header">
@@ -1259,6 +1231,69 @@ function FlowgramNodeSettingsPanel({
         ) : null}
       </div>
     </section>
+
+      {aiDialogOpen ? (
+        <div
+          className="flowgram-ai-dialog-layer"
+          onClick={() => {
+            if (!aiGenerating) {
+              setAiDialogOpen(false);
+              setAiDialogRequirement('');
+              setAiGenerateError(null);
+            }
+          }}
+        >
+          <div
+            className="flowgram-ai-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="flowgram-ai-dialog-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <strong id="flowgram-ai-dialog-title">AI 脚本生成</strong>
+            <p className="flowgram-ai-dialog__hint">描述你希望脚本实现的功能，AI 将生成 Rhai 代码。</p>
+            <textarea
+              className="flowgram-ai-dialog__textarea"
+              value={aiDialogRequirement}
+              onChange={(event) => {
+                setAiGenerateError(null);
+                setAiDialogRequirement(event.target.value);
+              }}
+              placeholder="例如：将摄氏温度转为华氏温度，并添加严重级别字段"
+              disabled={aiGenerating}
+              autoFocus
+            />
+            {aiGenerateError ? (
+              <article className="flowgram-note flowgram-note--danger">{aiGenerateError}</article>
+            ) : null}
+            <div className="flowgram-ai-dialog__actions">
+              <button
+                type="button"
+                className="flowgram-ai-dialog__action"
+                disabled={aiGenerating}
+                onClick={() => {
+                  setAiDialogOpen(false);
+                  setAiDialogRequirement('');
+                  setAiGenerateError(null);
+                }}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                className="flowgram-ai-dialog__action flowgram-ai-dialog__action--primary"
+                disabled={aiGenerating || !aiDialogRequirement.trim()}
+                onClick={() => {
+                  void handleAiGenerate();
+                }}
+              >
+                {aiGenerating ? '生成中...' : '生成'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 }
 

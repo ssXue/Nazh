@@ -14,35 +14,24 @@ mod tests {
     }
 
     #[test]
-    fn registered_types_with_aliases_groups_aliases() {
+    fn registered_types_list_returns_sorted_entries() {
         let mut registry = NodeRegistry::new();
         registry.register("rhai", stub_factory);
-        let _ = registry.alias("code", "rhai");
-        let _ = registry.alias("code/rhai", "rhai");
-
         registry.register("native", stub_factory);
-        let _ = registry.alias("log", "native");
-
         registry.register("timer", stub_factory);
 
-        let entries = registry.registered_types_with_aliases();
+        let entries = registry.registered_types_list();
 
         assert_eq!(entries.len(), 3);
-
-        let code_entry = entries.iter().find(|e| e.name == "code").unwrap();
-        assert_eq!(code_entry.aliases, vec!["rhai", "code/rhai"]);
-
-        let log_entry = entries.iter().find(|e| e.name == "log").unwrap();
-        assert_eq!(log_entry.aliases, vec!["native"]);
-
-        let timer_entry = entries.iter().find(|e| e.name == "timer").unwrap();
-        assert!(timer_entry.aliases.is_empty());
+        assert_eq!(entries[0].name, "native");
+        assert_eq!(entries[1].name, "rhai");
+        assert_eq!(entries[2].name, "timer");
     }
 
     #[test]
-    fn registered_types_with_aliases_empty_registry() {
+    fn registered_types_list_empty_registry() {
         let registry = NodeRegistry::new();
-        let entries = registry.registered_types_with_aliases();
+        let entries = registry.registered_types_list();
         assert!(entries.is_empty());
     }
 
@@ -51,15 +40,7 @@ mod tests {
         let registry = standard_registry();
         let types = registry.registered_types();
 
-        for expected in [
-            "if",
-            "switch",
-            "tryCatch",
-            "loop",
-            "rhai",
-            "code",
-            "code/rhai",
-        ] {
+        for expected in ["if", "switch", "tryCatch", "loop", "rhai"] {
             assert!(
                 types.contains(&expected),
                 "FlowPlugin 缺少节点类型: {expected}"
@@ -74,20 +55,12 @@ mod tests {
 
         for expected in [
             "native",
-            "native/log",
-            "log",
             "timer",
             "serialTrigger",
-            "serial/trigger",
-            "serial",
             "modbusRead",
-            "modbus/read",
             "httpClient",
-            "http/client",
             "sqlWriter",
-            "sql/writer",
             "debugConsole",
-            "debug/console",
         ] {
             assert!(
                 types.contains(&expected),
@@ -97,8 +70,8 @@ mod tests {
     }
 
     #[test]
-    fn 两个插件合并后覆盖全部_12_种主节点类型() {
-        let entries = standard_registry().registered_types_with_aliases();
-        assert_eq!(entries.len(), 12, "应注册 12 种主节点类型（去重别名后）");
+    fn 两个插件合并后覆盖全部_12_种节点类型() {
+        let entries = standard_registry().registered_types_list();
+        assert_eq!(entries.len(), 12, "应注册 12 种节点类型");
     }
 }
