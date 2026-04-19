@@ -13,7 +13,7 @@ use uuid::Uuid;
 use nazh_core::{
     EngineError, NodeDispatch, NodeExecution, NodeOutput, NodeTrait, into_payload_map,
 };
-use scripting::{RhaiNodeBase, default_max_operations};
+use scripting::{ScriptNodeBase, default_max_operations};
 
 /// Loop 节点单次执行的最大迭代数量，防止恶意脚本导致 OOM。
 const MAX_LOOP_ITERATIONS: usize = 10_000;
@@ -25,19 +25,19 @@ pub struct LoopNodeConfig {
     pub max_operations: u64,
 }
 
-/// 循环迭代节点，基于 [`RhaiNodeBase`] 实现。
+/// 循环迭代节点，基于 [`ScriptNodeBase`] 实现。
 pub struct LoopNode {
-    base: RhaiNodeBase,
+    base: ScriptNodeBase,
 }
 
 impl LoopNode {
     /// # Errors
     ///
-    /// Rhai 脚本编译失败时返回 [`EngineError::RhaiCompile`]。
+    /// 脚本编译失败时返回 [`EngineError::ScriptCompile`]。
     #[allow(clippy::needless_pass_by_value)]
     pub fn new(id: impl Into<String>, config: LoopNodeConfig) -> Result<Self, EngineError> {
         Ok(Self {
-            base: RhaiNodeBase::new(id, &config.script, config.max_operations, None)?,
+            base: ScriptNodeBase::new(id, &config.script, config.max_operations, None)?,
         })
     }
 }

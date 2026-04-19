@@ -16,15 +16,15 @@ mod tests {
     #[test]
     fn registered_types_list_returns_sorted_entries() {
         let mut registry = NodeRegistry::new();
-        registry.register("rhai", stub_factory);
+        registry.register("code", stub_factory);
         registry.register("native", stub_factory);
         registry.register("timer", stub_factory);
 
         let entries = registry.registered_types_list();
 
         assert_eq!(entries.len(), 3);
-        assert_eq!(entries[0].name, "native");
-        assert_eq!(entries[1].name, "rhai");
+        assert_eq!(entries[0].name, "code");
+        assert_eq!(entries[1].name, "native");
         assert_eq!(entries[2].name, "timer");
     }
 
@@ -40,7 +40,7 @@ mod tests {
         let registry = standard_registry();
         let types = registry.registered_types();
 
-        for expected in ["if", "switch", "tryCatch", "loop", "rhai"] {
+        for expected in ["if", "switch", "tryCatch", "loop", "code"] {
             assert!(
                 types.contains(&expected),
                 "FlowPlugin 缺少节点类型: {expected}"

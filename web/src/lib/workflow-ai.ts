@@ -34,7 +34,7 @@ function toFiniteNumber(value: number | bigint | undefined | null): number | und
 }
 
 export function isAiCapableScriptNode(nodeType: string): boolean {
-  return nodeType === 'code' || nodeType === 'rhai';
+  return nodeType === 'code';
 }
 
 export function isUsableGlobalAiProvider(

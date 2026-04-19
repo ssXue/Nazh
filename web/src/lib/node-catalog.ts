@@ -20,7 +20,7 @@ export const NODE_CATEGORY_MAP: Record<
   switch: { category: '流程控制', description: '多路分支路由' },
   tryCatch: { category: '流程控制', description: '脚本异常捕获路由' },
   loop: { category: '流程控制', description: '循环迭代与逐项分发' },
-  rhai: { category: '脚本执行', description: '沙箱化 Rhai 脚本执行' },
+  code: { category: '脚本执行', description: '沙箱化脚本执行节点' },
   native: { category: '数据注入', description: '打印 payload 元数据，可选附加连接上下文' },
   timer: { category: '硬件接口', description: '按固定间隔触发工作流并注入计时元数据' },
   serialTrigger: {

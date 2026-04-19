@@ -1,8 +1,6 @@
 import type { FlowNodeEntity } from '@flowgram.ai/free-layout-editor';
 
-import type { AiCompletionRequest } from '../generated/AiCompletionRequest';
-import type { AiGenerationParams } from '../generated/AiGenerationParams';
-import type { AiMessage } from '../generated/AiMessage';
+import type { AiCompletionRequest, AiGenerationParams, AiMessage } from '../types';
 import { copilotComplete } from './tauri';
 
 export interface NodeContextInfo {
@@ -167,7 +165,7 @@ export async function generateScript(
     model: options.model ?? undefined,
     messages,
     params: resolveGenerationParams(options.params),
-    timeoutMs: BigInt(options.timeoutMs ?? DEFAULT_SCRIPT_GENERATION_TIMEOUT_MS),
+    timeoutMs: options.timeoutMs ?? DEFAULT_SCRIPT_GENERATION_TIMEOUT_MS,
   };
   const response = await copilotComplete(request);
   return sanitizeGeneratedScript(response.content);

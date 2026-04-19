@@ -3,11 +3,7 @@ import type { WorkflowJSON as FlowgramWorkflowJSON } from '@flowgram.ai/free-lay
 // ── 从 Rust 引擎自动生成的 IPC 契约类型（ts-rs） ────────────
 
 export type {
-  AiAgentSettings,
-  AiCompletionRequest,
   AiCompletionResponse,
-  AiConfigUpdate,
-  AiConfigView,
   AiGenerationParams,
   AiMessage,
   AiMessageRole,
@@ -15,7 +11,6 @@ export type {
   AiProviderUpsert,
   AiProviderView,
   AiSecretInput,
-  AiTestResult,
   AiTokenUsage,
   ConnectionDefinition,
   DeployResponse,
@@ -34,11 +29,36 @@ export type { WorkflowContext as WorkflowResult } from './generated';
 // ── 前端扩展类型（补充 Rust 侧不需要的画布/UI 字段） ───────
 
 import type {
+  AiAgentSettings as GeneratedAiAgentSettings,
+  AiCompletionRequest as GeneratedAiCompletionRequest,
+  AiConfigUpdate as GeneratedAiConfigUpdate,
+  AiConfigView as GeneratedAiConfigView,
+  AiTestResult as GeneratedAiTestResult,
   ConnectionRecord as GeneratedConnectionRecord,
   JsonValue,
   WorkflowGraph as WorkflowGraphBase,
   WorkflowNodeDefinition as WorkflowNodeDefinitionBase,
 } from './generated';
+
+export type AiAgentSettings = Omit<GeneratedAiAgentSettings, 'timeoutMs'> & {
+  timeoutMs?: number;
+};
+
+export type AiCompletionRequest = Omit<GeneratedAiCompletionRequest, 'timeoutMs'> & {
+  timeoutMs?: number;
+};
+
+export type AiConfigView = Omit<GeneratedAiConfigView, 'agentSettings'> & {
+  agentSettings: AiAgentSettings;
+};
+
+export type AiConfigUpdate = Omit<GeneratedAiConfigUpdate, 'agentSettings'> & {
+  agentSettings: AiAgentSettings;
+};
+
+export type AiTestResult = Omit<GeneratedAiTestResult, 'latencyMs'> & {
+  latencyMs?: number;
+};
 
 export type ConnectionHealthState =
   | 'idle'

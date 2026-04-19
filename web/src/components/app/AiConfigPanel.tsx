@@ -88,20 +88,6 @@ function parseOptionalPositiveInteger(value: string): number | undefined {
   return Math.round(parsed);
 }
 
-function parseOptionalPositiveBigInt(value: string): bigint | undefined {
-  const normalized = value.trim();
-  if (!normalized) {
-    return undefined;
-  }
-
-  if (!/^\d+$/.test(normalized)) {
-    return undefined;
-  }
-
-  const parsed = BigInt(normalized);
-  return parsed > 0n ? parsed : undefined;
-}
-
 function buildProviderUpserts(
   aiConfig: NonNullable<AiConfigPanelProps['aiConfig']>,
   activeProviderId: string | null,
@@ -207,7 +193,7 @@ export function AiConfigPanel({
     parseOptionalFiniteNumber(agentSettingsForm.topP) !== undefined;
   const isTimeoutValid =
     !agentSettingsForm.timeoutMs.trim() ||
-    parseOptionalPositiveBigInt(agentSettingsForm.timeoutMs) !== undefined;
+    parseOptionalPositiveInteger(agentSettingsForm.timeoutMs) !== undefined;
   const isAgentSettingsValid =
     isTemperatureValid && isMaxTokensValid && isTopPValid && isTimeoutValid;
 
@@ -324,7 +310,7 @@ export function AiConfigPanel({
         },
         agentSettings: {
           systemPrompt: agentSettingsForm.systemPrompt.trim() || undefined,
-          timeoutMs: parseOptionalPositiveBigInt(agentSettingsForm.timeoutMs),
+          timeoutMs: parseOptionalPositiveInteger(agentSettingsForm.timeoutMs),
         },
       }),
     );
@@ -480,7 +466,7 @@ export function AiConfigPanel({
               </div>
               <article className="settings-row">
                 <span className="settings-row__label" style={{ color: 'var(--text-tertiary)' }}>
-                  `code/rhai` 节点调用 `ai_complete(prompt)` 时默认使用这里的系统提示词、采样参数和超时设置。
+                  `code` 节点调用 `ai_complete(prompt)` 时默认使用这里的系统提示词、采样参数和超时设置。
                 </span>
               </article>
 

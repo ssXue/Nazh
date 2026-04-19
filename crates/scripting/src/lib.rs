@@ -1,8 +1,8 @@
-//! Rhai 脚本引擎基座。
+//! 脚本引擎基座。
 //!
-//! [`RhaiNodeBase`] 封装了 Rhai 引擎初始化、脚本编译和求值的通用逻辑。
-//! 所有基于脚本的节点（If、Switch、TryCatch、Loop、Rhai）均通过组合此基座
-//! 来复用脚本执行能力。添加新的脚本节点时只需嵌入 `RhaiNodeBase` 字段。
+//! [`ScriptNodeBase`] 封装了脚本引擎初始化、脚本编译和求值的通用逻辑。
+//! 所有基于脚本的节点（If、Switch、TryCatch、Loop、Code）均通过组合此基座
+//! 来复用脚本执行能力。添加新的脚本节点时只需嵌入 `ScriptNodeBase` 字段。
 
 use std::sync::Arc;
 
@@ -20,9 +20,9 @@ pub fn default_max_operations() -> u64 {
     50_000
 }
 
-/// 为嵌入 `RhaiNodeBase` 的脚本节点委托 [`NodeTrait`](nazh_core::NodeTrait) 元数据方法。
+/// 为嵌入 `ScriptNodeBase` 的脚本节点委托 [`NodeTrait`](nazh_core::NodeTrait) 元数据方法。
 ///
-/// 需要节点结构体含有 `base: RhaiNodeBase` 字段。
+/// 需要节点结构体含有 `base: ScriptNodeBase` 字段。
 #[macro_export]
 macro_rules! delegate_node_base {
     ($kind:expr) => {
@@ -35,13 +35,13 @@ macro_rules! delegate_node_base {
     };
 }
 
-/// Rhai 脚本节点的通用基座。
+/// 脚本节点的通用基座。
 ///
 /// 封装了引擎初始化、脚本编译和求值逻辑，供所有基于脚本的节点复用。
-/// 新增脚本节点时，在节点结构体中嵌入 `RhaiNodeBase` 字段，
-/// 然后在 `execute()` 中调用 [`evaluate`](RhaiNodeBase::evaluate) 或
-/// [`evaluate_catching`](RhaiNodeBase::evaluate_catching) 即可。
-pub struct RhaiNodeBase {
+/// 新增脚本节点时，在节点结构体中嵌入 `ScriptNodeBase` 字段，
+/// 然后在 `execute()` 中调用 [`evaluate`](ScriptNodeBase::evaluate) 或
+/// [`evaluate_catching`](ScriptNodeBase::evaluate_catching) 即可。
+pub struct ScriptNodeBase {
     id: String,
     engine: Engine,
     ast: AST,
@@ -49,7 +49,7 @@ pub struct RhaiNodeBase {
 
 /// 脚本节点的 AI 运行时配置。
 #[derive(Clone)]
-pub struct RhaiAiRuntime {
+pub struct ScriptAiRuntime {
     node_id: String,
     service: Arc<dyn AiService>,
     provider_id: String,
@@ -59,7 +59,7 @@ pub struct RhaiAiRuntime {
     timeout_ms: Option<u64>,
 }
 
-impl RhaiAiRuntime {
+impl ScriptAiRuntime {
     /// 构造脚本节点的 AI 调用器。
     pub fn new(
         node_id: impl Into<String>,
@@ -118,7 +118,7 @@ impl RhaiAiRuntime {
 
     fn complete(&self, prompt: String) -> Result<Dynamic, Box<EvalAltResult>> {
         if prompt.trim().is_empty() {
-            return Err(to_rhai_error("AI prompt 不能为空"));
+            return Err(to_script_error("AI prompt 不能为空"));
         }
 
         let request = self.build_request(prompt);
@@ -141,8 +141,8 @@ impl RhaiAiRuntime {
 
         match join_result {
             Ok(Ok(content)) => Ok(parse_ai_response(content)),
-            Ok(Err(message)) => Err(to_rhai_error(message)),
-            Err(_) => Err(to_rhai_error(format!(
+            Ok(Err(message)) => Err(to_script_error(message)),
+            Err(_) => Err(to_script_error(format!(
                 "节点 `{}` 的 AI 调用线程发生 panic",
                 self.node_id
             ))),
@@ -151,23 +151,23 @@ impl RhaiAiRuntime {
 }
 
 #[derive(Clone)]
-enum RhaiAiBinding {
-    Enabled(Arc<RhaiAiRuntime>),
+enum ScriptAiBinding {
+    Enabled(Arc<ScriptAiRuntime>),
     Disabled(String),
 }
 
-impl RhaiAiBinding {
+impl ScriptAiBinding {
     fn complete(&self, prompt: String) -> Result<Dynamic, Box<EvalAltResult>> {
         match self {
             Self::Enabled(runtime) => runtime.complete(prompt),
-            Self::Disabled(message) => Err(to_rhai_error(message.clone())),
+            Self::Disabled(message) => Err(to_script_error(message.clone())),
         }
     }
 }
 
 // Rhai register_fn 要求 Box<EvalAltResult> 返回类型
 #[allow(clippy::unnecessary_box_returns)]
-fn to_rhai_error(message: impl Into<String>) -> Box<EvalAltResult> {
+fn to_script_error(message: impl Into<String>) -> Box<EvalAltResult> {
     Box::new(EvalAltResult::ErrorRuntime(
         message.into().into(),
         Position::NONE,
@@ -198,10 +198,10 @@ fn parse_ai_response(content: String) -> Dynamic {
     }
 }
 
-fn register_ai_complete(engine: &mut Engine, node_id: &str, ai: Option<RhaiAiRuntime>) {
+fn register_ai_complete(engine: &mut Engine, node_id: &str, ai: Option<ScriptAiRuntime>) {
     let binding = Arc::new(ai.map_or_else(
-        || RhaiAiBinding::Disabled(format!("脚本节点 `{node_id}` 未启用 AI 能力")),
-        |runtime| RhaiAiBinding::Enabled(Arc::new(runtime)),
+        || ScriptAiBinding::Disabled(format!("脚本节点 `{node_id}` 未启用 AI 能力")),
+        |runtime| ScriptAiBinding::Enabled(Arc::new(runtime)),
     ));
 
     engine.register_fn(
@@ -210,13 +210,13 @@ fn register_ai_complete(engine: &mut Engine, node_id: &str, ai: Option<RhaiAiRun
     );
 }
 
-impl RhaiNodeBase {
+impl ScriptNodeBase {
     /// 创建基座：编译脚本并设置步数上限。
     pub fn new(
         id: impl Into<String>,
         script: &str,
         max_operations: u64,
-        ai: Option<RhaiAiRuntime>,
+        ai: Option<ScriptAiRuntime>,
     ) -> Result<Self, EngineError> {
         let id = id.into();
         let mut engine = Engine::new();
@@ -224,7 +224,7 @@ impl RhaiNodeBase {
         register_ai_complete(&mut engine, &id, ai);
         let ast = engine
             .compile(script)
-            .map_err(|error| EngineError::rhai_compile(id.clone(), error.to_string()))?;
+            .map_err(|error| EngineError::script_compile(id.clone(), error.to_string()))?;
         Ok(Self { id, engine, ast })
     }
 
@@ -243,13 +243,13 @@ impl RhaiNodeBase {
 
     /// 执行 Rhai 脚本，返回作用域和结果值。
     ///
-    /// 脚本运行时错误会转换为 [`EngineError::RhaiRuntime`]。
+    /// 脚本运行时错误会转换为 [`EngineError::ScriptRuntime`]。
     pub fn evaluate(&self, payload: Value) -> Result<(Scope<'static>, Dynamic), EngineError> {
         let mut scope = self.prepare_scope(payload)?;
         let result = self
             .engine
             .eval_ast_with_scope::<Dynamic>(&mut scope, &self.ast)
-            .map_err(|error| EngineError::rhai_runtime(self.id.clone(), error.to_string()))?;
+            .map_err(|error| EngineError::script_runtime(self.id.clone(), error.to_string()))?;
         Ok((scope, result))
     }
 

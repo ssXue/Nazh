@@ -137,7 +137,8 @@ describe('generateScript', () => {
     expect(request.params.temperature).toBe(0.2);
     expect(request.params.maxTokens).toBe(512);
     expect(request.params.topP).toBe(0.9);
-    expect(request.timeoutMs).toBe(BigInt(60000));
+    expect(request.timeoutMs).toBe(60000);
+    expect(() => JSON.stringify(request)).not.toThrow();
   });
 
   it('未显式传参时回退到默认 copilot 参数', async () => {

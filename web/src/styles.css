@@ -32,7 +32,7 @@
   --danger-border: rgba(185, 122, 130, 0.24);
   --danger-ink: #87555b;
   --node-native: var(--accent);
-  --node-rhai: #7d8da4;
+  --node-code: #7d8da4;
   --surface-muted: rgba(255, 255, 255, 0.4);
   --surface-elevated: rgba(255, 255, 255, 0.8);
   --dialog-surface: #ffffff;
@@ -126,7 +126,7 @@ html[data-theme='dark'] {
   --danger-border: rgba(198, 145, 152, 0.28);
   --danger-ink: #f0d2d6;
   --node-native: var(--accent);
-  --node-rhai: #97a7bc;
+  --node-code: #97a7bc;
   --surface-muted: rgba(255, 255, 255, 0.05);
   --surface-elevated: rgba(255, 255, 255, 0.1);
   --dialog-surface: #2c2c2e;
@@ -3315,18 +3315,11 @@ h3 {
   color: var(--accent-ink);
 }
 
-.flowgram-add-card--rhai .flowgram-add-card__icon,
-.flowgram-node-panel__item--rhai .flowgram-node-panel__glyph,
 .flowgram-add-card--code .flowgram-add-card__icon,
 .flowgram-node-panel__item--code .flowgram-node-panel__glyph,
-.flowgram-card--display-rhai .flowgram-card__icon {
-  background: color-mix(in srgb, var(--node-rhai) 15%, transparent);
-  color: color-mix(in srgb, var(--node-rhai) 85%, var(--text) 15%);
-}
-
 .flowgram-card--display-code .flowgram-card__icon {
-  background: color-mix(in srgb, var(--node-rhai) 15%, transparent);
-  color: color-mix(in srgb, var(--node-rhai) 85%, var(--text) 15%);
+  background: color-mix(in srgb, var(--node-code) 15%, transparent);
+  color: color-mix(in srgb, var(--node-code) 85%, var(--text) 15%);
 }
 
 .flowgram-add-card--timer .flowgram-add-card__icon,
@@ -3813,10 +3806,6 @@ h3 {
   box-shadow: var(--shadow-low);
 }
 
-.flowgram-card--rhai {
-  box-shadow: var(--shadow-low);
-}
-
 .flowgram-card__body {
   padding: 12px;
   user-select: none;
@@ -3865,14 +3854,9 @@ h3 {
   color: var(--accent-ink);
 }
 
-.flowgram-card--display-rhai .flowgram-card__type {
-  background: color-mix(in srgb, var(--node-rhai) 14%, transparent);
-  color: color-mix(in srgb, var(--node-rhai) 82%, var(--text) 18%);
-}
-
 .flowgram-card--display-code .flowgram-card__type {
-  background: color-mix(in srgb, var(--node-rhai) 14%, transparent);
-  color: color-mix(in srgb, var(--node-rhai) 82%, var(--text) 18%);
+  background: color-mix(in srgb, var(--node-code) 14%, transparent);
+  color: color-mix(in srgb, var(--node-code) 82%, var(--text) 18%);
 }
 
 .flowgram-card--display-timer .flowgram-card__type {

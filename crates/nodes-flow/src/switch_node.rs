@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use nazh_core::EngineError;
 use nazh_core::{NodeExecution, NodeTrait};
-use scripting::{RhaiNodeBase, default_max_operations};
+use scripting::{ScriptNodeBase, default_max_operations};
 
 fn default_switch_branch() -> String {
     "default".to_owned()
@@ -35,16 +35,16 @@ pub struct SwitchNodeConfig {
     pub max_operations: u64,
 }
 
-/// 多路分支节点，基于 [`RhaiNodeBase`] 实现。
+/// 多路分支节点，基于 [`ScriptNodeBase`] 实现。
 pub struct SwitchNode {
-    base: RhaiNodeBase,
+    base: ScriptNodeBase,
     default_branch: String,
 }
 
 impl SwitchNode {
     /// # Errors
     ///
-    /// Rhai 脚本编译失败时返回 [`EngineError::RhaiCompile`]。
+    /// 脚本编译失败时返回 [`EngineError::ScriptCompile`]。
     #[allow(clippy::needless_pass_by_value)]
     pub fn new(id: impl Into<String>, config: SwitchNodeConfig) -> Result<Self, EngineError> {
         let default_branch = if config.default_branch.trim().is_empty() {
@@ -53,7 +53,7 @@ impl SwitchNode {
             config.default_branch
         };
         Ok(Self {
-            base: RhaiNodeBase::new(id, &config.script, config.max_operations, None)?,
+            base: ScriptNodeBase::new(id, &config.script, config.max_operations, None)?,
             default_branch,
         })
     }

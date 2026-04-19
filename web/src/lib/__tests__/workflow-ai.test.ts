@@ -28,8 +28,8 @@ function createWorkflowGraph(): WorkflowGraph {
           },
         },
       },
-      rhai: {
-        type: 'rhai',
+      code_secondary: {
+        type: 'code',
         config: {
           script: 'payload',
         },
@@ -46,7 +46,7 @@ function createWorkflowGraph(): WorkflowGraph {
     },
     edges: [
       { from: 'input', to: 'code' },
-      { from: 'code', to: 'rhai' },
+      { from: 'code', to: 'code_secondary' },
     ],
   } as WorkflowGraph;
 }
@@ -73,20 +73,20 @@ function createAiConfig(): AiConfigView {
     },
     agentSettings: {
       systemPrompt: '你是测试助手',
-      timeoutMs: 4000n,
+      timeoutMs: 4000,
     },
   };
 }
 
 describe('stripWorkflowNodeLocalAiConfig', () => {
-  it('会移除 code/rhai 节点上的本地 ai 配置，但保留其他配置', () => {
+  it('会移除 code 节点上的本地 ai 配置，但保留其他配置', () => {
     const result = stripWorkflowNodeLocalAiConfig(createWorkflowGraph());
 
     expect(result.nodes['code']?.config).toEqual({
       script: 'payload["reply"] = ai_complete("hello"); payload',
       retries: 2,
     });
-    expect(result.nodes['rhai']?.config).toEqual({
+    expect(result.nodes['code_secondary']?.config).toEqual({
       script: 'payload',
     });
     expect(result.nodes['branch']?.config).toEqual({
@@ -99,7 +99,7 @@ describe('stripWorkflowNodeLocalAiConfig', () => {
 });
 
 describe('applyGlobalAiConfigToWorkflowGraph', () => {
-  it('会把全局 AI 注入到 code/rhai 节点，并覆盖旧的本地 ai 配置', () => {
+  it('会把全局 AI 注入到 code 节点，并覆盖旧的本地 ai 配置', () => {
     const result = applyGlobalAiConfigToWorkflowGraph(
       createWorkflowGraph(),
       createAiConfig(),
@@ -118,7 +118,7 @@ describe('applyGlobalAiConfigToWorkflowGraph', () => {
         timeoutMs: 4000,
       },
     });
-    expect(result.nodes['rhai']?.config).toEqual({
+    expect(result.nodes['code_secondary']?.config).toEqual({
       script: 'payload',
       ai: {
         providerId: 'deepseek',
@@ -145,7 +145,7 @@ describe('applyGlobalAiConfigToWorkflowGraph', () => {
       script: 'payload["reply"] = ai_complete("hello"); payload',
       retries: 2,
     });
-    expect(result.nodes['rhai']?.config).toEqual({
+    expect(result.nodes['code_secondary']?.config).toEqual({
       script: 'payload',
     });
   });

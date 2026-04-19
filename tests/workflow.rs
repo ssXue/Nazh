@@ -11,11 +11,12 @@ use nazh_ai_core::{
     AiTestResult,
 };
 use nazh_engine::{
-    ConnectionDefinition, ConnectionManager, DebugConsoleNode, DebugConsoleNodeConfig, EngineError,
-    HttpClientNode, HttpClientNodeConfig, ModbusReadNode, ModbusReadNodeConfig, NodeDispatch,
-    NodeTrait, RhaiNode, RhaiNodeConfig, SerialTriggerNode, SerialTriggerNodeConfig, SqlWriterNode,
-    SqlWriterNodeConfig, TimerNode, TimerNodeConfig, WorkflowContext, WorkflowGraph,
-    deploy_workflow, deploy_workflow_with_ai, shared_connection_manager, standard_registry,
+    CodeNode, CodeNodeConfig, ConnectionDefinition, ConnectionManager, DebugConsoleNode,
+    DebugConsoleNodeConfig, EngineError, HttpClientNode, HttpClientNodeConfig, ModbusReadNode,
+    ModbusReadNodeConfig, NodeDispatch, NodeTrait, SerialTriggerNode, SerialTriggerNodeConfig,
+    SqlWriterNode, SqlWriterNodeConfig, TimerNode, TimerNodeConfig, WorkflowContext,
+    WorkflowGraph, deploy_workflow, deploy_workflow_with_ai, shared_connection_manager,
+    standard_registry,
 };
 use serde_json::json;
 use tokio::time::timeout;
@@ -91,10 +92,10 @@ impl AiService for JsonStubAiService {
 }
 
 #[tokio::test]
-async fn rhai_node_can_transform_json_payload() {
-    let node = match RhaiNode::new(
-        "rhai-transform",
-        RhaiNodeConfig {
+async fn code_node_can_transform_json_payload() {
+    let node = match CodeNode::new(
+        "code-transform",
+        CodeNodeConfig {
             script: "payload[\"value\"] = payload[\"value\"] + 1; payload".to_owned(),
             max_operations: 10_000,
             ai: None,
@@ -102,7 +103,7 @@ async fn rhai_node_can_transform_json_payload() {
         None,
     ) {
         Ok(node) => node,
-        Err(error) => panic!("rhai node should compile: {error}"),
+        Err(error) => panic!("code node should compile: {error}"),
     };
 
     let trace_id = Uuid::new_v4();
@@ -113,13 +114,13 @@ async fn rhai_node_can_transform_json_payload() {
             Some(first_output) => {
                 match &first_output.dispatch {
                     NodeDispatch::Broadcast => {}
-                    NodeDispatch::Route(_) => panic!("plain rhai node should broadcast"),
+                    NodeDispatch::Route(_) => panic!("plain code node should broadcast"),
                 }
                 assert_eq!(first_output.payload, json!({ "value": 10 }));
             }
-            None => panic!("rhai node should produce a single output"),
+            None => panic!("code node should produce a single output"),
         },
-        Err(error) => panic!("rhai node should execute successfully: {error}"),
+        Err(error) => panic!("code node should execute successfully: {error}"),
     }
 }
 
@@ -129,7 +130,7 @@ async fn workflow_script_node_can_call_ai_complete() {
         &json!({
             "nodes": {
                 "script": {
-                    "type": "rhai",
+                    "type": "code",
                     "config": {
                         "script": "payload[\"reply\"] = ai_complete(\"请回复:\" + payload[\"text\"]); payload",
                         "ai": {
@@ -193,7 +194,7 @@ async fn workflow_rejects_script_ai_config_without_ai_service() {
         &json!({
             "nodes": {
                 "script": {
-                    "type": "rhai",
+                    "type": "code",
                     "config": {
                         "script": "payload[\"reply\"] = ai_complete(\"hello\"); payload",
                         "ai": {
@@ -231,7 +232,7 @@ async fn ai_complete_auto_parses_json_object_response() {
         &json!({
             "nodes": {
                 "script": {
-                    "type": "rhai",
+                    "type": "code",
                     "config": {
                         "script": "let result = ai_complete(\"返回温度数据\"); payload[\"temperature\"] = result[\"temperature\"]; payload[\"status\"] = result[\"status\"]; payload",
                         "ai": {
@@ -289,7 +290,7 @@ async fn ai_complete_keeps_plain_text_as_string() {
         &json!({
             "nodes": {
                 "script": {
-                    "type": "rhai",
+                    "type": "code",
                     "config": {
                         "script": "let result = ai_complete(\"你好\"); payload[\"reply\"] = result; payload",
                         "ai": {
@@ -345,7 +346,7 @@ async fn ai_complete_auto_parses_json_array_response() {
         &json!({
             "nodes": {
                 "script": {
-                    "type": "rhai",
+                    "type": "code",
                     "config": {
                         "script": "let result = ai_complete(\"返回数组\"); payload[\"count\"] = len(result); payload[\"first\"] = result[0]; payload",
                         "ai": {
@@ -422,7 +423,7 @@ async fn workflow_graph_executes_end_to_end() {
                     }
                 },
                 "script": {
-                    "type": "rhai",
+                    "type": "code",
                     "config": {
                         "script": "payload[\"value\"] = payload[\"value\"] * 2; payload"
                     }
@@ -949,49 +950,6 @@ async fn serial_trigger_node_normalizes_ascii_and_hex_frames() {
             None => panic!("serial trigger node should produce one output"),
         },
         Err(error) => panic!("serial trigger node should execute successfully: {error}"),
-    }
-}
-
-#[tokio::test]
-async fn code_node_alias_executes_like_rhai() {
-    let graph = match WorkflowGraph::from_json(
-        &json!({
-            "nodes": {
-                "transform": {
-                    "type": "rhai",
-                    "config": {
-                        "script": "payload[\"normalized\"] = true; payload[\"value\"] = payload[\"value\"] + 2; payload"
-                    }
-                }
-            },
-            "edges": []
-        })
-        .to_string(),
-    ) {
-        Ok(graph) => graph,
-        Err(error) => panic!("graph JSON should parse: {error}"),
-    };
-
-    let registry = standard_registry();
-    let mut deployment = match deploy_workflow(graph, shared_connection_manager(), &registry).await
-    {
-        Ok(deployment) => deployment,
-        Err(error) => panic!("workflow should deploy successfully: {error}"),
-    };
-
-    let submit_result = deployment
-        .submit(WorkflowContext::new(json!({ "value": 40 })))
-        .await;
-    assert!(submit_result.is_ok(), "workflow should accept payload");
-
-    let result = timeout(Duration::from_secs(1), deployment.next_result()).await;
-    match result {
-        Ok(Some(ctx)) => {
-            assert_eq!(ctx.payload["normalized"], json!(true));
-            assert_eq!(ctx.payload["value"], json!(42));
-        }
-        Ok(None) => panic!("result stream closed unexpectedly"),
-        Err(elapsed) => panic!("workflow did not produce a result in time: {elapsed}"),
     }
 }
 

@@ -48,11 +48,11 @@ pub enum EngineError {
     #[error("不支持的节点类型 `{0}`")]
     UnsupportedNodeType(String),
 
-    #[error("节点 `{node_id}` 的 Rhai 脚本编译失败: {message}")]
-    RhaiCompile { node_id: String, message: String },
+    #[error("节点 `{node_id}` 的脚本编译失败: {message}")]
+    ScriptCompile { node_id: String, message: String },
 
-    #[error("节点 `{node_id}` 的 Rhai 脚本运行时错误: {message}")]
-    RhaiRuntime { node_id: String, message: String },
+    #[error("节点 `{node_id}` 的脚本运行时错误: {message}")]
+    ScriptRuntime { node_id: String, message: String },
 
     #[error("节点 `{node_id}` 的 payload 转换失败: {message}")]
     PayloadConversion { node_id: String, message: String },
@@ -134,15 +134,15 @@ impl EngineError {
         Self::UnsupportedNodeType(node_type.into())
     }
 
-    pub fn rhai_compile(node_id: impl Into<String>, message: impl Into<String>) -> Self {
-        Self::RhaiCompile {
+    pub fn script_compile(node_id: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::ScriptCompile {
             node_id: node_id.into(),
             message: message.into(),
         }
     }
 
-    pub fn rhai_runtime(node_id: impl Into<String>, message: impl Into<String>) -> Self {
-        Self::RhaiRuntime {
+    pub fn script_runtime(node_id: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::ScriptRuntime {
             node_id: node_id.into(),
             message: message.into(),
         }

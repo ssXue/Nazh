@@ -1602,7 +1602,7 @@ function App() {
             runtimeState={engine.runtimeState}
             workflowStatus={workflowStatus}
             accentHex={settings.accentHex}
-            nodeRhaiColor={settings.accentThemeVariables['--node-rhai']}
+            nodeCodeColor={settings.accentThemeVariables['--node-code']}
             onRunRequested={handleDeploy}
             onStopRequested={handleUndeploy}
             onDispatchRequested={handleDispatchPayload}

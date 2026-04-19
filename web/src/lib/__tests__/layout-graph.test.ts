@@ -14,7 +14,7 @@ describe('layoutGraph', () => {
       connections: [],
       nodes: {
         A: makeNode('native'),
-        B: makeNode('rhai'),
+        B: makeNode('code'),
         C: makeNode('native'),
       },
       edges: [
@@ -36,8 +36,8 @@ describe('layoutGraph', () => {
       connections: [],
       nodes: {
         A: makeNode('native'),
-        B: makeNode('rhai'),
-        C: makeNode('rhai'),
+        B: makeNode('code'),
+        C: makeNode('code'),
       },
       edges: [
         { from: 'A', to: 'B' },
@@ -72,13 +72,13 @@ describe('layoutGraph', () => {
     const graph = {
       connections: [],
       nodes: {
-        script_node: makeNode('rhai'),
+        script_node: makeNode('code'),
       },
       edges: [],
     } as WorkflowGraph;
 
     const positioned = layoutGraph(graph);
-    expect(positioned[0].type).toBe('rhai');
+    expect(positioned[0].type).toBe('code');
   });
 
   it('菱形 DAG（A→B，A→C，B→D，C→D）→ D 层级最大', () => {
@@ -86,8 +86,8 @@ describe('layoutGraph', () => {
       connections: [],
       nodes: {
         A: makeNode('native'),
-        B: makeNode('rhai'),
-        C: makeNode('rhai'),
+        B: makeNode('code'),
+        C: makeNode('code'),
         D: makeNode('native'),
       },
       edges: [
@@ -110,7 +110,7 @@ describe('layoutGraph', () => {
       connections: [],
       nodes: {
         X: makeNode('native'),
-        Y: makeNode('rhai'),
+        Y: makeNode('code'),
         Z: makeNode('native'),
       },
       edges: [{ from: 'X', to: 'Y' }],

@@ -115,7 +115,7 @@ impl NodeExecution {
 pub trait NodeTrait: Send + Sync {
     /// 节点在工作流图中的唯一标识。
     fn id(&self) -> &str;
-    /// 返回节点类型标识（如 `"native"`、`"rhai"`、`"timer"` 等）。
+    /// 返回节点类型标识（如 `"native"`、`"code"`、`"timer"` 等）。
     fn kind(&self) -> &'static str;
     /// 执行节点逻辑：接收业务数据，返回变换后的 payload 与执行元数据。
     ///

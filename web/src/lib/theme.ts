@@ -107,6 +107,6 @@ export function buildAccentThemeVariables(
     '--accent-gradient-start': toRgba(base, themeMode === 'dark' ? 0.88 : 0.96),
     '--accent-gradient-end': accentGradientEnd,
     '--node-native': normalizeHex(accentHex),
-    '--node-rhai': rgbToHex(nodeRhai),
+    '--node-code': rgbToHex(nodeRhai),
   };
 }

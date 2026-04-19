@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 use nazh_core::EngineError;
 use nazh_core::{NodeExecution, NodeTrait};
-use scripting::{RhaiNodeBase, default_max_operations};
+use scripting::{ScriptNodeBase, default_max_operations};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IfNodeConfig {
@@ -18,19 +18,19 @@ pub struct IfNodeConfig {
     pub max_operations: u64,
 }
 
-/// 布尔条件分支节点，基于 [`RhaiNodeBase`] 实现。
+/// 布尔条件分支节点，基于 [`ScriptNodeBase`] 实现。
 pub struct IfNode {
-    base: RhaiNodeBase,
+    base: ScriptNodeBase,
 }
 
 impl IfNode {
     /// # Errors
     ///
-    /// Rhai 脚本编译失败时返回 [`EngineError::RhaiCompile`]。
+    /// 脚本编译失败时返回 [`EngineError::ScriptCompile`]。
     #[allow(clippy::needless_pass_by_value)]
     pub fn new(id: impl Into<String>, config: IfNodeConfig) -> Result<Self, EngineError> {
         Ok(Self {
-            base: RhaiNodeBase::new(id, &config.script, config.max_operations, None)?,
+            base: ScriptNodeBase::new(id, &config.script, config.max_operations, None)?,
         })
     }
 }

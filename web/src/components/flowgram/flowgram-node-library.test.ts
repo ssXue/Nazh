@@ -13,7 +13,7 @@ const CONNECTION_DEFAULTS: FlowgramConnectionDefaults = {
 };
 
 describe('normalizeFlowgramNodeJson', () => {
-  it('保留 code/rhai 节点的 AI 配置', () => {
+  it('保留 code 节点的 AI 配置', () => {
     const json: WorkflowNodeJSON = {
       id: 'code_1',
       type: 'code',

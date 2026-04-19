@@ -11,7 +11,7 @@ function baseGraph(): WorkflowGraph {
     nodes: {
       a: { type: 'native', config: { message: 'hello' } },
       b: {
-        type: 'rhai',
+        type: 'code',
         config: {
           script: 'payload["reply"] = ai_complete("hello"); payload',
           ai: {
@@ -50,7 +50,32 @@ describe('toNazhWorkflowGraph', () => {
     const flowgramJson = toFlowgramWorkflowJson(graph);
     const result = toNazhWorkflowGraph(flowgramJson, graph);
     expect(result.nodes['a']?.type).toBe('native');
-    expect(result.nodes['b']?.type).toBe('rhai');
+    expect(result.nodes['b']?.type).toBe('code');
+  });
+
+  it('保存 Code Node 时会保留为统一的 code 类型', () => {
+    const graph: WorkflowGraph = {
+      nodes: {
+        code_1: {
+          type: 'code',
+          config: {
+            script: 'payload',
+            ai: {
+              providerId: 'deepseek',
+            },
+          },
+        },
+      },
+      edges: [],
+    } as WorkflowGraph;
+
+    const flowgramJson = toFlowgramWorkflowJson(graph);
+    const result = toNazhWorkflowGraph(flowgramJson, graph);
+
+    expect(result.nodes['code_1']?.type).toBe('code');
+    expect(result.nodes['code_1']?.config).toEqual({
+      script: 'payload',
+    });
   });
 
   it('从 previousGraph 继承 name 字段', () => {

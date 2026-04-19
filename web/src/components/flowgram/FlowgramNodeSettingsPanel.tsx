@@ -8,6 +8,7 @@ import {
   getDefaultHttpAlarmBodyTemplate,
   getDefaultHttpAlarmTitleTemplate,
   inferHttpWebhookKind,
+  normalizeNodeKind,
   normalizeHttpBodyMode,
   parseTimeoutMs,
   type FlowgramLogicBranch,
@@ -157,7 +158,6 @@ function isSerialConnectionType(connectionType: string): boolean {
 function isScriptNode(nodeType: string): boolean {
   return (
     nodeType === 'code' ||
-    nodeType === 'rhai' ||
     nodeType === 'if' ||
     nodeType === 'switch' ||
     nodeType === 'tryCatch' ||
@@ -166,7 +166,7 @@ function isScriptNode(nodeType: string): boolean {
 }
 
 function supportsScriptAi(nodeType: string): boolean {
-  return nodeType === 'code' || nodeType === 'rhai';
+  return nodeType === 'code';
 }
 
 function isUsableAiProvider(provider: AiProviderView | null | undefined): provider is AiProviderView {
@@ -199,7 +199,7 @@ function readNodeDraft(node: FlowNodeEntity): SelectedNodeDraft {
     config?: unknown;
   };
   const config = isRecord(rawData.config) ? rawData.config : {};
-  const nodeType = String(rawData.nodeType ?? node.flowNodeType);
+  const nodeType = normalizeNodeKind(rawData.nodeType ?? node.flowNodeType);
   const httpUrl = readString(config.url);
   const httpWebhookKind = readString(config.webhook_kind, inferHttpWebhookKind(httpUrl));
   const httpBodyMode = normalizeHttpBodyMode(config.body_mode, httpWebhookKind);
@@ -254,7 +254,6 @@ function getPrimaryEditorLabel(nodeType: string): string {
     case 'loop':
       return '迭代脚本';
     case 'code':
-    case 'rhai':
       return 'Code Script';
     default:
       return '脚本';
@@ -868,7 +867,7 @@ function FlowgramNodeSettingsPanel({
           <label>
             <span>
               {getPrimaryEditorLabel(draft.nodeType)}
-              {(draft.nodeType === 'code' || draft.nodeType === 'rhai') ? (
+              {draft.nodeType === 'code' ? (
                 <button
                   type="button"
                   className="ghost flowgram-btn-ai"

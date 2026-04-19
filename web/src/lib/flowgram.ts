@@ -17,7 +17,6 @@ interface FlowgramNodeData {
 
 const FLOWGRAM_BUSINESS_NODE_TYPES = new Set([
   'native',
-  'rhai',
   'code',
   'timer',
   'serialTrigger',
@@ -66,10 +65,11 @@ function buildBaseFlowgramWorkflowJson(graph: WorkflowGraph): FlowgramWorkflowJS
         x: 44 + positionedNode.layer * 320,
         y: 40 + positionedNode.row * 196,
       };
+      const nodeType = definition?.type ?? 'unknown';
       const data: FlowgramNodeData = {
         label: positionedNode.id,
-        nodeType: definition?.type ?? 'unknown',
-        displayType: definition?.type ?? 'unknown',
+        nodeType,
+        displayType: nodeType,
         connectionId: definition?.connection_id ?? null,
         timeoutMs: definition?.timeout_ms ?? null,
         config: definition?.config ?? {},

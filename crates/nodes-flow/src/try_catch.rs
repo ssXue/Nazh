@@ -1,6 +1,6 @@
 //! 异常捕获节点，脚本执行成功路由到 `"try"`，失败路由到 `"catch"`。
 //!
-//! 使用 [`RhaiNodeBase::evaluate_catching`] 捕获脚本错误而非直接传播，
+//! 使用 [`ScriptNodeBase::evaluate_catching`] 捕获脚本错误而非直接传播，
 //! 错误信息会写入 payload 的 `_error` 字段。
 
 use async_trait::async_trait;
@@ -10,7 +10,7 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use nazh_core::{EngineError, NodeExecution, NodeTrait, into_payload_map};
-use scripting::{RhaiNodeBase, default_max_operations};
+use scripting::{ScriptNodeBase, default_max_operations};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TryCatchNodeConfig {
@@ -19,19 +19,19 @@ pub struct TryCatchNodeConfig {
     pub max_operations: u64,
 }
 
-/// 异常捕获节点，基于 [`RhaiNodeBase`] 实现。
+/// 异常捕获节点，基于 [`ScriptNodeBase`] 实现。
 pub struct TryCatchNode {
-    base: RhaiNodeBase,
+    base: ScriptNodeBase,
 }
 
 impl TryCatchNode {
     /// # Errors
     ///
-    /// Rhai 脚本编译失败时返回 [`EngineError::RhaiCompile`]。
+    /// 脚本编译失败时返回 [`EngineError::ScriptCompile`]。
     #[allow(clippy::needless_pass_by_value)]
     pub fn new(id: impl Into<String>, config: TryCatchNodeConfig) -> Result<Self, EngineError> {
         Ok(Self {
-            base: RhaiNodeBase::new(id, &config.script, config.max_operations, None)?,
+            base: ScriptNodeBase::new(id, &config.script, config.max_operations, None)?,
         })
     }
 }

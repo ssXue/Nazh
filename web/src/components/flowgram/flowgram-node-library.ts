@@ -6,7 +6,6 @@ import type {
 
 export type NazhNodeKind =
   | 'native'
-  | 'rhai'
   | 'code'
   | 'timer'
   | 'serialTrigger'
@@ -399,16 +398,16 @@ function normalizeScriptAiConfig(value: unknown): FlowgramScriptAiConfig | undef
   return normalized;
 }
 
-function normalizeNodeKind(value: unknown): NazhNodeKind {
+export function normalizeNodeKind(value: unknown): NazhNodeKind {
   switch (value) {
     case 'code':
+      return 'code';
     case 'timer':
     case 'serialTrigger':
     case 'modbusRead':
     case 'httpClient':
     case 'sqlWriter':
     case 'debugConsole':
-    case 'rhai':
     case 'if':
     case 'switch':
     case 'tryCatch':
@@ -634,7 +633,7 @@ function normalizeNodeConfig(
     };
   }
 
-  if (nodeType === 'rhai' || nodeType === 'code') {
+  if (nodeType === 'code') {
     const { ai: _unusedAi, ...restConfig } = rawConfig;
     const ai = normalizeScriptAiConfig(rawConfig.ai);
 
@@ -734,11 +733,10 @@ export function buildDefaultNodeSeed(kind: NazhNodeKind): NodeSeed {
           message: 'New native node',
         },
       };
-    case 'rhai':
     case 'code':
       return {
-        idPrefix: kind === 'code' ? 'code_node' : 'rhai_node',
-        kind,
+        idPrefix: 'code_node',
+        kind: 'code',
         displayType: 'code',
         label: '',
         timeoutMs: 1000,
@@ -889,7 +887,6 @@ function getFallbackNodeLabel(nodeType: NazhNodeKind): string {
       return 'Serial Trigger';
     case 'modbusRead':
       return 'Modbus Read';
-    case 'rhai':
     case 'code':
       return 'Code Node';
     case 'if':
@@ -1010,7 +1007,6 @@ export function createFlowgramNodeRegistries(
 ): WorkflowNodeRegistry[] {
   const nodeKinds: NazhNodeKind[] = [
     'native',
-    'rhai',
     'code',
     'timer',
     'serialTrigger',
@@ -1035,7 +1031,7 @@ export function getDefaultFlowgramNodeRegistry(type: string): WorkflowNodeRegist
   const kind = normalizeNodeKind(type);
 
   return {
-    type,
+    type: kind,
     meta: buildRegistryMeta(kind),
   };
 }

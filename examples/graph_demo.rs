@@ -29,7 +29,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 },
                 "transform": {
-                    "type": "rhai",
+                    "type": "code",
                     "config": {
                         "script": "payload[\"temperature_f\"] = (payload[\"value\"] * 1.8) + 32.0; payload"
                     }

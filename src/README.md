@@ -13,9 +13,9 @@ src/
 │
 ├── nodes/               # 节点系统（每种节点一个文件）
 │   ├── mod.rs           # NodeTrait、NodeDispatch、NodeExecution 核心抽象
-│   ├── helpers.rs       # 共享基础设施：RhaiNodeBase 脚本基座、with_connection
+│   ├── helpers.rs       # 共享基础设施：ScriptNodeBase 脚本基座、with_connection
 │   ├── native.rs        # NativeNode — 原生 Rust 逻辑节点
-│   ├── rhai.rs          # RhaiNode — 沙箱化 Rhai 脚本节点
+│   ├── code.rs          # CodeNode — 沙箱化脚本节点
 │   ├── timer.rs         # TimerNode — 定时触发节点
 │   ├── modbus_read.rs   # ModbusReadNode — Modbus 寄存器读取（模拟）
 │   ├── if_node.rs       # IfNode — 布尔条件分支
@@ -45,7 +45,7 @@ src/
 ```text
 WorkflowContext
     → 根节点接收（ingress）
-    → 节点执行（NativeNode / RhaiNode / ...）
+    → 节点执行（NativeNode / CodeNode / ...）
     → MPSC Channel 传递给下游节点
     → 叶节点输出到 result 流
     → 所有节点向 event 流发送状态事件
@@ -54,14 +54,14 @@ WorkflowContext
 ## 关键抽象
 
 - **`NodeTrait`**（`nodes/mod.rs`）— 所有节点的统一异步接口，新节点只需实现此 Trait
-- **`RhaiNodeBase`**（`nodes/helpers.rs`）— 脚本节点的组合基座，封装 Rhai 引擎初始化、编译、求值
+- **`ScriptNodeBase`**（`nodes/helpers.rs`）— 脚本节点的组合基座，封装脚本引擎初始化、编译、求值
 - **`with_connection`**（`nodes/helpers.rs`）— 连接借出-释放的异步生命周期辅助
 
 ## 添加新节点类型
 
 1. 在 `nodes/` 下创建新文件（如 `mqtt_publish.rs`）
 2. 定义 `XxxNodeConfig`（带 `#[derive(Serialize, Deserialize)]`）和节点结构体
-3. 若为脚本节点，嵌入 `helpers::RhaiNodeBase`；若需连接，使用 `helpers::with_connection`
+3. 若为脚本节点，嵌入 `helpers::ScriptNodeBase`；若需连接，使用 `helpers::with_connection`
 4. 实现 `NodeTrait`（`id`、`kind`、`ai_description`、`execute`）
 5. 在 `nodes/mod.rs` 中添加 `mod xxx;` 和 `pub use xxx::{...};`
 6. 在 `graph/instantiate.rs` 的 `instantiate_node()` 中添加匹配分支

@@ -21,7 +21,6 @@ type IconProps = SVGProps<SVGSVGElement>;
 export function normalizeFlowgramDisplayType(value: unknown): NazhNodeDisplayType {
   if (
     value === 'native' ||
-    value === 'rhai' ||
     value === 'code' ||
     value === 'timer' ||
     value === 'serialTrigger' ||
@@ -37,7 +36,7 @@ export function normalizeFlowgramDisplayType(value: unknown): NazhNodeDisplayTyp
     return value;
   }
 
-  return value === 'rhai' ? 'rhai' : 'native';
+  return 'native';
 }
 
 export function getFlowgramDisplayLabel(displayType: NazhNodeDisplayType): string {
@@ -63,7 +62,6 @@ export function getFlowgramDisplayLabel(displayType: NazhNodeDisplayType): strin
     case 'debugConsole':
       return 'Debug';
     case 'code':
-    case 'rhai':
       return 'Code';
     case 'native':
       return 'Native';
@@ -96,7 +94,6 @@ export function FlowgramNodeGlyph({
     case 'debugConsole':
       return <DebugConsoleNodeIcon {...props} />;
     case 'code':
-    case 'rhai':
       return <ScriptNodeIcon {...props} />;
     case 'native':
       return <NativeNodeIcon {...props} />;

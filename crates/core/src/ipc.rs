@@ -53,7 +53,7 @@ pub struct UndeployResponse {
 #[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct NodeTypeEntry {
-    /// 节点类型主名称（如 "rhai"）。
+    /// 节点类型主名称（如 "code"）。
     pub name: String,
 }
 

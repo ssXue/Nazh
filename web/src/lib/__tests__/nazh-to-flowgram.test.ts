@@ -16,7 +16,7 @@ function baseGraph(): WorkflowGraph {
         meta: { position: { x: 0, y: 0 } },
       },
       b: {
-        type: 'rhai',
+        type: 'code',
         config: {
           script: 'payload["reply"] = ai_complete("hello"); payload',
           ai: {
@@ -52,7 +52,7 @@ describe('toFlowgramWorkflowJson', () => {
     const nodeA = result.nodes.find((n) => n.id === 'a');
     const nodeB = result.nodes.find((n) => n.id === 'b');
     expect((nodeA?.data as { nodeType?: string })?.nodeType).toBe('native');
-    expect((nodeB?.data as { nodeType?: string })?.nodeType).toBe('rhai');
+    expect((nodeB?.data as { nodeType?: string })?.nodeType).toBe('code');
   });
 
   it('脚本节点的 AI 配置会被映射到 FlowGram data.config', () => {

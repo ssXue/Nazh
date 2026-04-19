@@ -1,4 +1,4 @@
-//! Nazh 流程控制节点（Ring 1）：if / switch / loop / tryCatch / rhai。
+//! Nazh 流程控制节点（Ring 1）：if / switch / loop / tryCatch / code。
 
 use std::sync::Arc;
 
@@ -7,13 +7,13 @@ use nazh_core::{NodeRegistry, Plugin, PluginManifest};
 
 mod if_node;
 mod loop_node;
-mod rhai_node;
+mod code_node;
 mod switch_node;
 mod try_catch;
 
+pub use code_node::{CodeNode, CodeNodeAiConfig, CodeNodeConfig};
 pub use if_node::{IfNode, IfNodeConfig};
 pub use loop_node::{LoopNode, LoopNodeConfig};
-pub use rhai_node::{RhaiNode, RhaiNodeAiConfig, RhaiNodeConfig};
 pub use switch_node::{SwitchBranchConfig, SwitchNode, SwitchNodeConfig};
 pub use try_catch::{TryCatchNode, TryCatchNodeConfig};
 
@@ -28,10 +28,10 @@ impl Plugin for FlowPlugin {
     }
 
     fn register(&self, registry: &mut NodeRegistry) {
-        registry.register("rhai", |def, res| {
-            let config: RhaiNodeConfig = def.parse_config()?;
+        registry.register("code", |def, res| {
+            let config: CodeNodeConfig = def.parse_config()?;
             let ai_service = res.get::<Arc<dyn AiService>>();
-            Ok(Arc::new(RhaiNode::new(def.id.clone(), config, ai_service)?))
+            Ok(Arc::new(CodeNode::new(def.id.clone(), config, ai_service)?))
         });
 
         registry.register("if", |def, _res| {

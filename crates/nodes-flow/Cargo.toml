@@ -1,6 +1,6 @@
 [package]
 name = "nodes-flow"
-description = "Nazh 流程控制节点：if / switch / loop / tryCatch / rhai（Ring 1）"
+description = "Nazh 流程控制节点：if / switch / loop / tryCatch / code（Ring 1）"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

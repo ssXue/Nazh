@@ -57,6 +57,7 @@ import {
 } from './flowgram/FlowgramNodeGlyph';
 import {
   getLogicNodeBranchDefinitions,
+  normalizeNodeKind,
   resolveNodeData,
   type FlowgramConnectionDefaults,
   type NodeSeed,
@@ -87,7 +88,7 @@ interface FlowgramCanvasProps {
   runtimeState: WorkflowRuntimeState;
   workflowStatus: WorkflowWindowStatus;
   accentHex: string;
-  nodeRhaiColor: string;
+  nodeCodeColor: string;
   onRunRequested?: () => void;
   onStopRequested?: () => void;
   onDispatchRequested?: () => void;
@@ -107,7 +108,7 @@ interface FlowgramNodeMaterialProps {
   activated?: boolean;
   runtimeStatus?: RuntimeNodeStatus;
   accentHex: string;
-  nodeRhaiColor: string;
+  nodeCodeColor: string;
 }
 
 type RuntimeNodeStatus = 'idle' | 'running' | 'completed' | 'failed' | 'output';
@@ -397,34 +398,21 @@ function isBusinessFlowNode(node: FlowNodeEntity | null): node is FlowNodeEntity
   const rawData = (node.getExtInfo() ?? {}) as {
     nodeType?: string;
   };
+  const nodeType = normalizeNodeKind(rawData.nodeType ?? node.flowNodeType);
 
   return (
-    rawData.nodeType === 'timer' ||
-    rawData.nodeType === 'serialTrigger' ||
-    rawData.nodeType === 'modbusRead' ||
-    rawData.nodeType === 'code' ||
-    rawData.nodeType === 'native' ||
-    rawData.nodeType === 'rhai' ||
-    rawData.nodeType === 'if' ||
-    rawData.nodeType === 'switch' ||
-    rawData.nodeType === 'tryCatch' ||
-    rawData.nodeType === 'loop' ||
-    rawData.nodeType === 'httpClient' ||
-    rawData.nodeType === 'sqlWriter' ||
-    rawData.nodeType === 'debugConsole' ||
-    node.flowNodeType === 'timer' ||
-    node.flowNodeType === 'serialTrigger' ||
-    node.flowNodeType === 'modbusRead' ||
-    node.flowNodeType === 'code' ||
-    node.flowNodeType === 'native' ||
-    node.flowNodeType === 'rhai' ||
-    node.flowNodeType === 'if' ||
-    node.flowNodeType === 'switch' ||
-    node.flowNodeType === 'tryCatch' ||
-    node.flowNodeType === 'loop' ||
-    node.flowNodeType === 'httpClient' ||
-    node.flowNodeType === 'sqlWriter' ||
-    node.flowNodeType === 'debugConsole'
+    nodeType === 'timer' ||
+    nodeType === 'serialTrigger' ||
+    nodeType === 'modbusRead' ||
+    nodeType === 'code' ||
+    nodeType === 'native' ||
+    nodeType === 'if' ||
+    nodeType === 'switch' ||
+    nodeType === 'tryCatch' ||
+    nodeType === 'loop' ||
+    nodeType === 'httpClient' ||
+    nodeType === 'sqlWriter' ||
+    nodeType === 'debugConsole'
   );
 }
 
@@ -447,7 +435,7 @@ function describeFlowgramError(error: unknown): string {
 function resolveNodePortColor(
   displayType: string,
   accentHex: string,
-  nodeRhaiColor: string,
+  nodeCodeColor: string,
 ): string {
   switch (displayType) {
     case 'timer':
@@ -471,8 +459,7 @@ function resolveNodePortColor(
     case 'debugConsole':
       return 'var(--muted)';
     case 'code':
-    case 'rhai':
-      return nodeRhaiColor;
+      return nodeCodeColor;
     case 'native':
     default:
       return accentHex;
@@ -488,7 +475,7 @@ function getDefaultOutputPortId(node: FlowNodeEntity | null): string | undefined
     nodeType?: string;
     config?: unknown;
   };
-  const nodeType = String(rawData.nodeType ?? node.flowNodeType);
+  const nodeType = normalizeNodeKind(rawData.nodeType ?? node.flowNodeType);
   return getLogicNodeBranchDefinitions(nodeType, rawData.config)[0]?.key;
 }
 
@@ -521,7 +508,7 @@ function FlowgramNodeCard(props: FlowgramNodeMaterialProps) {
       }
     | undefined;
 
-  const nodeType = rawData?.nodeType ?? props.node.flowNodeType;
+  const nodeType = normalizeNodeKind(rawData?.nodeType ?? props.node.flowNodeType);
   const displayType = normalizeFlowgramDisplayType(rawData?.displayType ?? nodeType);
   const runtimeStatus = props.runtimeStatus ?? 'idle';
   const branchDefinitions = useMemo(
@@ -555,7 +542,7 @@ function FlowgramNodeCard(props: FlowgramNodeMaterialProps) {
         ? `寄存器 ${rawData?.config?.register ?? 40001} · ${rawData?.config?.quantity ?? 1} 点`
       : nodeType === 'native'
       ? rawData?.config?.message ?? 'Native I/O passthrough'
-      : nodeType === 'code' || nodeType === 'rhai'
+      : nodeType === 'code'
         ? rawData?.config?.script ?? 'Transform payload'
       : nodeType === 'if'
         ? rawData?.config?.script ?? 'return boolean'
@@ -579,7 +566,7 @@ function FlowgramNodeCard(props: FlowgramNodeMaterialProps) {
       className={`flowgram-card flowgram-card--${nodeType} flowgram-card--display-${displayType} flowgram-card--${runtimeStatus} ${props.activated ? 'is-activated' : ''}`}
       portClassName="flowgram-card__port"
       portBackgroundColor="var(--panel-strong)"
-      portPrimaryColor={resolveNodePortColor(displayType, props.accentHex, props.nodeRhaiColor)}
+      portPrimaryColor={resolveNodePortColor(displayType, props.accentHex, props.nodeCodeColor)}
       portSecondaryColor="var(--surface-elevated)"
       portErrorColor="var(--danger)"
     >
@@ -1051,7 +1038,7 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
   runtimeState,
   workflowStatus,
   accentHex,
-  nodeRhaiColor,
+  nodeCodeColor,
   onRunRequested,
   onStopRequested,
   onDispatchRequested,
@@ -1259,10 +1246,10 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
         {...props}
         runtimeStatus={resolveNodeRuntimeStatus(props.node.id)}
         accentHex={accentHex}
-        nodeRhaiColor={nodeRhaiColor}
+        nodeCodeColor={nodeCodeColor}
       />
     ),
-    [accentHex, nodeRhaiColor, resolveNodeRuntimeStatus],
+    [accentHex, nodeCodeColor, resolveNodeRuntimeStatus],
   );
   const materials = useMemo(
     () => ({

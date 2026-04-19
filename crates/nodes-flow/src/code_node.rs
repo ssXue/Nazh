@@ -1,4 +1,4 @@
-//! 沙箱化 Rhai 脚本节点。
+//! 沙箱化脚本节点。
 //!
 //! 用户编写的业务逻辑脚本在有界 Rhai 虚拟机中执行，
 //! 脚本可修改 `payload` 变量或返回新值作为输出 payload。
@@ -13,11 +13,11 @@ use serde::{Deserialize, Serialize};
 
 use nazh_core::EngineError;
 use nazh_core::{NodeExecution, NodeTrait};
-use scripting::{RhaiAiRuntime, RhaiNodeBase, default_max_operations};
+use scripting::{ScriptAiRuntime, ScriptNodeBase, default_max_operations};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct RhaiNodeAiConfig {
+pub struct CodeNodeAiConfig {
     pub provider_id: String,
     #[serde(default)]
     pub model: Option<String>,
@@ -34,31 +34,31 @@ pub struct RhaiNodeAiConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RhaiNodeConfig {
+pub struct CodeNodeConfig {
     pub script: String,
     #[serde(default = "default_max_operations")]
     pub max_operations: u64,
     #[serde(default)]
-    pub ai: Option<RhaiNodeAiConfig>,
+    pub ai: Option<CodeNodeAiConfig>,
 }
 
-/// 沙箱化 Rhai 脚本节点，基于 [`RhaiNodeBase`] 实现。
-pub struct RhaiNode {
-    base: RhaiNodeBase,
+/// 沙箱化脚本节点，基于 [`ScriptNodeBase`] 实现。
+pub struct CodeNode {
+    base: ScriptNodeBase,
 }
 
-impl RhaiNode {
+impl CodeNode {
     /// # Errors
     ///
-    /// Rhai 脚本编译失败时返回 [`EngineError::RhaiCompile`]。
+    /// 脚本编译失败时返回 [`EngineError::ScriptCompile`]。
     #[allow(clippy::needless_pass_by_value)]
     pub fn new(
         id: impl Into<String>,
-        config: RhaiNodeConfig,
+        config: CodeNodeConfig,
         ai_service: Option<Arc<dyn AiService>>,
     ) -> Result<Self, EngineError> {
         let id = id.into();
-        let RhaiNodeConfig {
+        let CodeNodeConfig {
             script,
             max_operations,
             ai,
@@ -68,10 +68,10 @@ impl RhaiNode {
             Some(ai_config) => {
                 let service = ai_service.ok_or_else(|| {
                     EngineError::invalid_graph(format!(
-                        "脚本节点 `{id}` 配置了 AI，但部署资源中缺少 AiService"
+                        "Code 节点 `{id}` 配置了 AI，但部署资源中缺少 AiService"
                     ))
                 })?;
-                Some(RhaiAiRuntime::new(
+                Some(ScriptAiRuntime::new(
                     id.clone(),
                     service,
                     ai_config.provider_id,
@@ -89,14 +89,14 @@ impl RhaiNode {
         };
 
         Ok(Self {
-            base: RhaiNodeBase::new(id, &script, max_operations, ai)?,
+            base: ScriptNodeBase::new(id, &script, max_operations, ai)?,
         })
     }
 }
 
 #[async_trait]
-impl NodeTrait for RhaiNode {
-    scripting::delegate_node_base!("rhai");
+impl NodeTrait for CodeNode {
+    scripting::delegate_node_base!("code");
 
     async fn transform(
         &self,
