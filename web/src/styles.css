@@ -5421,6 +5421,12 @@ html.is-tauri-runtime .studio-nav-safe-region {
   min-width: 0;
 }
 
+.studio-board-workspace__control-group {
+  display: inline-flex;
+  align-items: stretch;
+  min-width: 0;
+}
+
 .studio-board-workspace__environment-select {
   display: inline-flex;
   align-items: center;
@@ -5428,7 +5434,7 @@ html.is-tauri-runtime .studio-nav-safe-region {
   height: 32px;
   padding: 0 10px;
   border: 1px solid var(--line-soft);
-  border-radius: 10px;
+  border-radius: 10px 0 0 10px;
   background: var(--panel-strong);
   box-shadow: var(--shadow-low);
   color: var(--text-soft);
@@ -5441,6 +5447,7 @@ html.is-tauri-runtime .studio-nav-safe-region {
 }
 
 .studio-board-workspace__environment-select select {
+  min-width: 0;
   border: 0;
   background: transparent;
   color: var(--text);
@@ -5474,6 +5481,17 @@ html.is-tauri-runtime .studio-nav-safe-region {
   height: 14px;
 }
 
+.studio-board-workspace__action--group-primary {
+  border-radius: 10px 0 0 10px;
+}
+
+.studio-board-workspace__action--menu-segment {
+  min-width: 32px;
+  padding: 0 9px;
+  border-left: 0;
+  border-radius: 0 10px 10px 0;
+}
+
 .studio-board-workspace__action:hover,
 .studio-board-workspace__action:focus-visible,
 .studio-board-workspace__menu[open] > .studio-board-workspace__action {
@@ -5486,6 +5504,10 @@ html.is-tauri-runtime .studio-nav-safe-region {
 
 .studio-board-workspace__menu {
   position: relative;
+}
+
+.studio-board-workspace__menu--segment {
+  display: inline-flex;
 }
 
 .studio-board-workspace__menu summary {
@@ -5502,10 +5524,10 @@ html.is-tauri-runtime .studio-nav-safe-region {
   right: 0;
   z-index: var(--z-popup);
   display: grid;
-  gap: 12px;
+  gap: 10px;
   width: min(360px, calc(100vw - 280px));
   min-width: 320px;
-  padding: 14px;
+  padding: 12px;
   border: 1px solid var(--line-soft);
   border-radius: 16px;
   background: linear-gradient(180deg, var(--dialog-surface-strong), var(--dialog-surface));
@@ -5540,64 +5562,83 @@ html.is-tauri-runtime .studio-nav-safe-region {
 
 .studio-board-workspace__snapshot-list {
   display: grid;
-  gap: 8px;
-  max-height: 360px;
+  gap: 6px;
+  max-height: 320px;
   overflow: auto;
 }
 
 .studio-board-workspace__snapshot-card {
   display: grid;
-  gap: 8px;
-  padding: 10px 11px;
+  gap: 6px;
+  padding: 8px 10px;
   border: 1px solid var(--line-soft);
-  border-radius: 13px;
+  border-radius: 12px;
   background: var(--surface-muted);
+}
+
+.studio-board-workspace__snapshot-card--empty {
+  background: var(--panel-strong);
 }
 
 .studio-board-workspace__snapshot-copy {
   display: grid;
-  gap: 4px;
+  gap: 2px;
 }
 
 .studio-board-workspace__snapshot-copy strong {
-  font-size: var(--font-body);
-  line-height: 1.3;
+  font-size: var(--font-callout);
+  line-height: 1.25;
 }
 
 .studio-board-workspace__snapshot-copy span {
   color: var(--muted);
-  font-size: var(--font-callout);
-  line-height: 1.45;
+  font-size: var(--font-footnote);
+  line-height: 1.35;
 }
 
 .studio-board-workspace__snapshot-meta {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
   color: var(--muted);
-  font-size: var(--font-caption);
+  font-size: var(--font-footnote);
 }
 
 .studio-board-workspace__snapshot-meta em {
-  min-height: 18px;
-  padding: 0 7px;
+  min-height: 16px;
+  padding: 0 6px;
   border-radius: 999px;
   background: var(--accent-soft);
   color: var(--accent-ink);
   font-style: normal;
-  line-height: 18px;
+  line-height: 16px;
+}
+
+.studio-board-workspace__snapshot-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
 }
 
 .studio-board-workspace__snapshot-action {
-  justify-self: end;
-  min-height: 28px;
-  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 26px;
+  padding: 0 9px;
   border: 1px solid var(--line-soft);
   border-radius: 999px;
   background: var(--panel-strong);
   color: var(--text);
   box-shadow: none;
+  font-size: var(--font-footnote);
+}
+
+.studio-board-workspace__snapshot-action svg {
+  width: 12px;
+  height: 12px;
 }
 
 .studio-board-workspace__snapshot-action:hover,
@@ -5605,6 +5646,13 @@ html.is-tauri-runtime .studio-nav-safe-region {
   border-color: var(--accent-border);
   background: var(--accent-soft);
   color: var(--accent-ink);
+}
+
+.studio-board-workspace__snapshot-action.is-danger:hover,
+.studio-board-workspace__snapshot-action.is-danger:focus-visible {
+  border-color: color-mix(in srgb, var(--danger) 28%, transparent);
+  background: var(--danger-soft);
+  color: var(--danger-ink);
 }
 
 .studio-board-workspace__environment-editor {
@@ -5734,6 +5782,10 @@ html.is-tauri-runtime .studio-nav-safe-region {
 
 .window-safe-header > * {
   pointer-events: none;
+}
+
+.window-safe-header > [data-no-window-drag] {
+  pointer-events: auto;
 }
 
 html.is-tauri-runtime [data-window-drag-region] {

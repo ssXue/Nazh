@@ -1073,6 +1073,17 @@ export function createProjectSnapshot(
   };
 }
 
+export function deleteProjectSnapshot(
+  project: ProjectRecord,
+  snapshotId: string,
+): ProjectRecord {
+  return {
+    ...project,
+    updatedAt: nowIso(),
+    snapshots: project.snapshots.filter((snapshot) => snapshot.id !== snapshotId),
+  };
+}
+
 export function rollbackProjectToSnapshot(
   project: ProjectRecord,
   snapshotId: string,

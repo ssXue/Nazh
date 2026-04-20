@@ -6,6 +6,7 @@ import {
   applyEnvironmentToConnectionDefinitions,
   applyEnvironmentToGraph,
   buildDefaultProjectLibrary,
+  deleteProjectSnapshot,
   importProjectsFromText,
   loadProjectLibrary,
   persistProjectLibrary,
@@ -98,5 +99,16 @@ describe('project library persistence and rollback', () => {
     expect(rolledBack.astText).toBe(initialSnapshot.astText);
     expect(rolledBack.payloadText).toBe(initialSnapshot.payloadText);
     expect(rolledBack.snapshots[0].reason).toBe('rollback');
+  });
+
+  it('支持删除单个快照', () => {
+    const library = buildDefaultProjectLibrary();
+    const project = library.projects[0];
+    const snapshotToDelete = project.snapshots[0];
+
+    const nextProject = deleteProjectSnapshot(project, snapshotToDelete.id);
+
+    expect(nextProject.snapshots).toHaveLength(project.snapshots.length - 1);
+    expect(nextProject.snapshots.some((snapshot) => snapshot.id === snapshotToDelete.id)).toBe(false);
   });
 });

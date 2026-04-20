@@ -85,16 +85,6 @@ interface DeploymentSnapshot {
   runtimeConnections: ConnectionDefinition[];
 }
 
-function downloadTextFile(fileName: string, text: string) {
-  const blob = new Blob([text], { type: 'application/json;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = fileName;
-  anchor.click();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
 interface ConnectionUsageSummary {
   nodeIds: string[];
   projectNames: string[];
@@ -532,24 +522,6 @@ function App() {
     }
   }
 
-  function handleExportBoard(projectId: string) {
-    const draftSnapshot =
-      activeProject?.id === projectId ? buildProjectDraftSnapshot(projectId) : null;
-    const exported = projectLibrary.exportProject(
-      projectId,
-      draftSnapshot?.astText ? { astText: draftSnapshot.astText } : undefined,
-    );
-
-    if (!exported) {
-      engine.setStatusMessage('导出失败：当前工程不存在。');
-      return;
-    }
-
-    downloadTextFile(exported.fileName, exported.text);
-    engine.setStatusMessage(`已导出工程 ${exported.fileName}。`);
-    engine.appendRuntimeLog('project', 'info', '已导出工程包', exported.fileName);
-  }
-
   function handleDeleteBoard(board: BoardItem) {
     const deletedProject = projectLibrary.deleteProject(board.id);
     if (!deletedProject) {
@@ -564,26 +536,6 @@ function App() {
 
     engine.setStatusMessage(`已删除工程 ${deletedProject.name}。`);
     engine.appendRuntimeLog('project', 'warn', '已删除工程', deletedProject.name);
-  }
-
-  function handleSaveProject() {
-    if (!activeProject) {
-      return;
-    }
-
-    const draftSnapshot = buildProjectDraftSnapshot(activeProject.id);
-    if (draftSnapshot.error || !draftSnapshot.astText) {
-      engine.appendAppError('command', '保存工程失败', draftSnapshot.error ?? '未知错误');
-      engine.setStatusMessage(draftSnapshot.error ?? '保存工程失败。');
-      return;
-    }
-
-    projectLibrary.saveProject(activeProject.id, {
-      astText: draftSnapshot.astText,
-      payloadText: activeProject.payloadText,
-    });
-    engine.setStatusMessage(`已保存工程 ${activeProject.name}。`);
-    engine.appendRuntimeLog('project', 'success', '工程已保存', activeProject.name);
   }
 
   function handleCreateSnapshot() {
@@ -624,6 +576,21 @@ function App() {
       'warn',
       '已回滚工程版本',
       nextProject?.snapshots[0]?.label ?? activeProject.name,
+    );
+  }
+
+  function handleDeleteSnapshot(snapshotId: string) {
+    if (!activeProject) {
+      return;
+    }
+
+    const nextProject = projectLibrary.deleteSnapshot(activeProject.id, snapshotId);
+    engine.setStatusMessage(`已删除 ${activeProject.name} 的版本快照。`);
+    engine.appendRuntimeLog(
+      'project',
+      'info',
+      '已删除版本快照',
+      nextProject ? `剩余 ${nextProject.snapshots.length} 个版本` : activeProject.name,
     );
   }
 
@@ -1582,9 +1549,8 @@ function App() {
             project={activeProject}
             nodeCount={graphNodeCount}
             onBack={handleBackToBoards}
-            onSave={handleSaveProject}
-            onExport={() => handleExportBoard(activeProject.id)}
             onCreateSnapshot={handleCreateSnapshot}
+            onDeleteSnapshot={handleDeleteSnapshot}
             onRollbackSnapshot={handleRollbackSnapshot}
             onEnvironmentChange={handleEnvironmentChange}
             onEnvironmentSave={handleEnvironmentSave}

@@ -6,13 +6,13 @@ import {
   applyEnvironmentToGraph,
   createNewProjectRecord,
   createProjectSnapshot,
+  deleteProjectSnapshot,
   getActiveEnvironment,
   importProjectsFromText,
   loadProjectLibrary,
   mergeImportedProjects,
   parseProjectLibraryText,
   persistProjectLibrary,
-  prepareProjectExport,
   renameProjectRecord,
   rollbackProjectToSnapshot,
   type ProjectEnvironment,
@@ -54,15 +54,12 @@ export interface ProjectLibraryActions {
     nextDraft?: Partial<Pick<ProjectRecord, 'astText' | 'payloadText'>>,
   ) => ProjectRecord | null;
   createSnapshot: (projectId: string, label?: string, description?: string) => ProjectRecord | null;
+  deleteSnapshot: (projectId: string, snapshotId: string) => ProjectRecord | null;
   rollbackProject: (projectId: string, snapshotId: string) => ProjectRecord | null;
   setActiveEnvironment: (projectId: string, environmentId: string) => void;
   updateEnvironment: (projectId: string, environmentId: string, patch: UpdateEnvironmentPatch) => void;
   duplicateEnvironment: (projectId: string, environmentId: string) => ProjectEnvironment | null;
   deleteEnvironment: (projectId: string, environmentId: string) => void;
-  exportProject: (
-    projectId: string,
-    nextDraft?: Partial<Pick<ProjectRecord, 'astText' | 'payloadText'>>,
-  ) => { fileName: string; text: string } | null;
   getProjectGraphForRuntime: (projectId: string, nextGraph?: WorkflowGraph | null) => WorkflowGraph | null;
 }
 
@@ -359,6 +356,20 @@ export function useProjectLibrary(workspacePath = ''): UseProjectLibraryResult {
     return nextProject;
   }
 
+  function deleteSnapshot(projectId: string, snapshotId: string): ProjectRecord | null {
+    const target = library.projects.find((project) => project.id === projectId);
+    if (!target) {
+      return null;
+    }
+
+    const nextProject = deleteProjectSnapshot(target, snapshotId);
+    setLibrary((current) => ({
+      ...current,
+      projects: updateProject(current.projects, projectId, () => nextProject),
+    }));
+    return nextProject;
+  }
+
   function rollbackProject(projectId: string, snapshotId: string): ProjectRecord | null {
     const target = library.projects.find((project) => project.id === projectId);
     if (!target) {
@@ -465,18 +476,6 @@ export function useProjectLibrary(workspacePath = ''): UseProjectLibraryResult {
     }));
   }
 
-  function exportProject(
-    projectId: string,
-    nextDraft?: Partial<Pick<ProjectRecord, 'astText' | 'payloadText'>>,
-  ) {
-    const target = library.projects.find((project) => project.id === projectId);
-    if (!target) {
-      return null;
-    }
-
-    return prepareProjectExport(nextDraft ? renameProjectRecord(target, nextDraft) : target);
-  }
-
   function getProjectGraphForRuntime(projectId: string, nextGraph?: WorkflowGraph | null) {
     const target = library.projects.find((project) => project.id === projectId);
     if (!target) {
@@ -501,12 +500,12 @@ export function useProjectLibrary(workspacePath = ''): UseProjectLibraryResult {
     updateProjectDraft,
     saveProject,
     createSnapshot,
+    deleteSnapshot,
     rollbackProject,
     setActiveEnvironment,
     updateEnvironment,
     duplicateEnvironment,
     deleteEnvironment,
-    exportProject,
     getProjectGraphForRuntime,
   };
 }

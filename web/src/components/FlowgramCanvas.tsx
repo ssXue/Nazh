@@ -117,7 +117,6 @@ type FlowgramInteractiveType = 'MOUSE' | 'PAD';
 
 interface FlowgramToolbarProps {
   canRun: boolean;
-  canSave: boolean;
   canDispatch: boolean;
   isWorkflowActive: boolean;
   minimapVisible: boolean;
@@ -125,7 +124,6 @@ interface FlowgramToolbarProps {
   onRun?: () => void;
   onStop?: () => void;
   onDispatch?: () => void;
-  onSave: () => void;
   onDownload: (format: FlowDownloadFormat) => void | Promise<void>;
 }
 
@@ -654,7 +652,6 @@ function FlowgramToolButton({
 
 function FlowgramToolbar({
   canRun,
-  canSave,
   canDispatch,
   isWorkflowActive,
   minimapVisible,
@@ -662,7 +659,6 @@ function FlowgramToolbar({
   onRun,
   onStop,
   onDispatch,
-  onSave,
   onDownload,
 }: FlowgramToolbarProps) {
   const { history, playground } = useClientContext();
@@ -678,7 +674,6 @@ function FlowgramToolbar({
   const [interactiveType, setInteractiveType] = useState<FlowgramInteractiveType>(
     () => getPreferredInteractiveType(),
   );
-  const [savedPulse, setSavedPulse] = useState(false);
   const zoomMenuRef = useRef<HTMLDetailsElement | null>(null);
   const interactiveMenuRef = useRef<HTMLDetailsElement | null>(null);
   const downloadMenuRef = useRef<HTMLDetailsElement | null>(null);
@@ -722,15 +717,6 @@ function FlowgramToolbar({
     tools.setInteractiveType(interactiveType as EditorInteractiveType);
     setPreferredInteractiveType(interactiveType);
   }, [interactiveType, tools]);
-
-  useEffect(() => {
-    if (!savedPulse) {
-      return;
-    }
-
-    const timer = window.setTimeout(() => setSavedPulse(false), 1200);
-    return () => window.clearTimeout(timer);
-  }, [savedPulse]);
 
   useEffect(() => {
     function handlePointerDown(event: PointerEvent) {
@@ -991,18 +977,6 @@ function FlowgramToolbar({
             </button>
           </div>
         </details>
-
-        <button
-          type="button"
-          className={savedPulse ? 'flowgram-tools__action is-saved' : 'flowgram-tools__action'}
-          onClick={() => {
-            onSave();
-            setSavedPulse(true);
-          }}
-          disabled={!canSave || isReadonly}
-        >
-          {savedPulse ? '已保存' : '保存'}
-        </button>
 
         {canDispatch ? (
           <FlowgramToolButton label="手动触发" data-testid="dispatch-button" onClick={() => onDispatch?.()}>
@@ -1669,7 +1643,6 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
                 <EditorRenderer className="flowgram-editor" />
                 <FlowgramToolbar
                   canRun={Boolean(onRunRequested)}
-                  canSave={Boolean(editorCtx && resolvedGraph)}
                   canDispatch={canDispatchPayload}
                   isWorkflowActive={isWorkflowActive}
                   minimapVisible={minimapVisible}
@@ -1677,7 +1650,6 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
                   onRun={onRunRequested}
                   onStop={onStopRequested}
                   onDispatch={onDispatchRequested}
-                  onSave={handleSaveCurrentGraph}
                   onDownload={handleDownloadCurrentGraph}
                 />
                 <div className="flowgram-overlay">

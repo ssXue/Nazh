@@ -124,6 +124,14 @@ export function DockToggleIcon(props: IconProps) {
   );
 }
 
+export function ChevronDownIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="m7 10 5 5 5-5" />
+    </BaseIcon>
+  );
+}
+
 export function CopyIcon(props: IconProps) {
   return (
     <BaseIcon {...props}>
