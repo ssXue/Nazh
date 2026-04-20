@@ -11,10 +11,12 @@ import {
   importProjectsFromText,
   loadProjectLibrary,
   mergeImportedProjects,
+  parseProjectBoardFiles,
   parseProjectLibraryText,
   persistProjectLibrary,
   renameProjectRecord,
   rollbackProjectToSnapshot,
+  serializeProjectLibraryToBoardFiles,
   type ProjectEnvironment,
   type ProjectEnvironmentDiff,
   type ProjectLibraryState,
@@ -22,8 +24,8 @@ import {
 } from '../lib/projects';
 import {
   hasTauriRuntime,
-  loadProjectLibraryFile,
-  saveProjectLibraryFile,
+  loadProjectBoardFiles,
+  saveProjectBoardFiles,
 } from '../lib/tauri';
 
 interface UpdateEnvironmentPatch {
@@ -36,7 +38,7 @@ export interface ProjectLibraryStorageState {
   isReady: boolean;
   isSyncing: boolean;
   resolvedWorkspacePath: string | null;
-  libraryFilePath: string | null;
+  boardsDirectoryPath: string | null;
   usingDefaultLocation: boolean;
   error: string | null;
 }
@@ -90,7 +92,7 @@ function describeStorageError(error: unknown): string {
     return error.message;
   }
 
-  return '工程库同步失败。';
+  return '看板文件同步失败。';
 }
 
 export function useProjectLibrary(workspacePath = ''): UseProjectLibraryResult {
@@ -101,7 +103,7 @@ export function useProjectLibrary(workspacePath = ''): UseProjectLibraryResult {
     isReady: !desktopStorageEnabled,
     isSyncing: false,
     resolvedWorkspacePath: null,
-    libraryFilePath: null,
+    boardsDirectoryPath: null,
     usingDefaultLocation: normalizedWorkspacePath.length === 0,
     error: null,
   }));
@@ -124,7 +126,7 @@ export function useProjectLibrary(workspacePath = ''): UseProjectLibraryResult {
         isReady: true,
         isSyncing: false,
         resolvedWorkspacePath: null,
-        libraryFilePath: null,
+        boardsDirectoryPath: null,
         usingDefaultLocation: true,
         error: null,
       });
@@ -143,17 +145,19 @@ export function useProjectLibrary(workspacePath = ''): UseProjectLibraryResult {
       error: null,
     }));
 
-    void loadProjectLibraryFile(normalizedWorkspacePath)
+    void loadProjectBoardFiles(normalizedWorkspacePath)
       .then(async (result) => {
         let nextLibrary = fallbackLibrary;
         let nextStorage = result.storage;
 
-        if (result.libraryText) {
-          nextLibrary = parseProjectLibraryText(result.libraryText);
+        if (result.boardFiles.length > 0) {
+          nextLibrary = parseProjectBoardFiles(result.boardFiles);
+        } else if (result.legacyLibraryText) {
+          nextLibrary = parseProjectLibraryText(result.legacyLibraryText);
         } else {
-          nextStorage = await saveProjectLibraryFile(
+          nextStorage = await saveProjectBoardFiles(
             normalizedWorkspacePath,
-            JSON.stringify(fallbackLibrary, null, 2),
+            serializeProjectLibraryToBoardFiles(fallbackLibrary),
           );
         }
 
@@ -166,7 +170,7 @@ export function useProjectLibrary(workspacePath = ''): UseProjectLibraryResult {
           isReady: true,
           isSyncing: false,
           resolvedWorkspacePath: nextStorage.workspacePath,
-          libraryFilePath: nextStorage.libraryFilePath,
+          boardsDirectoryPath: nextStorage.boardsDirectoryPath,
           usingDefaultLocation: nextStorage.usingDefaultLocation,
           error: null,
         });
@@ -207,7 +211,7 @@ export function useProjectLibrary(workspacePath = ''): UseProjectLibraryResult {
       error: null,
     }));
 
-    void saveProjectLibraryFile(normalizedWorkspacePath, JSON.stringify(library, null, 2))
+    void saveProjectBoardFiles(normalizedWorkspacePath, serializeProjectLibraryToBoardFiles(library))
       .then((result) => {
         if (cancelled) {
           return;
@@ -217,7 +221,7 @@ export function useProjectLibrary(workspacePath = ''): UseProjectLibraryResult {
           isReady: true,
           isSyncing: false,
           resolvedWorkspacePath: result.workspacePath,
-          libraryFilePath: result.libraryFilePath,
+          boardsDirectoryPath: result.boardsDirectoryPath,
           usingDefaultLocation: result.usingDefaultLocation,
           error: null,
         });

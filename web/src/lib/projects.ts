@@ -1,4 +1,6 @@
-import { formatWorkflowGraph } from './flowgram';
+import type { WorkflowJSON as FlowgramWorkflowJSON } from '@flowgram.ai/free-layout-editor';
+
+import { formatWorkflowGraph, toFlowgramWorkflowJson, toNazhWorkflowGraph } from './flowgram';
 import { parseWorkflowGraph } from './graph';
 import type {
   ConnectionDefinition,
@@ -11,8 +13,10 @@ export const CURRENT_USER_NAME = 'ssxue';
 export const PROJECT_LIBRARY_STORAGE_KEY = 'nazh.project-library';
 export const PROJECT_PACKAGE_KIND = 'nazh.project';
 export const PROJECT_LIBRARY_KIND = 'nazh.project-library';
+export const PROJECT_BOARD_KIND = 'nazh.board';
 export const PROJECT_SCHEMA_VERSION = 2;
 export const MAX_PROJECT_SNAPSHOTS = 20;
+export const PROJECT_BOARD_FILE_SUFFIX = '.nazh-board.json';
 
 export interface ProjectEnvironmentDiff {
   connections?: Record<string, JsonValue>;
@@ -73,6 +77,41 @@ export interface ProjectPackage {
   project: ProjectRecord;
 }
 
+export interface ProjectBoardFileText {
+  fileName: string;
+  text: string;
+}
+
+export interface ProjectBoardSnapshotFile {
+  id: string;
+  label: string;
+  description: string;
+  createdAt: string;
+  reason: ProjectSnapshotReason;
+  nodes: FlowgramWorkflowJSON['nodes'];
+  edges: FlowgramWorkflowJSON['edges'];
+  payloadText: string;
+  activeEnvironmentId: string;
+  environments: ProjectEnvironment[];
+}
+
+export interface ProjectBoardFile {
+  kind: typeof PROJECT_BOARD_KIND;
+  schemaVersion: typeof PROJECT_SCHEMA_VERSION;
+  id: string;
+  name: string;
+  description: string;
+  createdAt: string;
+  updatedAt: string;
+  nodes: FlowgramWorkflowJSON['nodes'];
+  edges: FlowgramWorkflowJSON['edges'];
+  payloadText: string;
+  activeEnvironmentId: string;
+  environments: ProjectEnvironment[];
+  snapshots: ProjectBoardSnapshotFile[];
+  migrationNotes: string[];
+}
+
 export interface ImportProjectsResult {
   importedProjects: ProjectRecord[];
   migrationNotes: string[];
@@ -80,6 +119,10 @@ export interface ImportProjectsResult {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isFlowgramWorkflowJsonLike(value: unknown): value is FlowgramWorkflowJSON {
+  return isRecord(value) && Array.isArray(value.nodes) && Array.isArray(value.edges);
 }
 
 function cloneJson<T>(value: T): T {
@@ -112,6 +155,15 @@ function normalizeString(value: unknown, fallback: string): string {
   return typeof value === 'string' && value.trim() ? value.trim() : fallback;
 }
 
+function createEmptyWorkflowGraph(name: string): WorkflowGraph {
+  return {
+    name,
+    connections: [],
+    nodes: {},
+    edges: [],
+  };
+}
+
 function normalizeJsonValue(value: unknown, fallback: JsonValue = {}): JsonValue {
   if (
     value === null ||
@@ -139,6 +191,61 @@ function normalizeJsonValue(value: unknown, fallback: JsonValue = {}): JsonValue
 function asJsonObject(value: unknown): Record<string, JsonValue> {
   const normalized = normalizeJsonValue(value, {});
   return isRecord(normalized) ? (normalized as Record<string, JsonValue>) : {};
+}
+
+function normalizeFlowgramWorkflowJson(
+  value: unknown,
+  fallbackName: string,
+): FlowgramWorkflowJSON {
+  if (isFlowgramWorkflowJsonLike(value)) {
+    return {
+      nodes: cloneJson(value.nodes),
+      edges: cloneJson(value.edges),
+    };
+  }
+
+  if (isRecord(value) && isFlowgramWorkflowJsonLike(value.workflow)) {
+    return {
+      nodes: cloneJson(value.workflow.nodes),
+      edges: cloneJson(value.workflow.edges),
+    };
+  }
+
+  const astTextCandidate =
+    isRecord(value) && typeof value.astText === 'string'
+      ? value.astText
+      : isRecord(value) && typeof value.workflowAst === 'string'
+        ? value.workflowAst
+        : null;
+
+  if (astTextCandidate) {
+    const parsed = parseWorkflowGraph(astTextCandidate);
+    if (parsed.graph) {
+      return toFlowgramWorkflowJson(parsed.graph);
+    }
+  }
+
+  return toFlowgramWorkflowJson(buildStarterWorkflow(fallbackName));
+}
+
+function formatFlowgramWorkflowAstText(
+  flowgramWorkflow: FlowgramWorkflowJSON,
+  boardName: string,
+): string {
+  const graph = toNazhWorkflowGraph(flowgramWorkflow, createEmptyWorkflowGraph(boardName));
+  return normalizeProjectAstText(formatWorkflowGraph(graph));
+}
+
+function buildProjectFlowgramWorkflow(
+  astText: string,
+  fallbackName: string,
+): FlowgramWorkflowJSON {
+  const parsed = parseWorkflowGraph(astText);
+  if (parsed.graph) {
+    return toFlowgramWorkflowJson(parsed.graph);
+  }
+
+  return toFlowgramWorkflowJson(buildStarterWorkflow(fallbackName));
 }
 
 function deepMergeJson(baseValue: JsonValue, overrideValue: JsonValue): JsonValue {
@@ -787,6 +894,44 @@ function normalizeEnvironment(value: unknown, index: number): ProjectEnvironment
   };
 }
 
+function normalizeProjectSnapshotReason(value: unknown): ProjectSnapshotReason {
+  return value === 'seed' ||
+    value === 'manual' ||
+    value === 'import' ||
+    value === 'migration' ||
+    value === 'rollback'
+    ? value
+    : 'manual';
+}
+
+function normalizeBoardSnapshot(
+  value: unknown,
+  project: ProjectRecord,
+  index: number,
+): ProjectSnapshot {
+  const source = isRecord(value) ? value : {};
+  const environments = Array.isArray(source.environments)
+    ? source.environments.map((item, itemIndex) => normalizeEnvironment(item, itemIndex))
+    : cloneJson(project.environments);
+  const activeEnvironmentId = normalizeString(
+    source.activeEnvironmentId,
+    environments[0]?.id ?? project.activeEnvironmentId,
+  );
+  const flowgramWorkflow = normalizeFlowgramWorkflowJson(source, project.name);
+
+  return {
+    id: normalizeString(source.id, `snapshot-${index + 1}`),
+    label: normalizeString(source.label, `快照 ${index + 1}`),
+    description: typeof source.description === 'string' ? source.description : project.description,
+    createdAt: normalizeString(source.createdAt, nowIso()),
+    reason: normalizeProjectSnapshotReason(source.reason),
+    astText: formatFlowgramWorkflowAstText(flowgramWorkflow, project.name),
+    payloadText: normalizeString(source.payloadText, project.payloadText),
+    activeEnvironmentId,
+    environments,
+  };
+}
+
 function normalizeSnapshot(value: unknown, project: ProjectRecord, index: number): ProjectSnapshot {
   const source = isRecord(value) ? value : {};
   const environments = Array.isArray(source.environments)
@@ -802,18 +947,65 @@ function normalizeSnapshot(value: unknown, project: ProjectRecord, index: number
     label: normalizeString(source.label, `快照 ${index + 1}`),
     description: typeof source.description === 'string' ? source.description : project.description,
     createdAt: normalizeString(source.createdAt, nowIso()),
-    reason:
-      source.reason === 'seed' ||
-      source.reason === 'manual' ||
-      source.reason === 'import' ||
-      source.reason === 'migration' ||
-      source.reason === 'rollback'
-        ? source.reason
-        : 'manual',
+    reason: normalizeProjectSnapshotReason(source.reason),
     astText: normalizeProjectAstText(normalizeString(source.astText, project.astText)),
     payloadText: normalizeString(source.payloadText, project.payloadText),
     activeEnvironmentId,
     environments,
+  };
+}
+
+function normalizeProjectRecordFromBoardFile(
+  value: unknown,
+  fallbackName: string,
+  migrationNotes: string[] = [],
+): ProjectRecord {
+  const source = isRecord(value) ? value : {};
+  const projectName = normalizeString(source.name, fallbackName);
+  const flowgramWorkflow = normalizeFlowgramWorkflowJson(source, projectName);
+  const createdAt = normalizeString(source.createdAt, nowIso());
+  const updatedAt = normalizeString(source.updatedAt, createdAt);
+  const environments = Array.isArray(source.environments)
+    ? source.environments.map((item, index) => normalizeEnvironment(item, index))
+    : [createEnvironment('生产环境', '默认环境。')];
+  const activeEnvironmentId = normalizeString(
+    source.activeEnvironmentId,
+    environments[0]?.id ?? '',
+  );
+
+  const project: ProjectRecord = {
+    id: normalizeString(source.id, createId('project')),
+    name: projectName,
+    description:
+      typeof source.description === 'string' ? source.description : '从看板文件结构迁移而来。',
+    createdAt,
+    updatedAt,
+    astText: formatFlowgramWorkflowAstText(flowgramWorkflow, projectName),
+    payloadText:
+      typeof source.payloadText === 'string'
+        ? source.payloadText
+        : JSON.stringify({ manual: true }, null, 2),
+    activeEnvironmentId,
+    environments,
+    snapshots: [],
+    migrationNotes: [
+      ...migrationNotes,
+      ...(Array.isArray(source.migrationNotes)
+        ? source.migrationNotes.filter((item): item is string => typeof item === 'string')
+        : []),
+    ],
+  };
+
+  const snapshots = Array.isArray(source.snapshots)
+    ? source.snapshots.map((item, index) => normalizeBoardSnapshot(item, project, index))
+    : [];
+
+  return {
+    ...project,
+    snapshots:
+      snapshots.length > 0
+        ? ensureSnapshotLimit(snapshots)
+        : [createSnapshot(project, project.migrationNotes.length > 0 ? 'migration' : 'seed')],
   };
 }
 
@@ -1151,8 +1343,127 @@ function buildImportedProjectFromGraph(graph: WorkflowGraph, name?: string): Pro
   };
 }
 
+function buildImportedProjectFromFlowgramJson(
+  workflow: FlowgramWorkflowJSON,
+  name?: string,
+): ProjectRecord {
+  const projectName = name?.trim() || 'Flowgram 导入工程';
+  const graph = toNazhWorkflowGraph(workflow, createEmptyWorkflowGraph(projectName));
+
+  return {
+    ...buildImportedProjectFromGraph(graph, projectName),
+    description: '从 Flowgram 导出 JSON 导入并迁移得到。',
+    migrationNotes: ['已从 Flowgram 导出 JSON 迁移为 Nazh 工程包。'],
+  };
+}
+
+function serializeProjectSnapshotToBoardFile(
+  snapshot: ProjectSnapshot,
+  boardName: string,
+): ProjectBoardSnapshotFile {
+  const flowgramWorkflow = buildProjectFlowgramWorkflow(snapshot.astText, boardName);
+
+  return {
+    id: snapshot.id,
+    label: snapshot.label,
+    description: snapshot.description,
+    createdAt: snapshot.createdAt,
+    reason: snapshot.reason,
+    nodes: cloneJson(flowgramWorkflow.nodes),
+    edges: cloneJson(flowgramWorkflow.edges),
+    payloadText: snapshot.payloadText,
+    activeEnvironmentId: snapshot.activeEnvironmentId,
+    environments: cloneJson(snapshot.environments),
+  };
+}
+
+export function serializeProjectRecordToBoardFile(project: ProjectRecord): ProjectBoardFile {
+  const flowgramWorkflow = buildProjectFlowgramWorkflow(project.astText, project.name);
+
+  return {
+    kind: PROJECT_BOARD_KIND,
+    schemaVersion: PROJECT_SCHEMA_VERSION,
+    id: project.id,
+    name: project.name,
+    description: project.description,
+    createdAt: project.createdAt,
+    updatedAt: project.updatedAt,
+    nodes: cloneJson(flowgramWorkflow.nodes),
+    edges: cloneJson(flowgramWorkflow.edges),
+    payloadText: project.payloadText,
+    activeEnvironmentId: project.activeEnvironmentId,
+    environments: cloneJson(project.environments),
+    snapshots: project.snapshots.map((snapshot) =>
+      serializeProjectSnapshotToBoardFile(snapshot, project.name),
+    ),
+    migrationNotes: cloneJson(project.migrationNotes),
+  };
+}
+
+export function buildProjectBoardFileName(project: Pick<ProjectRecord, 'id' | 'name'>): string {
+  return `${slugify(project.name)}--${slugify(project.id)}${PROJECT_BOARD_FILE_SUFFIX}`;
+}
+
+export function serializeProjectLibraryToBoardFiles(
+  library: Pick<ProjectLibraryState, 'projects'>,
+): ProjectBoardFileText[] {
+  return library.projects.map((project) => ({
+    fileName: buildProjectBoardFileName(project),
+    text: JSON.stringify(serializeProjectRecordToBoardFile(project), null, 2),
+  }));
+}
+
+export function parseProjectBoardFileText(sourceText: string, fallbackName = '导入工程'): ProjectRecord {
+  const parsed = JSON.parse(sourceText) as unknown;
+
+  if (!isRecord(parsed) || parsed.kind !== PROJECT_BOARD_KIND) {
+    throw new Error('看板文件格式无效。');
+  }
+
+  const schemaVersion =
+    typeof parsed.schemaVersion === 'number' ? parsed.schemaVersion : PROJECT_SCHEMA_VERSION;
+  const migrationNotes =
+    schemaVersion === PROJECT_SCHEMA_VERSION
+      ? []
+      : [`已从看板文件 schema v${schemaVersion} 迁移到 v${PROJECT_SCHEMA_VERSION}。`];
+
+  return normalizeProjectRecordFromBoardFile(parsed, fallbackName, migrationNotes);
+}
+
+export function parseProjectBoardFiles(boardFiles: ProjectBoardFileText[]): ProjectLibraryState {
+  const projects = boardFiles.map((boardFile, index) =>
+    parseProjectBoardFileText(boardFile.text, boardFile.fileName || `工程 ${index + 1}`),
+  );
+
+  return {
+    kind: PROJECT_LIBRARY_KIND,
+    schemaVersion: PROJECT_SCHEMA_VERSION,
+    projects,
+  };
+}
+
 export function importProjectsFromText(sourceText: string): ImportProjectsResult {
   const parsed = JSON.parse(sourceText) as unknown;
+
+  if (isRecord(parsed) && parsed.kind === PROJECT_BOARD_KIND) {
+    const project = parseProjectBoardFileText(
+      sourceText,
+      normalizeString(parsed.name, '导入工程'),
+    );
+
+    return {
+      importedProjects: [project],
+      migrationNotes: project.migrationNotes,
+    };
+  }
+
+  if (isFlowgramWorkflowJsonLike(parsed)) {
+    const project = buildImportedProjectFromFlowgramJson(parsed);
+    return {
+      importedProjects: [project],
+      migrationNotes: project.migrationNotes,
+    };
+  }
 
   if (isWorkflowGraphLike(parsed)) {
     const project = buildImportedProjectFromGraph(parsed);
@@ -1231,16 +1542,9 @@ export function prepareProjectExport(project: ProjectRecord): {
   fileName: string;
   text: string;
 } {
-  const payload: ProjectPackage = {
-    kind: PROJECT_PACKAGE_KIND,
-    schemaVersion: PROJECT_SCHEMA_VERSION,
-    exportedAt: nowIso(),
-    project,
-  };
-
   return {
-    fileName: `${slugify(project.name)}.nazh-project.json`,
-    text: JSON.stringify(payload, null, 2),
+    fileName: buildProjectBoardFileName(project),
+    text: JSON.stringify(serializeProjectRecordToBoardFile(project), null, 2),
   };
 }
 

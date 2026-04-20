@@ -21,7 +21,7 @@ export function SettingsPanel({
   onStartupPageChange,
   projectWorkspacePath,
   projectWorkspaceResolvedPath,
-  projectWorkspaceLibraryFilePath,
+  projectWorkspaceBoardsDirectoryPath,
   projectWorkspaceUsingDefault,
   projectWorkspaceIsSyncing,
   projectWorkspaceError,
@@ -44,7 +44,7 @@ export function SettingsPanel({
     }
 
     if (projectWorkspaceIsSyncing) {
-      return '正在同步工程库到当前工作路径。';
+      return '正在同步看板文件到当前工作路径。';
     }
 
     return projectWorkspaceUsingDefault
@@ -231,8 +231,8 @@ export function SettingsPanel({
                 <code>{projectWorkspaceResolvedPath ?? '等待桌面端解析'}</code>
               </article>
               <article>
-                <span>工程库文件</span>
-                <code>{projectWorkspaceLibraryFilePath ?? '等待桌面端解析'}</code>
+                <span>看板目录</span>
+                <code>{projectWorkspaceBoardsDirectoryPath ?? '等待桌面端解析'}</code>
               </article>
             </div>
           </div>

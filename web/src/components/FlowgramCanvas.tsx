@@ -35,7 +35,6 @@ import {
   FileImageIcon,
   FileJsonIcon,
   FileVectorIcon,
-  FileYamlIcon,
   FitViewIcon,
   LockClosedIcon,
   LockOpenIcon,
@@ -70,6 +69,7 @@ import {
   toNazhWorkflowGraph,
 } from '../lib/flowgram';
 import { FlowDownloadFormat, FlowDownloadService } from '@flowgram.ai/export-plugin';
+import { hasTauriRuntime, saveFlowgramExportFile } from '../lib/tauri';
 import type {
   AiGenerationParams,
   AiProviderView,
@@ -89,12 +89,15 @@ interface FlowgramCanvasProps {
   workflowStatus: WorkflowWindowStatus;
   accentHex: string;
   nodeCodeColor: string;
+  workspacePath?: string;
+  workflowName?: string | null;
   onRunRequested?: () => void;
   onStopRequested?: () => void;
   onDispatchRequested?: () => void;
   canDispatchPayload?: boolean;
   onGraphChange: (nextAstText: string) => void;
   onError?: (title: string, detail?: string | null) => void;
+  onStatusMessage?: (message: string) => void;
 }
 
 export interface FlowgramCanvasHandle {
@@ -127,6 +130,29 @@ interface FlowgramToolbarProps {
   onDownload: (format: FlowDownloadFormat) => void | Promise<void>;
 }
 
+interface InternalFlowExportImageService {
+  export: (options: { format: FlowDownloadFormat; watermarkSVG?: string }) => Promise<string | undefined>;
+}
+
+interface InternalFlowDownloadService {
+  download: (params: { format: FlowDownloadFormat }) => Promise<void>;
+  document: {
+    toJSON: () => unknown;
+  };
+  exportImageService: InternalFlowExportImageService;
+  options?: {
+    watermarkSVG?: string;
+  };
+  formatDataContent: (
+    json: unknown,
+    format: FlowDownloadFormat,
+  ) => Promise<{
+    content: string;
+    mimeType: string;
+  }>;
+  setDownloading: (value: boolean) => void;
+}
+
 function normalizedConnectionType(connectionType: string): string {
   return connectionType.trim().toLowerCase();
 }
@@ -153,6 +179,31 @@ function isModbusConnectionType(connectionType: string): boolean {
     default:
       return false;
   }
+}
+
+function sanitizeExportFileSegment(value: string): string {
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[\\/:*?"<>|]+/g, '-')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+  return normalized || 'flowgram';
+}
+
+function buildFlowgramExportFileName(
+  workflowName: string | null | undefined,
+  format: FlowDownloadFormat,
+): string {
+  const baseName = sanitizeExportFileSegment(workflowName ?? 'flowgram-workflow');
+  const timestamp = new Date()
+    .toISOString()
+    .replace(/[:]/g, '-')
+    .replace(/\.\d{3}Z$/, 'Z');
+
+  return `${baseName}-${timestamp}.${format}`;
 }
 
 const FLOWGRAM_BUTTON_STYLE: CSSProperties = {
@@ -964,17 +1015,6 @@ function FlowgramToolbar({
             >
               {renderMenuLabel(<FileJsonIcon width={14} height={14} />, 'JSON')}
             </button>
-            <button
-              type="button"
-              className="flowgram-tools__menu-item"
-              disabled={isDownloading || isReadonly}
-              onClick={() => {
-                void onDownload(FlowDownloadFormat.YAML);
-                closeMenu(downloadMenuRef);
-              }}
-            >
-              {renderMenuLabel(<FileYamlIcon width={14} height={14} />, 'YAML')}
-            </button>
           </div>
         </details>
 
@@ -1013,12 +1053,15 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
   workflowStatus,
   accentHex,
   nodeCodeColor,
+  workspacePath,
+  workflowName,
   onRunRequested,
   onStopRequested,
   onDispatchRequested,
   canDispatchPayload = false,
   onGraphChange,
   onError,
+  onStatusMessage,
 }, ref) {
   const [lastChange, setLastChange] = useState<string | null>(null);
   const [editorCtx, setEditorCtx] = useState<FreeLayoutPluginContext | null>(null);
@@ -1400,9 +1443,51 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
       try {
         const downloadService = (editorCtx as FreeLayoutPluginContext & {
           get?: <T>(token: unknown) => T;
-        }).get?.<FlowDownloadService>(FlowDownloadService);
+        }).get?.<FlowDownloadService>(FlowDownloadService) as unknown as
+          | InternalFlowDownloadService
+          | undefined;
         if (!downloadService) {
           return;
+        }
+
+        if (hasTauriRuntime()) {
+          downloadService.setDownloading(true);
+
+          try {
+            const fileName = buildFlowgramExportFileName(workflowName, format);
+
+            if (format === FlowDownloadFormat.JSON) {
+              const json = downloadService.document.toJSON();
+              const { content } = await downloadService.formatDataContent(json, format);
+              const saved = await saveFlowgramExportFile(workspacePath ?? '', fileName, {
+                text: content,
+              });
+              onStatusMessage?.(`已导出到 ${saved.filePath}`);
+              return;
+            }
+
+            const imageUrl = await downloadService.exportImageService.export({
+              format,
+              watermarkSVG: downloadService.options?.watermarkSVG,
+            });
+            if (!imageUrl) {
+              throw new Error('未能生成导出内容。');
+            }
+
+            const response = await fetch(imageUrl);
+            if (!response.ok) {
+              throw new Error(`导出内容读取失败: ${response.status}`);
+            }
+
+            const buffer = await response.arrayBuffer();
+            const saved = await saveFlowgramExportFile(workspacePath ?? '', fileName, {
+              bytes: Array.from(new Uint8Array(buffer)),
+            });
+            onStatusMessage?.(`已导出到 ${saved.filePath}`);
+            return;
+          } finally {
+            downloadService.setDownloading(false);
+          }
         }
 
         await downloadService.download({ format });
@@ -1410,7 +1495,7 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
         reportFlowgramError('FlowGram 导出失败', error);
       }
     },
-    [editorCtx, reportFlowgramError],
+    [editorCtx, onStatusMessage, reportFlowgramError, workflowName, workspacePath],
   );
 
   const handleEditorRef = useCallback(

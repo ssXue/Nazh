@@ -38,14 +38,26 @@ export interface WorkflowRuntimePolicyInput {
 
 export interface ProjectWorkspaceStorageInfo {
   workspacePath: string;
-  libraryFilePath: string;
+  boardsDirectoryPath: string;
   usingDefaultLocation: boolean;
-  libraryExists: boolean;
+  boardFileCount: number;
+  legacyLibraryFilePath: string;
+  legacyLibraryExists: boolean;
+}
+
+export interface ProjectWorkspaceBoardFile {
+  fileName: string;
+  text: string;
 }
 
 export interface ProjectWorkspaceLoadResult {
   storage: ProjectWorkspaceStorageInfo;
-  libraryText: string | null;
+  boardFiles: ProjectWorkspaceBoardFile[];
+  legacyLibraryText: string | null;
+}
+
+export interface SavedWorkspaceFile {
+  filePath: string;
 }
 
 export function hasTauriRuntime(): boolean {
@@ -432,21 +444,37 @@ export async function saveConnectionDefinitions(
   });
 }
 
-export async function loadProjectLibraryFile(
+export async function loadProjectBoardFiles(
   workspacePath: string,
 ): Promise<ProjectWorkspaceLoadResult> {
-  return invoke<ProjectWorkspaceLoadResult>('load_project_library_file', {
+  return invoke<ProjectWorkspaceLoadResult>('load_project_board_files', {
     workspacePath: workspacePath.trim() || null,
   });
 }
 
-export async function saveProjectLibraryFile(
+export async function saveProjectBoardFiles(
   workspacePath: string,
-  libraryText: string,
+  boardFiles: ProjectWorkspaceBoardFile[],
 ): Promise<ProjectWorkspaceStorageInfo> {
-  return invoke<ProjectWorkspaceStorageInfo>('save_project_library_file', {
+  return invoke<ProjectWorkspaceStorageInfo>('save_project_board_files', {
     workspacePath: workspacePath.trim() || null,
-    libraryText,
+    boardFiles,
+  });
+}
+
+export async function saveFlowgramExportFile(
+  workspacePath: string,
+  fileName: string,
+  payload: {
+    text?: string;
+    bytes?: number[];
+  },
+): Promise<SavedWorkspaceFile> {
+  return invoke<SavedWorkspaceFile>('save_flowgram_export_file', {
+    workspacePath: workspacePath.trim() || null,
+    fileName,
+    text: payload.text ?? null,
+    bytes: payload.bytes ?? null,
   });
 }
 

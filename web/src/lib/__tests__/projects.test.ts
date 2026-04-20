@@ -9,7 +9,10 @@ import {
   deleteProjectSnapshot,
   importProjectsFromText,
   loadProjectLibrary,
+  parseProjectBoardFileText,
   persistProjectLibrary,
+  prepareProjectExport,
+  PROJECT_BOARD_KIND,
   rollbackProjectToSnapshot,
 } from '../projects';
 
@@ -39,6 +42,65 @@ describe('importProjectsFromText', () => {
     expect(result.importedProjects[0].name).toBe('裸工作流');
     expect(result.importedProjects[0].migrationNotes[0]).toContain('裸工作流 AST');
     expect(result.importedProjects[0].snapshots).toHaveLength(1);
+  });
+
+  it('支持从 Flowgram 导出 JSON 迁移为项目包', () => {
+    const source = JSON.stringify({
+      nodes: [
+        {
+          id: 'timer_trigger',
+          type: 'timer',
+          meta: {
+            position: {
+              x: 48,
+              y: 88,
+            },
+          },
+          data: {
+            nodeType: 'timer',
+            config: {
+              interval_ms: 1000,
+              immediate: true,
+            },
+            connectionId: null,
+            timeoutMs: null,
+          },
+        },
+      ],
+      edges: [],
+    });
+
+    const result = importProjectsFromText(source);
+
+    expect(result.importedProjects).toHaveLength(1);
+    expect(result.importedProjects[0].name).toBe('Flowgram 导入工程');
+    expect(result.importedProjects[0].migrationNotes[0]).toContain('Flowgram');
+    expect(result.importedProjects[0].snapshots).toHaveLength(1);
+  });
+});
+
+describe('project board file serialization', () => {
+  it('导出单看板文件时以 Flowgram nodes/edges 作为顶层结构', () => {
+    const project = buildDefaultProjectLibrary().projects[0];
+    const exported = prepareProjectExport(project);
+    const parsed = JSON.parse(exported.text) as Record<string, unknown>;
+
+    expect(exported.fileName).toMatch(/\.nazh-board\.json$/);
+    expect(parsed.kind).toBe(PROJECT_BOARD_KIND);
+    expect(Array.isArray(parsed.nodes)).toBe(true);
+    expect(Array.isArray(parsed.edges)).toBe(true);
+    expect(parsed.name).toBe(project.name);
+  });
+
+  it('可以从单看板文件恢复项目记录与快照', () => {
+    const project = buildDefaultProjectLibrary().projects[0];
+    const exported = prepareProjectExport(project);
+    const hydrated = parseProjectBoardFileText(exported.text, project.name);
+
+    expect(hydrated.id).toBe(project.id);
+    expect(hydrated.name).toBe(project.name);
+    expect(hydrated.snapshots).toHaveLength(project.snapshots.length);
+    expect(JSON.parse(hydrated.astText)).toHaveProperty('editor_graph');
   });
 });
 

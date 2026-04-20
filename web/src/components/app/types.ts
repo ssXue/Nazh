@@ -92,7 +92,7 @@ export interface SettingsPanelProps {
   onStartupPageChange: (page: StartupPage) => void;
   projectWorkspacePath: string;
   projectWorkspaceResolvedPath: string | null;
-  projectWorkspaceLibraryFilePath: string | null;
+  projectWorkspaceBoardsDirectoryPath: string | null;
   projectWorkspaceUsingDefault: boolean;
   projectWorkspaceIsSyncing: boolean;
   projectWorkspaceError: string | null;

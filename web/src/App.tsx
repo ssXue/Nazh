@@ -1569,12 +1569,15 @@ function App() {
             workflowStatus={workflowStatus}
             accentHex={settings.accentHex}
             nodeCodeColor={settings.accentThemeVariables['--node-code']}
+            workspacePath={settings.projectWorkspacePath}
+            workflowName={activeProject.name}
             onRunRequested={handleDeploy}
             onStopRequested={handleUndeploy}
             onDispatchRequested={handleDispatchPayload}
             canDispatchPayload={canDispatchPayload}
             onGraphChange={handleGraphChange}
             onError={engine.handleFlowgramError}
+            onStatusMessage={engine.setStatusMessage}
           />
 
           <RuntimeDock
@@ -1731,7 +1734,7 @@ function App() {
                 onStartupPageChange={settings.setStartupPage}
                 projectWorkspacePath={settings.projectWorkspacePath}
                 projectWorkspaceResolvedPath={projectLibrary.storage.resolvedWorkspacePath}
-                projectWorkspaceLibraryFilePath={projectLibrary.storage.libraryFilePath}
+                projectWorkspaceBoardsDirectoryPath={projectLibrary.storage.boardsDirectoryPath}
                 projectWorkspaceUsingDefault={projectLibrary.storage.usingDefaultLocation}
                 projectWorkspaceIsSyncing={projectLibrary.storage.isSyncing}
                 projectWorkspaceError={projectLibrary.storage.error}
