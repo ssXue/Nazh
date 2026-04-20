@@ -181,6 +181,10 @@ function isModbusConnectionType(connectionType: string): boolean {
   }
 }
 
+function isMqttConnectionType(connectionType: string): boolean {
+  return normalizedConnectionType(connectionType) === 'mqtt';
+}
+
 function sanitizeExportFileSegment(value: string): string {
   const normalized = value
     .trim()
@@ -1117,11 +1121,14 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
       connections.find((connection) => isModbusConnectionType(connection.type))?.id ?? null;
     const serialConnectionId =
       connections.find((connection) => isSerialConnectionType(connection.type))?.id ?? null;
+    const mqttConnectionId =
+      connections.find((connection) => isMqttConnectionType(connection.type))?.id ?? null;
 
     return {
       any: anyConnectionId,
       modbus: modbusConnectionId,
       serial: serialConnectionId,
+      mqtt: mqttConnectionId,
     };
   }, [connections]);
 

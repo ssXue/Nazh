@@ -21,6 +21,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 nazh-engine = { path = ".." }
 chrono.workspace = true
+rumqttc.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 serialport = "4"

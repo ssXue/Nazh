@@ -47,6 +47,8 @@ export function getFlowgramDisplayLabel(displayType: NazhNodeDisplayType): strin
       return 'Serial';
     case 'modbusRead':
       return 'Modbus';
+    case 'mqttClient':
+      return 'MQTT';
     case 'if':
       return 'IF';
     case 'switch':

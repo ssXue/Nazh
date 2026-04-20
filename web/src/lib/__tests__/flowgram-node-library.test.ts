@@ -12,6 +12,7 @@ const CONNECTION_DEFAULTS: FlowgramConnectionDefaults = {
   any: null,
   modbus: null,
   serial: null,
+  mqtt: null,
 };
 
 describe('normalizeFlowgramNodeJson', () => {

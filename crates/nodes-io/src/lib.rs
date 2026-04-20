@@ -10,6 +10,7 @@ pub mod template;
 mod debug_console;
 mod http_client;
 mod modbus_read;
+mod mqtt_client;
 mod native;
 mod serial_trigger;
 mod sql_writer;
@@ -18,6 +19,7 @@ mod timer;
 pub use debug_console::{DebugConsoleNode, DebugConsoleNodeConfig};
 pub use http_client::{HttpClientNode, HttpClientNodeConfig};
 pub use modbus_read::{ModbusReadNode, ModbusReadNodeConfig};
+pub use mqtt_client::{MqttClientNode, MqttClientNodeConfig};
 pub use native::{NativeNode, NativeNodeConfig};
 pub use serial_trigger::{SerialTriggerNode, SerialTriggerNodeConfig};
 pub use sql_writer::{SqlWriterNode, SqlWriterNodeConfig};
@@ -83,6 +85,15 @@ impl Plugin for IoPlugin {
         registry.register("debugConsole", |def, _res| {
             let config: DebugConsoleNodeConfig = def.parse_config()?;
             Ok(Arc::new(DebugConsoleNode::new(def.id.clone(), config)))
+        });
+
+        registry.register("mqttClient", |def, res| {
+            let mut config: MqttClientNodeConfig = def.parse_config()?;
+            if config.connection_id.is_none() {
+                config.connection_id.clone_from(&def.connection_id);
+            }
+            let cm = downcast_connection_manager(&res)?;
+            Ok(Arc::new(MqttClientNode::new(def.id.clone(), config, cm)))
         });
     }
 }

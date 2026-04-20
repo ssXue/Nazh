@@ -38,8 +38,13 @@ interface SelectedNodeDraft {
   modbusUnitId: string;
   modbusRegister: string;
   modbusQuantity: string;
+  modbusRegisterType: string;
   modbusBaseValue: string;
   modbusAmplitude: string;
+  mqttMode: string;
+  mqttTopic: string;
+  mqttQos: string;
+  mqttPayloadTemplate: string;
   httpUrl: string;
   httpMethod: string;
   httpHeaders: string;
@@ -138,7 +143,7 @@ function parseStringList(value: string): string[] {
 }
 
 function isConnectionNode(nodeType: string): boolean {
-  return nodeType === 'native' || nodeType === 'modbusRead' || nodeType === 'serialTrigger';
+  return nodeType === 'native' || nodeType === 'modbusRead' || nodeType === 'serialTrigger' || nodeType === 'mqttClient';
 }
 
 function isSerialConnectionType(connectionType: string): boolean {
@@ -218,8 +223,13 @@ function readNodeDraft(node: FlowNodeEntity): SelectedNodeDraft {
     modbusUnitId: readNumberString(config.unit_id, '1'),
     modbusRegister: readNumberString(config.register, '40001'),
     modbusQuantity: readNumberString(config.quantity, '1'),
+    modbusRegisterType: readString(config.register_type, 'holding'),
     modbusBaseValue: readNumberString(config.base_value, '64'),
     modbusAmplitude: readNumberString(config.amplitude, '6'),
+    mqttMode: readString(config.mode, 'publish'),
+    mqttTopic: readString(config.topic, ''),
+    mqttQos: typeof config.qos === 'number' ? String(config.qos) : '0',
+    mqttPayloadTemplate: readString(config.payload_template, ''),
     httpUrl,
     httpMethod: readString(config.method, 'POST'),
     httpHeaders: JSON.stringify(isRecord(config.headers) ? config.headers : {}, null, 2),
@@ -289,8 +299,19 @@ function buildNodeConfig(draft: SelectedNodeDraft, currentConfig: NodeConfigMap)
       unit_id: parsePositiveInteger(draft.modbusUnitId) ?? 1,
       register: parsePositiveInteger(draft.modbusRegister) ?? 40001,
       quantity: parsePositiveInteger(draft.modbusQuantity) ?? 1,
+      register_type: draft.modbusRegisterType || 'holding',
       base_value: parseFiniteNumber(draft.modbusBaseValue) ?? 64,
       amplitude: parseFiniteNumber(draft.modbusAmplitude) ?? 6,
+    };
+  }
+
+  if (draft.nodeType === 'mqttClient') {
+    return {
+      ...currentConfig,
+      mode: draft.mqttMode === 'subscribe' ? 'subscribe' : 'publish',
+      topic: draft.mqttTopic.trim(),
+      qos: [0, 1, 2].includes(Number(draft.mqttQos)) ? Number(draft.mqttQos) : 0,
+      payload_template: draft.mqttPayloadTemplate,
     };
   }
 
@@ -647,6 +668,13 @@ function FlowgramNodeSettingsPanel({
       });
     }
 
+    if (draft.nodeType === 'mqttClient' && !draft.mqttTopic.trim()) {
+      nextDiagnostics.push({
+        tone: 'danger',
+        message: 'MQTT 主题不能为空。',
+      });
+    }
+
     if (draft.nodeType === 'httpClient') {
       if (!draft.httpUrl.trim()) {
         nextDiagnostics.push({
@@ -961,6 +989,15 @@ function FlowgramNodeSettingsPanel({
               />
             </label>
             <label>
+              <span>寄存器类型</span>
+              <select value={draft.modbusRegisterType} onChange={(event) => updateDraft({ modbusRegisterType: event.target.value })}>
+                <option value="holding">Holding Register (03)</option>
+                <option value="input">Input Register (04)</option>
+                <option value="coil">Coil (01)</option>
+                <option value="discrete">Discrete Input (02)</option>
+              </select>
+            </label>
+            <label>
               <span>基准值</span>
               <input
                 value={draft.modbusBaseValue}
@@ -974,6 +1011,43 @@ function FlowgramNodeSettingsPanel({
                 onChange={(event) => updateDraft({ modbusAmplitude: event.target.value })}
               />
             </label>
+          </>
+        ) : null}
+
+        {draft.nodeType === 'mqttClient' ? (
+          <>
+            <label>
+              <span>工作模式</span>
+              <select value={draft.mqttMode} onChange={(event) => updateDraft({ mqttMode: event.target.value })}>
+                <option value="publish">发布 (Publish)</option>
+                <option value="subscribe">订阅 (Subscribe)</option>
+              </select>
+            </label>
+            <label>
+              <span>主题</span>
+              <input
+                value={draft.mqttTopic}
+                onChange={(event) => updateDraft({ mqttTopic: event.target.value })}
+                placeholder="sensors/temperature"
+              />
+            </label>
+            <label>
+              <span>QoS</span>
+              <select value={draft.mqttQos} onChange={(event) => updateDraft({ mqttQos: event.target.value })}>
+                <option value="0">0 - 最多一次</option>
+                <option value="1">1 - 至少一次</option>
+                <option value="2">2 - 恰好一次</option>
+              </select>
+            </label>
+            {draft.mqttMode === 'publish' ? (
+              <label>
+                <span>载荷模板</span>
+                <textarea
+                  value={draft.mqttPayloadTemplate}
+                  onChange={(event) => updateDraft({ mqttPayloadTemplate: event.target.value })}
+                />
+              </label>
+            ) : null}
           </>
         ) : null}
 

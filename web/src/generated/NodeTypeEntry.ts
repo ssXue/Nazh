@@ -5,6 +5,6 @@
  */
 export type NodeTypeEntry = { 
 /**
- * 节点类型主名称（如 "rhai"）。
+ * 节点类型主名称（如 "code"）。
  */
 name: string, };

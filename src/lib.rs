@@ -43,8 +43,9 @@ pub use nodes_flow::{
 
 pub use nodes_io::{
     DebugConsoleNode, DebugConsoleNodeConfig, HttpClientNode, HttpClientNodeConfig, IoPlugin,
-    ModbusReadNode, ModbusReadNodeConfig, NativeNode, NativeNodeConfig, SerialTriggerNode,
-    SerialTriggerNodeConfig, SqlWriterNode, SqlWriterNodeConfig, TimerNode, TimerNodeConfig,
+    ModbusReadNode, ModbusReadNodeConfig, MqttClientNode, MqttClientNodeConfig, NativeNode,
+    NativeNodeConfig, SerialTriggerNode, SerialTriggerNodeConfig, SqlWriterNode,
+    SqlWriterNodeConfig, TimerNode, TimerNodeConfig,
 };
 
 pub use graph::{

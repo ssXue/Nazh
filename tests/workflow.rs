@@ -13,9 +13,10 @@ use nazh_ai_core::{
 use nazh_engine::{
     CodeNode, CodeNodeConfig, ConnectionDefinition, ConnectionManager, DebugConsoleNode,
     DebugConsoleNodeConfig, EngineError, HttpClientNode, HttpClientNodeConfig, ModbusReadNode,
-    ModbusReadNodeConfig, NodeDispatch, NodeTrait, SerialTriggerNode, SerialTriggerNodeConfig,
-    SqlWriterNode, SqlWriterNodeConfig, TimerNode, TimerNodeConfig, WorkflowContext, WorkflowGraph,
-    deploy_workflow, deploy_workflow_with_ai, shared_connection_manager, standard_registry,
+    ModbusReadNodeConfig, MqttClientNode, MqttClientNodeConfig, NodeDispatch, NodeTrait,
+    SerialTriggerNode, SerialTriggerNodeConfig, SqlWriterNode, SqlWriterNodeConfig, TimerNode,
+    TimerNodeConfig, WorkflowContext, WorkflowGraph, deploy_workflow, deploy_workflow_with_ai,
+    shared_connection_manager, standard_registry,
 };
 use serde_json::json;
 use tokio::time::timeout;
@@ -1073,6 +1074,7 @@ async fn modbus_read_node_emits_simulated_values() {
             unit_id: 1,
             register: 40_001,
             quantity: 2,
+            register_type: "holding".to_owned(),
             base_value: 72.0,
             amplitude: 5.0,
         },
@@ -1458,4 +1460,70 @@ async fn debug_console_node_marks_payload_and_passes_through() {
         },
         Err(error) => panic!("debug console node should execute successfully: {error}"),
     }
+}
+
+#[tokio::test]
+async fn mqtt_subscribe_node_normalizes_incoming_message() {
+    let node = MqttClientNode::new(
+        "mqtt-sub",
+        MqttClientNodeConfig {
+            connection_id: None,
+            mode: "subscribe".to_owned(),
+            topic: "sensors/temp".to_owned(),
+            qos: 0,
+            payload_template: String::new(),
+        },
+        shared_connection_manager(),
+    );
+
+    let trace_id = Uuid::new_v4();
+    let payload = json!({
+        "_mqtt_message": {
+            "topic": "sensors/temp",
+            "payload": "{\"temperature\": 42.5, \"humidity\": 65}",
+            "qos": 0,
+            "retain": false,
+            "received_at": "2026-04-20T12:00:00Z",
+        }
+    });
+
+    let result = node.transform(trace_id, payload).await;
+
+    match result {
+        Ok(execution) => match execution.first() {
+            Some(first_output) => {
+                assert_eq!(first_output.metadata["mqtt"]["mode"], json!("subscribe"));
+                assert_eq!(first_output.payload["mqtt_topic"], json!("sensors/temp"));
+                assert_eq!(first_output.payload["temperature"], json!(42.5));
+                assert_eq!(first_output.payload["humidity"], json!(65));
+            }
+            None => panic!("mqtt subscribe node should produce one output"),
+        },
+        Err(error) => panic!("mqtt subscribe node should execute successfully: {error}"),
+    }
+}
+
+#[tokio::test]
+async fn mqtt_publish_node_requires_connection() {
+    let node = MqttClientNode::new(
+        "mqtt-pub",
+        MqttClientNodeConfig {
+            connection_id: None,
+            mode: "publish".to_owned(),
+            topic: "test/topic".to_owned(),
+            qos: 0,
+            payload_template: String::new(),
+        },
+        shared_connection_manager(),
+    );
+
+    let trace_id = Uuid::new_v4();
+    let result = node.transform(trace_id, json!({})).await;
+
+    assert!(result.is_err(), "mqtt publish without connection should fail");
+    let error_message = result.err().unwrap_or_else(|| panic!("expected error")).to_string();
+    assert!(
+        error_message.contains("连接资源"),
+        "error should mention connection requirement: {error_message}"
+    );
 }

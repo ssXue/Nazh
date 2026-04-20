@@ -58,6 +58,7 @@ mod tests {
             "timer",
             "serialTrigger",
             "modbusRead",
+            "mqttClient",
             "httpClient",
             "sqlWriter",
             "debugConsole",
@@ -70,8 +71,8 @@ mod tests {
     }
 
     #[test]
-    fn 两个插件合并后覆盖全部_12_种节点类型() {
+    fn 两个插件合并后覆盖全部_13_种节点类型() {
         let entries = standard_registry().registered_types_list();
-        assert_eq!(entries.len(), 12, "应注册 12 种节点类型");
+        assert_eq!(entries.len(), 13, "应注册 13 种节点类型");
     }
 }

@@ -742,6 +742,16 @@ struct SerialRootSpec {
     config: SerialTriggerNodeConfig,
 }
 
+#[derive(Debug, Clone)]
+struct MqttRootSpec {
+    node_id: String,
+    connection_id: String,
+    host: String,
+    port: u16,
+    topic: String,
+    qos: u8,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ProjectWorkspaceStorageInfo {
@@ -1011,6 +1021,9 @@ async fn deploy_workflow(
     let serial_roots = collect_serial_root_specs(&graph, state.connection_manager.clone())
         .await
         .map_err(stringify_error)?;
+    let mqtt_roots = collect_mqtt_root_specs(&graph, state.connection_manager.clone())
+        .await
+        .map_err(stringify_error)?;
     let node_count = graph.nodes.len();
     let edge_count = graph.edges.len();
     let registry = standard_registry();
@@ -1068,6 +1081,14 @@ async fn deploy_workflow(
         observability_store.clone(),
         workflow_id.clone(),
         serial_roots,
+    ));
+    trigger_tasks.extend(spawn_mqtt_root_tasks(
+        app.clone(),
+        dispatch_router.clone(),
+        state.connection_manager.clone(),
+        observability_store.clone(),
+        workflow_id.clone(),
+        mqtt_roots,
     ));
 
     let event_app = app.clone();
@@ -2556,6 +2577,269 @@ fn spawn_serial_root_tasks(
             }
         })
         .collect()
+}
+
+/// 收集工作流图中的 MQTT 订阅根节点。
+async fn collect_mqtt_root_specs(
+    graph: &WorkflowGraph,
+    connection_manager: nazh_engine::SharedConnectionManager,
+) -> Result<Vec<MqttRootSpec>, EngineError> {
+    let incoming_counts = count_incoming_edges(graph);
+    let mut mqtt_roots = Vec::new();
+
+    for node_id in graph.nodes.keys() {
+        if incoming_counts.get(node_id).copied().unwrap_or(0) > 0 {
+            continue;
+        }
+
+        let node_definition = match graph.nodes.get(node_id) {
+            Some(def) => def,
+            None => continue,
+        };
+
+        if node_definition.node_type != "mqttClient" {
+            continue;
+        }
+
+        let config: nazh_engine::MqttClientNodeConfig = node_definition
+            .parse_config()
+            .map_err(|error| {
+                EngineError::node_config(node_definition.id.clone(), error.to_string())
+            })?;
+
+        if config.mode.trim().to_ascii_lowercase() != "subscribe" {
+            continue;
+        }
+
+        let Some(connection_id) = config.connection_id.as_deref().or_else(|| {
+            node_definition.connection_id.as_deref()
+        }) else {
+            continue;
+        };
+
+        let lease = match connection_manager.borrow(connection_id).await {
+            Ok(lease) => lease,
+            Err(error) => {
+                let reason = format!("MQTT 连接资源 `{connection_id}` 借出失败: {error}");
+                let _ = connection_manager
+                    .mark_invalid_configuration(connection_id, &reason)
+                    .await;
+                return Err(EngineError::node_config(node_id.clone(), reason));
+            }
+        };
+
+        let host = lease
+            .metadata
+            .get("host")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned();
+        let port = lease
+            .metadata
+            .get("port")
+            .and_then(Value::as_u64)
+            .and_then(|p| u16::try_from(p).ok())
+            .unwrap_or(1883);
+        let topic = if config.topic.is_empty() {
+            lease
+                .metadata
+                .get("topic")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned()
+        } else {
+            config.topic.clone()
+        };
+
+        if topic.is_empty() {
+            let reason = format!("MQTT 订阅节点 `{node_id}` 的主题不能为空");
+            return Err(EngineError::node_config(node_id.clone(), reason));
+        }
+
+        if host.is_empty() {
+            let reason = format!("MQTT 连接资源 `{connection_id}` 缺少 host 配置");
+            return Err(EngineError::node_config(node_id.clone(), reason));
+        }
+
+        mqtt_roots.push(MqttRootSpec {
+            node_id: node_id.clone(),
+            connection_id: connection_id.to_owned(),
+            host,
+            port,
+            topic,
+            qos: config.qos,
+        });
+    }
+
+    Ok(mqtt_roots)
+}
+
+/// 为每个 MQTT 订阅根节点生成后台订阅任务。
+fn spawn_mqtt_root_tasks(
+    app: AppHandle,
+    dispatch_router: WorkflowDispatchRouter,
+    connection_manager: nazh_engine::SharedConnectionManager,
+    observability: Option<SharedObservabilityStore>,
+    workflow_id: String,
+    mqtt_roots: Vec<MqttRootSpec>,
+) -> Vec<DesktopTriggerTask> {
+    mqtt_roots
+        .into_iter()
+        .map(|mqtt_root| {
+            let app = app.clone();
+            let dispatch_router = dispatch_router.clone();
+            let connection_manager = connection_manager.clone();
+            let observability = observability.clone();
+            let workflow_id = workflow_id.clone();
+            let cancel = Arc::new(AtomicBool::new(false));
+            let task_cancel = Arc::clone(&cancel);
+            let join = tauri::async_runtime::spawn(async move {
+                run_mqtt_root_subscriber(
+                    app,
+                    dispatch_router,
+                    connection_manager,
+                    observability,
+                    workflow_id,
+                    mqtt_root,
+                    task_cancel,
+                )
+                .await;
+            });
+
+            DesktopTriggerTask {
+                cancel,
+                join: TriggerJoinHandle::Async(join),
+            }
+        })
+        .collect()
+}
+
+/// MQTT 订阅根节点的后台事件循环。
+async fn run_mqtt_root_subscriber(
+    app: AppHandle,
+    dispatch_router: WorkflowDispatchRouter,
+    _connection_manager: nazh_engine::SharedConnectionManager,
+    _observability: Option<SharedObservabilityStore>,
+    workflow_id: String,
+    mqtt_root: MqttRootSpec,
+    cancel: Arc<AtomicBool>,
+) {
+    let client_id = format!("nazh-sub-{}", &mqtt_root.node_id[..mqtt_root.node_id.len().min(16)]);
+    let mut mqttoptions =
+        rumqttc::MqttOptions::new(client_id, mqtt_root.host.clone(), mqtt_root.port);
+    mqttoptions.set_keep_alive(std::time::Duration::from_secs(30));
+
+    let qos = match mqtt_root.qos {
+        1 => rumqttc::QoS::AtLeastOnce,
+        2 => rumqttc::QoS::ExactlyOnce,
+        _ => rumqttc::QoS::AtMostOnce,
+    };
+
+    while !cancel.load(Ordering::Relaxed) {
+        let (client, mut eventloop) = rumqttc::AsyncClient::new(mqttoptions.clone(), 10);
+
+        // 等待连接确认
+        let connected = loop {
+            if cancel.load(Ordering::Relaxed) {
+                return;
+            }
+            match tokio::time::timeout(std::time::Duration::from_secs(5), eventloop.poll()).await {
+                Ok(Ok(rumqttc::Event::Incoming(rumqttc::Packet::ConnAck(ack)))) => {
+                    if ack.code == rumqttc::ConnectReturnCode::Success {
+                        break true;
+                    }
+                    tracing::warn!(
+                        node_id = %mqtt_root.node_id,
+                        "MQTT broker 拒绝连接: {:?}", ack.code
+                    );
+                    break false;
+                }
+                Ok(Ok(rumqttc::Event::Incoming(rumqttc::Packet::Disconnect))) => break false,
+                Ok(Err(error)) => {
+                    tracing::warn!(
+                        node_id = %mqtt_root.node_id,
+                        "MQTT 连接错误: {error}"
+                    );
+                    break false;
+                }
+                Err(_) => {
+                    tracing::warn!(
+                        node_id = %mqtt_root.node_id,
+                        "MQTT 连接超时"
+                    );
+                    break false;
+                }
+                _ => continue,
+            }
+        };
+
+        if !connected {
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            continue;
+        }
+
+        // 订阅主题
+        if let Err(error) = client.subscribe(&mqtt_root.topic, qos).await {
+            tracing::warn!(
+                node_id = %mqtt_root.node_id,
+                "MQTT 订阅失败: {error}"
+            );
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            continue;
+        }
+
+        // 消息循环
+        loop {
+            if cancel.load(Ordering::Relaxed) {
+                return;
+            }
+            match tokio::time::timeout(std::time::Duration::from_secs(60), eventloop.poll()).await {
+                Ok(Ok(rumqttc::Event::Incoming(rumqttc::Packet::Publish(message)))) => {
+                    let received_at = chrono::Utc::now().to_rfc3339();
+                    let payload_text = String::from_utf8_lossy(&message.payload).to_string();
+
+                    let ctx_payload = serde_json::json!({
+                        "_mqtt_message": {
+                            "topic": message.topic,
+                            "payload": payload_text,
+                            "qos": message.qos as u8,
+                            "retain": message.retain,
+                            "received_at": received_at,
+                        }
+                    });
+
+                    let ctx = nazh_engine::WorkflowContext::new(ctx_payload);
+
+                    let _ = dispatch_router
+                        .submit_trigger_to(&mqtt_root.node_id, ctx, "mqtt_subscribe")
+                        .await;
+
+                    tracing::info!(
+                        node_id = %mqtt_root.node_id,
+                        topic = %mqtt_root.topic,
+                        "MQTT 消息已投递到 DAG"
+                    );
+                }
+                Ok(Ok(_)) => continue,
+                Ok(Err(error)) => {
+                    tracing::warn!(
+                        node_id = %mqtt_root.node_id,
+                        "MQTT 事件循环错误: {error}"
+                    );
+                    break;
+                }
+                Err(_) => {
+                    // 超时，检查 cancel
+                    continue;
+                }
+            }
+        }
+
+        // 断开后重连
+        if !cancel.load(Ordering::Relaxed) {
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+        }
+    }
 }
 
 fn run_serial_root_reader(

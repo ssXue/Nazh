@@ -10,6 +10,7 @@ export type NazhNodeKind =
   | 'timer'
   | 'serialTrigger'
   | 'modbusRead'
+  | 'mqttClient'
   | 'if'
   | 'switch'
   | 'tryCatch'
@@ -92,6 +93,7 @@ export interface FlowgramConnectionDefaults {
   any: string | null;
   modbus: string | null;
   serial: string | null;
+  mqtt: string | null;
 }
 
 interface FlowgramNodeData {
@@ -203,7 +205,7 @@ const NODE_TEMPLATES: FlowgramPaletteItem[] = [
   {
     key: 'modbus-temperature',
     title: 'Modbus 采集',
-    description: '模拟读取物理寄存器。',
+    description: '读取 Modbus 寄存器。',
     badge: 'Modbus',
     seed: {
       idPrefix: 'modbus_read',
@@ -215,6 +217,7 @@ const NODE_TEMPLATES: FlowgramPaletteItem[] = [
         unit_id: 1,
         register: 40001,
         quantity: 1,
+        register_type: 'holding',
         base_value: 64,
         amplitude: 6,
       },
@@ -405,6 +408,7 @@ export function normalizeNodeKind(value: unknown): NazhNodeKind {
     case 'timer':
     case 'serialTrigger':
     case 'modbusRead':
+    case 'mqttClient':
     case 'httpClient':
     case 'sqlWriter':
     case 'debugConsole':
@@ -550,6 +554,8 @@ export function normalizeNodeConfig(
         typeof rawConfig.quantity === 'number' && Number.isFinite(rawConfig.quantity)
           ? Math.max(1, Math.round(rawConfig.quantity))
           : 1,
+      register_type:
+        typeof rawConfig.register_type === 'string' ? rawConfig.register_type : 'holding',
       base_value:
         typeof rawConfig.base_value === 'number' && Number.isFinite(rawConfig.base_value)
           ? rawConfig.base_value
@@ -558,6 +564,16 @@ export function normalizeNodeConfig(
         typeof rawConfig.amplitude === 'number' && Number.isFinite(rawConfig.amplitude)
           ? rawConfig.amplitude
           : 6,
+    };
+  }
+
+  if (nodeType === 'mqttClient') {
+    return {
+      ...rawConfig,
+      mode: rawConfig.mode === 'subscribe' ? 'subscribe' : 'publish',
+      topic: typeof rawConfig.topic === 'string' ? rawConfig.topic : '',
+      qos: [0, 1, 2].includes(rawConfig.qos as number) ? rawConfig.qos : 0,
+      payload_template: typeof rawConfig.payload_template === 'string' ? rawConfig.payload_template : '',
     };
   }
 
@@ -779,8 +795,23 @@ export function buildDefaultNodeSeed(kind: NazhNodeKind): NodeSeed {
           unit_id: 1,
           register: 40001,
           quantity: 1,
+          register_type: 'holding',
           base_value: 64,
           amplitude: 6,
+        },
+      };
+    case 'mqttClient':
+      return {
+        idPrefix: 'mqtt_client',
+        kind: 'mqttClient',
+        displayType: 'mqttClient',
+        label: '',
+        timeoutMs: 1000,
+        config: {
+          mode: 'publish',
+          topic: '',
+          qos: 0,
+          payload_template: '',
         },
       };
     case 'if':
@@ -887,6 +918,8 @@ function getFallbackNodeLabel(nodeType: NazhNodeKind): string {
       return 'Serial Trigger';
     case 'modbusRead':
       return 'Modbus Read';
+    case 'mqttClient':
+      return 'MQTT Client';
     case 'code':
       return 'Code Node';
     case 'if':
@@ -924,6 +957,8 @@ function resolveDefaultConnectionId(
       return connectionDefaults.modbus;
     case 'serialTrigger':
       return connectionDefaults.serial;
+    case 'mqttClient':
+      return connectionDefaults.mqtt;
     default:
       return null;
   }
@@ -1013,6 +1048,7 @@ export function createFlowgramNodeRegistries(
     'timer',
     'serialTrigger',
     'modbusRead',
+    'mqttClient',
     'if',
     'switch',
     'tryCatch',
@@ -1061,9 +1097,16 @@ export function getFlowgramPaletteSections(): FlowgramPaletteSection[] {
         {
           key: 'blank-modbus',
           title: 'Modbus Read',
-          description: '模拟读物理数据。',
+          description: '读取 Modbus 寄存器。',
           badge: 'Modbus',
           seed: buildDefaultNodeSeed('modbusRead'),
+        },
+        {
+          key: 'blank-mqtt',
+          title: 'MQTT Client',
+          description: '发布或订阅 MQTT 消息。',
+          badge: 'MQTT',
+          seed: buildDefaultNodeSeed('mqttClient'),
         },
         {
           key: 'blank-code',
