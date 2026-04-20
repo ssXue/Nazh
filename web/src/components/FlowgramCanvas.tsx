@@ -1257,6 +1257,37 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
     }),
     [renderNodeCard],
   );
+  const buildCurrentWorkflowGraph = useCallback(
+    (ctx: FreeLayoutPluginContext) => {
+      if (!latestGraphRef.current) {
+        return null;
+      }
+
+      const nextFlowgramGraph = ctx.document.toJSON();
+      return toNazhWorkflowGraph(nextFlowgramGraph, latestGraphRef.current);
+    },
+    [],
+  );
+
+  const emitCurrentGraphChange = useCallback(
+    (ctx: FreeLayoutPluginContext) => {
+      try {
+        const nextGraph = buildCurrentWorkflowGraph(ctx);
+        if (!nextGraph) {
+          return null;
+        }
+
+        const nextAstText = formatWorkflowGraph(nextGraph);
+        onGraphChange(nextAstText);
+        return nextAstText;
+      } catch (error) {
+        reportFlowgramError('FlowGram 当前工作流序列化失败', error);
+        return null;
+      }
+    },
+    [buildCurrentWorkflowGraph, onGraphChange, reportFlowgramError],
+  );
+
   const syncSelectionState = useCallback(
     (ctx: FreeLayoutPluginContext | null) => {
       try {
@@ -1275,9 +1306,9 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
         selectedNodeRef.current = nextBusinessNode;
         setHasSelection(Boolean(nextBusinessNode));
 
-        // 从选中节点切换到无选中时（关闭设置面板），异步同步图变更以避免渲染期 setState
+        // 从选中节点切换到无选中时（关闭设置面板），延迟同步图变更以避免渲染期 setState
         if (hadPreviousSelection && !nextBusinessNode) {
-          queueMicrotask(() => emitCurrentGraphChange(ctx));
+          setTimeout(() => emitCurrentGraphChange(ctx), 0);
         }
 
         const panelManager = (ctx as FreeLayoutPluginContext & {
@@ -1315,18 +1346,6 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
     [activeAiProviderId, aiProviders, connectionOptions, copilotParams, emitCurrentGraphChange, reportFlowgramError],
   );
 
-  const buildCurrentWorkflowGraph = useCallback(
-    (ctx: FreeLayoutPluginContext) => {
-      if (!latestGraphRef.current) {
-        return null;
-      }
-
-      const nextFlowgramGraph = ctx.document.toJSON();
-      return toNazhWorkflowGraph(nextFlowgramGraph, latestGraphRef.current);
-    },
-    [],
-  );
-
   const applyExternalFlowgramGraph = useCallback(
     (ctx: FreeLayoutPluginContext, nextGraph: FlowgramWorkflowJSON) => {
       try {
@@ -1351,25 +1370,6 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
       }
     },
     [reportFlowgramError, syncSelectionState],
-  );
-
-  const emitCurrentGraphChange = useCallback(
-    (ctx: FreeLayoutPluginContext) => {
-      try {
-        const nextGraph = buildCurrentWorkflowGraph(ctx);
-        if (!nextGraph) {
-          return null;
-        }
-
-        const nextAstText = formatWorkflowGraph(nextGraph);
-        onGraphChange(nextAstText);
-        return nextAstText;
-      } catch (error) {
-        reportFlowgramError('FlowGram 当前工作流序列化失败', error);
-        return null;
-      }
-    },
-    [buildCurrentWorkflowGraph, onGraphChange, reportFlowgramError],
   );
 
   const loadWorkflowGraph = useCallback(
@@ -1524,45 +1524,48 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
     applyExternalFlowgramGraph(editorCtx, nextFlowgramData);
   }, [applyExternalFlowgramGraph, editorCtx, flowgramDataSignature, graph]);
 
-  function handleContentChange(
-    ctx: FreeLayoutPluginContext,
-    event: WorkflowContentChangeEvent,
-  ) {
-    try {
-      if (applyingExternalGraphRef.current) {
-        return;
+  const handleContentChange = useCallback(
+    (ctx: FreeLayoutPluginContext, event: WorkflowContentChangeEvent) => {
+      try {
+        if (applyingExternalGraphRef.current) {
+          return;
+        }
+
+        if (event.type === WorkflowContentChangeType.META_CHANGE) {
+          return;
+        }
+
+        if (
+          event.type === WorkflowContentChangeType.DELETE_NODE ||
+          event.type === WorkflowContentChangeType.DELETE_LINE
+        ) {
+          ctx.playground.flush();
+        }
+
+        // 延迟状态更新，避免 FlowGram 在渲染期触发回调导致 setState 警告
+        setTimeout(() => {
+          setLastChange(event.type);
+          syncSelectionState(ctx);
+
+          if (!latestGraphRef.current) {
+            return;
+          }
+
+          if (syncTimerRef.current !== null) {
+            window.clearTimeout(syncTimerRef.current);
+            syncTimerRef.current = null;
+          }
+
+          syncTimerRef.current = window.setTimeout(() => {
+            emitCurrentGraphChange(ctx);
+          }, 120);
+        }, 0);
+      } catch (error) {
+        reportFlowgramError('FlowGram 内容同步失败', error);
       }
-
-      if (event.type === WorkflowContentChangeType.META_CHANGE) {
-        return;
-      }
-
-      if (
-        event.type === WorkflowContentChangeType.DELETE_NODE ||
-        event.type === WorkflowContentChangeType.DELETE_LINE
-      ) {
-        ctx.playground.flush();
-      }
-
-      setLastChange(event.type);
-      syncSelectionState(ctx);
-
-      if (!latestGraphRef.current) {
-        return;
-      }
-
-      if (syncTimerRef.current !== null) {
-        window.clearTimeout(syncTimerRef.current);
-        syncTimerRef.current = null;
-      }
-
-      syncTimerRef.current = window.setTimeout(() => {
-        emitCurrentGraphChange(ctx);
-      }, 120);
-    } catch (error) {
-      reportFlowgramError('FlowGram 内容同步失败', error);
-    }
-  }
+    },
+    [syncSelectionState, emitCurrentGraphChange, reportFlowgramError],
+  );
 
   function nextNodeId(prefix: string): string {
     const currentIds = new Set(
