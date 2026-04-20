@@ -66,13 +66,22 @@ function buildBaseFlowgramWorkflowJson(graph: WorkflowGraph): FlowgramWorkflowJS
         y: 40 + positionedNode.row * 196,
       };
       const nodeType = definition?.type ?? 'unknown';
+      const config = definition?.config ?? {};
+      if (nodeType === 'code') {
+        console.debug(
+          '[nazh-debug] buildBaseFlowgramWorkflowJson code node:',
+          positionedNode.id,
+          'definition.config=',
+          JSON.stringify(config),
+        );
+      }
       const data: FlowgramNodeData = {
         label: positionedNode.id,
         nodeType,
         displayType: nodeType,
         connectionId: definition?.connection_id ?? null,
         timeoutMs: definition?.timeout_ms ?? null,
-        config: definition?.config ?? {},
+        config,
       };
 
       return {

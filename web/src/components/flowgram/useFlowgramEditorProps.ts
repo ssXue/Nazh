@@ -76,13 +76,19 @@ export function useFlowgramEditorProps({
         return getDefaultFlowgramNodeRegistry(String(type));
       },
       fromNodeJSON(node, json) {
-        return normalizeFlowgramNodeJson(
+        const normalized = normalizeFlowgramNodeJson(
           {
             ...json,
             type: json.type ?? 'native',
           },
           connectionDefaults,
         );
+        // 将归一化后的 data 同步写入 extInfo，
+        // 否则 getExtInfo() 返回空值，节点卡片和设置面板无法读取 config。
+        if (isRecord(normalized.data)) {
+          node.updateExtInfo(normalized.data);
+        }
+        return normalized;
       },
       toNodeJSON(node, json) {
         const liveExtInfo = isRecord(node.getExtInfo()) ? node.getExtInfo() : {};

@@ -511,6 +511,16 @@ function FlowgramNodeCard(props: FlowgramNodeMaterialProps) {
   const nodeType = normalizeNodeKind(rawData?.nodeType ?? props.node.flowNodeType);
   const displayType = normalizeFlowgramDisplayType(rawData?.displayType ?? nodeType);
   const runtimeStatus = props.runtimeStatus ?? 'idle';
+  if (nodeType === 'code') {
+    console.debug(
+      '[nazh-debug] FlowgramNodeCard code node:',
+      props.node.id,
+      'rawData=',
+      rawData,
+      'flowNodeType=',
+      props.node.flowNodeType,
+    );
+  }
   const branchDefinitions = useMemo(
     () => getLogicNodeBranchDefinitions(nodeType, rawData?.config),
     [nodeType, rawData?.config],
@@ -1270,9 +1280,15 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
         const selectedNodes = selectionService.selectedNodes;
         const nextSelectedNode = selectedNodes.length === 1 ? selectedNodes[0] : null;
         const nextBusinessNode = isBusinessFlowNode(nextSelectedNode) ? nextSelectedNode : null;
+        const hadPreviousSelection = Boolean(selectedNodeRef.current);
 
         selectedNodeRef.current = nextBusinessNode;
         setHasSelection(Boolean(nextBusinessNode));
+
+        // 从选中节点切换到无选中时（关闭设置面板），立即同步图变更
+        if (hadPreviousSelection && !nextBusinessNode) {
+          emitCurrentGraphChange(ctx);
+        }
 
         const panelManager = (ctx as FreeLayoutPluginContext & {
           get?: <T>(token: unknown) => T;
@@ -1306,7 +1322,7 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
         return;
       }
     },
-    [activeAiProviderId, aiProviders, connectionOptions, copilotParams, reportFlowgramError],
+    [activeAiProviderId, aiProviders, connectionOptions, copilotParams, emitCurrentGraphChange, reportFlowgramError],
   );
 
   const buildCurrentWorkflowGraph = useCallback(

@@ -8,7 +8,7 @@ use std::{
 use async_trait::async_trait;
 use nazh_ai_core::{
     AiCompletionRequest, AiCompletionResponse, AiError, AiMessageRole, AiProviderDraft, AiService,
-    AiTestResult,
+    AiTestResult, StreamChunk,
 };
 use nazh_engine::{
     CodeNode, CodeNodeConfig, ConnectionDefinition, ConnectionManager, DebugConsoleNode,
@@ -58,6 +58,13 @@ impl AiService for StubAiService {
     async fn test_connection(&self, _draft: AiProviderDraft) -> Result<AiTestResult, AiError> {
         panic!("workflow tests should not call test_connection");
     }
+
+    async fn stream_complete(
+        &self,
+        _request: AiCompletionRequest,
+    ) -> Result<tokio::sync::mpsc::Receiver<Result<StreamChunk, AiError>>, AiError> {
+        panic!("workflow tests should not call stream_complete");
+    }
 }
 
 struct JsonStubAiService {
@@ -87,6 +94,13 @@ impl AiService for JsonStubAiService {
 
     async fn test_connection(&self, _draft: AiProviderDraft) -> Result<AiTestResult, AiError> {
         panic!("workflow tests should not call test_connection");
+    }
+
+    async fn stream_complete(
+        &self,
+        _request: AiCompletionRequest,
+    ) -> Result<tokio::sync::mpsc::Receiver<Result<StreamChunk, AiError>>, AiError> {
+        panic!("workflow tests should not call stream_complete");
     }
 }
 

@@ -504,7 +504,7 @@ export function getLogicNodeBranchDefinitions(
   }
 }
 
-function normalizeNodeConfig(
+export function normalizeNodeConfig(
   nodeType: NazhNodeKind,
   config: unknown,
 ): NodeSeed['config'] {
@@ -980,6 +980,19 @@ export function normalizeFlowgramNodeJson(
   const rawData = isRecord(json.data) ? (json.data as FlowgramNodeData) : {};
   const nodeType = normalizeNodeKind(rawData.nodeType ?? json.type);
   const fallbackLabel = json.id || getFallbackNodeLabel(nodeType);
+  const rawConfig = rawData.config;
+  const normalizedConfig = normalizeNodeConfig(nodeType, rawConfig);
+
+  if (nodeType === 'code') {
+    console.debug(
+      '[nazh-debug] normalizeFlowgramNodeJson code node:',
+      json.id,
+      'rawData.config.script=',
+      isRecord(rawConfig) ? (rawConfig as Record<string, unknown>).script : undefined,
+      'normalizedConfig.script=',
+      (normalizedConfig as Record<string, unknown>).script,
+    );
+  }
 
   return {
     ...json,
@@ -997,7 +1010,7 @@ export function normalizeFlowgramNodeJson(
           ? resolveDefaultConnectionId(nodeType, connectionDefaults)
           : rawData.connectionId ?? null,
       timeoutMs: normalizeTimeoutValue(rawData.timeoutMs),
-      config: normalizeNodeConfig(nodeType, rawData.config),
+      config: normalizedConfig,
     },
   };
 }
