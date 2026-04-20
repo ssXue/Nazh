@@ -200,18 +200,6 @@ function readNodeDraft(node: FlowNodeEntity): SelectedNodeDraft {
   };
   const config = isRecord(rawData.config) ? rawData.config : {};
   const nodeType = normalizeNodeKind(rawData.nodeType ?? node.flowNodeType);
-  if (nodeType === 'code') {
-    console.debug(
-      '[nazh-debug] readNodeDraft code node:',
-      node.id,
-      'extInfo=',
-      rawData,
-      'config.script=',
-      (config as Record<string, unknown>).script,
-      'flowNodeType=',
-      node.flowNodeType,
-    );
-  }
   const httpUrl = readString(config.url);
   const httpWebhookKind = readString(config.webhook_kind, inferHttpWebhookKind(httpUrl));
   const httpBodyMode = normalizeHttpBodyMode(config.body_mode, httpWebhookKind);

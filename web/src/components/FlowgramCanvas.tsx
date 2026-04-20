@@ -511,16 +511,6 @@ function FlowgramNodeCard(props: FlowgramNodeMaterialProps) {
   const nodeType = normalizeNodeKind(rawData?.nodeType ?? props.node.flowNodeType);
   const displayType = normalizeFlowgramDisplayType(rawData?.displayType ?? nodeType);
   const runtimeStatus = props.runtimeStatus ?? 'idle';
-  if (nodeType === 'code') {
-    console.debug(
-      '[nazh-debug] FlowgramNodeCard code node:',
-      props.node.id,
-      'rawData=',
-      rawData,
-      'flowNodeType=',
-      props.node.flowNodeType,
-    );
-  }
   const branchDefinitions = useMemo(
     () => getLogicNodeBranchDefinitions(nodeType, rawData?.config),
     [nodeType, rawData?.config],
@@ -1285,9 +1275,9 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
         selectedNodeRef.current = nextBusinessNode;
         setHasSelection(Boolean(nextBusinessNode));
 
-        // 从选中节点切换到无选中时（关闭设置面板），立即同步图变更
+        // 从选中节点切换到无选中时（关闭设置面板），异步同步图变更以避免渲染期 setState
         if (hadPreviousSelection && !nextBusinessNode) {
-          emitCurrentGraphChange(ctx);
+          queueMicrotask(() => emitCurrentGraphChange(ctx));
         }
 
         const panelManager = (ctx as FreeLayoutPluginContext & {

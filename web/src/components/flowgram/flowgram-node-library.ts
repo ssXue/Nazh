@@ -983,17 +983,6 @@ export function normalizeFlowgramNodeJson(
   const rawConfig = rawData.config;
   const normalizedConfig = normalizeNodeConfig(nodeType, rawConfig);
 
-  if (nodeType === 'code') {
-    console.debug(
-      '[nazh-debug] normalizeFlowgramNodeJson code node:',
-      json.id,
-      'rawData.config.script=',
-      isRecord(rawConfig) ? (rawConfig as Record<string, unknown>).script : undefined,
-      'normalizedConfig.script=',
-      (normalizedConfig as Record<string, unknown>).script,
-    );
-  }
-
   return {
     ...json,
     type: nodeType,
