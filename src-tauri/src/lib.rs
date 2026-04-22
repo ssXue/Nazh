@@ -2714,12 +2714,11 @@ fn spawn_mqtt_root_tasks(
         .collect()
 }
 
-/// MQTT 订阅根节点的后台事件循环。
 async fn run_mqtt_root_subscriber(
     app: AppHandle,
     dispatch_router: WorkflowDispatchRouter,
-    _connection_manager: nazh_engine::SharedConnectionManager,
-    _observability: Option<SharedObservabilityStore>,
+    connection_manager: nazh_engine::SharedConnectionManager,
+    observability: Option<SharedObservabilityStore>,
     workflow_id: String,
     mqtt_root: MqttRootSpec,
     cancel: Arc<AtomicBool>,
@@ -2736,12 +2735,27 @@ async fn run_mqtt_root_subscriber(
     };
 
     while !cancel.load(Ordering::Relaxed) {
+        let _lease = match connection_manager.borrow(&mqtt_root.connection_id).await {
+            Ok(lease) => lease,
+            Err(error) => {
+                let retry_after_ms = retry_delay_from_error(&error).unwrap_or(800);
+                emit_mqtt_trigger_failure(
+                    &app,
+                    &workflow_id,
+                    observability.as_ref(),
+                    &mqtt_root.node_id,
+                    error.to_string(),
+                );
+                tokio::time::sleep(std::time::Duration::from_millis(retry_after_ms)).await;
+                continue;
+            }
+        };
+
         let (client, mut eventloop) = rumqttc::AsyncClient::new(mqttoptions.clone(), 10);
 
-        // 等待连接确认
         let connected = loop {
             if cancel.load(Ordering::Relaxed) {
-                return;
+                break false;
             }
             match tokio::time::timeout(std::time::Duration::from_secs(5), eventloop.poll()).await {
                 Ok(Ok(rumqttc::Event::Incoming(rumqttc::Packet::ConnAck(ack)))) => {
@@ -2750,6 +2764,7 @@ async fn run_mqtt_root_subscriber(
                     }
                     tracing::warn!(
                         node_id = %mqtt_root.node_id,
+                        workflow_id = %workflow_id,
                         "MQTT broker 拒绝连接: {:?}", ack.code
                     );
                     break false;
@@ -2758,6 +2773,7 @@ async fn run_mqtt_root_subscriber(
                 Ok(Err(error)) => {
                     tracing::warn!(
                         node_id = %mqtt_root.node_id,
+                        workflow_id = %workflow_id,
                         "MQTT 连接错误: {error}"
                     );
                     break false;
@@ -2765,6 +2781,7 @@ async fn run_mqtt_root_subscriber(
                 Err(_) => {
                     tracing::warn!(
                         node_id = %mqtt_root.node_id,
+                        workflow_id = %workflow_id,
                         "MQTT 连接超时"
                     );
                     break false;
@@ -2774,24 +2791,63 @@ async fn run_mqtt_root_subscriber(
         };
 
         if !connected {
-            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            let reason = format!(
+                "MQTT {}:{} 连接失败",
+                mqtt_root.host, mqtt_root.port
+            );
+            let retry_after_ms = connection_manager
+                .record_connect_failure(&mqtt_root.connection_id, &reason)
+                .await
+                .unwrap_or(800);
+            let _ = connection_manager.release(&mqtt_root.connection_id).await;
+            emit_mqtt_trigger_failure(
+                &app,
+                &workflow_id,
+                observability.as_ref(),
+                &mqtt_root.node_id,
+                reason,
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(retry_after_ms)).await;
             continue;
         }
 
-        // 订阅主题
+        let _ = connection_manager
+            .record_connect_success(
+                &mqtt_root.connection_id,
+                format!(
+                    "MQTT {}:{} 已连接，订阅主题 {}",
+                    mqtt_root.host, mqtt_root.port, mqtt_root.topic
+                ),
+                None,
+            )
+            .await;
+
         if let Err(error) = client.subscribe(&mqtt_root.topic, qos).await {
             tracing::warn!(
                 node_id = %mqtt_root.node_id,
+                workflow_id = %workflow_id,
                 "MQTT 订阅失败: {error}"
             );
-            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            let reason = format!("MQTT 订阅主题 `{}` 失败: {error}", mqtt_root.topic);
+            let retry_after_ms = connection_manager
+                .record_connect_failure(&mqtt_root.connection_id, &reason)
+                .await
+                .unwrap_or(800);
+            let _ = connection_manager.release(&mqtt_root.connection_id).await;
+            emit_mqtt_trigger_failure(
+                &app,
+                &workflow_id,
+                observability.as_ref(),
+                &mqtt_root.node_id,
+                reason,
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(retry_after_ms)).await;
             continue;
         }
 
-        // 消息循环
         loop {
             if cancel.load(Ordering::Relaxed) {
-                return;
+                break;
             }
             match tokio::time::timeout(std::time::Duration::from_secs(60), eventloop.poll()).await {
                 Ok(Ok(rumqttc::Event::Incoming(rumqttc::Packet::Publish(message)))) => {
@@ -2810,12 +2866,32 @@ async fn run_mqtt_root_subscriber(
 
                     let ctx = nazh_engine::WorkflowContext::new(ctx_payload);
 
-                    let _ = dispatch_router
+                    if let Err(error) = dispatch_router
                         .submit_trigger_to(&mqtt_root.node_id, ctx, "mqtt_subscribe")
+                        .await
+                    {
+                        emit_mqtt_trigger_failure(
+                            &app,
+                            &workflow_id,
+                            observability.as_ref(),
+                            &mqtt_root.node_id,
+                            error.to_string(),
+                        );
+                    }
+
+                    let _ = connection_manager
+                        .record_heartbeat(
+                            &mqtt_root.connection_id,
+                            format!(
+                                "MQTT {}:{} 收到主题 {} 消息",
+                                mqtt_root.host, mqtt_root.port, mqtt_root.topic
+                            ),
+                        )
                         .await;
 
                     tracing::info!(
                         node_id = %mqtt_root.node_id,
+                        workflow_id = %workflow_id,
                         topic = %mqtt_root.topic,
                         "MQTT 消息已投递到 DAG"
                     );
@@ -2824,21 +2900,44 @@ async fn run_mqtt_root_subscriber(
                 Ok(Err(error)) => {
                     tracing::warn!(
                         node_id = %mqtt_root.node_id,
+                        workflow_id = %workflow_id,
                         "MQTT 事件循环错误: {error}"
                     );
                     break;
                 }
-                Err(_) => {
-                    // 超时，检查 cancel
-                    continue;
-                }
+                Err(_) => continue,
             }
         }
 
-        // 断开后重连
-        if !cancel.load(Ordering::Relaxed) {
-            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+        if cancel.load(Ordering::Relaxed) {
+            let _ = connection_manager.release(&mqtt_root.connection_id).await;
+            let reason = format!(
+                "MQTT {}:{} 订阅已停止",
+                mqtt_root.host, mqtt_root.port
+            );
+            let _ = connection_manager
+                .mark_disconnected(&mqtt_root.connection_id, &reason)
+                .await;
+            return;
         }
+
+        let reason = format!(
+            "MQTT {}:{} 连接已断开",
+            mqtt_root.host, mqtt_root.port
+        );
+        let retry_after_ms = connection_manager
+            .record_connect_failure(&mqtt_root.connection_id, &reason)
+            .await
+            .unwrap_or(800);
+        let _ = connection_manager.release(&mqtt_root.connection_id).await;
+        emit_mqtt_trigger_failure(
+            &app,
+            &workflow_id,
+            observability.as_ref(),
+            &mqtt_root.node_id,
+            reason,
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(retry_after_ms)).await;
     }
 }
 
@@ -3147,11 +3246,32 @@ fn emit_serial_trigger_failure(
     node_id: &str,
     message: String,
 ) {
+    emit_trigger_failure(app, workflow_id, observability, node_id, "串口触发失败", message);
+}
+
+fn emit_mqtt_trigger_failure(
+    app: &AppHandle,
+    workflow_id: &str,
+    observability: Option<&SharedObservabilityStore>,
+    node_id: &str,
+    message: String,
+) {
+    emit_trigger_failure(app, workflow_id, observability, node_id, "MQTT 触发失败", message);
+}
+
+fn emit_trigger_failure(
+    app: &AppHandle,
+    workflow_id: &str,
+    observability: Option<&SharedObservabilityStore>,
+    node_id: &str,
+    label: &str,
+    message: String,
+) {
     let context = WorkflowContext::new(Value::Object(Default::default()));
     if let Some(store) = observability {
         let _ = tauri::async_runtime::block_on(store.record_external_failure(
             node_id,
-            "串口触发失败".to_owned(),
+            label.to_owned(),
             Some(message.clone()),
             Some(context.trace_id.to_string()),
             None,
