@@ -13,6 +13,8 @@ const CONNECTION_DEFAULTS: FlowgramConnectionDefaults = {
   modbus: null,
   serial: null,
   mqtt: null,
+  http: null,
+  bark: null,
 };
 
 describe('normalizeFlowgramNodeJson', () => {
@@ -123,19 +125,35 @@ describe('normalizeNodeConfig', () => {
     expect(result).toEqual({ script: 'payload' });
   });
 
-  it('barkPush 节点会补齐默认 Bark 配置', () => {
+  it('barkPush 节点会剥离传输配置并补齐通知字段默认值', () => {
     const result = normalizeNodeConfig('barkPush', {
       device_key: 'demo-key',
       content_mode: 'markdown',
     });
 
     expect(result).toMatchObject({
-      server_url: 'https://api.day.app',
-      device_key: 'demo-key',
       content_mode: 'markdown',
       level: 'active',
-      request_timeout_ms: 4000,
     });
+    expect(result).not.toHaveProperty('server_url');
+    expect(result).not.toHaveProperty('device_key');
+    expect(result).not.toHaveProperty('request_timeout_ms');
+  });
+
+  it('httpClient 节点会剥离传输配置并保留消息模板配置', () => {
+    const result = normalizeNodeConfig('httpClient', {
+      url: 'https://example.com/hook',
+      method: 'POST',
+      body_mode: 'template',
+    });
+
+    expect(result).toMatchObject({
+      body_mode: 'template',
+      title_template: expect.any(String),
+    });
+    expect(result).not.toHaveProperty('url');
+    expect(result).not.toHaveProperty('method');
+    expect(result).not.toHaveProperty('request_timeout_ms');
   });
 });
 

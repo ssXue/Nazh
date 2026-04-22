@@ -1189,13 +1189,26 @@ async fn http_client_node_posts_payload_and_records_response() {
         }
     });
 
+    let connection_manager = shared_connection_manager();
+    let connection_id = format!("dingtalk-alert-{}", Uuid::new_v4());
+    connection_manager
+        .upsert_connection(ConnectionDefinition {
+            id: connection_id.clone(),
+            kind: "http".to_owned(),
+            metadata: json!({
+                "url": format!("http://{address}/robot"),
+                "method": "POST",
+            }),
+        })
+        .await;
+
     let node = match HttpClientNode::new(
         "dingtalk-alert",
         HttpClientNodeConfig {
-            url: format!("http://{address}/robot"),
-            method: "POST".to_owned(),
+            connection_id: Some(connection_id),
             ..HttpClientNodeConfig::default()
         },
+        connection_manager.clone(),
     ) {
         Ok(n) => n,
         Err(e) => panic!("HttpClientNode 创建失败: {e}"),
@@ -1327,21 +1340,35 @@ async fn http_alarm_node_renders_dingtalk_markdown_body() {
         }
     });
 
+    let connection_manager = shared_connection_manager();
+    let connection_id = format!("http-alarm-{}", Uuid::new_v4());
+    connection_manager
+        .upsert_connection(ConnectionDefinition {
+            id: connection_id.clone(),
+            kind: "http".to_owned(),
+            metadata: json!({
+                "url": format!("http://{address}/robot"),
+                "method": "POST",
+                "webhook_kind": "dingtalk",
+                "content_type": "application/json",
+                "request_timeout_ms": 2_500,
+                "at_mobiles": ["13800000000"],
+            }),
+        })
+        .await;
+
     let node = match HttpClientNode::new(
         "http_alarm",
         HttpClientNodeConfig {
-            url: format!("http://{address}/robot"),
-            method: "POST".to_owned(),
-            webhook_kind: "dingtalk".to_owned(),
+            connection_id: Some(connection_id),
             body_mode: "dingtalk_markdown".to_owned(),
-            request_timeout_ms: 2_500,
             title_template: "Nazh 告警 · {{payload.tag}} · {{payload.severity}}".to_owned(),
             body_template:
                 "### 告警\n- 设备：{{payload.tag}}\n- 严重级别：{{payload.severity}}\n- 温度：{{payload.temperature_c}}"
                     .to_owned(),
-            at_mobiles: vec!["13800000000".to_owned()],
             ..HttpClientNodeConfig::default()
         },
+        connection_manager.clone(),
     ) {
         Ok(n) => n,
         Err(e) => panic!("HttpClientNode 创建失败: {e}"),
@@ -1520,8 +1547,14 @@ async fn mqtt_publish_node_requires_connection() {
     let trace_id = Uuid::new_v4();
     let result = node.transform(trace_id, json!({})).await;
 
-    assert!(result.is_err(), "mqtt publish without connection should fail");
-    let error_message = result.err().unwrap_or_else(|| panic!("expected error")).to_string();
+    assert!(
+        result.is_err(),
+        "mqtt publish without connection should fail"
+    );
+    let error_message = result
+        .err()
+        .unwrap_or_else(|| panic!("expected error"))
+        .to_string();
     assert!(
         error_message.contains("连接资源"),
         "error should mention connection requirement: {error_message}"

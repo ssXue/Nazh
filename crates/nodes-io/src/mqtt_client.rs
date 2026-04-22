@@ -132,31 +132,25 @@ impl MqttClientNode {
         let (client, mut eventloop) = rumqttc::AsyncClient::new(mqttoptions, 10);
 
         // 等待连接确认
-        tokio::time::timeout(
-            std::time::Duration::from_secs(10),
-            async {
-                loop {
-                    match eventloop.poll().await {
-                        Ok(rumqttc::Event::Incoming(rumqttc::Packet::ConnAck(ack))) => {
-                            if ack.code == rumqttc::ConnectReturnCode::Success {
-                                return Ok(());
-                            }
-                            return Err(format!(
-                                "MQTT broker 拒绝连接: {:?}",
-                                ack.code
-                            ));
+        tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            loop {
+                match eventloop.poll().await {
+                    Ok(rumqttc::Event::Incoming(rumqttc::Packet::ConnAck(ack))) => {
+                        if ack.code == rumqttc::ConnectReturnCode::Success {
+                            return Ok(());
                         }
-                        Ok(rumqttc::Event::Incoming(rumqttc::Packet::Disconnect)) => {
-                            return Err("MQTT broker 断开连接".to_owned());
-                        }
-                        Err(error) => {
-                            return Err(format!("MQTT 连接错误: {error}"));
-                        }
-                        _ => {}
+                        return Err(format!("MQTT broker 拒绝连接: {:?}", ack.code));
                     }
+                    Ok(rumqttc::Event::Incoming(rumqttc::Packet::Disconnect)) => {
+                        return Err("MQTT broker 断开连接".to_owned());
+                    }
+                    Err(error) => {
+                        return Err(format!("MQTT 连接错误: {error}"));
+                    }
+                    _ => {}
                 }
-            },
-        )
+            }
+        })
         .await
         .map_err(|_| {
             EngineError::stage_execution(
@@ -165,9 +159,7 @@ impl MqttClientNode {
                 "MQTT 连接超时（10 秒）".to_owned(),
             )
         })?
-        .map_err(|msg: String| {
-            EngineError::stage_execution(self.id.clone(), trace_id, msg)
-        })?;
+        .map_err(|msg: String| EngineError::stage_execution(self.id.clone(), trace_id, msg))?;
 
         let qos = normalize_mqtt_qos(self.config.qos);
         client
@@ -182,11 +174,7 @@ impl MqttClientNode {
             })?;
 
         // 等待发送完成
-        let _ = tokio::time::timeout(
-            std::time::Duration::from_secs(5),
-            eventloop.poll(),
-        )
-        .await;
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), eventloop.poll()).await;
 
         Ok(json!({
             "published_topic": topic,
@@ -278,7 +266,9 @@ impl NodeTrait for MqttClientNode {
         };
 
         let mut guard = self.connection_manager.acquire(conn_id).await?;
-        let publish_info = self.publish_payload(trace_id, &mut guard, payload.clone()).await?;
+        let publish_info = self
+            .publish_payload(trace_id, &mut guard, payload.clone())
+            .await?;
 
         let mut metadata = Map::from_iter([(
             "mqtt".to_owned(),

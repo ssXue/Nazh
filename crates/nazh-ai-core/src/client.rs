@@ -99,7 +99,6 @@ impl OpenAiCompatibleService {
     }
 }
 
-
 struct ResolvedProvider {
     base_url: String,
     api_key: String,
@@ -304,7 +303,10 @@ impl AiService for OpenAiCompatibleService {
             )));
         }
 
-        let model = request.model.clone().unwrap_or(provider.default_model.clone());
+        let model = request
+            .model
+            .clone()
+            .unwrap_or(provider.default_model.clone());
         let timeout_ms = request.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS);
 
         let body = ChatCompletionPayload {
@@ -351,9 +353,7 @@ impl AiService for OpenAiCompatibleService {
                 let chunk = match chunk_result {
                     Ok(bytes) => bytes,
                     Err(error) => {
-                        let _ = tx
-                            .send(Err(AiError::NetworkError(error.to_string())))
-                            .await;
+                        let _ = tx.send(Err(AiError::NetworkError(error.to_string()))).await;
                         return;
                     }
                 };
@@ -369,7 +369,13 @@ impl AiService for OpenAiCompatibleService {
                     }
 
                     if line == "data: [DONE]" {
-                        let _ = tx.send(Ok(StreamChunk { delta: String::new(), thinking: None, done: true })).await;
+                        let _ = tx
+                            .send(Ok(StreamChunk {
+                                delta: String::new(),
+                                thinking: None,
+                                done: true,
+                            }))
+                            .await;
                         return;
                     }
 
@@ -383,7 +389,8 @@ impl AiService for OpenAiCompatibleService {
                             let content_delta = choice.delta.content.clone().unwrap_or_default();
                             let thinking_delta = choice.delta.thinking.clone();
                             let has_content = !content_delta.is_empty();
-                            let has_thinking = thinking_delta.as_ref().is_some_and(|s| !s.is_empty());
+                            let has_thinking =
+                                thinking_delta.as_ref().is_some_and(|s| !s.is_empty());
 
                             if has_content || has_thinking {
                                 if tx
@@ -403,7 +410,13 @@ impl AiService for OpenAiCompatibleService {
                 }
             }
 
-            let _ = tx.send(Ok(StreamChunk { delta: String::new(), thinking: None, done: true })).await;
+            let _ = tx
+                .send(Ok(StreamChunk {
+                    delta: String::new(),
+                    thinking: None,
+                    done: true,
+                }))
+                .await;
         });
 
         Ok(rx)

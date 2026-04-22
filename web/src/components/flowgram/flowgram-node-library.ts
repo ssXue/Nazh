@@ -56,25 +56,16 @@ export interface NodeSeed {
     quantity?: number;
     base_value?: number;
     amplitude?: number;
-    url?: string;
-    method?: string;
-    headers?: Record<string, unknown>;
-    webhook_kind?: string;
     body_mode?: string;
-    content_type?: string;
-    request_timeout_ms?: number;
     body_template?: string;
     title_template?: string;
-    at_mobiles?: string[];
-    at_all?: boolean;
-    server_url?: string;
-    device_key?: string;
     content_mode?: string;
     level?: string;
     badge?: string | number;
     sound?: string;
     icon?: string;
     group?: string;
+    url?: string;
     copy?: string;
     image?: string;
     auto_copy?: boolean;
@@ -108,6 +99,8 @@ export interface FlowgramConnectionDefaults {
   modbus: string | null;
   serial: string | null;
   mqtt: string | null;
+  http: string | null;
+  bark: string | null;
 }
 
 interface FlowgramNodeData {
@@ -121,16 +114,9 @@ interface FlowgramNodeData {
     script?: string;
     ai?: FlowgramScriptAiConfig;
     branches?: FlowgramLogicBranch[];
-    webhook_kind?: string;
     body_mode?: string;
-    content_type?: string;
-    request_timeout_ms?: number;
     body_template?: string;
     title_template?: string;
-    at_mobiles?: string[];
-    at_all?: boolean;
-    server_url?: string;
-    device_key?: string;
     content_mode?: string;
     level?: string;
     badge?: string | number;
@@ -304,8 +290,6 @@ const NODE_TEMPLATES: FlowgramPaletteItem[] = [
       label: 'Bark Alert',
       timeoutMs: 1000,
       config: {
-        server_url: 'https://api.day.app',
-        device_key: '',
         content_mode: 'body',
         title_template: DEFAULT_BARK_TITLE_TEMPLATE,
         subtitle_template: '{{payload.severity}}',
@@ -321,7 +305,6 @@ const NODE_TEMPLATES: FlowgramPaletteItem[] = [
         auto_copy: false,
         call: false,
         archive_mode: 'inherit',
-        request_timeout_ms: 4000,
       },
     },
   },
@@ -337,19 +320,9 @@ const NODE_TEMPLATES: FlowgramPaletteItem[] = [
       label: 'HTTP Alert',
       timeoutMs: 1000,
       config: {
-        method: 'POST',
-        url: 'https://oapi.dingtalk.com/robot/send?access_token=demo',
-        webhook_kind: 'dingtalk',
         body_mode: 'dingtalk_markdown',
-        content_type: 'application/json',
-        request_timeout_ms: 4000,
         title_template: DEFAULT_HTTP_ALARM_TITLE_TEMPLATE,
         body_template: DEFAULT_HTTP_ALARM_BODY_TEMPLATE,
-        at_mobiles: [],
-        at_all: false,
-        headers: {
-          'X-Alarm-Source': 'nazh',
-        },
       },
     },
   },
@@ -658,28 +631,27 @@ export function normalizeNodeConfig(
   }
 
   if (nodeType === 'httpClient') {
-    const url = typeof rawConfig.url === 'string' ? rawConfig.url : '';
+    const legacyUrl = typeof rawConfig.url === 'string' ? rawConfig.url : '';
+    const {
+      url: _unusedUrl,
+      method: _unusedMethod,
+      headers: _unusedHeaders,
+      webhook_kind: rawWebhookKind,
+      content_type: _unusedContentType,
+      request_timeout_ms: _unusedRequestTimeoutMs,
+      at_mobiles: _unusedAtMobiles,
+      at_all: _unusedAtAll,
+      ...restConfig
+    } = rawConfig;
     const webhookKind =
-      typeof rawConfig.webhook_kind === 'string' && rawConfig.webhook_kind.trim()
-        ? rawConfig.webhook_kind
-        : inferHttpWebhookKind(url);
+      typeof rawWebhookKind === 'string' && rawWebhookKind.trim()
+        ? rawWebhookKind
+        : inferHttpWebhookKind(legacyUrl);
     const bodyMode = normalizeHttpBodyMode(rawConfig.body_mode, webhookKind);
 
     return {
-      ...rawConfig,
-      url,
-      method: typeof rawConfig.method === 'string' ? rawConfig.method : 'POST',
-      headers: isRecord(rawConfig.headers) ? rawConfig.headers : {},
-      webhook_kind: webhookKind,
+      ...restConfig,
       body_mode: bodyMode,
-      content_type:
-        typeof rawConfig.content_type === 'string' && rawConfig.content_type.trim()
-          ? rawConfig.content_type
-          : 'application/json',
-      request_timeout_ms:
-        typeof rawConfig.request_timeout_ms === 'number' && Number.isFinite(rawConfig.request_timeout_ms)
-          ? Math.max(500, Math.round(rawConfig.request_timeout_ms))
-          : 4000,
       title_template:
         typeof rawConfig.title_template === 'string'
           ? rawConfig.title_template
@@ -690,21 +662,19 @@ export function normalizeNodeConfig(
           : bodyMode === 'dingtalk_markdown'
             ? DEFAULT_HTTP_ALARM_BODY_TEMPLATE
             : '',
-      at_mobiles: Array.isArray(rawConfig.at_mobiles)
-        ? rawConfig.at_mobiles.filter((value): value is string => typeof value === 'string')
-        : [],
-      at_all: rawConfig.at_all === true,
     };
   }
 
   if (nodeType === 'barkPush') {
+    const {
+      server_url: _unusedServerUrl,
+      device_key: _unusedDeviceKey,
+      request_timeout_ms: _unusedRequestTimeoutMs,
+      ...restConfig
+    } = rawConfig;
+
     return {
-      ...rawConfig,
-      server_url:
-        typeof rawConfig.server_url === 'string' && rawConfig.server_url.trim()
-          ? rawConfig.server_url
-          : 'https://api.day.app',
-      device_key: typeof rawConfig.device_key === 'string' ? rawConfig.device_key : '',
+      ...restConfig,
       content_mode: rawConfig.content_mode === 'markdown' ? 'markdown' : 'body',
       title_template:
         typeof rawConfig.title_template === 'string'
@@ -740,11 +710,6 @@ export function normalizeNodeConfig(
         rawConfig.archive_mode === 'archive' || rawConfig.archive_mode === 'skip'
           ? rawConfig.archive_mode
           : 'inherit',
-      request_timeout_ms:
-        typeof rawConfig.request_timeout_ms === 'number' &&
-        Number.isFinite(rawConfig.request_timeout_ms)
-          ? Math.max(500, Math.round(rawConfig.request_timeout_ms))
-          : 4000,
     };
   }
 
@@ -994,17 +959,9 @@ export function buildDefaultNodeSeed(kind: NazhNodeKind): NodeSeed {
         label: '',
         timeoutMs: 1000,
         config: {
-          url: '',
-          method: 'POST',
-          headers: {},
-          webhook_kind: 'generic',
           body_mode: 'json',
-          content_type: 'application/json',
-          request_timeout_ms: 4000,
           title_template: DEFAULT_HTTP_ALARM_TITLE_TEMPLATE,
           body_template: '',
-          at_mobiles: [],
-          at_all: false,
         },
       };
     case 'barkPush':
@@ -1015,8 +972,6 @@ export function buildDefaultNodeSeed(kind: NazhNodeKind): NodeSeed {
         label: '',
         timeoutMs: 1000,
         config: {
-          server_url: 'https://api.day.app',
-          device_key: '',
           content_mode: 'body',
           title_template: DEFAULT_BARK_TITLE_TEMPLATE,
           subtitle_template: '{{payload.severity}}',
@@ -1032,7 +987,6 @@ export function buildDefaultNodeSeed(kind: NazhNodeKind): NodeSeed {
           auto_copy: false,
           call: false,
           archive_mode: 'inherit',
-          request_timeout_ms: 4000,
         },
       };
     case 'sqlWriter':
@@ -1113,6 +1067,10 @@ function resolveDefaultConnectionId(
       return connectionDefaults.serial;
     case 'mqttClient':
       return connectionDefaults.mqtt;
+    case 'httpClient':
+      return connectionDefaults.http;
+    case 'barkPush':
+      return connectionDefaults.bark;
     default:
       return null;
   }

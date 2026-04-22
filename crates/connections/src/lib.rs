@@ -1227,6 +1227,25 @@ fn validate_connection_definition(kind: &str, metadata: &Value) -> Result<(), St
 
             Url::parse(url).map_err(|error| format!("HTTP URL 无效: {error}"))?;
         }
+        "bark" | "bark_push" => {
+            let device_key = metadata
+                .and_then(|value| value.get("device_key"))
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .unwrap_or_default();
+            if device_key.is_empty() {
+                return Err("Bark 连接需要配置 device_key 或完整推送 URL".to_owned());
+            }
+
+            let server_url = metadata
+                .and_then(|value| value.get("server_url"))
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .unwrap_or_default();
+            if !server_url.is_empty() {
+                Url::parse(server_url).map_err(|error| format!("Bark server_url 无效: {error}"))?;
+            }
+        }
         _ => {}
     }
 

@@ -185,6 +185,26 @@ function isMqttConnectionType(connectionType: string): boolean {
   return normalizedConnectionType(connectionType) === 'mqtt';
 }
 
+function isHttpConnectionType(connectionType: string): boolean {
+  switch (normalizedConnectionType(connectionType)) {
+    case 'http':
+    case 'http_sink':
+      return true;
+    default:
+      return false;
+  }
+}
+
+function isBarkConnectionType(connectionType: string): boolean {
+  switch (normalizedConnectionType(connectionType)) {
+    case 'bark':
+    case 'bark_push':
+      return true;
+    default:
+      return false;
+  }
+}
+
 function sanitizeExportFileSegment(value: string): string {
   const normalized = value
     .trim()
@@ -610,15 +630,13 @@ function FlowgramNodeCard(props: FlowgramNodeMaterialProps) {
       : nodeType === 'loop'
         ? rawData?.config?.script ?? 'return array or count'
         : nodeType === 'httpClient'
-        ? rawData?.config?.webhook_kind === 'dingtalk'
-          ? `钉钉报警 · ${rawData?.config?.method ?? 'POST'}`
-          : `${rawData?.config?.method ?? 'POST'} ${rawData?.config?.url ?? ''}`.trim()
+        ? rawData?.connectionId
+          ? `Connection Studio · ${rawData.connectionId}`
+          : '未绑定 HTTP 连接'
         : nodeType === 'barkPush'
-          ? rawData?.config?.group
-            ? `Bark · ${rawData.config.group}`
-            : rawData?.config?.device_key
-              ? `Bark · ${rawData.config.level ?? 'active'}`
-              : '未配置 Bark Key'
+          ? rawData?.connectionId
+            ? `Connection Studio · ${rawData.connectionId}`
+            : '未绑定 Bark 连接'
         : nodeType === 'sqlWriter'
           ? `${rawData?.config?.table ?? 'workflow_logs'} → ${rawData?.config?.database_path ?? './nazh-local.sqlite3'}`
         : nodeType === 'debugConsole'
@@ -1135,12 +1153,18 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
       connections.find((connection) => isSerialConnectionType(connection.type))?.id ?? null;
     const mqttConnectionId =
       connections.find((connection) => isMqttConnectionType(connection.type))?.id ?? null;
+    const httpConnectionId =
+      connections.find((connection) => isHttpConnectionType(connection.type))?.id ?? null;
+    const barkConnectionId =
+      connections.find((connection) => isBarkConnectionType(connection.type))?.id ?? null;
 
     return {
       any: anyConnectionId,
       modbus: modbusConnectionId,
       serial: serialConnectionId,
       mqtt: mqttConnectionId,
+      http: httpConnectionId,
+      bark: barkConnectionId,
     };
   }, [connections]);
 

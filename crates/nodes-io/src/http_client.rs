@@ -12,6 +12,7 @@ use serde_json::{Map, Value, json};
 use uuid::Uuid;
 
 use crate::template::{self, TemplateVars};
+use connections::{SharedConnectionManager, connection_metadata};
 use nazh_core::{EngineError, NodeExecution, NodeTrait, into_payload_map};
 
 fn default_http_method() -> String {
@@ -151,6 +152,8 @@ fn prepare_http_request_body(
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HttpClientNodeConfig {
+    #[serde(default)]
+    pub connection_id: Option<String>,
     pub url: String,
     #[serde(default = "default_http_method")]
     pub method: String,
@@ -177,6 +180,7 @@ pub struct HttpClientNodeConfig {
 impl Default for HttpClientNodeConfig {
     fn default() -> Self {
         Self {
+            connection_id: None,
             url: String::new(),
             method: default_http_method(),
             headers: Map::new(),
@@ -199,6 +203,7 @@ pub struct HttpClientNode {
     id: String,
     config: HttpClientNodeConfig,
     client: reqwest::Client,
+    connection_manager: SharedConnectionManager,
 }
 
 impl HttpClientNode {
@@ -207,7 +212,11 @@ impl HttpClientNode {
     /// # Errors
     ///
     /// 当 `reqwest::Client` 构建失败时返回 `EngineError`（例如 TLS 后端初始化异常）。
-    pub fn new(id: impl Into<String>, config: HttpClientNodeConfig) -> Result<Self, EngineError> {
+    pub fn new(
+        id: impl Into<String>,
+        config: HttpClientNodeConfig,
+        connection_manager: SharedConnectionManager,
+    ) -> Result<Self, EngineError> {
         let id = id.into();
         let client = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::limited(10))
@@ -215,7 +224,47 @@ impl HttpClientNode {
             .map_err(|error| {
                 EngineError::node_config(id.clone(), format!("HTTP 客户端初始化失败: {error}"))
             })?;
-        Ok(Self { id, config, client })
+        Ok(Self {
+            id,
+            config,
+            client,
+            connection_manager,
+        })
+    }
+
+    fn resolve_config(
+        &self,
+        connection_metadata: Option<&Value>,
+    ) -> Result<HttpClientNodeConfig, EngineError> {
+        let mut config_value = serde_json::to_value(&self.config)
+            .map_err(|error| EngineError::node_config(self.id.clone(), error.to_string()))?;
+
+        if let Some(metadata) = connection_metadata.and_then(Value::as_object) {
+            let Some(config_map) = config_value.as_object_mut() else {
+                return Err(EngineError::node_config(
+                    self.id.clone(),
+                    "HTTP Client 配置格式无效".to_owned(),
+                ));
+            };
+
+            for key in [
+                "url",
+                "method",
+                "headers",
+                "webhook_kind",
+                "content_type",
+                "request_timeout_ms",
+                "at_mobiles",
+                "at_all",
+            ] {
+                if let Some(value) = metadata.get(key) {
+                    config_map.insert(key.to_owned(), value.clone());
+                }
+            }
+        }
+
+        serde_json::from_value(config_value)
+            .map_err(|error| EngineError::node_config(self.id.clone(), error.to_string()))
     }
 }
 
@@ -228,9 +277,22 @@ impl NodeTrait for HttpClientNode {
         trace_id: Uuid,
         payload: Value,
     ) -> Result<NodeExecution, EngineError> {
-        let method = self.config.method.trim().to_uppercase();
-        let url = self.config.url.trim().to_owned();
+        let connection_id = self.config.connection_id.as_deref().ok_or_else(|| {
+            EngineError::node_config(
+                self.id.clone(),
+                "HTTP Client 节点需要在 Connection Studio 中绑定一个 HTTP / Webhook 连接",
+            )
+        })?;
+        let mut guard = Some(self.connection_manager.acquire(connection_id).await?);
+        let resolved_config =
+            self.resolve_config(guard.as_ref().map(connections::ConnectionGuard::metadata))?;
+
+        let method = resolved_config.method.trim().to_uppercase();
+        let url = resolved_config.url.trim().to_owned();
         if url.is_empty() {
+            if let Some(connection_guard) = &mut guard {
+                connection_guard.mark_failure("HTTP Client 节点需要配置 URL");
+            }
             return Err(EngineError::node_config(
                 self.id.clone(),
                 "HTTP Client 节点需要配置 URL",
@@ -239,10 +301,10 @@ impl NodeTrait for HttpClientNode {
 
         let now = Utc::now();
         let requested_at = now.to_rfc3339();
-        let request_timeout_ms = self.config.request_timeout_ms.max(500);
+        let request_timeout_ms = resolved_config.request_timeout_ms.max(500);
         let (payload_body, content_type, webhook_kind, body_mode) = prepare_http_request_body(
             &self.id,
-            &self.config,
+            &resolved_config,
             &payload,
             &trace_id,
             &now,
@@ -258,14 +320,13 @@ impl NodeTrait for HttpClientNode {
             .request(reqwest_method, &url)
             .timeout(std::time::Duration::from_millis(request_timeout_ms));
 
-        for (key, value) in &self.config.headers {
+        for (key, value) in &resolved_config.headers {
             request = request.header(key.as_str(), value_to_header_string(value));
         }
 
         let body_preview = template::truncate(&payload_body, 320);
         if method != "GET" && method != "HEAD" {
-            let has_content_type_header = self
-                .config
+            let has_content_type_header = resolved_config
                 .headers
                 .keys()
                 .any(|key| key.eq_ignore_ascii_case("content-type"));
@@ -275,39 +336,62 @@ impl NodeTrait for HttpClientNode {
             request = request.body(payload_body);
         }
 
-        let response = request.send().await.map_err(|error| {
-            EngineError::stage_execution(
-                self.id.clone(),
-                trace_id,
-                format!("HTTP 请求失败: {error}"),
-            )
-        })?;
+        let response = match request.send().await {
+            Ok(response) => response,
+            Err(error) => {
+                let message = format!("HTTP 请求失败: {error}");
+                if let Some(connection_guard) = &mut guard {
+                    connection_guard.mark_failure(&message);
+                }
+                return Err(EngineError::stage_execution(
+                    self.id.clone(),
+                    trace_id,
+                    message,
+                ));
+            }
+        };
 
         let status_code = response.status().as_u16();
-        let response_body = response.text().await.map_err(|error| {
-            EngineError::stage_execution(
-                self.id.clone(),
-                trace_id,
-                format!("读取 HTTP 响应体失败: {error}"),
-            )
-        })?;
+        let response_body = match response.text().await {
+            Ok(body) => body,
+            Err(error) => {
+                let message = format!("读取 HTTP 响应体失败: {error}");
+                if let Some(connection_guard) = &mut guard {
+                    connection_guard.mark_failure(&message);
+                }
+                return Err(EngineError::stage_execution(
+                    self.id.clone(),
+                    trace_id,
+                    message,
+                ));
+            }
+        };
         let response_value = parse_json_or_string(&response_body);
 
         if status_code >= 400 {
+            let message = format!(
+                "HTTP 请求返回错误状态码 {status_code}: {}",
+                template::truncate(&template::value_to_display_string(&response_value), 240)
+            );
+            if let Some(connection_guard) = &mut guard {
+                connection_guard.mark_failure(&message);
+            }
             return Err(EngineError::stage_execution(
                 self.id.clone(),
                 trace_id,
-                format!(
-                    "HTTP 请求返回错误状态码 {status_code}: {}",
-                    template::truncate(&template::value_to_display_string(&response_value), 240)
-                ),
+                message,
             ));
         }
 
         let mut payload_map = into_payload_map(payload);
         payload_map.insert("http_response".to_owned(), response_value);
 
-        let metadata = serde_json::Map::from_iter([(
+        let mut metadata = serde_json::Map::new();
+        if let Some(connection_guard) = guard.as_ref() {
+            let (key, value) = connection_metadata(&self.id, connection_guard.lease())?;
+            metadata.insert(key, value);
+        }
+        metadata.insert(
             "http".to_owned(),
             json!({
                 "node_id": self.id,
@@ -321,7 +405,11 @@ impl NodeTrait for HttpClientNode {
                 "requested_at": requested_at,
                 "request_body_preview": body_preview,
             }),
-        )]);
+        );
+
+        if let Some(connection_guard) = &mut guard {
+            connection_guard.mark_success();
+        }
 
         Ok(NodeExecution::broadcast(Value::Object(payload_map)).with_metadata(metadata))
     }

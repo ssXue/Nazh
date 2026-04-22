@@ -163,9 +163,7 @@ impl ModbusReadNode {
     ) -> Result<Vec<Value>, EngineError> {
         let register_type = parse_register_type(&self.config.register_type);
         let quantity = self.config.quantity.clamp(1, 125);
-        let slave = tokio_modbus::Slave(
-            u8::try_from(self.config.unit_id).unwrap_or(1),
-        );
+        let slave = tokio_modbus::Slave(u8::try_from(self.config.unit_id).unwrap_or(1));
 
         let socket_addr = std::net::SocketAddr::from((
             host.parse::<std::net::IpAddr>().map_err(|error| {
@@ -327,7 +325,10 @@ impl NodeTrait for ModbusReadNode {
                 ("unit_id".to_owned(), json!(self.config.unit_id)),
                 ("register".to_owned(), json!(self.config.register)),
                 ("register_type".to_owned(), json!(register_type.as_str())),
-                ("quantity".to_owned(), json!(self.config.quantity.clamp(1, 125))),
+                (
+                    "quantity".to_owned(),
+                    json!(self.config.quantity.clamp(1, 125)),
+                ),
                 ("sampled_at".to_owned(), json!(Utc::now().to_rfc3339())),
             ]);
 

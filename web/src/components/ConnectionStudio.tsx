@@ -15,6 +15,7 @@ import type {
   JsonValue,
 } from '../types';
 import {
+  BarkNodeIcon,
   ConnectionsIcon,
   DeleteActionIcon,
   HttpClientNodeIcon,
@@ -128,8 +129,8 @@ const CONNECTION_TEMPLATES: ConnectionTemplate[] = [
   },
   {
     key: 'http',
-    label: 'HTTP Sink',
-    description: '适合作为流程末端的 Web API 或采集平台出口。',
+    label: 'HTTP / Webhook',
+    description: '适合作为 HTTP 上报、Webhook 或钉钉机器人出口。',
     idPrefix: 'http_sink',
     definition: {
       id: 'http_sink',
@@ -137,6 +138,22 @@ const CONNECTION_TEMPLATES: ConnectionTemplate[] = [
       metadata: {
         url: 'https://example.com/ingest',
         method: 'POST',
+        governance: DEFAULT_CONNECTION_GOVERNANCE,
+      },
+    },
+  },
+  {
+    key: 'bark',
+    label: 'Bark Push',
+    description: '适合统一管理 Bark 服务地址、设备 Key 与推送超时。',
+    idPrefix: 'bark_push',
+    definition: {
+      id: 'bark_push',
+      type: 'bark',
+      metadata: {
+        server_url: 'https://api.day.app',
+        device_key: '',
+        request_timeout_ms: 4000,
         governance: DEFAULT_CONNECTION_GOVERNANCE,
       },
     },
@@ -248,10 +265,34 @@ function isSerialConnectionType(connectionType: string): boolean {
   }
 }
 
+function isHttpConnectionType(connectionType: string): boolean {
+  switch (normalizedConnectionType(connectionType)) {
+    case 'http':
+    case 'http_sink':
+      return true;
+    default:
+      return false;
+  }
+}
+
+function isBarkConnectionType(connectionType: string): boolean {
+  switch (normalizedConnectionType(connectionType)) {
+    case 'bark':
+    case 'bark_push':
+      return true;
+    default:
+      return false;
+  }
+}
+
 function connectionIconFor(connectionType: string): ConnectionIconComponent {
   const type = normalizedConnectionType(connectionType);
   if (isSerialConnectionType(type)) {
     return SerialNodeIcon;
+  }
+
+  if (isBarkConnectionType(type)) {
+    return BarkNodeIcon;
   }
 
   switch (type) {
@@ -307,6 +348,15 @@ function connectionParameterBrief(connection: ConnectionDefinition): string {
     const method = metadataString(connection.metadata, 'method', 'POST').toUpperCase();
     const url = metadataString(connection.metadata, 'url', '未配置 URL');
     return `${method} · ${compactConnectionValue(url, '未配置 URL')}`;
+  }
+
+  if (type === 'bark' || type === 'bark_push') {
+    const serverUrl = metadataString(connection.metadata, 'server_url', 'https://api.day.app');
+    const deviceKey = metadataString(connection.metadata, 'device_key', '未配置 Key');
+    return `${compactConnectionValue(serverUrl, 'https://api.day.app')} · ${compactConnectionValue(
+      deviceKey,
+      '未配置 Key',
+    )}`;
   }
 
   const metadataKeys = Object.keys(metadataRecord(connection.metadata)).filter(
@@ -1344,6 +1394,167 @@ export function ConnectionStudio({
                         </label>
                       </>
                     ) : null}
+                  </>
+                ) : null}
+
+                {isHttpConnectionType(activeConnection.type) ? (
+                  <>
+                    <label>
+                      <span>请求地址</span>
+                      <input
+                        value={metadataString(activeConnection.metadata, 'url', '')}
+                        onChange={(event) =>
+                          handleMetadataFieldChange(activeConnectionIndex, 'url', event.target.value)
+                        }
+                        placeholder="https://example.com/webhook"
+                      />
+                    </label>
+                    <label>
+                      <span>请求方法</span>
+                      <select
+                        value={metadataString(activeConnection.metadata, 'method', 'POST').toUpperCase()}
+                        onChange={(event) =>
+                          handleMetadataFieldChange(activeConnectionIndex, 'method', event.target.value)
+                        }
+                      >
+                        <option value="POST">POST</option>
+                        <option value="PUT">PUT</option>
+                        <option value="PATCH">PATCH</option>
+                        <option value="GET">GET</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>Webhook 类型</span>
+                      <select
+                        value={metadataString(activeConnection.metadata, 'webhook_kind', 'generic')}
+                        onChange={(event) =>
+                          handleMetadataFieldChange(
+                            activeConnectionIndex,
+                            'webhook_kind',
+                            event.target.value,
+                          )
+                        }
+                      >
+                        <option value="generic">通用 Webhook</option>
+                        <option value="dingtalk">钉钉机器人</option>
+                      </select>
+                    </label>
+                    {metadataString(activeConnection.metadata, 'webhook_kind', 'generic') === 'dingtalk' ? (
+                      <>
+                        <label>
+                          <span>@ 手机号</span>
+                          <input
+                            value={metadataString(activeConnection.metadata, 'at_mobiles', '')}
+                            onChange={(event) =>
+                              handleMetadataFieldChange(
+                                activeConnectionIndex,
+                                'at_mobiles',
+                                event.target.value,
+                              )
+                            }
+                            placeholder="13800000000,13900000000"
+                          />
+                        </label>
+                        <label>
+                          <span>@ 所有人</span>
+                          <select
+                            value={
+                              metadataBoolean(activeConnection.metadata, 'at_all', false)
+                                ? 'true'
+                                : 'false'
+                            }
+                            onChange={(event) =>
+                              handleMetadataFieldChange(
+                                activeConnectionIndex,
+                                'at_all',
+                                event.target.value === 'true',
+                              )
+                            }
+                          >
+                            <option value="false">否</option>
+                            <option value="true">是</option>
+                          </select>
+                        </label>
+                      </>
+                    ) : null}
+                    <label>
+                      <span>内容类型</span>
+                      <input
+                        value={metadataString(
+                          activeConnection.metadata,
+                          'content_type',
+                          'application/json',
+                        )}
+                        onChange={(event) =>
+                          handleMetadataFieldChange(
+                            activeConnectionIndex,
+                            'content_type',
+                            event.target.value,
+                          )
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>请求超时 ms</span>
+                      <input
+                        type="number"
+                        value={metadataNumber(activeConnection.metadata, 'request_timeout_ms', 4000)}
+                        onChange={(event) =>
+                          handleMetadataFieldChange(
+                            activeConnectionIndex,
+                            'request_timeout_ms',
+                            parseMetadataNumber(event.target.value, 4000),
+                          )
+                        }
+                      />
+                    </label>
+                  </>
+                ) : null}
+
+                {isBarkConnectionType(activeConnection.type) ? (
+                  <>
+                    <label>
+                      <span>服务地址</span>
+                      <input
+                        value={metadataString(activeConnection.metadata, 'server_url', 'https://api.day.app')}
+                        onChange={(event) =>
+                          handleMetadataFieldChange(
+                            activeConnectionIndex,
+                            'server_url',
+                            event.target.value,
+                          )
+                        }
+                        placeholder="https://api.day.app"
+                      />
+                    </label>
+                    <label>
+                      <span>设备 Key / 推送 URL</span>
+                      <input
+                        value={metadataString(activeConnection.metadata, 'device_key', '')}
+                        onChange={(event) =>
+                          handleMetadataFieldChange(
+                            activeConnectionIndex,
+                            'device_key',
+                            event.target.value,
+                          )
+                        }
+                        placeholder="填写 device_key，或粘贴 https://api.day.app/{key}"
+                      />
+                    </label>
+                    <label>
+                      <span>请求超时 ms</span>
+                      <input
+                        type="number"
+                        value={metadataNumber(activeConnection.metadata, 'request_timeout_ms', 4000)}
+                        onChange={(event) =>
+                          handleMetadataFieldChange(
+                            activeConnectionIndex,
+                            'request_timeout_ms',
+                            parseMetadataNumber(event.target.value, 4000),
+                          )
+                        }
+                      />
+                    </label>
                   </>
                 ) : null}
 

@@ -404,6 +404,22 @@ function buildIndustrialAlarmExample(boardName: string): WorkflowGraph {
           register: 40001,
         },
       },
+      {
+        id: 'alarm-http',
+        type: 'http',
+        metadata: {
+          url: 'https://oapi.dingtalk.com/robot/send?access_token=replace_me',
+          method: 'POST',
+          webhook_kind: 'dingtalk',
+          content_type: 'application/json',
+          request_timeout_ms: 4000,
+          at_mobiles: [],
+          at_all: false,
+          headers: {
+            'X-Alarm-Source': 'nazh',
+          },
+        },
+      },
     ],
     nodes: {
       timer_trigger: createNode('timer_trigger', 'timer', 48, 88, {
@@ -479,22 +495,13 @@ function buildIndustrialAlarmExample(boardName: string): WorkflowGraph {
         1288,
         -8,
         {
-          method: 'POST',
-          url: 'https://oapi.dingtalk.com/robot/send?access_token=replace_me',
-          webhook_kind: 'dingtalk',
           body_mode: 'dingtalk_markdown',
-          content_type: 'application/json',
-          request_timeout_ms: 4000,
           title_template: 'Nazh 工业告警 · {{payload.tag}} · {{payload.severity}}',
           body_template:
             '### Nazh 工业告警\n- 设备：{{payload.tag}}\n- 场景：{{payload.scene}}\n- 温度：{{payload.temperature_c}} °C / {{payload.temperature_f}} °F\n- 严重级别：{{payload.severity}}\n- Trace：{{trace_id}}\n- 时间：{{timestamp}}',
-          at_mobiles: [],
-          at_all: false,
-          headers: {
-            'X-Alarm-Source': 'nazh',
-          },
         },
         {
+          connection_id: 'alarm-http',
           timeout_ms: 1500,
         },
       ),
@@ -542,6 +549,9 @@ function buildDataPipelineExample(boardName: string): WorkflowGraph {
         metadata: {
           url: 'https://example.com/iot/ingest',
           method: 'POST',
+          headers: {
+            'X-Source': 'nazh-edge',
+          },
         },
       },
     ],
@@ -589,13 +599,7 @@ function buildDataPipelineExample(boardName: string): WorkflowGraph {
         692,
         4,
         {
-          method: 'POST',
-          url: 'https://example.com/iot/ingest',
           body_mode: 'json',
-          content_type: 'application/json',
-          headers: {
-            'X-Source': 'nazh-edge',
-          },
         },
         {
           connection_id: 'warehouse-http',
@@ -637,6 +641,15 @@ function buildNotificationExample(boardName: string): WorkflowGraph {
           topic: 'factory/alerts',
         },
       },
+      {
+        id: 'notify-http',
+        type: 'http',
+        metadata: {
+          url: 'https://example.com/robot/notify',
+          method: 'POST',
+          content_type: 'application/json',
+        },
+      },
     ],
     nodes: {
       timer_trigger: createNode('timer_trigger', 'timer', 56, 90, {
@@ -674,10 +687,10 @@ function buildNotificationExample(boardName: string): WorkflowGraph {
         984,
         -6,
         {
-          method: 'POST',
-          url: 'https://example.com/robot/notify',
           body_mode: 'json',
-          content_type: 'application/json',
+        },
+        {
+          connection_id: 'notify-http',
         },
       ),
       debug_console: createNode(
@@ -786,16 +799,16 @@ function buildSeedProjects(): ProjectRecord[] {
               host: '192.168.10.99',
               port: 1502,
             },
-          },
-          nodeConfigs: {
-            sql_writer: {
-              database_path: './data/test-edge-runtime.sqlite3',
-            },
-            http_alarm: {
+            'alarm-http': {
               url: 'https://oapi.dingtalk.com/robot/send?access_token=test_replace_me',
               headers: {
                 'X-Alarm-Source': 'nazh-test',
               },
+            },
+          },
+          nodeConfigs: {
+            sql_writer: {
+              database_path: './data/test-edge-runtime.sqlite3',
             },
           },
         }),
@@ -825,11 +838,6 @@ function buildSeedProjects(): ProjectRecord[] {
               url: 'http://127.0.0.1:8787/mock/ingest',
             },
           },
-          nodeConfigs: {
-            forward_http: {
-              url: 'http://127.0.0.1:8787/mock/ingest',
-            },
-          },
         }),
       ],
     ),
@@ -848,8 +856,8 @@ function buildSeedProjects(): ProjectRecord[] {
       [
         createEnvironment('生产环境', '正式机器人通道。'),
         createEnvironment('预演环境', '只输出到调试台，不发送正式通知。', {
-          nodeConfigs: {
-            notify_http: {
+          connections: {
+            'notify-http': {
               url: 'https://example.com/robot/rehearsal',
             },
           },

@@ -47,19 +47,10 @@ interface SelectedNodeDraft {
   mqttTopic: string;
   mqttQos: string;
   mqttPayloadTemplate: string;
-  httpUrl: string;
-  httpMethod: string;
-  httpHeaders: string;
   httpWebhookKind: string;
   httpBodyMode: string;
-  httpContentType: string;
-  httpRequestTimeoutMs: string;
   httpTitleTemplate: string;
   httpBodyTemplate: string;
-  httpAtMobiles: string;
-  httpAtAll: boolean;
-  barkServerUrl: string;
-  barkDeviceKey: string;
   barkContentMode: string;
   barkTitleTemplate: string;
   barkSubtitleTemplate: string;
@@ -75,7 +66,6 @@ interface SelectedNodeDraft {
   barkAutoCopy: boolean;
   barkCall: boolean;
   barkArchiveMode: string;
-  barkRequestTimeoutMs: string;
   sqlDatabasePath: string;
   sqlTable: string;
   debugLabel: string;
@@ -97,6 +87,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function readString(value: unknown, fallback = ''): string {
   return typeof value === 'string' ? value : fallback;
+}
+
+function readConnectionMetadataString(
+  connection: ConnectionDefinition | undefined,
+  key: string,
+  fallback = '',
+): string {
+  if (!connection || !isRecord(connection.metadata)) {
+    return fallback;
+  }
+
+  return readString(connection.metadata[key], fallback);
 }
 
 function readBoolean(value: unknown, fallback: boolean): boolean {
@@ -145,39 +147,69 @@ function parseFiniteNumber(value: string): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function parseHeadersJson(text: string): Record<string, unknown> | null {
-  const normalized = text.trim();
-  if (!normalized) {
-    return {};
-  }
-
-  try {
-    const value = JSON.parse(normalized);
-    return isRecord(value) ? value : null;
-  } catch {
-    return null;
+function isHttpConnectionType(connectionType: string): boolean {
+  switch (connectionType.trim().toLowerCase()) {
+    case 'http':
+    case 'http_sink':
+      return true;
+    default:
+      return false;
   }
 }
 
-function stringifyStringList(value: unknown): string {
-  if (!Array.isArray(value)) {
-    return '';
+function isBarkConnectionType(connectionType: string): boolean {
+  switch (connectionType.trim().toLowerCase()) {
+    case 'bark':
+    case 'bark_push':
+      return true;
+    default:
+      return false;
   }
-
-  return value
-    .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
-    .join(', ');
 }
 
-function parseStringList(value: string): string[] {
-  return value
-    .split(',')
-    .map((item) => item.trim())
-    .filter((item) => item.length > 0);
+function supportsConnectionBinding(nodeType: string): boolean {
+  return (
+    nodeType === 'native' ||
+    nodeType === 'modbusRead' ||
+    nodeType === 'serialTrigger' ||
+    nodeType === 'mqttClient' ||
+    nodeType === 'httpClient' ||
+    nodeType === 'barkPush'
+  );
 }
 
-function isConnectionNode(nodeType: string): boolean {
-  return nodeType === 'native' || nodeType === 'modbusRead' || nodeType === 'serialTrigger' || nodeType === 'mqttClient';
+function connectionMatchesNodeType(nodeType: string, connection: ConnectionDefinition): boolean {
+  switch (nodeType) {
+    case 'serialTrigger':
+      return isSerialConnectionType(connection.type);
+    case 'modbusRead':
+      return connection.type.trim().toLowerCase() === 'modbus' || connection.type.trim().toLowerCase() === 'modbus_tcp';
+    case 'mqttClient':
+      return connection.type.trim().toLowerCase() === 'mqtt';
+    case 'httpClient':
+      return isHttpConnectionType(connection.type);
+    case 'barkPush':
+      return isBarkConnectionType(connection.type);
+    default:
+      return true;
+  }
+}
+
+function compatibleConnectionHint(nodeType: string): string {
+  switch (nodeType) {
+    case 'serialTrigger':
+      return 'serial / uart';
+    case 'modbusRead':
+      return 'modbus';
+    case 'mqttClient':
+      return 'mqtt';
+    case 'httpClient':
+      return 'http / http_sink';
+    case 'barkPush':
+      return 'bark';
+    default:
+      return '任意类型';
+  }
 }
 
 function isSerialConnectionType(connectionType: string): boolean {
@@ -239,8 +271,10 @@ function readNodeDraft(node: FlowNodeEntity): SelectedNodeDraft {
   };
   const config = isRecord(rawData.config) ? rawData.config : {};
   const nodeType = normalizeNodeKind(rawData.nodeType ?? node.flowNodeType);
-  const httpUrl = readString(config.url);
-  const httpWebhookKind = readString(config.webhook_kind, inferHttpWebhookKind(httpUrl));
+  const httpWebhookKind = readString(
+    config.webhook_kind,
+    inferHttpWebhookKind(readString(config.url)),
+  );
   const httpBodyMode = normalizeHttpBodyMode(config.body_mode, httpWebhookKind);
 
   return {
@@ -264,22 +298,13 @@ function readNodeDraft(node: FlowNodeEntity): SelectedNodeDraft {
     mqttTopic: readString(config.topic, ''),
     mqttQos: typeof config.qos === 'number' ? String(config.qos) : '0',
     mqttPayloadTemplate: readString(config.payload_template, ''),
-    httpUrl,
-    httpMethod: readString(config.method, 'POST'),
-    httpHeaders: JSON.stringify(isRecord(config.headers) ? config.headers : {}, null, 2),
     httpWebhookKind,
     httpBodyMode,
-    httpContentType: readString(config.content_type, 'application/json'),
-    httpRequestTimeoutMs: readNumberString(config.request_timeout_ms, '4000'),
     httpTitleTemplate: readString(config.title_template, getDefaultHttpAlarmTitleTemplate()),
     httpBodyTemplate: readString(
       config.body_template,
       httpBodyMode === 'dingtalk_markdown' ? getDefaultHttpAlarmBodyTemplate() : '',
     ),
-    httpAtMobiles: stringifyStringList(config.at_mobiles),
-    httpAtAll: readBoolean(config.at_all, false),
-    barkServerUrl: readString(config.server_url, 'https://api.day.app'),
-    barkDeviceKey: readString(config.device_key),
     barkContentMode: readString(config.content_mode, 'body'),
     barkTitleTemplate: readString(config.title_template, getDefaultBarkTitleTemplate()),
     barkSubtitleTemplate: readString(config.subtitle_template, ''),
@@ -298,7 +323,6 @@ function readNodeDraft(node: FlowNodeEntity): SelectedNodeDraft {
     barkAutoCopy: readBoolean(config.auto_copy, false),
     barkCall: readBoolean(config.call, false),
     barkArchiveMode: readString(config.archive_mode, 'inherit'),
-    barkRequestTimeoutMs: readNumberString(config.request_timeout_ms, '4000'),
     sqlDatabasePath: readString(config.database_path, './nazh-local.sqlite3'),
     sqlTable: readString(config.table, 'workflow_logs'),
     debugLabel: readString(config.label),
@@ -382,27 +406,36 @@ function buildNodeConfig(draft: SelectedNodeDraft, currentConfig: NodeConfigMap)
   }
 
   if (draft.nodeType === 'httpClient') {
+    const {
+      url: _unusedUrl,
+      method: _unusedMethod,
+      headers: _unusedHeaders,
+      webhook_kind: _unusedWebhookKind,
+      content_type: _unusedContentType,
+      request_timeout_ms: _unusedRequestTimeoutMs,
+      at_mobiles: _unusedAtMobiles,
+      at_all: _unusedAtAll,
+      ...restConfig
+    } = currentConfig;
+
     return {
-      ...currentConfig,
-      url: draft.httpUrl.trim(),
-      method: draft.httpMethod.trim().toUpperCase() || 'POST',
-      headers: parseHeadersJson(draft.httpHeaders) ?? (isRecord(currentConfig.headers) ? currentConfig.headers : {}),
-      webhook_kind: draft.httpWebhookKind,
+      ...restConfig,
       body_mode: normalizeHttpBodyMode(draft.httpBodyMode, draft.httpWebhookKind),
-      content_type: draft.httpContentType.trim() || 'application/json',
-      request_timeout_ms: parsePositiveInteger(draft.httpRequestTimeoutMs) ?? 4000,
       title_template: draft.httpTitleTemplate,
       body_template: draft.httpBodyTemplate,
-      at_mobiles: parseStringList(draft.httpAtMobiles),
-      at_all: draft.httpAtAll,
     };
   }
 
   if (draft.nodeType === 'barkPush') {
+    const {
+      server_url: _unusedServerUrl,
+      device_key: _unusedDeviceKey,
+      request_timeout_ms: _unusedRequestTimeoutMs,
+      ...restConfig
+    } = currentConfig;
+
     return {
-      ...currentConfig,
-      server_url: draft.barkServerUrl.trim() || 'https://api.day.app',
-      device_key: draft.barkDeviceKey.trim(),
+      ...restConfig,
       content_mode: draft.barkContentMode === 'markdown' ? 'markdown' : 'body',
       title_template: draft.barkTitleTemplate,
       subtitle_template: draft.barkSubtitleTemplate,
@@ -422,7 +455,6 @@ function buildNodeConfig(draft: SelectedNodeDraft, currentConfig: NodeConfigMap)
       archive_mode: ['inherit', 'archive', 'skip'].includes(draft.barkArchiveMode)
         ? draft.barkArchiveMode
         : 'inherit',
-      request_timeout_ms: parsePositiveInteger(draft.barkRequestTimeoutMs) ?? 4000,
     };
   }
 
@@ -601,17 +633,51 @@ function FlowgramNodeSettingsPanel({
     return '请先启用一个 AI 提供商';
   }, [activeCopilotProvider, aiProviders, preferredCopilotProvider]);
 
+  const selectedConnection = useMemo(
+    () =>
+      draft?.connectionId
+        ? connections.find((connection) => connection.id === draft.connectionId) ?? null
+        : null,
+    [connections, draft?.connectionId],
+  );
+
+  const compatibleConnections = useMemo(
+    () =>
+      draft
+        ? connections.filter((connection) => connectionMatchesNodeType(draft.nodeType, connection))
+        : [],
+    [connections, draft],
+  );
+
+  const usesManagedHttpConnection = Boolean(
+    draft?.nodeType === 'httpClient' &&
+    selectedConnection &&
+    connectionMatchesNodeType('httpClient', selectedConnection),
+  );
+  const usesManagedBarkConnection = Boolean(
+    draft?.nodeType === 'barkPush' &&
+    selectedConnection &&
+    connectionMatchesNodeType('barkPush', selectedConnection),
+  );
+  const resolvedHttpWebhookKind =
+    usesManagedHttpConnection && selectedConnection
+      ? readConnectionMetadataString(
+          selectedConnection,
+          'webhook_kind',
+          inferHttpWebhookKind(readConnectionMetadataString(selectedConnection, 'url')),
+        )
+      : draft?.httpWebhookKind ?? 'generic';
+  const resolvedHttpBodyMode = draft
+    ? normalizeHttpBodyMode(draft.httpBodyMode, resolvedHttpWebhookKind)
+    : 'json';
+
   const diagnostics = useMemo<NodeValidation[]>(() => {
     if (!draft) {
       return [];
     }
 
     const nextDiagnostics: NodeValidation[] = [];
-    const selectedConnection = connections.find((connection) => connection.id === draft.connectionId);
     const parsedTimeoutMs = parseTimeoutMs(draft.timeoutMs);
-    const parsedHeaders = parseHeadersJson(draft.httpHeaders);
-    const parsedRequestTimeoutMs = parsePositiveInteger(draft.httpRequestTimeoutMs);
-    const parsedBarkRequestTimeoutMs = parsePositiveInteger(draft.barkRequestTimeoutMs);
     const parsedBarkBadge = draft.barkBadge.trim()
       ? parseNonNegativeInteger(draft.barkBadge)
       : 0;
@@ -640,7 +706,7 @@ function FlowgramNodeSettingsPanel({
       }
     }
 
-    if (isConnectionNode(draft.nodeType)) {
+    if (supportsConnectionBinding(draft.nodeType)) {
       if (draft.connectionId && !selectedConnection) {
         nextDiagnostics.push({
           tone: 'danger',
@@ -649,18 +715,34 @@ function FlowgramNodeSettingsPanel({
       } else if (selectedConnection) {
         nextDiagnostics.push({
           tone:
-            draft.nodeType === 'serialTrigger' && !isSerialConnectionType(selectedConnection.type)
+            !connectionMatchesNodeType(draft.nodeType, selectedConnection)
               ? 'danger'
               : 'info',
           message:
-            draft.nodeType === 'serialTrigger' && !isSerialConnectionType(selectedConnection.type)
-              ? `串口触发节点需要绑定 serial / uart 类型连接，当前为 ${selectedConnection.type}。`
+            !connectionMatchesNodeType(draft.nodeType, selectedConnection)
+              ? `${draft.nodeType} 节点需要绑定 ${compatibleConnectionHint(draft.nodeType)} 类型连接，当前为 ${selectedConnection.type}。`
               : `已绑定 ${selectedConnection.id} · ${selectedConnection.type}`,
         });
       } else if (draft.nodeType === 'serialTrigger') {
         nextDiagnostics.push({
           tone: 'danger',
           message: '串口触发节点需要在连接资源中绑定一个串口连接。',
+        });
+      } else if (draft.nodeType === 'httpClient') {
+        nextDiagnostics.push({
+          tone: 'danger',
+          message:
+            compatibleConnections.length > 0
+              ? 'HTTP Client 节点必须绑定 Connection Studio 中的 HTTP / Webhook 连接。'
+              : '当前还没有 HTTP / Webhook 连接，请先在 Connection Studio 中新增并绑定。',
+        });
+      } else if (draft.nodeType === 'barkPush') {
+        nextDiagnostics.push({
+          tone: 'danger',
+          message:
+            compatibleConnections.length > 0
+              ? 'Bark Push 节点必须绑定 Connection Studio 中的 Bark 连接。'
+              : '当前还没有 Bark 连接，请先在 Connection Studio 中新增并绑定。',
         });
       } else if (connections.length > 0) {
         nextDiagnostics.push({
@@ -763,35 +845,21 @@ function FlowgramNodeSettingsPanel({
     }
 
     if (draft.nodeType === 'httpClient') {
-      if (!draft.httpUrl.trim()) {
+      if (!usesManagedHttpConnection) {
         nextDiagnostics.push({
           tone: 'danger',
-          message: 'HTTP Client 需要配置 URL。',
+          message: 'HTTP Client 节点需要绑定有效的 HTTP / Webhook 连接。',
         });
       }
 
-      if (parsedHeaders === null) {
-        nextDiagnostics.push({
-          tone: 'danger',
-          message: '请求头 JSON 必须是对象。',
-        });
-      }
-
-      if (parsedRequestTimeoutMs === null) {
-        nextDiagnostics.push({
-          tone: 'danger',
-          message: '请求超时必须是大于 0 的毫秒数。',
-        });
-      }
-
-      if (draft.httpBodyMode === 'template' && !draft.httpBodyTemplate.trim()) {
+      if (resolvedHttpBodyMode === 'template' && !draft.httpBodyTemplate.trim()) {
         nextDiagnostics.push({
           tone: 'warning',
           message: '自定义模板模式下建议填写消息模板。',
         });
       }
 
-      if (draft.httpBodyMode === 'dingtalk_markdown' && !draft.httpTitleTemplate.trim()) {
+      if (resolvedHttpBodyMode === 'dingtalk_markdown' && !draft.httpTitleTemplate.trim()) {
         nextDiagnostics.push({
           tone: 'warning',
           message: '钉钉 Markdown 模式建议填写标题模板。',
@@ -800,17 +868,10 @@ function FlowgramNodeSettingsPanel({
     }
 
     if (draft.nodeType === 'barkPush') {
-      if (!draft.barkDeviceKey.trim()) {
+      if (!usesManagedBarkConnection) {
         nextDiagnostics.push({
           tone: 'danger',
-          message: 'Bark 节点需要配置设备 Key 或推送 URL。',
-        });
-      }
-
-      if (parsedBarkRequestTimeoutMs === null) {
-        nextDiagnostics.push({
-          tone: 'danger',
-          message: 'Bark 请求超时必须是大于 0 的毫秒数。',
+          message: 'Bark Push 节点需要绑定有效的 Bark 连接。',
         });
       }
 
@@ -853,7 +914,20 @@ function FlowgramNodeSettingsPanel({
     }
 
     return nextDiagnostics;
-  }, [activeAiProviderId, activeCopilotProvider, aiProviders, connections, draft, resolvedGlobalAiProvider, stats]);
+  }, [
+    activeAiProviderId,
+    activeCopilotProvider,
+    aiProviders,
+    compatibleConnections.length,
+    connections,
+    draft,
+    resolvedGlobalAiProvider,
+    resolvedHttpBodyMode,
+    selectedConnection,
+    stats,
+    usesManagedBarkConnection,
+    usesManagedHttpConnection,
+  ]);
 
   const branchSummary = useMemo(
     () =>
@@ -981,7 +1055,7 @@ function FlowgramNodeSettingsPanel({
           <span>节点类型</span>
           <input value={draft.nodeType} readOnly />
         </label>
-        {isConnectionNode(draft.nodeType) ? (
+        {supportsConnectionBinding(draft.nodeType) ? (
           <label>
             <span>连接资源</span>
             <select
@@ -1005,13 +1079,20 @@ function FlowgramNodeSettingsPanel({
 
                 updateDraft({ connectionId: value });
               }}
-              disabled={connections.length === 0 && !draft.connectionId}
+              disabled={compatibleConnections.length === 0 && !draft.connectionId}
             >
               <option value="__none__">未绑定</option>
               {draft.connectionId && !connections.some((connection) => connection.id === draft.connectionId) ? (
                 <option value={`__missing__:${draft.connectionId}`}>未注册连接: {draft.connectionId}</option>
               ) : null}
-              {connections.map((connection) => (
+              {selectedConnection &&
+              draft.connectionId &&
+              !connectionMatchesNodeType(draft.nodeType, selectedConnection) ? (
+                <option value={selectedConnection.id}>
+                  不兼容连接: {selectedConnection.id} · {selectedConnection.type}
+                </option>
+              ) : null}
+              {compatibleConnections.map((connection) => (
                 <option key={connection.id} value={connection.id}>
                   {connection.id} · {connection.type}
                 </option>
@@ -1170,52 +1251,18 @@ function FlowgramNodeSettingsPanel({
 
         {draft.nodeType === 'httpClient' ? (
           <>
-            <label>
-              <span>Webhook 类型</span>
-              <select
-                value={draft.httpWebhookKind}
-                onChange={(event) => {
-                  const webhookKind = event.target.value;
-                  updateDraft({
-                    httpWebhookKind: webhookKind,
-                    httpBodyMode: normalizeHttpBodyMode(draft.httpBodyMode, webhookKind),
-                    httpTitleTemplate:
-                      webhookKind === 'dingtalk' && !draft.httpTitleTemplate.trim()
-                        ? getDefaultHttpAlarmTitleTemplate()
-                        : draft.httpTitleTemplate,
-                    httpBodyTemplate:
-                      webhookKind === 'dingtalk' &&
-                      normalizeHttpBodyMode(draft.httpBodyMode, webhookKind) === 'dingtalk_markdown' &&
-                      !draft.httpBodyTemplate.trim()
-                        ? getDefaultHttpAlarmBodyTemplate()
-                        : draft.httpBodyTemplate,
-                  });
-                }}
-              >
-                <option value="generic">通用 Webhook</option>
-                <option value="dingtalk">钉钉机器人</option>
-              </select>
-            </label>
-            <label>
-              <span>请求地址</span>
-              <input value={draft.httpUrl} onChange={(event) => updateDraft({ httpUrl: event.target.value })} />
-            </label>
-            <label>
-              <span>请求方法</span>
-              <select
-                value={draft.httpMethod || 'POST'}
-                onChange={(event) => updateDraft({ httpMethod: event.target.value })}
-              >
-                <option value="POST">POST</option>
-                <option value="PUT">PUT</option>
-                <option value="PATCH">PATCH</option>
-                <option value="GET">GET</option>
-              </select>
-            </label>
+            {selectedConnection ? (
+              <p className="flowgram-form__hint">
+                当前节点的请求地址、方法和超时已由 Connection Studio 中的{' '}
+                <strong>{selectedConnection.id}</strong> 统一管理。
+              </p>
+            ) : (
+              <p className="flowgram-form__hint">请先在上方绑定一个 HTTP / Webhook 连接。</p>
+            )}
             <label>
               <span>载荷模式</span>
               <select
-                value={draft.httpBodyMode}
+                value={resolvedHttpBodyMode}
                 onChange={(event) =>
                   updateDraft({
                     httpBodyMode: event.target.value,
@@ -1232,24 +1279,12 @@ function FlowgramNodeSettingsPanel({
               >
                 <option value="json">JSON Payload</option>
                 <option value="template">自定义模板</option>
-                <option value="dingtalk_markdown">钉钉 Markdown</option>
+                {resolvedHttpWebhookKind === 'dingtalk' ? (
+                  <option value="dingtalk_markdown">钉钉 Markdown</option>
+                ) : null}
               </select>
             </label>
-            <label>
-              <span>内容类型</span>
-              <input
-                value={draft.httpContentType}
-                onChange={(event) => updateDraft({ httpContentType: event.target.value })}
-              />
-            </label>
-            <label>
-              <span>请求超时 ms</span>
-              <input
-                value={draft.httpRequestTimeoutMs}
-                onChange={(event) => updateDraft({ httpRequestTimeoutMs: event.target.value })}
-              />
-            </label>
-            {draft.httpBodyMode === 'dingtalk_markdown' ? (
+            {resolvedHttpBodyMode === 'dingtalk_markdown' ? (
               <label>
                 <span>标题模板</span>
                 <textarea
@@ -1258,65 +1293,28 @@ function FlowgramNodeSettingsPanel({
                 />
               </label>
             ) : null}
-            {draft.httpBodyMode !== 'json' ? (
+            {resolvedHttpBodyMode !== 'json' ? (
               <label>
-                <span>{draft.httpBodyMode === 'dingtalk_markdown' ? '消息模板' : '请求体模板'}</span>
+                <span>{resolvedHttpBodyMode === 'dingtalk_markdown' ? '消息模板' : '请求体模板'}</span>
                 <textarea
                   value={draft.httpBodyTemplate}
                   onChange={(event) => updateDraft({ httpBodyTemplate: event.target.value })}
                 />
               </label>
             ) : null}
-            {draft.httpWebhookKind === 'dingtalk' ? (
-              <>
-                <label>
-                  <span>@ 手机号</span>
-                  <input
-                    value={draft.httpAtMobiles}
-                    onChange={(event) => updateDraft({ httpAtMobiles: event.target.value })}
-                    placeholder="13800000000, 13900000000"
-                  />
-                </label>
-                <label>
-                  <span>@ 所有人</span>
-                  <select
-                    value={draft.httpAtAll ? 'true' : 'false'}
-                    onChange={(event) => updateDraft({ httpAtAll: event.target.value === 'true' })}
-                  >
-                    <option value="false">否</option>
-                    <option value="true">是</option>
-                  </select>
-                </label>
-              </>
-            ) : null}
-            <label>
-              <span>请求头 JSON</span>
-              <textarea
-                value={draft.httpHeaders}
-                onChange={(event) => updateDraft({ httpHeaders: event.target.value })}
-              />
-            </label>
           </>
         ) : null}
 
         {draft.nodeType === 'barkPush' ? (
           <>
-            <label>
-              <span>服务地址</span>
-              <input
-                value={draft.barkServerUrl}
-                onChange={(event) => updateDraft({ barkServerUrl: event.target.value })}
-                placeholder="https://api.day.app"
-              />
-            </label>
-            <label>
-              <span>设备 Key / 推送 URL</span>
-              <input
-                value={draft.barkDeviceKey}
-                onChange={(event) => updateDraft({ barkDeviceKey: event.target.value })}
-                placeholder="填写 device_key，或粘贴 https://api.day.app/{key}"
-              />
-            </label>
+            {selectedConnection ? (
+              <p className="flowgram-form__hint">
+                当前节点的 Bark 服务地址、设备 Key 和超时已由 Connection Studio 中的{' '}
+                <strong>{selectedConnection.id}</strong> 统一管理。
+              </p>
+            ) : (
+              <p className="flowgram-form__hint">请先在上方绑定一个 Bark 连接。</p>
+            )}
             <label>
               <span>内容模式</span>
               <select
@@ -1444,13 +1442,6 @@ function FlowgramNodeSettingsPanel({
                 <option value="archive">强制保存</option>
                 <option value="skip">不保存</option>
               </select>
-            </label>
-            <label>
-              <span>请求超时 ms</span>
-              <input
-                value={draft.barkRequestTimeoutMs}
-                onChange={(event) => updateDraft({ barkRequestTimeoutMs: event.target.value })}
-              />
             </label>
           </>
         ) : null}

@@ -1853,7 +1853,8 @@ async fn load_project_board_files(
     workspace_path: Option<String>,
 ) -> Result<ProjectWorkspaceLoadResult, String> {
     let storage = resolve_project_workspace_storage(&app, workspace_path.as_deref())?;
-    let board_file_paths = list_project_board_file_paths(Path::new(&storage.boards_directory_path))?;
+    let board_file_paths =
+        list_project_board_file_paths(Path::new(&storage.boards_directory_path))?;
     let mut board_files = Vec::with_capacity(board_file_paths.len());
     for file_path in board_file_paths {
         let text = fs::read_to_string(&file_path)
@@ -1924,9 +1925,9 @@ async fn save_project_board_files(
             continue;
         }
 
-        fs::remove_file(&existing_path)
-            .await
-            .map_err(|error| format!("删除旧看板文件失败 `{}`: {error}", existing_path.display()))?;
+        fs::remove_file(&existing_path).await.map_err(|error| {
+            format!("删除旧看板文件失败 `{}`: {error}", existing_path.display())
+        })?;
     }
 
     resolve_project_workspace_storage(&app, workspace_path.as_deref())
@@ -1954,17 +1955,17 @@ async fn save_flowgram_export_file(
             if text.len() > MAX_EXPORT_FILE_BYTES {
                 return Err("导出文件超过最大允许大小（25 MB）".to_owned());
             }
-            fs::write(&target_path, text)
-                .await
-                .map_err(|error| format!("写入导出文件失败 `{}`: {error}", target_path.display()))?;
+            fs::write(&target_path, text).await.map_err(|error| {
+                format!("写入导出文件失败 `{}`: {error}", target_path.display())
+            })?;
         }
         (None, Some(bytes)) => {
             if bytes.len() > MAX_EXPORT_FILE_BYTES {
                 return Err("导出文件超过最大允许大小（25 MB）".to_owned());
             }
-            fs::write(&target_path, bytes)
-                .await
-                .map_err(|error| format!("写入导出文件失败 `{}`: {error}", target_path.display()))?;
+            fs::write(&target_path, bytes).await.map_err(|error| {
+                format!("写入导出文件失败 `{}`: {error}", target_path.display())
+            })?;
         }
         (None, None) => {
             return Err("导出内容不能为空。".to_owned());
@@ -2041,7 +2042,10 @@ fn build_nonconflicting_file_path(dir: &Path, file_name: &str) -> PathBuf {
         .and_then(|value| value.to_str())
         .filter(|value| !value.is_empty())
         .unwrap_or("flowgram-export");
-    let ext = path.extension().and_then(|value| value.to_str()).unwrap_or("");
+    let ext = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("");
 
     let mut index = 2usize;
     loop {
@@ -2601,9 +2605,8 @@ async fn collect_mqtt_root_specs(
             continue;
         }
 
-        let config: nazh_engine::MqttClientNodeConfig = node_definition
-            .parse_config()
-            .map_err(|error| {
+        let config: nazh_engine::MqttClientNodeConfig =
+            node_definition.parse_config().map_err(|error| {
                 EngineError::node_config(node_definition.id.clone(), error.to_string())
             })?;
 
@@ -2611,9 +2614,11 @@ async fn collect_mqtt_root_specs(
             continue;
         }
 
-        let Some(connection_id) = config.connection_id.as_deref().or_else(|| {
-            node_definition.connection_id.as_deref()
-        }) else {
+        let Some(connection_id) = config
+            .connection_id
+            .as_deref()
+            .or_else(|| node_definition.connection_id.as_deref())
+        else {
             continue;
         };
 
@@ -2723,7 +2728,10 @@ async fn run_mqtt_root_subscriber(
     mqtt_root: MqttRootSpec,
     cancel: Arc<AtomicBool>,
 ) {
-    let client_id = format!("nazh-sub-{}", &mqtt_root.node_id[..mqtt_root.node_id.len().min(16)]);
+    let client_id = format!(
+        "nazh-sub-{}",
+        &mqtt_root.node_id[..mqtt_root.node_id.len().min(16)]
+    );
     let mut mqttoptions =
         rumqttc::MqttOptions::new(client_id, mqtt_root.host.clone(), mqtt_root.port);
     mqttoptions.set_keep_alive(std::time::Duration::from_secs(30));
