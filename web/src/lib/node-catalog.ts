@@ -32,6 +32,7 @@ export const NODE_CATEGORY_MAP: Record<
     description: '读取 Modbus 寄存器并将遥测数据写入 payload',
   },
   httpClient: { category: '外部通信', description: '将 payload 发送到 HTTP 端点' },
+  barkPush: { category: '外部通信', description: '向 Bark 服务发送 iOS 推送通知' },
   sqlWriter: { category: '持久化', description: '将当前 payload 持久化到本地 SQLite 表' },
   debugConsole: { category: '调试工具', description: '将 payload 打印到调试控制台以供检查' },
 };

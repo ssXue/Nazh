@@ -16,6 +16,7 @@ export type NazhNodeKind =
   | 'tryCatch'
   | 'loop'
   | 'httpClient'
+  | 'barkPush'
   | 'sqlWriter'
   | 'debugConsole';
 export type NazhNodeDisplayType = NazhNodeKind;
@@ -66,6 +67,19 @@ export interface NodeSeed {
     title_template?: string;
     at_mobiles?: string[];
     at_all?: boolean;
+    server_url?: string;
+    device_key?: string;
+    content_mode?: string;
+    level?: string;
+    badge?: string | number;
+    sound?: string;
+    icon?: string;
+    group?: string;
+    copy?: string;
+    image?: string;
+    auto_copy?: boolean;
+    call?: boolean;
+    archive_mode?: string;
     database_path?: string;
     table?: string;
     pretty?: boolean;
@@ -115,6 +129,20 @@ interface FlowgramNodeData {
     title_template?: string;
     at_mobiles?: string[];
     at_all?: boolean;
+    server_url?: string;
+    device_key?: string;
+    content_mode?: string;
+    level?: string;
+    badge?: string | number;
+    sound?: string;
+    icon?: string;
+    group?: string;
+    url?: string;
+    copy?: string;
+    image?: string;
+    auto_copy?: boolean;
+    call?: boolean;
+    archive_mode?: string;
     [key: string]: unknown;
   };
 }
@@ -162,6 +190,9 @@ const DEFAULT_HTTP_ALARM_TITLE_TEMPLATE =
   'Nazh 工业告警 · {{payload.tag}} · {{payload.severity}}';
 const DEFAULT_HTTP_ALARM_BODY_TEMPLATE =
   '### Nazh 工业告警\n- 设备：{{payload.tag}}\n- 温度：{{payload.temperature_c}} °C\n- 严重级别：{{payload.severity}}\n- Trace：{{trace_id}}\n- 事件时间：{{timestamp}}';
+const DEFAULT_BARK_TITLE_TEMPLATE = 'Nazh 告警 · {{payload.tag}}';
+const DEFAULT_BARK_BODY_TEMPLATE =
+  '设备：{{payload.tag}}\n严重级别：{{payload.severity}}\n时间：{{timestamp}}\n摘要：{{payload}}';
 
 const NODE_TEMPLATES: FlowgramPaletteItem[] = [
   {
@@ -258,6 +289,39 @@ const NODE_TEMPLATES: FlowgramPaletteItem[] = [
       config: {
         script:
           'payload["temperature"] = payload["value"]; payload["severity"] = payload["value"] > 88 ? "high" : "normal"; payload',
+      },
+    },
+  },
+  {
+    key: 'bark-alert',
+    title: 'Bark 推送',
+    description: '向 iPhone 发送 Bark 告警通知。',
+    badge: 'Bark',
+    seed: {
+      idPrefix: 'bark_push',
+      kind: 'barkPush',
+      displayType: 'barkPush',
+      label: 'Bark Alert',
+      timeoutMs: 1000,
+      config: {
+        server_url: 'https://api.day.app',
+        device_key: '',
+        content_mode: 'body',
+        title_template: DEFAULT_BARK_TITLE_TEMPLATE,
+        subtitle_template: '{{payload.severity}}',
+        body_template: DEFAULT_BARK_BODY_TEMPLATE,
+        level: 'active',
+        badge: '',
+        sound: '',
+        icon: '',
+        group: 'nazh-alert',
+        url: '',
+        copy: '',
+        image: '',
+        auto_copy: false,
+        call: false,
+        archive_mode: 'inherit',
+        request_timeout_ms: 4000,
       },
     },
   },
@@ -410,6 +474,7 @@ export function normalizeNodeKind(value: unknown): NazhNodeKind {
     case 'modbusRead':
     case 'mqttClient':
     case 'httpClient':
+    case 'barkPush':
     case 'sqlWriter':
     case 'debugConsole':
     case 'if':
@@ -632,6 +697,57 @@ export function normalizeNodeConfig(
     };
   }
 
+  if (nodeType === 'barkPush') {
+    return {
+      ...rawConfig,
+      server_url:
+        typeof rawConfig.server_url === 'string' && rawConfig.server_url.trim()
+          ? rawConfig.server_url
+          : 'https://api.day.app',
+      device_key: typeof rawConfig.device_key === 'string' ? rawConfig.device_key : '',
+      content_mode: rawConfig.content_mode === 'markdown' ? 'markdown' : 'body',
+      title_template:
+        typeof rawConfig.title_template === 'string'
+          ? rawConfig.title_template
+          : DEFAULT_BARK_TITLE_TEMPLATE,
+      subtitle_template:
+        typeof rawConfig.subtitle_template === 'string' ? rawConfig.subtitle_template : '',
+      body_template:
+        typeof rawConfig.body_template === 'string'
+          ? rawConfig.body_template
+          : DEFAULT_BARK_BODY_TEMPLATE,
+      level:
+        rawConfig.level === 'critical' ||
+        rawConfig.level === 'timeSensitive' ||
+        rawConfig.level === 'passive'
+          ? rawConfig.level
+          : 'active',
+      badge:
+        typeof rawConfig.badge === 'number'
+          ? String(rawConfig.badge)
+          : typeof rawConfig.badge === 'string'
+            ? rawConfig.badge
+            : '',
+      sound: typeof rawConfig.sound === 'string' ? rawConfig.sound : '',
+      icon: typeof rawConfig.icon === 'string' ? rawConfig.icon : '',
+      group: typeof rawConfig.group === 'string' ? rawConfig.group : '',
+      url: typeof rawConfig.url === 'string' ? rawConfig.url : '',
+      copy: typeof rawConfig.copy === 'string' ? rawConfig.copy : '',
+      image: typeof rawConfig.image === 'string' ? rawConfig.image : '',
+      auto_copy: rawConfig.auto_copy === true,
+      call: rawConfig.call === true,
+      archive_mode:
+        rawConfig.archive_mode === 'archive' || rawConfig.archive_mode === 'skip'
+          ? rawConfig.archive_mode
+          : 'inherit',
+      request_timeout_ms:
+        typeof rawConfig.request_timeout_ms === 'number' &&
+        Number.isFinite(rawConfig.request_timeout_ms)
+          ? Math.max(500, Math.round(rawConfig.request_timeout_ms))
+          : 4000,
+    };
+  }
+
   if (nodeType === 'sqlWriter') {
     return {
       ...rawConfig,
@@ -714,6 +830,14 @@ export function getDefaultHttpAlarmTitleTemplate(): string {
 
 export function getDefaultHttpAlarmBodyTemplate(): string {
   return DEFAULT_HTTP_ALARM_BODY_TEMPLATE;
+}
+
+export function getDefaultBarkTitleTemplate(): string {
+  return DEFAULT_BARK_TITLE_TEMPLATE;
+}
+
+export function getDefaultBarkBodyTemplate(): string {
+  return DEFAULT_BARK_BODY_TEMPLATE;
 }
 
 export function inferHttpWebhookKind(url: string): 'generic' | 'dingtalk' {
@@ -883,6 +1007,34 @@ export function buildDefaultNodeSeed(kind: NazhNodeKind): NodeSeed {
           at_all: false,
         },
       };
+    case 'barkPush':
+      return {
+        idPrefix: 'bark_push',
+        kind: 'barkPush',
+        displayType: 'barkPush',
+        label: '',
+        timeoutMs: 1000,
+        config: {
+          server_url: 'https://api.day.app',
+          device_key: '',
+          content_mode: 'body',
+          title_template: DEFAULT_BARK_TITLE_TEMPLATE,
+          subtitle_template: '{{payload.severity}}',
+          body_template: DEFAULT_BARK_BODY_TEMPLATE,
+          level: 'active',
+          badge: '',
+          sound: '',
+          icon: '',
+          group: '',
+          url: '',
+          copy: '',
+          image: '',
+          auto_copy: false,
+          call: false,
+          archive_mode: 'inherit',
+          request_timeout_ms: 4000,
+        },
+      };
     case 'sqlWriter':
       return {
         idPrefix: 'sql_writer',
@@ -932,6 +1084,8 @@ function getFallbackNodeLabel(nodeType: NazhNodeKind): string {
       return 'Loop Node';
     case 'httpClient':
       return 'HTTP Client';
+    case 'barkPush':
+      return 'Bark Push';
     case 'sqlWriter':
       return 'SQL Writer';
     case 'debugConsole':
@@ -1054,6 +1208,7 @@ export function createFlowgramNodeRegistries(
     'tryCatch',
     'loop',
     'httpClient',
+    'barkPush',
     'sqlWriter',
     'debugConsole',
   ];
@@ -1121,6 +1276,13 @@ export function getFlowgramPaletteSections(): FlowgramPaletteSection[] {
           description: '发送钉钉或 Webhook 报警。',
           badge: 'HTTP',
           seed: buildDefaultNodeSeed('httpClient'),
+        },
+        {
+          key: 'blank-bark',
+          title: 'Bark Push',
+          description: '发送 Bark iOS 推送。',
+          badge: 'Bark',
+          seed: buildDefaultNodeSeed('barkPush'),
         },
         {
           key: 'blank-sql',

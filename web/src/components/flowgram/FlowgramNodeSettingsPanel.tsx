@@ -4,6 +4,8 @@ import { type FlowNodeEntity, useClientContext } from '@flowgram.ai/free-layout-
 import { type PanelFactory, usePanelManager } from '@flowgram.ai/panel-manager-plugin';
 
 import {
+  getDefaultBarkBodyTemplate,
+  getDefaultBarkTitleTemplate,
   getLogicNodeBranchDefinitions,
   getDefaultHttpAlarmBodyTemplate,
   getDefaultHttpAlarmTitleTemplate,
@@ -56,6 +58,24 @@ interface SelectedNodeDraft {
   httpBodyTemplate: string;
   httpAtMobiles: string;
   httpAtAll: boolean;
+  barkServerUrl: string;
+  barkDeviceKey: string;
+  barkContentMode: string;
+  barkTitleTemplate: string;
+  barkSubtitleTemplate: string;
+  barkBodyTemplate: string;
+  barkLevel: string;
+  barkBadge: string;
+  barkSound: string;
+  barkIcon: string;
+  barkGroup: string;
+  barkUrl: string;
+  barkCopy: string;
+  barkImage: string;
+  barkAutoCopy: boolean;
+  barkCall: boolean;
+  barkArchiveMode: string;
+  barkRequestTimeoutMs: string;
   sqlDatabasePath: string;
   sqlTable: string;
   debugLabel: string;
@@ -95,6 +115,20 @@ function parsePositiveInteger(value: string): number | null {
 
   const parsed = Number(normalized);
   if (!Number.isFinite(parsed) || parsed <= 0) {
+    return null;
+  }
+
+  return Math.round(parsed);
+}
+
+function parseNonNegativeInteger(value: string): number | null {
+  const normalized = value.trim();
+  if (!normalized) {
+    return null;
+  }
+
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed) || parsed < 0) {
     return null;
   }
 
@@ -244,6 +278,27 @@ function readNodeDraft(node: FlowNodeEntity): SelectedNodeDraft {
     ),
     httpAtMobiles: stringifyStringList(config.at_mobiles),
     httpAtAll: readBoolean(config.at_all, false),
+    barkServerUrl: readString(config.server_url, 'https://api.day.app'),
+    barkDeviceKey: readString(config.device_key),
+    barkContentMode: readString(config.content_mode, 'body'),
+    barkTitleTemplate: readString(config.title_template, getDefaultBarkTitleTemplate()),
+    barkSubtitleTemplate: readString(config.subtitle_template, ''),
+    barkBodyTemplate: readString(config.body_template, getDefaultBarkBodyTemplate()),
+    barkLevel: readString(config.level, 'active'),
+    barkBadge:
+      typeof config.badge === 'number'
+        ? String(config.badge)
+        : readString(config.badge, ''),
+    barkSound: readString(config.sound, ''),
+    barkIcon: readString(config.icon, ''),
+    barkGroup: readString(config.group, ''),
+    barkUrl: readString(config.url, ''),
+    barkCopy: readString(config.copy, ''),
+    barkImage: readString(config.image, ''),
+    barkAutoCopy: readBoolean(config.auto_copy, false),
+    barkCall: readBoolean(config.call, false),
+    barkArchiveMode: readString(config.archive_mode, 'inherit'),
+    barkRequestTimeoutMs: readNumberString(config.request_timeout_ms, '4000'),
     sqlDatabasePath: readString(config.database_path, './nazh-local.sqlite3'),
     sqlTable: readString(config.table, 'workflow_logs'),
     debugLabel: readString(config.label),
@@ -340,6 +395,34 @@ function buildNodeConfig(draft: SelectedNodeDraft, currentConfig: NodeConfigMap)
       body_template: draft.httpBodyTemplate,
       at_mobiles: parseStringList(draft.httpAtMobiles),
       at_all: draft.httpAtAll,
+    };
+  }
+
+  if (draft.nodeType === 'barkPush') {
+    return {
+      ...currentConfig,
+      server_url: draft.barkServerUrl.trim() || 'https://api.day.app',
+      device_key: draft.barkDeviceKey.trim(),
+      content_mode: draft.barkContentMode === 'markdown' ? 'markdown' : 'body',
+      title_template: draft.barkTitleTemplate,
+      subtitle_template: draft.barkSubtitleTemplate,
+      body_template: draft.barkBodyTemplate,
+      level: ['active', 'timeSensitive', 'passive', 'critical'].includes(draft.barkLevel)
+        ? draft.barkLevel
+        : 'active',
+      badge: parseNonNegativeInteger(draft.barkBadge) ?? '',
+      sound: draft.barkSound,
+      icon: draft.barkIcon,
+      group: draft.barkGroup,
+      url: draft.barkUrl,
+      copy: draft.barkCopy,
+      image: draft.barkImage,
+      auto_copy: draft.barkAutoCopy,
+      call: draft.barkCall,
+      archive_mode: ['inherit', 'archive', 'skip'].includes(draft.barkArchiveMode)
+        ? draft.barkArchiveMode
+        : 'inherit',
+      request_timeout_ms: parsePositiveInteger(draft.barkRequestTimeoutMs) ?? 4000,
     };
   }
 
@@ -528,6 +611,10 @@ function FlowgramNodeSettingsPanel({
     const parsedTimeoutMs = parseTimeoutMs(draft.timeoutMs);
     const parsedHeaders = parseHeadersJson(draft.httpHeaders);
     const parsedRequestTimeoutMs = parsePositiveInteger(draft.httpRequestTimeoutMs);
+    const parsedBarkRequestTimeoutMs = parsePositiveInteger(draft.barkRequestTimeoutMs);
+    const parsedBarkBadge = draft.barkBadge.trim()
+      ? parseNonNegativeInteger(draft.barkBadge)
+      : 0;
 
     if (stats) {
       if (stats.incoming === 0 && stats.outgoing === 0) {
@@ -708,6 +795,36 @@ function FlowgramNodeSettingsPanel({
         nextDiagnostics.push({
           tone: 'warning',
           message: '钉钉 Markdown 模式建议填写标题模板。',
+        });
+      }
+    }
+
+    if (draft.nodeType === 'barkPush') {
+      if (!draft.barkDeviceKey.trim()) {
+        nextDiagnostics.push({
+          tone: 'danger',
+          message: 'Bark 节点需要配置设备 Key 或推送 URL。',
+        });
+      }
+
+      if (parsedBarkRequestTimeoutMs === null) {
+        nextDiagnostics.push({
+          tone: 'danger',
+          message: 'Bark 请求超时必须是大于 0 的毫秒数。',
+        });
+      }
+
+      if (draft.barkBadge.trim() && parsedBarkBadge === null) {
+        nextDiagnostics.push({
+          tone: 'danger',
+          message: 'Bark badge 必须是大于等于 0 的整数。',
+        });
+      }
+
+      if (!draft.barkTitleTemplate.trim() && !draft.barkBodyTemplate.trim()) {
+        nextDiagnostics.push({
+          tone: 'warning',
+          message: '建议至少填写标题模板或消息模板。',
         });
       }
     }
@@ -1177,6 +1294,162 @@ function FlowgramNodeSettingsPanel({
               <textarea
                 value={draft.httpHeaders}
                 onChange={(event) => updateDraft({ httpHeaders: event.target.value })}
+              />
+            </label>
+          </>
+        ) : null}
+
+        {draft.nodeType === 'barkPush' ? (
+          <>
+            <label>
+              <span>服务地址</span>
+              <input
+                value={draft.barkServerUrl}
+                onChange={(event) => updateDraft({ barkServerUrl: event.target.value })}
+                placeholder="https://api.day.app"
+              />
+            </label>
+            <label>
+              <span>设备 Key / 推送 URL</span>
+              <input
+                value={draft.barkDeviceKey}
+                onChange={(event) => updateDraft({ barkDeviceKey: event.target.value })}
+                placeholder="填写 device_key，或粘贴 https://api.day.app/{key}"
+              />
+            </label>
+            <label>
+              <span>内容模式</span>
+              <select
+                value={draft.barkContentMode}
+                onChange={(event) => updateDraft({ barkContentMode: event.target.value })}
+              >
+                <option value="body">普通文本</option>
+                <option value="markdown">Markdown</option>
+              </select>
+            </label>
+            <label>
+              <span>中断级别</span>
+              <select
+                value={draft.barkLevel}
+                onChange={(event) => updateDraft({ barkLevel: event.target.value })}
+              >
+                <option value="active">active</option>
+                <option value="timeSensitive">timeSensitive</option>
+                <option value="passive">passive</option>
+                <option value="critical">critical</option>
+              </select>
+            </label>
+            <label>
+              <span>标题模板</span>
+              <input
+                value={draft.barkTitleTemplate}
+                onChange={(event) => updateDraft({ barkTitleTemplate: event.target.value })}
+              />
+            </label>
+            <label>
+              <span>副标题模板</span>
+              <input
+                value={draft.barkSubtitleTemplate}
+                onChange={(event) => updateDraft({ barkSubtitleTemplate: event.target.value })}
+              />
+            </label>
+            <label>
+              <span>{draft.barkContentMode === 'markdown' ? 'Markdown 模板' : '消息模板'}</span>
+              <textarea
+                value={draft.barkBodyTemplate}
+                onChange={(event) => updateDraft({ barkBodyTemplate: event.target.value })}
+              />
+            </label>
+            <label>
+              <span>分组</span>
+              <input
+                value={draft.barkGroup}
+                onChange={(event) => updateDraft({ barkGroup: event.target.value })}
+                placeholder="nazh-alert"
+              />
+            </label>
+            <label>
+              <span>点击跳转 URL</span>
+              <input
+                value={draft.barkUrl}
+                onChange={(event) => updateDraft({ barkUrl: event.target.value })}
+                placeholder="支持 URL Scheme 或 https://"
+              />
+            </label>
+            <label>
+              <span>铃声</span>
+              <input
+                value={draft.barkSound}
+                onChange={(event) => updateDraft({ barkSound: event.target.value })}
+                placeholder="minuet"
+              />
+            </label>
+            <label>
+              <span>Badge</span>
+              <input
+                value={draft.barkBadge}
+                onChange={(event) => updateDraft({ barkBadge: event.target.value })}
+                placeholder="0"
+              />
+            </label>
+            <label>
+              <span>图标 URL</span>
+              <input
+                value={draft.barkIcon}
+                onChange={(event) => updateDraft({ barkIcon: event.target.value })}
+              />
+            </label>
+            <label>
+              <span>图片 URL</span>
+              <input
+                value={draft.barkImage}
+                onChange={(event) => updateDraft({ barkImage: event.target.value })}
+              />
+            </label>
+            <label>
+              <span>复制内容</span>
+              <input
+                value={draft.barkCopy}
+                onChange={(event) => updateDraft({ barkCopy: event.target.value })}
+                placeholder="留空时不附带 copy 字段"
+              />
+            </label>
+            <label>
+              <span>自动复制</span>
+              <select
+                value={draft.barkAutoCopy ? 'true' : 'false'}
+                onChange={(event) => updateDraft({ barkAutoCopy: event.target.value === 'true' })}
+              >
+                <option value="false">否</option>
+                <option value="true">是</option>
+              </select>
+            </label>
+            <label>
+              <span>重复响铃</span>
+              <select
+                value={draft.barkCall ? 'true' : 'false'}
+                onChange={(event) => updateDraft({ barkCall: event.target.value === 'true' })}
+              >
+                <option value="false">否</option>
+                <option value="true">是</option>
+              </select>
+            </label>
+            <label>
+              <span>历史归档</span>
+              <select
+                value={draft.barkArchiveMode}
+                onChange={(event) => updateDraft({ barkArchiveMode: event.target.value })}
+              >
+                <option value="inherit">跟随 Bark App 设置</option>
+                <option value="archive">强制保存</option>
+                <option value="skip">不保存</option>
+              </select>
+            </label>
+            <label>
+              <span>请求超时 ms</span>
+              <input
+                value={draft.barkRequestTimeoutMs}
+                onChange={(event) => updateDraft({ barkRequestTimeoutMs: event.target.value })}
               />
             </label>
           </>

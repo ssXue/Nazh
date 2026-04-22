@@ -122,11 +122,30 @@ describe('normalizeNodeConfig', () => {
     const result = normalizeNodeConfig('code', undefined);
     expect(result).toEqual({ script: 'payload' });
   });
+
+  it('barkPush 节点会补齐默认 Bark 配置', () => {
+    const result = normalizeNodeConfig('barkPush', {
+      device_key: 'demo-key',
+      content_mode: 'markdown',
+    });
+
+    expect(result).toMatchObject({
+      server_url: 'https://api.day.app',
+      device_key: 'demo-key',
+      content_mode: 'markdown',
+      level: 'active',
+      request_timeout_ms: 4000,
+    });
+  });
 });
 
 describe('normalizeNodeKind', () => {
   it('code 类型保持不变', () => {
     expect(normalizeNodeKind('code')).toBe('code');
+  });
+
+  it('barkPush 类型保持不变', () => {
+    expect(normalizeNodeKind('barkPush')).toBe('barkPush');
   });
 
   it('未知类型回退到 native', () => {

@@ -1,6 +1,7 @@
 import type { SVGProps } from 'react';
 
 import {
+  BarkNodeIcon,
   DebugConsoleNodeIcon,
   HttpClientNodeIcon,
   IfNodeIcon,
@@ -30,6 +31,7 @@ export function normalizeFlowgramDisplayType(value: unknown): NazhNodeDisplayTyp
     value === 'tryCatch' ||
     value === 'loop' ||
     value === 'httpClient' ||
+    value === 'barkPush' ||
     value === 'sqlWriter' ||
     value === 'debugConsole'
   ) {
@@ -59,6 +61,8 @@ export function getFlowgramDisplayLabel(displayType: NazhNodeDisplayType): strin
       return 'LOOP';
     case 'httpClient':
       return 'HTTP';
+    case 'barkPush':
+      return 'Bark';
     case 'sqlWriter':
       return 'SQL';
     case 'debugConsole':
@@ -91,6 +95,8 @@ export function FlowgramNodeGlyph({
       return <LoopNodeIcon {...props} />;
     case 'httpClient':
       return <HttpClientNodeIcon {...props} />;
+    case 'barkPush':
+      return <BarkNodeIcon {...props} />;
     case 'sqlWriter':
       return <SqlWriterNodeIcon {...props} />;
     case 'debugConsole':

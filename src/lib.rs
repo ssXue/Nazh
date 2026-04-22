@@ -14,7 +14,7 @@
 //! | Ring 1 | `connections` | 全局连接资源池 |
 //! | Ring 1 | `scripting` | Rhai 脚本引擎基座 |
 //! | Ring 1 | `nodes-flow` | 流程控制节点（if/switch/loop/tryCatch/code） |
-//! | Ring 1 | `nodes-io` | I/O 节点（native/timer/serial/modbus/http/sql/debug） |
+//! | Ring 1 | `nodes-io` | I/O 节点（native/timer/serial/modbus/http/bark/sql/debug） |
 //! | Facade | `nazh-engine`（本 crate） | 组装 Ring 0 + Ring 1，DAG 部署编排 |
 
 pub mod graph;
@@ -42,10 +42,10 @@ pub use nodes_flow::{
 };
 
 pub use nodes_io::{
-    DebugConsoleNode, DebugConsoleNodeConfig, HttpClientNode, HttpClientNodeConfig, IoPlugin,
-    ModbusReadNode, ModbusReadNodeConfig, MqttClientNode, MqttClientNodeConfig, NativeNode,
-    NativeNodeConfig, SerialTriggerNode, SerialTriggerNodeConfig, SqlWriterNode,
-    SqlWriterNodeConfig, TimerNode, TimerNodeConfig,
+    BarkPushNode, BarkPushNodeConfig, DebugConsoleNode, DebugConsoleNodeConfig, HttpClientNode,
+    HttpClientNodeConfig, IoPlugin, ModbusReadNode, ModbusReadNodeConfig, MqttClientNode,
+    MqttClientNodeConfig, NativeNode, NativeNodeConfig, SerialTriggerNode,
+    SerialTriggerNodeConfig, SqlWriterNode, SqlWriterNodeConfig, TimerNode, TimerNodeConfig,
 };
 
 pub use graph::{

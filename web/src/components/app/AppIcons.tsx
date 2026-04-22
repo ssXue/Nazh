@@ -422,6 +422,17 @@ export function HttpClientNodeIcon(props: IconProps) {
   );
 }
 
+export function BarkNodeIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="M9 8a3 3 0 0 1 6 0v2.6c0 .8.3 1.6.86 2.16L17 14v1H7v-1l1.14-1.24A3.08 3.08 0 0 0 9 10.6V8" />
+      <path d="M10.2 18a1.8 1.8 0 0 0 3.6 0" />
+      <path d="M18.2 9.1a4.2 4.2 0 0 1 0 5.8" />
+      <path d="M5.8 14.9a4.2 4.2 0 0 1 0-5.8" />
+    </BaseIcon>
+  );
+}
+
 export function SqlWriterNodeIcon(props: IconProps) {
   return (
     <BaseIcon {...props}>

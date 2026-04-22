@@ -8,6 +8,7 @@ use nazh_core::{EngineError, NodeRegistry, Plugin, PluginManifest, SharedResourc
 pub mod template;
 
 mod debug_console;
+mod bark_push;
 mod http_client;
 mod modbus_read;
 mod mqtt_client;
@@ -17,6 +18,7 @@ mod sql_writer;
 mod timer;
 
 pub use debug_console::{DebugConsoleNode, DebugConsoleNodeConfig};
+pub use bark_push::{BarkPushNode, BarkPushNodeConfig};
 pub use http_client::{HttpClientNode, HttpClientNodeConfig};
 pub use modbus_read::{ModbusReadNode, ModbusReadNodeConfig};
 pub use mqtt_client::{MqttClientNode, MqttClientNodeConfig};
@@ -75,6 +77,11 @@ impl Plugin for IoPlugin {
         registry.register("httpClient", |def, _res| {
             let config: HttpClientNodeConfig = def.parse_config()?;
             Ok(Arc::new(HttpClientNode::new(def.id.clone(), config)?))
+        });
+
+        registry.register("barkPush", |def, _res| {
+            let config: BarkPushNodeConfig = def.parse_config()?;
+            Ok(Arc::new(BarkPushNode::new(def.id.clone(), config)?))
         });
 
         registry.register("sqlWriter", |def, _res| {

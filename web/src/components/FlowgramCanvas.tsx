@@ -464,6 +464,7 @@ function isBusinessFlowNode(node: FlowNodeEntity | null): node is FlowNodeEntity
     nodeType === 'tryCatch' ||
     nodeType === 'loop' ||
     nodeType === 'httpClient' ||
+    nodeType === 'barkPush' ||
     nodeType === 'sqlWriter' ||
     nodeType === 'debugConsole'
   );
@@ -507,6 +508,8 @@ function resolveNodePortColor(
       return 'color-mix(in srgb, var(--accent) 72%, var(--success) 28%)';
     case 'httpClient':
       return 'color-mix(in srgb, var(--warning) 56%, var(--danger) 44%)';
+    case 'barkPush':
+      return 'color-mix(in srgb, var(--danger) 34%, var(--accent) 66%)';
     case 'sqlWriter':
       return 'color-mix(in srgb, var(--success) 68%, var(--accent) 32%)';
     case 'debugConsole':
@@ -554,6 +557,9 @@ function FlowgramNodeCard(props: FlowgramNodeMaterialProps) {
           method?: string;
           webhook_kind?: string;
           body_mode?: string;
+          device_key?: string;
+          group?: string;
+          level?: string;
           table?: string;
           database_path?: string;
           label?: string;
@@ -604,9 +610,15 @@ function FlowgramNodeCard(props: FlowgramNodeMaterialProps) {
       : nodeType === 'loop'
         ? rawData?.config?.script ?? 'return array or count'
         : nodeType === 'httpClient'
-          ? rawData?.config?.webhook_kind === 'dingtalk'
-            ? `钉钉报警 · ${rawData?.config?.method ?? 'POST'}`
-            : `${rawData?.config?.method ?? 'POST'} ${rawData?.config?.url ?? ''}`.trim()
+        ? rawData?.config?.webhook_kind === 'dingtalk'
+          ? `钉钉报警 · ${rawData?.config?.method ?? 'POST'}`
+          : `${rawData?.config?.method ?? 'POST'} ${rawData?.config?.url ?? ''}`.trim()
+        : nodeType === 'barkPush'
+          ? rawData?.config?.group
+            ? `Bark · ${rawData.config.group}`
+            : rawData?.config?.device_key
+              ? `Bark · ${rawData.config.level ?? 'active'}`
+              : '未配置 Bark Key'
         : nodeType === 'sqlWriter'
           ? `${rawData?.config?.table ?? 'workflow_logs'} → ${rawData?.config?.database_path ?? './nazh-local.sqlite3'}`
         : nodeType === 'debugConsole'

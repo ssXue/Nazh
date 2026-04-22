@@ -26,6 +26,7 @@ const FLOWGRAM_BUSINESS_NODE_TYPES = new Set([
   'tryCatch',
   'loop',
   'httpClient',
+  'barkPush',
   'sqlWriter',
   'debugConsole',
 ]);

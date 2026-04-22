@@ -60,6 +60,7 @@ mod tests {
             "modbusRead",
             "mqttClient",
             "httpClient",
+            "barkPush",
             "sqlWriter",
             "debugConsole",
         ] {
@@ -71,8 +72,8 @@ mod tests {
     }
 
     #[test]
-    fn 两个插件合并后覆盖全部_13_种节点类型() {
+    fn 两个插件合并后覆盖全部_14_种节点类型() {
         let entries = standard_registry().registered_types_list();
-        assert_eq!(entries.len(), 13, "应注册 13 种节点类型");
+        assert_eq!(entries.len(), 14, "应注册 14 种节点类型");
     }
 }
