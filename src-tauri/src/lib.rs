@@ -1716,7 +1716,8 @@ async fn copilot_complete_stream(
     app: tauri::AppHandle,
     state: State<'_, DesktopState>,
     request: AiCompletionRequest,
-) -> Result<String, String> {
+    stream_id: String,
+) -> Result<(), String> {
     let service = Arc::clone(&state.ai_service);
 
     let mut rx = service
@@ -1724,11 +1725,7 @@ async fn copilot_complete_stream(
         .await
         .map_err(|error| error.to_string())?;
 
-    let event_id = uuid::Uuid::new_v4().to_string();
-    let event_name = format!("copilot://stream/{event_id}");
-
-    app.emit("copilot://stream/init", &event_id)
-        .map_err(|error| error.to_string())?;
+    let event_name = format!("copilot://stream/{stream_id}");
 
     let app_clone = app.clone();
     tokio::spawn(async move {
@@ -1755,7 +1752,7 @@ async fn copilot_complete_stream(
         }
     });
 
-    Ok(event_id)
+    Ok(())
 }
 
 #[derive(Debug, Clone, Serialize)]

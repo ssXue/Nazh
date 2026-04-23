@@ -651,38 +651,166 @@ export async function copilotComplete(request: AiCompletionRequest): Promise<AiC
   return invoke<AiCompletionResponse>('copilot_complete', { request });
 }
 
+function createCopilotStreamId(): string {
+  const randomId = globalThis.crypto?.randomUUID?.();
+  if (typeof randomId === 'string' && randomId.trim()) {
+    return randomId;
+  }
+  return `copilot-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function toError(error: unknown): Error {
+  if (error instanceof Error) {
+    return error;
+  }
+  return new Error(String(error));
+}
+
+export interface CopilotStreamResult {
+  text: string;
+  finishReason?: string;
+}
+
+export interface CopilotStreamRetryOptions {
+  maxRetries?: number;
+  onRetryStart?: (attempt: number, error: Error) => void | Promise<void>;
+}
+
+function isRecoverableCopilotStreamError(error: Error): boolean {
+  const message = error.message.trim().toLowerCase();
+  return [
+    'error decoding response body',
+    '未收到结束信号',
+    'connection reset',
+    'broken pipe',
+    'unexpected eof',
+    'unexpected end of file',
+    'connection closed before message completed',
+    'stream interrupted',
+  ].some((pattern) => message.includes(pattern));
+}
+
+async function waitForCopilotRetry(delayMs: number): Promise<void> {
+  await new Promise<void>((resolve) => {
+    globalThis.setTimeout(resolve, delayMs);
+  });
+}
+
+async function runCopilotStreamAttempt(
+  request: AiCompletionRequest,
+  onDelta: (text: string) => void,
+  onThinking?: (text: string) => void,
+): Promise<CopilotStreamResult> {
+  const streamId = createCopilotStreamId();
+  const eventName = `copilot://stream/${streamId}`;
+  let accumulated = '';
+  let thinkingAccumulated = '';
+  let finishReason: string | undefined;
+  let stopListening: (() => void) | null = null;
+  let settled = false;
+  let resolvePromise!: (value: CopilotStreamResult) => void;
+  let rejectPromise!: (reason?: unknown) => void;
+
+  const completion = new Promise<CopilotStreamResult>((resolve, reject) => {
+    resolvePromise = resolve;
+    rejectPromise = reject;
+  });
+
+  const cleanup = () => {
+    if (stopListening) {
+      const nextStop = stopListening;
+      stopListening = null;
+      nextStop();
+    }
+  };
+
+  const resolveStream = (value: string) => {
+    if (settled) {
+      return;
+    }
+    settled = true;
+    cleanup();
+    resolvePromise({
+      text: value,
+      finishReason,
+    });
+  };
+
+  const rejectStream = (error: unknown) => {
+    if (settled) {
+      return;
+    }
+    settled = true;
+    cleanup();
+    rejectPromise(toError(error));
+  };
+
+  stopListening = await listen<{
+    delta?: string;
+    thinking?: string;
+    done?: boolean;
+    error?: string;
+    finishReason?: string;
+  }>(
+    eventName,
+    (event) => {
+      const payload = event.payload;
+      if (payload.error) {
+        rejectStream(payload.error);
+        return;
+      }
+      if (payload.finishReason?.trim()) {
+        finishReason = payload.finishReason.trim();
+      }
+      if (payload.thinking && onThinking) {
+        thinkingAccumulated += payload.thinking;
+        onThinking(thinkingAccumulated);
+      }
+      if (payload.delta) {
+        accumulated += payload.delta;
+        onDelta(accumulated);
+      }
+      if (payload.done) {
+        resolveStream(accumulated);
+      }
+    },
+  );
+
+  try {
+    await invoke<void>('copilot_complete_stream', { request, streamId });
+  } catch (error) {
+    rejectStream(error);
+  }
+
+  return completion;
+}
+
 export async function copilotCompleteStream(
   request: AiCompletionRequest,
   onDelta: (text: string) => void,
   onThinking?: (text: string) => void,
-): Promise<string> {
-  const streamId: string = await invoke<string>('copilot_complete_stream', { request });
-  const eventName = `copilot://stream/${streamId}`;
+  retryOptions?: CopilotStreamRetryOptions,
+): Promise<CopilotStreamResult> {
+  const maxRetries = Math.max(0, Math.floor(retryOptions?.maxRetries ?? 1));
 
-  return new Promise((resolve, reject) => {
-    let accumulated = '';
-    let thinkingAccumulated = '';
+  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+    try {
+      return await runCopilotStreamAttempt(request, onDelta, onThinking);
+    } catch (error) {
+      const normalizedError = toError(error);
+      const shouldRetry =
+        attempt < maxRetries && isRecoverableCopilotStreamError(normalizedError);
 
-    void listen<{ delta?: string; thinking?: string; done?: boolean; error?: string }>(
-      eventName,
-      (event) => {
-        const payload = event.payload;
-        if (payload.error) {
-          reject(new Error(payload.error));
-          return;
-        }
-        if (payload.thinking && onThinking) {
-          thinkingAccumulated += payload.thinking;
-          onThinking(thinkingAccumulated);
-        }
-        if (payload.delta) {
-          accumulated += payload.delta;
-          onDelta(accumulated);
-        }
-        if (payload.done) {
-          resolve(accumulated);
-        }
-      },
-    );
-  });
+      if (!shouldRetry) {
+        throw normalizedError;
+      }
+
+      await retryOptions?.onRetryStart?.(attempt + 1, normalizedError);
+      onDelta('');
+      onThinking?.('');
+      await waitForCopilotRetry(350);
+    }
+  }
+
+  throw new Error('AI 流式输出重试失败');
 }

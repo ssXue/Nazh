@@ -24,6 +24,9 @@ pub struct StreamChunk {
     /// 本次 chunk 的思考过程片段（DeepSeek 等模型的 reasoning_content）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thinking: Option<String>,
+    /// 提供商返回的结束原因，例如 stop / length。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub finish_reason: Option<String>,
     /// 是否为最后一个 chunk。
     pub done: bool,
 }
@@ -160,6 +163,8 @@ struct StreamApiResponse {
 #[derive(Debug, Deserialize)]
 struct StreamChoice {
     delta: StreamDelta,
+    #[serde(default)]
+    finish_reason: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -214,6 +219,90 @@ fn parse_api_error(status: u16, body: &str) -> AiError {
         status,
         message: body.to_owned(),
     }
+}
+
+async fn emit_stream_line(
+    line: &str,
+    tx: &tokio::sync::mpsc::Sender<Result<StreamChunk, AiError>>,
+    saw_explicit_completion: &mut bool,
+) -> bool {
+    let trimmed = line.trim();
+    if trimmed.is_empty() || trimmed == ":" {
+        return true;
+    }
+
+    if trimmed == "data: [DONE]" {
+        *saw_explicit_completion = true;
+        if tx
+            .send(Ok(StreamChunk {
+                delta: String::new(),
+                thinking: None,
+                finish_reason: None,
+                done: true,
+            }))
+            .await
+            .is_err()
+        {
+            return false;
+        }
+        return false;
+    }
+
+    let Some(data) = trimmed.strip_prefix("data: ") else {
+        return true;
+    };
+
+    let parsed: StreamApiResponse = match serde_json::from_str(data) {
+        Ok(value) => value,
+        Err(_) => return true,
+    };
+
+    let Some(choice) = parsed.choices.first() else {
+        return true;
+    };
+
+    let content_delta = choice.delta.content.clone().unwrap_or_default();
+    let thinking_delta = choice.delta.thinking.clone();
+    let has_content = !content_delta.is_empty();
+    let has_thinking = thinking_delta.as_ref().is_some_and(|value| !value.is_empty());
+    let is_done = choice
+        .finish_reason
+        .as_deref()
+        .map(str::trim)
+        .is_some_and(|value| !value.is_empty());
+    let finish_reason = choice.finish_reason.clone().filter(|value| !value.trim().is_empty());
+
+    if is_done {
+        *saw_explicit_completion = true;
+    }
+
+    if has_content || has_thinking || is_done {
+        return tx
+            .send(Ok(StreamChunk {
+                delta: content_delta,
+                thinking: if has_thinking { thinking_delta } else { None },
+                finish_reason,
+                done: is_done,
+            }))
+            .await
+            .is_ok()
+            && !is_done;
+    }
+
+    true
+}
+
+fn build_stream_body_decode_error(error: &reqwest::Error, chunk_count: usize, byte_count: usize) -> AiError {
+    let detail = error.to_string();
+    let hint = if detail.contains("error decoding response body") {
+        "上游流式响应在传输过程中中断或损坏，常见于代理/网关提前断开 chunked SSE 响应。"
+    } else {
+        "上游流式响应在读取过程中失败，可能是网络抖动或提供商提前断开连接。"
+    };
+
+    AiError::NetworkError(format!(
+        "{detail}；已接收 {chunk_count} 个分块 / {byte_count} 字节。{hint}"
+    ))
 }
 
 #[async_trait]
@@ -348,15 +437,26 @@ impl AiService for OpenAiCompatibleService {
             use futures_util::StreamExt;
             let mut buffer = String::new();
             let newline = char::from(10);
+            let mut saw_explicit_completion = false;
+            let mut received_chunk_count = 0_usize;
+            let mut received_byte_count = 0_usize;
 
             while let Some(chunk_result) = stream.next().await {
                 let chunk = match chunk_result {
                     Ok(bytes) => bytes,
                     Err(error) => {
-                        let _ = tx.send(Err(AiError::NetworkError(error.to_string()))).await;
+                        let _ = tx
+                            .send(Err(build_stream_body_decode_error(
+                                &error,
+                                received_chunk_count,
+                                received_byte_count,
+                            )))
+                            .await;
                         return;
                     }
                 };
+                received_chunk_count += 1;
+                received_byte_count += chunk.len();
 
                 buffer.push_str(&String::from_utf8_lossy(&chunk));
 
@@ -364,59 +464,25 @@ impl AiService for OpenAiCompatibleService {
                     let line = buffer[..nl_pos].trim().to_owned();
                     buffer = buffer[nl_pos + 1..].to_owned();
 
-                    if line.is_empty() || line == ":" {
-                        continue;
-                    }
-
-                    if line == "data: [DONE]" {
-                        let _ = tx
-                            .send(Ok(StreamChunk {
-                                delta: String::new(),
-                                thinking: None,
-                                done: true,
-                            }))
-                            .await;
+                    if !emit_stream_line(&line, &tx, &mut saw_explicit_completion).await {
                         return;
-                    }
-
-                    if let Some(data) = line.strip_prefix("data: ") {
-                        let parsed: StreamApiResponse = match serde_json::from_str(data) {
-                            Ok(value) => value,
-                            Err(_) => continue,
-                        };
-
-                        if let Some(choice) = parsed.choices.first() {
-                            let content_delta = choice.delta.content.clone().unwrap_or_default();
-                            let thinking_delta = choice.delta.thinking.clone();
-                            let has_content = !content_delta.is_empty();
-                            let has_thinking =
-                                thinking_delta.as_ref().is_some_and(|s| !s.is_empty());
-
-                            if has_content || has_thinking {
-                                if tx
-                                    .send(Ok(StreamChunk {
-                                        delta: content_delta,
-                                        thinking: if has_thinking { thinking_delta } else { None },
-                                        done: false,
-                                    }))
-                                    .await
-                                    .is_err()
-                                {
-                                    return;
-                                }
-                            }
-                        }
                     }
                 }
             }
 
-            let _ = tx
-                .send(Ok(StreamChunk {
-                    delta: String::new(),
-                    thinking: None,
-                    done: true,
-                }))
-                .await;
+            if !buffer.trim().is_empty()
+                && !emit_stream_line(&buffer, &tx, &mut saw_explicit_completion).await
+            {
+                return;
+            }
+
+            if !saw_explicit_completion {
+                let _ = tx
+                    .send(Err(AiError::NetworkError(
+                        "AI 流式输出意外中断，未收到结束信号".to_owned(),
+                    )))
+                    .await;
+            }
         });
 
         Ok(rx)

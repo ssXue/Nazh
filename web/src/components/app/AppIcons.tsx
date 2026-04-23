@@ -214,6 +214,16 @@ export function PlusIcon(props: IconProps) {
   );
 }
 
+export function SparklesIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="m12 3 1.6 3.9L17.5 8.5l-3.9 1.6L12 14l-1.6-3.9L6.5 8.5l3.9-1.6L12 3Z" />
+      <path d="m18.5 14 0.9 2.1 2.1 0.9-2.1 0.9-0.9 2.1-0.9-2.1-2.1-0.9 2.1-0.9 0.9-2.1Z" />
+      <path d="m5.5 13 0.7 1.7 1.8 0.8-1.8 0.7-0.7 1.8-0.8-1.8-1.7-0.7 1.7-0.8 0.8-1.7Z" />
+    </BaseIcon>
+  );
+}
+
 export function FileImageIcon(props: IconProps) {
   return (
     <BaseIcon {...props}>

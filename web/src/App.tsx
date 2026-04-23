@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { startTransition, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useProjectLibrary } from './hooks/use-project-library';
 import { useSettings } from './hooks/use-settings';
@@ -7,6 +7,7 @@ import { useConnectionLibrary } from './hooks/use-connection-library';
 
 import { AboutPanel } from './components/app/AboutPanel';
 import { AiConfigPanel } from './components/app/AiConfigPanel';
+import { AiWorkflowComposer } from './components/app/AiWorkflowComposer';
 import { BoardsPanel, type BoardItem } from './components/app/BoardsPanel';
 import { DashboardPanel } from './components/app/DashboardPanel';
 import { LogsPanel } from './components/app/LogsPanel';
@@ -43,6 +44,7 @@ import {
   formatRelativeTimestamp,
   getActiveEnvironment,
   parseProjectNodeCount,
+  type ProjectRecord,
   type ProjectEnvironmentDiff,
 } from './lib/projects';
 import { buildSidebarSections } from './lib/sidebar';
@@ -51,6 +53,15 @@ import {
   applyGlobalAiConfigToWorkflowGraph,
   stripWorkflowNodeLocalAiConfig,
 } from './lib/workflow-ai';
+import {
+  createEmptyWorkflowDraft,
+  createWorkflowOrchestrationState,
+  getWorkflowAiUnavailableReason,
+  resolvePreferredWorkflowAiProvider,
+  streamWorkflowOrchestration,
+  type WorkflowOrchestrationMode,
+  type WorkflowOrchestrationSessionState,
+} from './lib/workflow-orchestrator';
 import {
   clearDeploymentSessionFile,
   deployWorkflow,
@@ -213,7 +224,21 @@ function App() {
   const [aiConfigError, setAiConfigError] = useState<string | null>(null);
   const [aiTestResult, setAiTestResult] = useState<AiTestResult | null>(null);
   const [aiTesting, setAiTesting] = useState(false);
+  const [aiComposerOpen, setAiComposerOpen] = useState(false);
+  const [aiComposerMode, setAiComposerMode] = useState<WorkflowOrchestrationMode>('create');
+  const [aiComposerRequirement, setAiComposerRequirement] = useState('');
+  const [aiComposerStatus, setAiComposerStatus] = useState<
+    'idle' | 'generating' | 'completed' | 'interrupted'
+  >('idle');
+  const [aiComposerError, setAiComposerError] = useState<string | null>(null);
+  const [aiComposerRawText, setAiComposerRawText] = useState<string | null>(null);
+  const [aiComposerThinkingText, setAiComposerThinkingText] = useState<string | null>(null);
+  const [aiComposerState, setAiComposerState] =
+    useState<WorkflowOrchestrationSessionState | null>(null);
   const flowgramCanvasRef = useRef<FlowgramCanvasHandle | null>(null);
+  const aiComposerTargetProjectIdRef = useRef<string | null>(null);
+  const aiComposerSessionIdRef = useRef(0);
+  const aiComposerGenerating = aiComposerStatus === 'generating';
   const restoreLookupRef = useRef<{
     scope: string | null;
     status: 'idle' | 'loading' | 'prompted' | 'handled' | 'none';
@@ -222,6 +247,17 @@ function App() {
     status: 'idle',
   });
   const migrationDoneRef = useRef(false);
+  const preferredWorkflowAiProvider = useMemo(
+    () => resolvePreferredWorkflowAiProvider(aiConfig),
+    [aiConfig],
+  );
+  const aiWorkflowActionTitle = useMemo(() => {
+    if (aiComposerGenerating) {
+      return aiComposerMode === 'create' ? 'AI 正在流式编排新工作流' : 'AI 正在流式编辑当前工作流';
+    }
+
+    return getWorkflowAiUnavailableReason(aiConfig);
+  }, [aiComposerGenerating, aiComposerMode, aiConfig]);
 
   const boardItems = useMemo<BoardItem[]>(
     () =>
@@ -397,7 +433,9 @@ function App() {
 
   function updateProjectDraft(
     projectId: string,
-    nextDraft: Partial<Pick<(typeof projectLibrary.projects)[number], 'astText' | 'payloadText'>>,
+    nextDraft: Partial<
+      Pick<(typeof projectLibrary.projects)[number], 'astText' | 'payloadText' | 'name' | 'description'>
+    >,
   ) {
     projectLibrary.updateProjectDraft(projectId, nextDraft);
   }
@@ -469,6 +507,250 @@ function App() {
     }
 
     updateProjectDraft(activeProject.id, { payloadText: nextText });
+  }
+
+  function buildAiWorkflowDraftFromProject(project: ProjectRecord) {
+    const parsedGraphState = parseWorkflowGraph(project.astText);
+    const currentGraph =
+      project.id === activeBoardId
+        ? flowgramCanvasRef.current?.getCurrentWorkflowGraph() ?? parsedGraphState.graph
+        : parsedGraphState.graph;
+
+    return {
+      name: project.name,
+      description: project.description,
+      payloadText: project.payloadText,
+      graph: currentGraph ?? createEmptyWorkflowDraft(project.name).graph,
+    };
+  }
+
+  function resetAiComposerState(
+    mode: WorkflowOrchestrationMode,
+    nextRequirement = '',
+    nextSessionState: WorkflowOrchestrationSessionState | null = null,
+  ) {
+    setAiComposerMode(mode);
+    setAiComposerRequirement(nextRequirement);
+    setAiComposerStatus('idle');
+    setAiComposerError(null);
+    setAiComposerRawText(null);
+    setAiComposerThinkingText(null);
+    setAiComposerState(nextSessionState);
+  }
+
+  function handleOpenAiCreate() {
+    resetAiComposerState('create');
+    setAiComposerOpen(true);
+  }
+
+  function handleOpenAiEdit() {
+    if (!activeProject) {
+      return;
+    }
+
+    resetAiComposerState(
+      'edit',
+      '',
+      createWorkflowOrchestrationState(buildAiWorkflowDraftFromProject(activeProject)),
+    );
+    setAiComposerOpen(true);
+  }
+
+  function handleCloseAiComposer() {
+    if (aiComposerGenerating) {
+      return;
+    }
+
+    setAiComposerOpen(false);
+    setAiComposerStatus('idle');
+    setAiComposerError(null);
+    setAiComposerRawText(null);
+    setAiComposerThinkingText(null);
+    setAiComposerState(null);
+    aiComposerTargetProjectIdRef.current = null;
+  }
+
+  function ensureAiComposerTargetProject(
+    mode: WorkflowOrchestrationMode,
+    nextDraft: WorkflowOrchestrationSessionState['draft'],
+  ) {
+    if (mode === 'edit') {
+      return activeProject?.id ?? aiComposerTargetProjectIdRef.current;
+    }
+
+    if (aiComposerTargetProjectIdRef.current) {
+      return aiComposerTargetProjectIdRef.current;
+    }
+
+    const nextProject = projectLibrary.createProject(
+      nextDraft.name.trim() || `AI 编排草稿 ${projectLibrary.projects.length + 1}`,
+      nextDraft.description.trim() || 'AI 正在编排工作流。',
+    );
+    aiComposerTargetProjectIdRef.current = nextProject.id;
+    setActiveBoardId(nextProject.id);
+    setSidebarSection('boards');
+    engine.resetWorkspaceRuntime(`AI 正在编排工程 ${nextProject.name}。`);
+    engine.appendRuntimeLog('ai', 'info', '已创建 AI 编排草稿工程', nextProject.name);
+    return nextProject.id;
+  }
+
+  function applyAiComposerDraft(
+    mode: WorkflowOrchestrationMode,
+    nextState: WorkflowOrchestrationSessionState,
+  ) {
+    const projectId = ensureAiComposerTargetProject(mode, nextState.draft);
+    if (!projectId) {
+      return;
+    }
+
+    startTransition(() => {
+      updateProjectDraft(projectId, {
+        name: nextState.draft.name,
+        description: nextState.draft.description,
+        payloadText: nextState.draft.payloadText,
+        astText: formatWorkflowGraph(nextState.draft.graph),
+      });
+    });
+  }
+
+  async function handleSubmitAiComposer() {
+    if (!preferredWorkflowAiProvider) {
+      setAiComposerError(aiWorkflowActionTitle);
+      return;
+    }
+
+    const requirement = aiComposerRequirement.trim();
+    if (!requirement) {
+      setAiComposerError('请输入编排需求。');
+      return;
+    }
+
+    const mode = aiComposerMode;
+    const baseDraft =
+      mode === 'edit' && activeProject ? buildAiWorkflowDraftFromProject(activeProject) : null;
+    const initialSessionState = createWorkflowOrchestrationState(baseDraft);
+    const sessionId = aiComposerSessionIdRef.current + 1;
+    aiComposerSessionIdRef.current = sessionId;
+    aiComposerTargetProjectIdRef.current = mode === 'edit' ? activeProject?.id ?? null : null;
+
+    setAiComposerStatus('generating');
+    setAiComposerError(null);
+    setAiComposerRawText(null);
+    setAiComposerThinkingText(null);
+    setAiComposerState(initialSessionState);
+    engine.appendRuntimeLog(
+      'ai',
+      'info',
+      mode === 'create' ? '开始 AI 流式编排工作流' : '开始 AI 流式编辑工作流',
+      requirement,
+    );
+    engine.setStatusMessage(
+      mode === 'create' ? 'AI 正在流式编排新工作流。' : 'AI 正在流式编辑当前工作流。',
+    );
+
+    try {
+      const finalState = await streamWorkflowOrchestration({
+        mode,
+        requirement,
+        providerId: preferredWorkflowAiProvider.id,
+        model: preferredWorkflowAiProvider.defaultModel,
+        baseDraft,
+        params: aiConfig?.copilotParams,
+        timeoutMs: aiConfig?.agentSettings.timeoutMs,
+        onRawText: (rawText) => {
+          if (aiComposerSessionIdRef.current !== sessionId) {
+            return;
+          }
+
+          setAiComposerRawText(rawText);
+        },
+        onThinking: (thinkingText) => {
+          if (aiComposerSessionIdRef.current !== sessionId) {
+            return;
+          }
+
+          setAiComposerThinkingText(thinkingText);
+        },
+        onOperation: (operation, nextState) => {
+          if (aiComposerSessionIdRef.current !== sessionId) {
+            return;
+          }
+
+          startTransition(() => {
+            setAiComposerState(nextState);
+            applyAiComposerDraft(mode, nextState);
+          });
+
+          if (operation.type === 'done') {
+            engine.appendRuntimeLog(
+              'ai',
+              'success',
+              mode === 'create' ? 'AI 编排完成' : 'AI 编辑完成',
+              nextState.summary ?? nextState.draft.name,
+            );
+            engine.setStatusMessage(
+              mode === 'create'
+                ? `AI 已完成工程 ${nextState.draft.name} 的流式编排。`
+                : `AI 已完成工程 ${nextState.draft.name} 的流式编辑。`,
+            );
+          }
+        },
+        onRetry: (attempt, error, retryState) => {
+          if (aiComposerSessionIdRef.current !== sessionId) {
+            return;
+          }
+
+          setAiComposerError(null);
+          startTransition(() => {
+            setAiComposerState(retryState);
+            if (mode === 'edit' || aiComposerTargetProjectIdRef.current) {
+              applyAiComposerDraft(mode, retryState);
+            }
+          });
+          engine.appendRuntimeLog(
+            'ai',
+            'warn',
+            `AI 输出中断，正在自动重试（第 ${attempt} 次）`,
+            error.message,
+          );
+          engine.setStatusMessage(
+            mode === 'create'
+              ? 'AI 输出中断，正在自动重试编排。'
+              : 'AI 输出中断，正在自动重试编辑。',
+          );
+        },
+      });
+
+      if (aiComposerSessionIdRef.current !== sessionId) {
+        return;
+      }
+
+      setAiComposerState(finalState);
+      if (mode === 'edit' || finalState.operations.length > 0) {
+        applyAiComposerDraft(mode, finalState);
+      }
+      setAiComposerStatus('completed');
+    } catch (error) {
+      if (aiComposerSessionIdRef.current !== sessionId) {
+        return;
+      }
+
+      const { message, detail } = describeUnknownError(error);
+      const composedDetail = detail ? `${message}\n\n${detail}` : message;
+      const targetProjectId = aiComposerTargetProjectIdRef.current;
+      setAiComposerStatus('interrupted');
+      setAiComposerError(message);
+      engine.appendAppError('command', 'AI 编排失败', composedDetail);
+      engine.appendRuntimeLog(
+        'ai',
+        'error',
+        mode === 'create' ? 'AI 编排失败' : 'AI 编辑失败',
+        targetProjectId ? `${message}\n已保留当前部分草稿。` : message,
+      );
+      engine.setStatusMessage(
+        targetProjectId ? 'AI 中断，已保留当前部分编排草稿。' : message,
+      );
+    }
   }
 
   function handleOpenBoard(board: BoardItem) {
@@ -1532,8 +1814,12 @@ function App() {
               boards={boardItems}
               onOpenBoard={handleOpenBoard}
               onCreateBoard={handleCreateBoard}
+              onStartAiCreate={handleOpenAiCreate}
               onImportBoardFile={handleImportBoardFile}
               onDeleteBoard={handleDeleteBoard}
+              aiActionTitle={aiWorkflowActionTitle}
+              aiActionDisabled={!preferredWorkflowAiProvider || aiComposerGenerating}
+              aiActionLoading={aiComposerGenerating && aiComposerMode === 'create'}
             />
           </div>
         </section>
@@ -1556,6 +1842,10 @@ function App() {
             onEnvironmentSave={handleEnvironmentSave}
             onDuplicateEnvironment={handleDuplicateEnvironment}
             onDeleteEnvironment={handleDeleteEnvironment}
+            onOpenAiComposer={handleOpenAiEdit}
+            aiActionTitle={aiWorkflowActionTitle}
+            aiActionDisabled={!preferredWorkflowAiProvider || aiComposerGenerating}
+            aiActionLoading={aiComposerGenerating && aiComposerMode === 'edit'}
           />
 
           <FlowgramCanvas
@@ -1791,6 +2081,24 @@ function App() {
 
         {renderStudioContent()}
       </section>
+      <AiWorkflowComposer
+        open={aiComposerOpen}
+        mode={aiComposerMode}
+        activeProjectName={activeProject?.name ?? null}
+        status={aiComposerStatus}
+        generating={aiComposerGenerating}
+        requirement={aiComposerRequirement}
+        error={aiComposerError}
+        rawText={aiComposerRawText}
+        thinkingText={aiComposerThinkingText}
+        draft={aiComposerState?.draft ?? null}
+        operations={aiComposerState?.operations ?? []}
+        onRequirementChange={setAiComposerRequirement}
+        onClose={handleCloseAiComposer}
+        onSubmit={() => {
+          void handleSubmitAiComposer();
+        }}
+      />
       {renderRestoreDialog()}
     </main>
   );

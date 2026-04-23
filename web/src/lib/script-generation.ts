@@ -192,6 +192,6 @@ export async function generateScriptStream(
     params: resolveGenerationParams(options.params),
     timeoutMs: options.timeoutMs ?? DEFAULT_SCRIPT_GENERATION_TIMEOUT_MS,
   };
-  const rawContent = await copilotCompleteStream(request, onDelta, onThinking);
-  return sanitizeGeneratedScript(rawContent);
+  const result = await copilotCompleteStream(request, onDelta, onThinking);
+  return sanitizeGeneratedScript(result.text);
 }

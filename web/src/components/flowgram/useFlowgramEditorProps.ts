@@ -20,6 +20,7 @@ import {
   getDefaultFlowgramNodeRegistry,
   normalizeFlowgramNodeJson,
 } from './flowgram-node-library';
+import { flowgramShortcutsPlugin } from './flowgram-shortcuts';
 import { FlowgramGroupNodeRender } from './FlowgramGroupNodeRender';
 import { flowgramNodeSettingsPanelFactory } from './FlowgramNodeSettingsPanel';
 import { createFlowgramQuickNodePanel } from './FlowgramQuickNodePanel';
@@ -153,6 +154,7 @@ export function useFlowgramEditorProps({
           groupNodeRender: FlowgramGroupNodeRender,
         }),
         createDownloadPlugin({}),
+        flowgramShortcutsPlugin,
         createPanelManagerPlugin({
           factories: [flowgramNodeSettingsPanelFactory, flowgramRuntimePanelFactory],
           right: {
