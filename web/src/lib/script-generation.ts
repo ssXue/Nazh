@@ -114,11 +114,18 @@ export interface GenerateScriptOptions {
 }
 
 function resolveGenerationParams(params?: AiGenerationParams): AiGenerationParams {
-  return {
+  const resolved: AiGenerationParams = {
     temperature: params?.temperature ?? DEFAULT_SCRIPT_GENERATION_PARAMS.temperature,
     maxTokens: params?.maxTokens ?? DEFAULT_SCRIPT_GENERATION_PARAMS.maxTokens,
     topP: params?.topP ?? DEFAULT_SCRIPT_GENERATION_PARAMS.topP,
   };
+  if (params?.thinking) {
+    resolved.thinking = params.thinking;
+  }
+  if (params?.reasoningEffort) {
+    resolved.reasoningEffort = params.reasoningEffort;
+  }
+  return resolved;
 }
 
 const NL_PREFIX_PATTERNS = [

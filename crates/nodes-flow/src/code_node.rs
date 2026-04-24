@@ -8,7 +8,7 @@ use serde_json::Value;
 use std::sync::Arc;
 use uuid::Uuid;
 
-use nazh_ai_core::{AiGenerationParams, AiService};
+use nazh_ai_core::{AiGenerationParams, AiReasoningEffort, AiService, AiThinkingConfig};
 use serde::{Deserialize, Serialize};
 
 use nazh_core::EngineError;
@@ -29,6 +29,10 @@ pub struct CodeNodeAiConfig {
     pub max_tokens: Option<u32>,
     #[serde(default)]
     pub top_p: Option<f32>,
+    #[serde(default)]
+    pub thinking: Option<AiThinkingConfig>,
+    #[serde(default)]
+    pub reasoning_effort: Option<AiReasoningEffort>,
     #[serde(default)]
     pub timeout_ms: Option<u64>,
 }
@@ -81,6 +85,8 @@ impl CodeNode {
                         temperature: ai_config.temperature,
                         max_tokens: ai_config.max_tokens,
                         top_p: ai_config.top_p,
+                        thinking: ai_config.thinking,
+                        reasoning_effort: ai_config.reasoning_effort,
                     },
                     ai_config.timeout_ms,
                 )?)

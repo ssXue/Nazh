@@ -34,6 +34,10 @@ export interface FlowgramScriptAiConfig {
   temperature?: number;
   maxTokens?: number;
   topP?: number;
+  thinking?: {
+    type: 'enabled' | 'disabled';
+  };
+  reasoningEffort?: 'high' | 'max';
   timeoutMs?: number;
 }
 
@@ -395,6 +399,8 @@ function normalizeScriptAiConfig(value: unknown): FlowgramScriptAiConfig | undef
       'temperature',
       'maxTokens',
       'topP',
+      'thinking',
+      'reasoningEffort',
       'timeoutMs',
     ] as const
   ).some((key) => hasOwnKey(value, key));
@@ -428,6 +434,19 @@ function normalizeScriptAiConfig(value: unknown): FlowgramScriptAiConfig | undef
   const topP = normalizeFiniteValue(value.topP);
   if (topP !== undefined) {
     normalized.topP = topP;
+  }
+
+  if (
+    isRecord(value.thinking) &&
+    (value.thinking.type === 'enabled' || value.thinking.type === 'disabled')
+  ) {
+    normalized.thinking = {
+      type: value.thinking.type,
+    };
+  }
+
+  if (value.reasoningEffort === 'high' || value.reasoningEffort === 'max') {
+    normalized.reasoningEffort = value.reasoningEffort;
   }
 
   const timeoutMs = normalizePositiveIntegerValue(value.timeoutMs);

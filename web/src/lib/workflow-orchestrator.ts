@@ -899,11 +899,18 @@ export function applyWorkflowOrchestrationOperation(
 }
 
 function resolveGenerationParams(params?: AiGenerationParams): AiGenerationParams {
-  return {
+  const resolved: AiGenerationParams = {
     temperature: params?.temperature ?? DEFAULT_COPILOT_PARAMS.temperature,
     maxTokens: params?.maxTokens ?? DEFAULT_COPILOT_PARAMS.maxTokens,
     topP: params?.topP ?? DEFAULT_COPILOT_PARAMS.topP,
   };
+  if (params?.thinking) {
+    resolved.thinking = params.thinking;
+  }
+  if (params?.reasoningEffort) {
+    resolved.reasoningEffort = params.reasoningEffort;
+  }
+  return resolved;
 }
 
 function consumeOperationLines(

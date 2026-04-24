@@ -21,11 +21,13 @@ function baseGraph(): WorkflowGraph {
           script: 'payload["reply"] = ai_complete("hello"); payload',
           ai: {
             providerId: 'deepseek',
-            model: 'deepseek-chat',
+            model: 'deepseek-v4-flash',
             systemPrompt: '你是测试助手',
             temperature: 0.2,
             maxTokens: 256,
             topP: 0.9,
+            thinking: { type: 'enabled' },
+            reasoningEffort: 'high',
             timeoutMs: 4000,
           },
         },
@@ -60,11 +62,13 @@ describe('toFlowgramWorkflowJson', () => {
     const nodeB = result.nodes.find((n) => n.id === 'b');
     expect((nodeB?.data as { config?: { ai?: unknown } })?.config?.ai).toEqual({
       providerId: 'deepseek',
-      model: 'deepseek-chat',
+      model: 'deepseek-v4-flash',
       systemPrompt: '你是测试助手',
       temperature: 0.2,
       maxTokens: 256,
       topP: 0.9,
+      thinking: { type: 'enabled' },
+      reasoningEffort: 'high',
       timeoutMs: 4000,
     });
   });

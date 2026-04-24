@@ -289,6 +289,33 @@ pub struct AiProviderDraft {
     pub enabled: bool,
 }
 
+/// DeepSeek/OpenAI 兼容的思考模式开关。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "lowercase")]
+pub enum AiThinkingMode {
+    Enabled,
+    Disabled,
+}
+
+/// DeepSeek/OpenAI 兼容的思考模式配置。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct AiThinkingConfig {
+    #[serde(rename = "type")]
+    pub kind: AiThinkingMode,
+}
+
+/// DeepSeek 推理强度。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "lowercase")]
+pub enum AiReasoningEffort {
+    High,
+    Max,
+}
+
 /// Copilot 默认生成参数。
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
@@ -303,6 +330,12 @@ pub struct AiGenerationParams {
     #[serde(default = "default_copilot_top_p")]
     #[ts(optional)]
     pub top_p: Option<f32>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub thinking: Option<AiThinkingConfig>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub reasoning_effort: Option<AiReasoningEffort>,
 }
 
 #[allow(clippy::unnecessary_wraps)]
@@ -324,6 +357,8 @@ impl Default for AiGenerationParams {
             temperature: default_copilot_temperature(),
             max_tokens: default_copilot_max_tokens(),
             top_p: default_copilot_top_p(),
+            thinking: None,
+            reasoning_effort: None,
         }
     }
 }
@@ -551,5 +586,7 @@ mod tests {
         assert_eq!(params.temperature, Some(0.7));
         assert_eq!(params.max_tokens, Some(2048));
         assert_eq!(params.top_p, Some(1.0));
+        assert_eq!(params.thinking, None);
+        assert_eq!(params.reasoning_effort, None);
     }
 }

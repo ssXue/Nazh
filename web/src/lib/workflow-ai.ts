@@ -1,5 +1,6 @@
 import type {
   AiConfigView,
+  AiGenerationParams,
   AiProviderView,
   JsonValue,
   WorkflowGraph,
@@ -13,6 +14,8 @@ export interface GlobalScriptAiConfig {
   temperature?: number;
   maxTokens?: number;
   topP?: number;
+  thinking?: AiGenerationParams['thinking'];
+  reasoningEffort?: AiGenerationParams['reasoningEffort'];
   timeoutMs?: number;
 }
 
@@ -121,6 +124,14 @@ export function buildGlobalScriptAiConfig(
   const topP = toFiniteNumber(aiConfig?.copilotParams.topP);
   if (topP !== undefined) {
     nextConfig.topP = topP;
+  }
+
+  if (aiConfig?.copilotParams.thinking) {
+    nextConfig.thinking = aiConfig.copilotParams.thinking;
+  }
+
+  if (aiConfig?.copilotParams.reasoningEffort) {
+    nextConfig.reasoningEffort = aiConfig.copilotParams.reasoningEffort;
   }
 
   const timeoutMs = toFiniteNumber(aiConfig?.agentSettings.timeoutMs);

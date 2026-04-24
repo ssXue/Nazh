@@ -28,11 +28,16 @@ import {
   XCloseIcon,
 } from './AppIcons';
 
+type ThinkingModeValue = 'enabled' | 'disabled';
+type ReasoningEffortValue = 'high' | 'max';
+
 interface AgentSettingsFormState {
   systemPrompt: string;
   temperature: string;
   maxTokens: string;
   topP: string;
+  thinkingMode: string;
+  reasoningEffort: string;
   timeoutMs: string;
 }
 
@@ -41,6 +46,8 @@ const EMPTY_AGENT_SETTINGS_FORM: AgentSettingsFormState = {
   temperature: '',
   maxTokens: '',
   topP: '',
+  thinkingMode: '',
+  reasoningEffort: '',
   timeoutMs: '',
 };
 
@@ -52,7 +59,8 @@ interface ProviderPreset {
 }
 
 const PROVIDER_PRESETS: ProviderPreset[] = [
-  { label: 'DeepSeek', name: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', defaultModel: 'deepseek-chat' },
+  { label: 'DeepSeek Flash', name: 'DeepSeek', baseUrl: 'https://api.deepseek.com', defaultModel: 'deepseek-v4-flash' },
+  { label: 'DeepSeek Pro', name: 'DeepSeek', baseUrl: 'https://api.deepseek.com', defaultModel: 'deepseek-v4-pro' },
   { label: 'OpenAI', name: 'OpenAI', baseUrl: 'https://api.openai.com/v1', defaultModel: 'gpt-4o-mini' },
   { label: '月之暗面', name: 'Moonshot', baseUrl: 'https://api.moonshot.cn/v1', defaultModel: 'moonshot-v1-8k' },
   { label: '智谱', name: 'Zhipu', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', defaultModel: 'glm-4-flash' },
@@ -91,6 +99,24 @@ function parseOptionalPositiveInteger(value: string): number | undefined {
   }
 
   return Math.round(parsed);
+}
+
+function isThinkingModeValue(value: string): value is ThinkingModeValue {
+  return value === 'enabled' || value === 'disabled';
+}
+
+function isReasoningEffortValue(value: string): value is ReasoningEffortValue {
+  return value === 'high' || value === 'max';
+}
+
+function parseOptionalThinkingConfig(value: string) {
+  const normalized = value.trim();
+  return isThinkingModeValue(normalized) ? { type: normalized } : undefined;
+}
+
+function parseOptionalReasoningEffort(value: string): ReasoningEffortValue | undefined {
+  const normalized = value.trim();
+  return isReasoningEffortValue(normalized) ? normalized : undefined;
 }
 
 function buildProviderUpserts(
@@ -149,6 +175,8 @@ function toAgentSettingsForm(
     temperature: readNumberInput(aiConfig.copilotParams.temperature),
     maxTokens: readNumberInput(aiConfig.copilotParams.maxTokens),
     topP: readNumberInput(aiConfig.copilotParams.topP),
+    thinkingMode: aiConfig.copilotParams.thinking?.type ?? '',
+    reasoningEffort: aiConfig.copilotParams.reasoningEffort ?? '',
     timeoutMs: readNumberInput(aiConfig.agentSettings.timeoutMs),
   };
 }
@@ -222,11 +250,22 @@ export function AiConfigPanel({
   const isTopPValid =
     !agentSettingsForm.topP.trim() ||
     parseOptionalFiniteNumber(agentSettingsForm.topP) !== undefined;
+  const isThinkingModeValid =
+    agentSettingsForm.thinkingMode === '' ||
+    isThinkingModeValue(agentSettingsForm.thinkingMode);
+  const isReasoningEffortValid =
+    agentSettingsForm.reasoningEffort === '' ||
+    isReasoningEffortValue(agentSettingsForm.reasoningEffort);
   const isTimeoutValid =
     !agentSettingsForm.timeoutMs.trim() ||
     parseOptionalPositiveInteger(agentSettingsForm.timeoutMs) !== undefined;
   const isAgentSettingsValid =
-    isTemperatureValid && isMaxTokensValid && isTopPValid && isTimeoutValid;
+    isTemperatureValid &&
+    isMaxTokensValid &&
+    isTopPValid &&
+    isThinkingModeValid &&
+    isReasoningEffortValid &&
+    isTimeoutValid;
 
   const hasPendingAgentSettings =
     !!aiConfig &&
@@ -375,6 +414,8 @@ export function AiConfigPanel({
           temperature: parseOptionalFiniteNumber(agentSettingsForm.temperature),
           maxTokens: parseOptionalPositiveInteger(agentSettingsForm.maxTokens),
           topP: parseOptionalFiniteNumber(agentSettingsForm.topP),
+          thinking: parseOptionalThinkingConfig(agentSettingsForm.thinkingMode),
+          reasoningEffort: parseOptionalReasoningEffort(agentSettingsForm.reasoningEffort),
         },
         agentSettings: {
           systemPrompt: agentSettingsForm.systemPrompt.trim() || undefined,
@@ -609,7 +650,8 @@ export function AiConfigPanel({
                   {PROVIDER_PRESETS.map((preset) => {
                     const isActive =
                       form.name === preset.name &&
-                      form.baseUrl === preset.baseUrl;
+                      form.baseUrl === preset.baseUrl &&
+                      form.defaultModel === preset.defaultModel;
                     return (
                       <button
                         key={preset.label}
@@ -651,7 +693,7 @@ export function AiConfigPanel({
                     id="ai-provider-url"
                     className="settings-path-input"
                     type="text"
-                    placeholder="例如：https://api.deepseek.com/v1"
+                    placeholder="例如：https://api.deepseek.com"
                     value={form.baseUrl}
                     onChange={(e) => handleFormChange('baseUrl', e.target.value)}
                   />
@@ -665,7 +707,7 @@ export function AiConfigPanel({
                     id="ai-provider-model"
                     className="settings-path-input"
                     type="text"
-                    placeholder="例如：deepseek-chat"
+                    placeholder="例如：deepseek-v4-flash"
                     value={form.defaultModel}
                     onChange={(e) => handleFormChange('defaultModel', e.target.value)}
                   />
@@ -836,6 +878,84 @@ export function AiConfigPanel({
                     value={agentSettingsForm.topP}
                     onChange={(event) => handleAgentSettingsChange('topP', event.target.value)}
                   />
+                </article>
+
+                <article className="settings-row settings-row--stacked">
+                  <strong className="settings-row__label">DeepSeek Thinking</strong>
+                  <div className="settings-segment" role="group" aria-label="DeepSeek Thinking">
+                    <button
+                      type="button"
+                      className={
+                        agentSettingsForm.thinkingMode === ''
+                          ? 'settings-segment__button is-active'
+                          : 'settings-segment__button'
+                      }
+                      onClick={() => handleAgentSettingsChange('thinkingMode', '')}
+                    >
+                      默认
+                    </button>
+                    <button
+                      type="button"
+                      className={
+                        agentSettingsForm.thinkingMode === 'enabled'
+                          ? 'settings-segment__button is-active'
+                          : 'settings-segment__button'
+                      }
+                      onClick={() => handleAgentSettingsChange('thinkingMode', 'enabled')}
+                    >
+                      开启
+                    </button>
+                    <button
+                      type="button"
+                      className={
+                        agentSettingsForm.thinkingMode === 'disabled'
+                          ? 'settings-segment__button is-active'
+                          : 'settings-segment__button'
+                      }
+                      onClick={() => handleAgentSettingsChange('thinkingMode', 'disabled')}
+                    >
+                      关闭
+                    </button>
+                  </div>
+                </article>
+
+                <article className="settings-row settings-row--stacked">
+                  <strong className="settings-row__label">Reasoning Effort</strong>
+                  <div className="settings-segment" role="group" aria-label="Reasoning Effort">
+                    <button
+                      type="button"
+                      className={
+                        agentSettingsForm.reasoningEffort === ''
+                          ? 'settings-segment__button is-active'
+                          : 'settings-segment__button'
+                      }
+                      onClick={() => handleAgentSettingsChange('reasoningEffort', '')}
+                    >
+                      默认
+                    </button>
+                    <button
+                      type="button"
+                      className={
+                        agentSettingsForm.reasoningEffort === 'high'
+                          ? 'settings-segment__button is-active'
+                          : 'settings-segment__button'
+                      }
+                      onClick={() => handleAgentSettingsChange('reasoningEffort', 'high')}
+                    >
+                      High
+                    </button>
+                    <button
+                      type="button"
+                      className={
+                        agentSettingsForm.reasoningEffort === 'max'
+                          ? 'settings-segment__button is-active'
+                          : 'settings-segment__button'
+                      }
+                      onClick={() => handleAgentSettingsChange('reasoningEffort', 'max')}
+                    >
+                      Max
+                    </button>
+                  </div>
                 </article>
 
                 <article className="settings-row settings-row--stacked">

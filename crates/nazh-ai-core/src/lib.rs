@@ -14,7 +14,8 @@ pub mod types;
 pub use client::{OpenAiCompatibleService, StreamChunk};
 pub use config::{
     AiAgentSettings, AiConfigFile, AiConfigUpdate, AiConfigView, AiGenerationParams,
-    AiProviderDraft, AiProviderSecretRecord, AiProviderUpsert, AiProviderView, AiSecretInput,
+    AiProviderDraft, AiProviderSecretRecord, AiProviderUpsert, AiProviderView, AiReasoningEffort,
+    AiSecretInput, AiThinkingConfig, AiThinkingMode,
 };
 pub use error::AiError;
 pub use service::AiService;
@@ -37,6 +38,9 @@ mod export_bindings {
         let _ = AiConfigView::export();
         let _ = AiConfigUpdate::export();
         let _ = AiGenerationParams::export();
+        let _ = AiThinkingConfig::export();
+        let _ = AiThinkingMode::export();
+        let _ = AiReasoningEffort::export();
         let _ = AiProviderView::export();
         let _ = AiProviderUpsert::export();
         let _ = AiProviderDraft::export();

@@ -32,11 +32,13 @@ describe('normalizeFlowgramNodeJson', () => {
           script: 'payload["reply"] = ai_complete("hello"); payload',
           ai: {
             providerId: 'deepseek',
-            model: 'deepseek-chat',
+            model: 'deepseek-v4-flash',
             systemPrompt: '你是测试助手',
             temperature: 0.2,
             maxTokens: 128,
             topP: 0.85,
+            thinking: { type: 'enabled' },
+            reasoningEffort: 'max',
             timeoutMs: 5000,
           },
         },
@@ -47,11 +49,13 @@ describe('normalizeFlowgramNodeJson', () => {
 
     expect((normalized.data as { config?: { ai?: unknown } })?.config?.ai).toEqual({
       providerId: 'deepseek',
-      model: 'deepseek-chat',
+      model: 'deepseek-v4-flash',
       systemPrompt: '你是测试助手',
       temperature: 0.2,
       maxTokens: 128,
       topP: 0.85,
+      thinking: { type: 'enabled' },
+      reasoningEffort: 'max',
       timeoutMs: 5000,
     });
   });

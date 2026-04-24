@@ -8,7 +8,10 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
-use crate::config::{AiConfigFile, AiProviderDraft, AiProviderSecretRecord};
+use crate::config::{
+    AiConfigFile, AiGenerationParams, AiProviderDraft, AiProviderSecretRecord, AiReasoningEffort,
+    AiThinkingConfig, AiThinkingMode,
+};
 use crate::error::AiError;
 use crate::service::AiService;
 use crate::types::{
@@ -102,6 +105,106 @@ impl OpenAiCompatibleService {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_provider(base_url: &str, default_model: &str) -> ResolvedProvider {
+        ResolvedProvider {
+            base_url: base_url.to_owned(),
+            api_key: "sk-test".to_owned(),
+            default_model: default_model.to_owned(),
+            extra_headers: HashMap::new(),
+        }
+    }
+
+    fn test_messages() -> Vec<ChatMessagePayload> {
+        vec![ChatMessagePayload {
+            role: "user".to_owned(),
+            content: "Hi".to_owned(),
+        }]
+    }
+
+    #[test]
+    fn deepseek_payload_sends_thinking_options_and_omits_sampling_when_enabled() {
+        let provider = test_provider("https://api.deepseek.com", "deepseek-v4-pro");
+        let params = AiGenerationParams {
+            temperature: Some(0.8),
+            max_tokens: Some(256),
+            top_p: Some(0.9),
+            thinking: Some(AiThinkingConfig {
+                kind: AiThinkingMode::Enabled,
+            }),
+            reasoning_effort: Some(AiReasoningEffort::Max),
+        };
+
+        let payload = build_chat_payload(
+            provider.default_model.clone(),
+            test_messages(),
+            &params,
+            false,
+            provider_accepts_deepseek_options(&provider, &provider.default_model),
+        );
+        let json = serde_json::to_value(payload).expect("payload serializes");
+
+        assert_eq!(json["model"], "deepseek-v4-pro");
+        assert_eq!(json["thinking"]["type"], "enabled");
+        assert_eq!(json["reasoning_effort"], "max");
+        assert_eq!(json["max_tokens"], 256);
+        assert!(json.get("temperature").is_none());
+        assert!(json.get("top_p").is_none());
+    }
+
+    #[test]
+    fn non_deepseek_payload_omits_deepseek_specific_options() {
+        let provider = test_provider("https://api.openai.com/v1", "gpt-4o-mini");
+        let params = AiGenerationParams {
+            temperature: Some(0.3),
+            max_tokens: Some(128),
+            top_p: Some(0.8),
+            thinking: Some(AiThinkingConfig {
+                kind: AiThinkingMode::Enabled,
+            }),
+            reasoning_effort: Some(AiReasoningEffort::High),
+        };
+
+        let payload = build_chat_payload(
+            provider.default_model.clone(),
+            test_messages(),
+            &params,
+            false,
+            provider_accepts_deepseek_options(&provider, &provider.default_model),
+        );
+        let json = serde_json::to_value(payload).expect("payload serializes");
+
+        assert!(json.get("thinking").is_none());
+        assert!(json.get("reasoning_effort").is_none());
+        assert!((json["temperature"].as_f64().unwrap_or_default() - 0.3).abs() < 0.001);
+        assert!((json["top_p"].as_f64().unwrap_or_default() - 0.8).abs() < 0.001);
+    }
+
+    #[test]
+    fn deepseek_connection_test_disables_thinking_for_lightweight_probe() {
+        let provider = test_provider("https://api.deepseek.com", "deepseek-v4-flash");
+        let params = build_connection_test_params(provider_accepts_deepseek_options(
+            &provider,
+            &provider.default_model,
+        ));
+        let payload = build_chat_payload(
+            provider.default_model.clone(),
+            test_messages(),
+            &params,
+            false,
+            provider_accepts_deepseek_options(&provider, &provider.default_model),
+        );
+        let json = serde_json::to_value(payload).expect("payload serializes");
+
+        assert_eq!(json["thinking"]["type"], "disabled");
+        assert_eq!(json["temperature"], 0.0);
+        assert_eq!(json["max_tokens"], TEST_MAX_TOKENS);
+    }
+}
+
 struct ResolvedProvider {
     base_url: String,
     api_key: String,
@@ -113,6 +216,10 @@ struct ResolvedProvider {
 struct ChatCompletionPayload {
     model: String,
     messages: Vec<ChatMessagePayload>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    thinking: Option<AiThinkingConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reasoning_effort: Option<AiReasoningEffort>,
     #[serde(skip_serializing_if = "Option::is_none")]
     temperature: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -205,6 +312,64 @@ fn build_url(base_url: &str, path: &str) -> Result<String, AiError> {
     Ok(format!("{trimmed}{path}"))
 }
 
+fn provider_accepts_deepseek_options(provider: &ResolvedProvider, model: &str) -> bool {
+    let base_url = provider.base_url.to_ascii_lowercase();
+    let model = model.to_ascii_lowercase();
+    base_url.contains("deepseek.com") || model.starts_with("deepseek-")
+}
+
+fn is_thinking_enabled(params: &AiGenerationParams) -> bool {
+    params
+        .thinking
+        .as_ref()
+        .is_some_and(|thinking| thinking.kind == AiThinkingMode::Enabled)
+}
+
+fn build_chat_payload(
+    model: String,
+    messages: Vec<ChatMessagePayload>,
+    params: &AiGenerationParams,
+    stream: bool,
+    include_deepseek_options: bool,
+) -> ChatCompletionPayload {
+    let omit_sampling_params = include_deepseek_options && is_thinking_enabled(params);
+
+    ChatCompletionPayload {
+        model,
+        messages,
+        thinking: include_deepseek_options
+            .then(|| params.thinking.clone())
+            .flatten(),
+        reasoning_effort: include_deepseek_options
+            .then(|| params.reasoning_effort.clone())
+            .flatten(),
+        temperature: if omit_sampling_params {
+            None
+        } else {
+            params.temperature
+        },
+        max_tokens: params.max_tokens,
+        top_p: if omit_sampling_params {
+            None
+        } else {
+            params.top_p
+        },
+        stream,
+    }
+}
+
+fn build_connection_test_params(disable_deepseek_thinking: bool) -> AiGenerationParams {
+    AiGenerationParams {
+        temperature: Some(0.0),
+        max_tokens: Some(TEST_MAX_TOKENS),
+        top_p: None,
+        thinking: disable_deepseek_thinking.then_some(AiThinkingConfig {
+            kind: AiThinkingMode::Disabled,
+        }),
+        reasoning_effort: None,
+    }
+}
+
 fn parse_api_error(status: u16, body: &str) -> AiError {
     if let Ok(error_response) = serde_json::from_str::<ApiErrorResponse>(body) {
         let message = error_response
@@ -264,13 +429,18 @@ async fn emit_stream_line(
     let content_delta = choice.delta.content.clone().unwrap_or_default();
     let thinking_delta = choice.delta.thinking.clone();
     let has_content = !content_delta.is_empty();
-    let has_thinking = thinking_delta.as_ref().is_some_and(|value| !value.is_empty());
+    let has_thinking = thinking_delta
+        .as_ref()
+        .is_some_and(|value| !value.is_empty());
     let is_done = choice
         .finish_reason
         .as_deref()
         .map(str::trim)
         .is_some_and(|value| !value.is_empty());
-    let finish_reason = choice.finish_reason.clone().filter(|value| !value.trim().is_empty());
+    let finish_reason = choice
+        .finish_reason
+        .clone()
+        .filter(|value| !value.trim().is_empty());
 
     if is_done {
         *saw_explicit_completion = true;
@@ -292,7 +462,11 @@ async fn emit_stream_line(
     true
 }
 
-fn build_stream_body_decode_error(error: &reqwest::Error, chunk_count: usize, byte_count: usize) -> AiError {
+fn build_stream_body_decode_error(
+    error: &reqwest::Error,
+    chunk_count: usize,
+    byte_count: usize,
+) -> AiError {
     let detail = error.to_string();
     let hint = if detail.contains("error decoding response body") {
         "上游流式响应在传输过程中中断或损坏，常见于代理/网关提前断开 chunked SSE 响应。"
@@ -322,14 +496,13 @@ impl AiService for OpenAiCompatibleService {
         let model = request.model.as_deref().unwrap_or(&provider.default_model);
         let timeout_ms = request.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS);
 
-        let body = ChatCompletionPayload {
-            model: model.to_owned(),
-            messages: build_chat_messages(&request.messages),
-            temperature: request.params.temperature,
-            max_tokens: request.params.max_tokens,
-            top_p: request.params.top_p,
-            stream: false,
-        };
+        let body = build_chat_payload(
+            model.to_owned(),
+            build_chat_messages(&request.messages),
+            &request.params,
+            false,
+            provider_accepts_deepseek_options(&provider, model),
+        );
 
         let url = build_url(&provider.base_url, "/chat/completions")?;
 
@@ -398,14 +571,13 @@ impl AiService for OpenAiCompatibleService {
             .unwrap_or(provider.default_model.clone());
         let timeout_ms = request.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS);
 
-        let body = ChatCompletionPayload {
-            model,
-            messages: build_chat_messages(&request.messages),
-            temperature: request.params.temperature,
-            max_tokens: request.params.max_tokens,
-            top_p: request.params.top_p,
-            stream: true,
-        };
+        let body = build_chat_payload(
+            model.clone(),
+            build_chat_messages(&request.messages),
+            &request.params,
+            true,
+            provider_accepts_deepseek_options(&provider, &model),
+        );
 
         let url = build_url(&provider.base_url, "/chat/completions")?;
 
@@ -498,17 +670,17 @@ impl AiService for OpenAiCompatibleService {
 
         let url = build_url(&provider.base_url, "/chat/completions")?;
 
-        let body = ChatCompletionPayload {
-            model: provider.default_model.clone(),
-            messages: vec![ChatMessagePayload {
+        let model = provider.default_model.clone();
+        let body = build_chat_payload(
+            model.clone(),
+            vec![ChatMessagePayload {
                 role: "user".to_owned(),
                 content: "Hi".to_owned(),
             }],
-            temperature: Some(0.0),
-            max_tokens: Some(TEST_MAX_TOKENS),
-            top_p: None,
-            stream: false,
-        };
+            &build_connection_test_params(provider_accepts_deepseek_options(&provider, &model)),
+            false,
+            provider_accepts_deepseek_options(&provider, &model),
+        );
 
         let mut builder = self
             .http

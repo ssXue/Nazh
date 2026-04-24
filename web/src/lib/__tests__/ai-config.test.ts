@@ -13,14 +13,14 @@ describe('ai-config helpers', () => {
     expect(
       toProviderFormState({
         name: 'DeepSeek',
-        baseUrl: 'https://api.deepseek.com/v1',
-        defaultModel: 'deepseek-chat',
+        baseUrl: 'https://api.deepseek.com',
+        defaultModel: 'deepseek-v4-flash',
       }),
     ).toEqual({
       name: 'DeepSeek',
-      baseUrl: 'https://api.deepseek.com/v1',
+      baseUrl: 'https://api.deepseek.com',
       apiKey: '',
-      defaultModel: 'deepseek-chat',
+      defaultModel: 'deepseek-v4-flash',
     });
   });
 
@@ -49,8 +49,8 @@ describe('ai-config helpers', () => {
   it('仅在编辑时根据表单和 api key 策略识别未保存变更', () => {
     const provider = {
       name: 'DeepSeek',
-      baseUrl: 'https://api.deepseek.com/v1',
-      defaultModel: 'deepseek-chat',
+      baseUrl: 'https://api.deepseek.com',
+      defaultModel: 'deepseek-v4-flash',
     };
 
     expect(hasPendingProviderChanges(provider, EMPTY_PROVIDER_FORM, null, false)).toBe(false);
@@ -62,7 +62,7 @@ describe('ai-config helpers', () => {
         provider,
         {
           ...toProviderFormState(provider),
-          defaultModel: 'deepseek-reasoner',
+          defaultModel: 'deepseek-v4-pro',
         },
         'provider-1',
         false,

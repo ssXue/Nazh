@@ -58,8 +58,8 @@ function createAiConfig(): AiConfigView {
       {
         id: 'deepseek',
         name: 'DeepSeek',
-        baseUrl: 'https://api.deepseek.com/v1',
-        defaultModel: 'deepseek-chat',
+        baseUrl: 'https://api.deepseek.com',
+        defaultModel: 'deepseek-v4-flash',
         extraHeaders: {},
         enabled: true,
         hasApiKey: true,
@@ -70,6 +70,8 @@ function createAiConfig(): AiConfigView {
       temperature: 0.2,
       maxTokens: 512,
       topP: 0.9,
+      thinking: { type: 'enabled' },
+      reasoningEffort: 'max',
     },
     agentSettings: {
       systemPrompt: '你是测试助手',
@@ -110,11 +112,13 @@ describe('applyGlobalAiConfigToWorkflowGraph', () => {
       retries: 2,
       ai: {
         providerId: 'deepseek',
-        model: 'deepseek-chat',
+        model: 'deepseek-v4-flash',
         systemPrompt: '你是测试助手',
         temperature: 0.2,
         maxTokens: 512,
         topP: 0.9,
+        thinking: { type: 'enabled' },
+        reasoningEffort: 'max',
         timeoutMs: 4000,
       },
     });
@@ -122,11 +126,13 @@ describe('applyGlobalAiConfigToWorkflowGraph', () => {
       script: 'payload',
       ai: {
         providerId: 'deepseek',
-        model: 'deepseek-chat',
+        model: 'deepseek-v4-flash',
         systemPrompt: '你是测试助手',
         temperature: 0.2,
         maxTokens: 512,
         topP: 0.9,
+        thinking: { type: 'enabled' },
+        reasoningEffort: 'max',
         timeoutMs: 4000,
       },
     });

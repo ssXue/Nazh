@@ -126,11 +126,13 @@ describe('generateScript', () => {
 
     const result = await generateScript('需求', mockContext, {
       providerId: 'test-provider',
-      model: 'deepseek-chat',
+      model: 'deepseek-v4-flash',
       params: {
         temperature: 0.2,
         maxTokens: 512,
         topP: 0.9,
+        thinking: { type: 'disabled' },
+        reasoningEffort: 'high',
       },
     });
 
@@ -138,11 +140,13 @@ describe('generateScript', () => {
     expect(mocked).toHaveBeenCalledTimes(1);
     const request = mocked.mock.calls[0][0];
     expect(request.providerId).toBe('test-provider');
-    expect(request.model).toBe('deepseek-chat');
+    expect(request.model).toBe('deepseek-v4-flash');
     expect(request.messages).toHaveLength(2);
     expect(request.params.temperature).toBe(0.2);
     expect(request.params.maxTokens).toBe(512);
     expect(request.params.topP).toBe(0.9);
+    expect(request.params.thinking).toEqual({ type: 'disabled' });
+    expect(request.params.reasoningEffort).toBe('high');
     expect(request.timeoutMs).toBe(60000);
     expect(() => JSON.stringify(request)).not.toThrow();
   });
