@@ -5,7 +5,7 @@
 
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
-use nazh_ai_core::AiService;
+use ai::AiService;
 use tokio::sync::mpsc;
 
 use super::runner::run_node;
@@ -65,7 +65,7 @@ pub async fn deploy_workflow_with_ai(
     let mut receivers = HashMap::new();
 
     for (node_id, node_definition) in &graph.nodes {
-        let (sender, receiver) = mpsc::channel::<ContextRef>(node_definition.buffer.max(1));
+        let (sender, receiver) = mpsc::channel::<ContextRef>(node_definition.buffer().max(1));
         senders.insert(node_id.clone(), sender);
         receivers.insert(node_id.clone(), receiver);
     }
@@ -105,7 +105,7 @@ pub async fn deploy_workflow_with_ai(
 
         runtime.spawn(run_node(
             node,
-            node_definition.timeout_ms.map(Duration::from_millis),
+            node_definition.timeout_ms().map(Duration::from_millis),
             input_rx,
             downstream_senders,
             result_tx.clone(),

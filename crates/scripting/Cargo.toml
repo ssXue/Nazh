@@ -13,7 +13,7 @@ workspace = true
 
 [dependencies]
 nazh-core.workspace = true
-nazh-ai-core.workspace = true
+ai.workspace = true
 fastrand.workspace = true
 rhai.workspace = true
 serde_json.workspace = true

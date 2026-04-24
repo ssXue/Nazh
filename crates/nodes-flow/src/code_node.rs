@@ -8,7 +8,7 @@ use serde_json::Value;
 use std::sync::Arc;
 use uuid::Uuid;
 
-use nazh_ai_core::{AiGenerationParams, AiReasoningEffort, AiService, AiThinkingConfig};
+use ai::{AiGenerationParams, AiReasoningEffort, AiService, AiThinkingConfig};
 use serde::{Deserialize, Serialize};
 
 use nazh_core::EngineError;

@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "crates/core", "crates/pipeline", "crates/connections", "crates/scripting", "crates/nodes-flow", "crates/nodes-io", "crates/nazh-ai-core", "src-tauri"]
+members = [".", "crates/core", "crates/pipeline", "crates/connections", "crates/scripting", "crates/nodes-flow", "crates/nodes-io", "crates/ai", "src-tauri"]
 exclude = ["crates/nazh-core"]
 resolver = "2"
 
@@ -24,7 +24,7 @@ missing_errors_doc = "allow"
 
 [workspace.dependencies]
 nazh-core = { path = "crates/core" }
-nazh-ai-core = { path = "crates/nazh-ai-core" }
+ai = { path = "crates/ai" }
 pipeline = { path = "crates/pipeline" }
 connections = { path = "crates/connections" }
 scripting = { path = "crates/scripting" }
@@ -47,6 +47,7 @@ rumqttc = { version = "0.24", features = ["use-rustls"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ts-rs = { version = "10", features = ["serde-compat", "serde-json-impl", "chrono-impl", "uuid-impl"] }
+url = "2"
 uuid = { version = "1", features = ["serde", "v4"] }
 
 [package]
@@ -74,7 +75,7 @@ path = "examples/phase1_demo.rs"
 
 [dependencies]
 nazh-core.workspace = true
-nazh-ai-core.workspace = true
+ai.workspace = true
 pipeline.workspace = true
 connections.workspace = true
 scripting.workspace = true

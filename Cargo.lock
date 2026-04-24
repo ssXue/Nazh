@@ -32,6 +32,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "ai"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "futures-util",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+ "ts-rs",
+ "uuid",
+]
+
+[[package]]
 name = "alloc-no-stdlib"
 version = "2.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -361,11 +377,11 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "nazh-core",
- "reqwest 0.12.28",
  "serde",
  "serde_json",
  "tokio",
  "ts-rs",
+ "url",
 ]
 
 [[package]]
@@ -2087,22 +2103,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "nazh-ai-core"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "futures-util",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "thiserror 1.0.69",
- "tokio",
- "tracing",
- "ts-rs",
- "uuid",
-]
-
-[[package]]
 name = "nazh-core"
 version = "0.1.0"
 dependencies = [
@@ -2123,8 +2123,8 @@ dependencies = [
 name = "nazh-desktop"
 version = "0.1.0"
 dependencies = [
+ "ai",
  "chrono",
- "nazh-ai-core",
  "nazh-engine",
  "rumqttc",
  "serde",
@@ -2142,9 +2142,9 @@ dependencies = [
 name = "nazh-engine"
 version = "0.1.0"
 dependencies = [
+ "ai",
  "async-trait",
  "connections",
- "nazh-ai-core",
  "nazh-core",
  "nodes-flow",
  "nodes-io",
@@ -2219,8 +2219,8 @@ dependencies = [
 name = "nodes-flow"
 version = "0.1.0"
 dependencies = [
+ "ai",
  "async-trait",
- "nazh-ai-core",
  "nazh-core",
  "rhai",
  "scripting",
@@ -2245,6 +2245,7 @@ dependencies = [
  "tokio",
  "tokio-modbus",
  "tracing",
+ "url",
  "uuid",
 ]
 
@@ -3455,8 +3456,8 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 name = "scripting"
 version = "0.1.0"
 dependencies = [
+ "ai",
  "fastrand",
- "nazh-ai-core",
  "nazh-core",
  "rhai",
  "serde_json",

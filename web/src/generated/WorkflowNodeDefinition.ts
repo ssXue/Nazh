@@ -3,5 +3,10 @@ import type { JsonValue } from "./serde_json/JsonValue";
 
 /**
  * 工作流图中的单节点配置。
+ *
+ * 字段私有以防止未来引入校验/不变量时被外部直接绕过。外部读取通过
+ * 同名访问器（`id()` / `node_type()` / ...），规范化缺省值通过 [`normalize`] 方法。
+ *
+ * [`normalize`]: WorkflowNodeDefinition::normalize
  */
 export type WorkflowNodeDefinition = { id: string, type: string, connection_id?: string, config: JsonValue, timeout_ms?: number, buffer: number, };

@@ -113,7 +113,7 @@ fn resolve_bark_endpoint(server_url: &str, key_or_url: &str) -> Result<String, S
     }
 
     if normalized.starts_with("http://") || normalized.starts_with("https://") {
-        let url = reqwest::Url::parse(normalized)
+        let url = url::Url::parse(normalized)
             .map_err(|error| format!("无效的 Bark 推送 URL: {error}"))?;
         let device_key = url
             .path_segments()

@@ -1,6 +1,6 @@
 [package]
-name = "nodes-io"
-description = "Nazh I/O 节点与模板引擎（Ring 1）"
+name = "ai"
+description = "Nazh AI 能力层：AiService trait、OpenAI 兼容 API 客户端与配置模型（Ring 1）"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -12,17 +12,16 @@ repository.workspace = true
 workspace = true
 
 [dependencies]
-nazh-core.workspace = true
-connections.workspace = true
 async-trait.workspace = true
-chrono.workspace = true
-reqwest.workspace = true
-rusqlite.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+reqwest = { workspace = true, features = ["stream"] }
+futures-util.workspace = true
+thiserror.workspace = true
 tokio.workspace = true
-tokio-modbus.workspace = true
-rumqttc.workspace = true
 tracing.workspace = true
-url.workspace = true
+ts-rs.workspace = true
 uuid.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true

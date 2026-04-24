@@ -10,11 +10,11 @@ use std::{
 };
 
 use chrono::{DateTime, Utc};
-use reqwest::Url;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use tokio::sync::RwLock;
 use ts_rs::TS;
+use url::Url;
 
 use nazh_core::EngineError;
 

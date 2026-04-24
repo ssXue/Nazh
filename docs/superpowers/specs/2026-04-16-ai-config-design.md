@@ -57,7 +57,7 @@
 Nazh-Workspace/           (Cargo workspace)
 ├── crates/
 │   ├── nazh-core/         # Ring 0：基础类型（不变）
-│   └── nazh-ai-core/      # 公共层：AI API HTTP 客户端 + 配置模型
+│   └── ai/      # 公共层：AI API HTTP 客户端 + 配置模型
 ├── src/                   # nazh-engine：后续接入运行时 LLM 节点
 └── src-tauri/             # nazh-desktop：本次依赖 ai-core，实现配置时 Copilot 接口
 ```
@@ -66,25 +66,25 @@ Nazh-Workspace/           (Cargo workspace)
 
 ```
 nazh-core
-nazh-ai-core ← src-tauri (nazh-desktop)
+ai ← src-tauri (nazh-desktop)
 ```
 
-- `nazh-ai-core` 是纯 AI 通信层，不依赖引擎业务逻辑
-- `nazh-ai-core` 有独立的 `AiError`，不引用 `EngineError`
+- `ai` 是纯 AI 通信层，不依赖引擎业务逻辑
+- `ai` 有独立的 `AiError`，不引用 `EngineError`
 - tauri 层在 IPC 边界转 `String`
 
 后续运行时 AI 节点接入时，再引入：
 
 ```
-nazh-core ← nazh-ai-core ← nazh-engine
+nazh-core ← ai ← nazh-engine
 ```
 
 届时 engine 层负责错误转换（`AiError → EngineError`）。
 
-## `nazh-ai-core` 模块结构
+## `ai` 模块结构
 
 ```
-crates/nazh-ai-core/src/
+crates/ai/src/
 ├── lib.rs               # crate 入口，重导出
 ├── config.rs            # AiConfigFile/View/Update, Provider 相关类型
 ├── error.rs             # AiError（独立错误类型）
@@ -388,7 +388,7 @@ pub enum AiError {
 
 为避免 AI 类型只停留在设计层，本次同时补齐实际导出入口：
 
-- `crates/nazh-ai-core/src/lib.rs` 新增 `#[cfg(test)] fn export_bindings()`，显式调用所有 AI 相关 `TS` 类型的 `export()`
+- `crates/ai/src/lib.rs` 新增 `#[cfg(test)] fn export_bindings()`，显式调用所有 AI 相关 `TS` 类型的 `export()`
 - `crates/nazh-core/` 保持既有 IPC 类型导出入口；若当前缺失，同步补上同名 `export_bindings()` 测试
 - 统一生成命令为：
 
@@ -505,10 +505,10 @@ export async function copilotComplete(request: AiCompletionRequest): Promise<AiC
 
 | crate | 变更 |
 |-------|------|
-| `Cargo.toml` (workspace) | `members` 新增 `"crates/nazh-ai-core"` |
-| `crates/nazh-ai-core/` | 新建，依赖 reqwest/async-trait/serde/thiserror/ts-rs/uuid/tokio/tracing |
+| `Cargo.toml` (workspace) | `members` 新增 `"crates/ai"` |
+| `crates/ai/` | 新建，依赖 reqwest/async-trait/serde/thiserror/ts-rs/uuid/tokio/tracing |
 | `crates/nazh-core/` | `error.rs` 新增 `AiNodeError` 变体 |
-| `src-tauri/` | `Cargo.toml` 新增 `nazh-ai-core` 依赖 |
+| `src-tauri/` | `Cargo.toml` 新增 `ai` 依赖 |
 
 ## 测试
 
@@ -539,7 +539,7 @@ export async function copilotComplete(request: AiCompletionRequest): Promise<AiC
 
 ### 本次实现
 
-1. 新建 `crates/nazh-ai-core/` — 配置模型、类型、trait、OpenAI 兼容客户端、AiError
+1. 新建 `crates/ai/` — 配置模型、类型、trait、OpenAI 兼容客户端、AiError
 2. Workspace `Cargo.toml` 注册新 crate
 3. `crates/nazh-core/error.rs` 新增 `AiNodeError` 变体
 4. `src-tauri/` 新增 4 个 IPC 命令 + `ai-config.json` 原子读写 + 共享 `ai_config` / `DesktopState` 扩展
@@ -551,4 +551,4 @@ export async function copilotComplete(request: AiCompletionRequest): Promise<AiC
 
 - Copilot 对话 UI（仅预留 `copilot_complete` IPC 接口）
 - 运行时 AI 节点的 DAG 集成（仅预留 `AiNodeError` 错误变体和 `AiNodeConfig` 类型定义）
-- `nazh-engine` 对 `nazh-ai-core` 的实际接入与运行时执行链路
+- `nazh-engine` 对 `ai` 的实际接入与运行时执行链路

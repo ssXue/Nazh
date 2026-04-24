@@ -5,11 +5,11 @@ use std::{
     time::Duration,
 };
 
-use async_trait::async_trait;
-use nazh_ai_core::{
+use ai::{
     AiCompletionRequest, AiCompletionResponse, AiError, AiMessageRole, AiProviderDraft, AiService,
     AiTestResult, StreamChunk,
 };
+use async_trait::async_trait;
 use nazh_engine::{
     CodeNode, CodeNodeConfig, ConnectionDefinition, ConnectionManager, DebugConsoleNode,
     DebugConsoleNodeConfig, EngineError, HttpClientNode, HttpClientNodeConfig, ModbusReadNode,

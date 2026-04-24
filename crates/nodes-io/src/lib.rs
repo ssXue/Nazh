@@ -3,7 +3,9 @@
 use std::sync::Arc;
 
 use connections::SharedConnectionManager;
-use nazh_core::{EngineError, NodeRegistry, Plugin, PluginManifest, SharedResources};
+use nazh_core::{
+    EngineError, NodeRegistry, Plugin, PluginManifest, SharedResources, WorkflowNodeDefinition,
+};
 
 pub mod template;
 
@@ -35,6 +37,13 @@ fn downcast_connection_manager(
         .ok_or_else(|| EngineError::invalid_graph("部署资源中缺少 ConnectionManager"))
 }
 
+/// 若节点 config 未指定 connection_id，则从 `WorkflowNodeDefinition` 顶层字段继承。
+fn inherit_connection_id(config_conn: &mut Option<String>, def: &WorkflowNodeDefinition) {
+    if config_conn.is_none() {
+        *config_conn = def.connection_id().map(str::to_owned);
+    }
+}
+
 pub struct IoPlugin;
 
 impl Plugin for IoPlugin {
@@ -48,67 +57,76 @@ impl Plugin for IoPlugin {
     fn register(&self, registry: &mut NodeRegistry) {
         registry.register("native", |def, res| {
             let mut config: NativeNodeConfig = def.parse_config()?;
-            if config.connection_id.is_none() {
-                config.connection_id.clone_from(&def.connection_id);
-            }
+            inherit_connection_id(&mut config.connection_id, def);
             let cm = downcast_connection_manager(&res)?;
-            Ok(Arc::new(NativeNode::new(def.id.clone(), config, cm)))
+            Ok(Arc::new(NativeNode::new(def.id().to_owned(), config, cm)))
         });
 
         registry.register("timer", |def, _res| {
             let config: TimerNodeConfig = def.parse_config()?;
-            Ok(Arc::new(TimerNode::new(def.id.clone(), config)))
+            Ok(Arc::new(TimerNode::new(def.id().to_owned(), config)))
         });
 
         registry.register("serialTrigger", |def, _res| {
             let config: SerialTriggerNodeConfig = def.parse_config()?;
-            Ok(Arc::new(SerialTriggerNode::new(def.id.clone(), config)))
+            Ok(Arc::new(SerialTriggerNode::new(
+                def.id().to_owned(),
+                config,
+            )))
         });
 
         registry.register("modbusRead", |def, res| {
             let mut config: ModbusReadNodeConfig = def.parse_config()?;
-            if config.connection_id.is_none() {
-                config.connection_id.clone_from(&def.connection_id);
-            }
+            inherit_connection_id(&mut config.connection_id, def);
             let cm = downcast_connection_manager(&res)?;
-            Ok(Arc::new(ModbusReadNode::new(def.id.clone(), config, cm)))
+            Ok(Arc::new(ModbusReadNode::new(
+                def.id().to_owned(),
+                config,
+                cm,
+            )))
         });
 
         registry.register("httpClient", |def, res| {
             let mut config: HttpClientNodeConfig = def.parse_config()?;
-            if config.connection_id.is_none() {
-                config.connection_id.clone_from(&def.connection_id);
-            }
+            inherit_connection_id(&mut config.connection_id, def);
             let cm = downcast_connection_manager(&res)?;
-            Ok(Arc::new(HttpClientNode::new(def.id.clone(), config, cm)?))
+            Ok(Arc::new(HttpClientNode::new(
+                def.id().to_owned(),
+                config,
+                cm,
+            )?))
         });
 
         registry.register("barkPush", |def, res| {
             let mut config: BarkPushNodeConfig = def.parse_config()?;
-            if config.connection_id.is_none() {
-                config.connection_id.clone_from(&def.connection_id);
-            }
+            inherit_connection_id(&mut config.connection_id, def);
             let cm = downcast_connection_manager(&res)?;
-            Ok(Arc::new(BarkPushNode::new(def.id.clone(), config, cm)?))
+            Ok(Arc::new(BarkPushNode::new(
+                def.id().to_owned(),
+                config,
+                cm,
+            )?))
         });
 
         registry.register("sqlWriter", |def, _res| {
             let config: SqlWriterNodeConfig = def.parse_config()?;
-            Ok(Arc::new(SqlWriterNode::new(def.id.clone(), config)))
+            Ok(Arc::new(SqlWriterNode::new(def.id().to_owned(), config)))
         });
 
         registry.register("debugConsole", |def, _res| {
             let config: DebugConsoleNodeConfig = def.parse_config()?;
-            Ok(Arc::new(DebugConsoleNode::new(def.id.clone(), config)))
+            Ok(Arc::new(DebugConsoleNode::new(def.id().to_owned(), config)))
         });
 
         registry.register("mqttClient", |def, res| {
             let mut config: MqttClientNodeConfig = def.parse_config()?;
-            if config.connection_id.is_none() {
-                config.connection_id.clone_from(&def.connection_id);
-            }
+            inherit_connection_id(&mut config.connection_id, def);
             let cm = downcast_connection_manager(&res)?;
-            Ok(Arc::new(MqttClientNode::new(def.id.clone(), config, cm)))
+            Ok(Arc::new(MqttClientNode::new(
+                def.id().to_owned(),
+                config,
+                cm,
+            )))
         });
     }
 }

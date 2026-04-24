@@ -14,17 +14,14 @@
   <a href="https://github.com/ssXue/Nazh/stargazers">
     <img src="https://img.shields.io/github/stars/ssXue/Nazh" alt="Stars" />
   </a>
-  <a href="https://github.com/ssXue/Nazh/issues">
-    <img src="https://img.shields.io/github/issues/ssXue/Nazh" alt="Issues" />
-  </a>
   <a href="https://www.rust-lang.org/">
-    <img src="https://img.shields.io/badge/Rust-000000?logo=rust&logoColor=white" alt="Rust" />
+    <img src="https://img.shields.io/badge/Rust-2024-000000?logo=rust&logoColor=white" alt="Rust 2024" />
   </a>
   <a href="https://tauri.app/">
-    <img src="https://img.shields.io/badge/Tauri-24C8DB?logo=tauri&logoColor=white" alt="Tauri" />
+    <img src="https://img.shields.io/badge/Tauri-v2-24C8DB?logo=tauri&logoColor=white" alt="Tauri v2" />
   </a>
   <a href="https://react.dev/">
-    <img src="https://img.shields.io/badge/React-20232A?logo=react&logoColor=61DAFB" alt="React" />
+    <img src="https://img.shields.io/badge/React-18-20232A?logo=react&logoColor=61DAFB" alt="React 18" />
   </a>
   <a href="https://github.com/bytedance/flowgram.ai">
     <img src="https://img.shields.io/badge/FlowGram.AI-Editor-6366F1" alt="FlowGram.AI" />
@@ -32,447 +29,339 @@
 </p>
 
 <p align="center">
-  <code>工业边缘工作流编排引擎</code> · <code>Rust + Tauri + React / FlowGram.AI</code> · <code>12 种内置节点</code> · <code>多工作流并发运行时</code>
+  <code>工业边缘工作流编排引擎</code> · <code>AI 驱动</code> · <code>Rust + Tauri + React</code>
 </p>
 
-> 面向工业边缘场景的本地工作流编排引擎。使用 Rust 构建可靠执行内核，通过 Tauri 桌面壳与 React / FlowGram.AI 工作台完成可视化编排、部署、调试与运行观测。
+> 面向工业边缘的本地工作流编排引擎。Rust 可靠内核 + Tauri 桌面壳 + React/FlowGram.AI 可视化工作台。AI 能力（脚本生成、工作流辅助、思考模式推理）作为一等公民集成到执行引擎中。
 
-## 项目概览
+## 项目定位
 
-Nazh 是工业边缘侧的本地运行时与桌面工作台，聚焦以下核心问题：
+Nazh 面向**工业边缘侧的本地部署**场景：
 
-- **DAG 编排**：将设备接入、协议动作、数据清洗、条件分支和脚本逻辑编排成可执行有向无环图。
-- **可靠执行**：节点级超时保护、panic 隔离、失败事件回传，单节点异常绝不拖垮运行时。
-- **类型安全 IPC**：Rust 侧统一定义边界类型，通过 `ts-rs` 自动生成 TypeScript，编译期杜绝双端漂移。
-- **本地优先**：通过 Tauri 桌面壳承载工作台，适合边缘节点、实验环境和离线调试场景。
+- **DAG 编排**：把设备采集、协议动作、数据清洗、条件分支、脚本逻辑组织成可执行的有向无环图
+- **可靠执行**：节点级超时、panic 隔离、失败事件回传；单节点异常不拖垮运行时
+- **AI 增强**：内置 OpenAI 兼容客户端 + 流式输出 + 思考模式；`code` 节点支持自然语言生成 Rhai 脚本；脚本运行时可调用 `ai_complete()`
+- **类型契约**：Rust 侧统一定义 IPC 边界类型，`ts-rs` 自动生成 TypeScript，编译期杜绝前后端漂移
+- **本地优先**：单进程 Tauri 桌面部署，零网络依赖，适合边缘节点与离线环境
 
-典型数据流：`FlowGram 画布 → Workflow AST(JSON) → Tauri IPC → Rust DAG Runtime → 执行事件 / 结果回流 → 桌面工作台`
+典型数据流：`FlowGram 画布 → Workflow AST → Tauri IPC → Rust DAG → 执行事件回流 → 工作台`
 
-## 系统架构
+## 工程架构
+
+### Cargo Workspace（8 个 crate）
+
+```
+crates/
+├── core/              # Ring 0 — 引擎内核（NodeTrait / Plugin / DataStore / EventChannel）
+├── pipeline/          # Ring 1 — 线性流水线抽象
+├── connections/       # Ring 1 — 连接资源池 + RAII Guard + 熔断/限流
+├── scripting/         # Ring 1 — Rhai 脚本引擎（含 ai_complete() 桥）
+├── nodes-flow/        # Ring 1 — 流程节点：if / switch / loop / tryCatch / code
+├── nodes-io/          # Ring 1 — I/O 节点：timer / serial / modbus / http / mqtt / bark / sql / debug
+└── ai/                # Ring 1 — AiService trait + OpenAI 兼容客户端（流式 / 思考模式 / DeepSeek）
+
+src/                   # nazh-engine facade — DAG 编排 + standard_registry()
+src-tauri/             # Tauri 桌面壳（nazh-desktop）
+web/                   # React + FlowGram.AI 工作台
+```
+
+Ring 0/1 分层规则与设计哲学见 [`AGENTS.md`](./AGENTS.md) 与 [`docs/rfcs/0002-分层内核与插件架构.md`](./docs/rfcs/0002-分层内核与插件架构.md)。
+
+### 三层架构
 
 ```mermaid
 flowchart TB
     subgraph Frontend["React / FlowGram.AI 工作台"]
-        direction LR
-        F1["项目库 · 环境快照"]
-        F2["画布编辑 · 连接管理"]
-        F3["运行时面板 · 日志"]
+        F1["项目库 · 画布编辑"]
+        F2["运行时面板 · 日志 · 观测"]
+        F3["AI Copilot · 连接管理"]
     end
 
-    subgraph Shell["Tauri v2 桌面壳"]
-        direction LR
-        S1["部署路由 · 派发背压/重试/死信"]
-        S2["串口管理 · 部署持久化"]
-        S3["可观测性 (JSONL) · 连接定义 · 项目库文件"]
+    subgraph Shell["Tauri v2 桌面壳 (nazh-desktop)"]
+        S1["22 IPC 命令 · 7 事件通道"]
+        S2["触发器监督（timer / serial / mqtt 订阅）"]
+        S3["AI Provider 配置 · 观测日志 · 工程库文件"]
     end
 
-    subgraph Engine["Rust 引擎 (nazh-engine)"]
+    subgraph Engine["Rust 引擎 (nazh-engine facade)"]
         direction TB
-        subgraph Core["核心模块"]
-            direction LR
-            E1["DAG 解析 · 拓扑排序"]
-            E2["节点注册表 · 12 种节点"]
-            E3["连接治理 · 限流/熔断"]
-            E4["Pipeline 顺序执行"]
-        end
-        subgraph Flow["数据流"]
-            E5["Tokio MPSC Channels"]
-            E6["WorkflowContext 流转<br/>(trace_id, timestamp, payload)"]
-        end
-        E1 --> E5
-        E2 --> E5
-        E3 --> E5
-        E4 --> E5
-        E5 --> E6
+        C0["Ring 0 core: NodeTrait · Plugin · DataStore · Guard"]
+        C1a["Ring 1 nodes-flow / nodes-io — 节点实现"]
+        C1b["Ring 1 connections / scripting / ai — 能力层"]
+        C1c["Ring 1 pipeline — 线性流水线"]
+        G["graph: Kahn 拓扑 + 部署 + per-node 运行循环"]
+        C0 --> C1a
+        C0 --> C1b
+        C0 --> C1c
+        C0 --> G
+        C1a --> G
+        C1b --> G
     end
 
-    Frontend -- "Tauri invoke (22 个 IPC 命令)" --> Shell
-    Shell -- "Tauri Window::emit (7 个事件通道)" --> Frontend
-    Shell -- "nazh-engine (path dependency)" --> Engine
+    Frontend -- "Tauri invoke" --> Shell
+    Shell -- "Tauri Window::emit" --> Frontend
+    Shell -- "path dependency" --> Engine
 ```
 
-### 三层职责
+### 数据与控制分离
 
-| 层 | 职责 | 关键约束 |
-|----|------|----------|
-| **Rust 引擎** (`src/`) | DAG 解析、节点执行、连接治理、事件输出 | 纯库 crate，零 Tauri 依赖 |
-| **Tauri 壳** (`src-tauri/`) | IPC 命令、派发路由、串口 I/O、持久化 | 桥接引擎与前端，不承载业务逻辑 |
-| **前端** (`web/`) | 画布编辑、状态展示、项目管理 | 仅视图层，通过 `invoke` / `emit` 通信 |
+- **Payload（业务数据）** 走 `DataStore`（`ArenaDataStore` 内存默认实现），通过 `ContextRef`（~64 字节）在 MPSC 通道传递
+- **Metadata（执行元数据：协议参数、连接信息、触发时刻）** 走 `ExecutionEvent::Completed` 事件通道，**不污染 payload**
+- **Configuration（未来共享状态）** 将通过 `WorkflowVariables` 承载（ADR-0012，提议中）
 
-## 节点体系
+详见 [ADR-0008](./docs/adr/0008-节点输出元数据通道.md) 与 [ADR-0012](./docs/adr/0012-工作流变量.md)。
 
-引擎内置 12 种节点，分为四大类，通过 `NodeRegistry` 工厂统一注册。所有节点实现 `NodeTrait` 异步接口，每个节点拥有独立的 `*Config` 反序列化结构体。
+## 节点能力
 
 ### 触发器节点
+| 节点 | 功能 |
+|------|------|
+| `timer` | 定时触发，支持立即/延迟首触 |
+| `serialTrigger` | 串口帧监听（依赖 connection 层借出串口资源） |
+| `mqttClient`（订阅） | MQTT 订阅触发（当前由壳层管理生命周期，ADR-0009 待迁入引擎） |
 
-| 节点 | 说明 | 端口 |
-|------|------|------|
-| `Timer` | 定时触发，注入 `_timer` 元数据 | → 输出 |
-| `SerialTrigger` | 串口帧读取与标准化 | → 输出 |
-
-### 路由节点
-
-| 节点 | 说明 | 端口 |
-|------|------|------|
-| `If` | 布尔条件分支 | → true / false |
-| `Switch` | 多分支路由（Rhai 脚本求值） | → 多个输出端口 |
-| `TryCatch` | 异常捕获路由 | → try / catch |
-| `Loop` | 迭代循环（上限 10k 次） | → body / done |
+### 流程节点
+| 节点 | 功能 |
+|------|------|
+| `if` | 布尔条件二选一 |
+| `switch` | 多路径由（Rhai 表达式求值） |
+| `tryCatch` | 异常捕获路由（try / catch 端口） |
+| `loop` | 迭代循环（默认上限 10k，可配） |
+| `code` | Rhai 沙箱脚本；支持 AI 生成 + 思考模式 |
 
 ### I/O 节点
+| 节点 | 功能 |
+|------|------|
+| `native` | 原生字段注入 / 透传 |
+| `modbusRead` | Modbus TCP 真实驱动（寄存器读取） |
+| `httpClient` | HTTP 请求（内置钉钉 Webhook 模板） |
+| `mqttClient`（发布） | MQTT 单次发布 |
+| `barkPush` | Bark iOS 推送 |
+| `sqlWriter` | SQLite 本地持久化（bundled） |
+| `debugConsole` | 格式化调试输出 |
 
-| 节点 | 说明 | 端口 |
-|------|------|------|
-| `Native` | Rust 原生逻辑，字段注入 | → 输出 |
-| `Rhai / Code` | 沙箱脚本执行（步数上限防死循环） | → 输出 |
-| `HttpClient` | HTTP 请求，支持钉钉 Webhook | → 输出 |
-| `ModbusRead` | Modbus 寄存器读取（当前为模拟） | → 输出 |
-| `SqlWriter` | SQLite 持久化 | → 输出 |
-| `DebugConsole` | 格式化控制台输出 | → 输出 |
+### 新增节点
 
-### 节点开发规范
+1. 在 `crates/nodes-flow/` 或 `crates/nodes-io/` 下新建 `src/<node>.rs`，实现 `NodeTrait`
+2. 定义 `*Config` 结构体（支持 `serde::Deserialize`）
+3. 在对应 crate 的 `lib.rs` 的 `Plugin::register` 中注册工厂
+4. 在前端 `web/src/components/flowgram/flowgram-node-library.ts` 增加节点定义
+5. 在 `tests/workflow.rs` 添加最小 DAG 的集成测试
 
-新增节点需要：
+注意事项详见 [AGENTS.md](./AGENTS.md) 的 "Critical Coding Constraints" 小节。
 
-1. 在 `src/nodes/` 下创建文件，实现 `NodeTrait`（可使用 `delegate_node_base!` / `impl_node_meta!` 宏减少样板代码）。
-2. 定义 `*Config` 结构体，支持 `serde` 反序列化。
-3. 在 `src/graph/instantiate.rs` 的 `register_standard_nodes()` 中注册工厂。
-4. 在前端 `web/src/components/flowgram/flowgram-node-library.ts` 中添加对应节点类型定义。
-5. 每个节点必须保留 `ai_description` 字段。
+## AI 能力
 
-### 辅助工具
+`ai` crate 提供统一的 `AiService` trait + OpenAI 兼容 HTTP 客户端（含 Azure、DeepSeek、Moonshot 等）：
 
-- **`RhaiNodeBase`** — 脚本节点的通用执行骨架。
-- **`with_connection`** — 从 `ConnectionManager` 借出连接并执行操作的封装。
-- **`{{placeholder}}` 模板引擎** — HTTP 请求体等场景的模板渲染。
+- **流式补全**：SSE 流式返回 token，UI 可逐字渲染
+- **思考模式**：支持 reasoning effort（low/medium/high）与 DeepSeek `<thinking>` 标签解析
+- **`code` 节点 AI 生成**：用户输入自然语言需求 → 生成 Rhai 脚本插入节点
+- **脚本内调用**：Rhai 脚本可直接调 `ai_complete(prompt)` 获取结构化 JSON 结果
+- **Provider 管理**：Tauri 命令 `list_ai_providers` / `save_ai_provider` / `test_ai_provider`，磁盘 atomic 写入
+
+ADR-0019 规划了把 `AiService` trait 上移到 Ring 0、`ai` crate 重定位为"OpenAI 兼容实现"的依赖反转方案——未来接入 Claude 原生 SDK、本地 Llama、通义千问等只需新 crate 实现 trait。
 
 ## 连接治理
 
-`ConnectionManager` 提供完整的连接生命周期管理：
+`ConnectionManager` 是引擎中**唯一的共享可变状态**：
 
-- **借出/归还**：节点通过 `ConnectionLease` 借出连接，使用完毕自动归还。
-- **限流**：可配置每连接最大并发借出数。
-- **熔断器**：连续失败达到阈值后自动熔断，支持指数退避恢复。
-- **健康诊断**：10 种健康状态（`ConnectionHealthState`），提供诊断建议。
-- **全局资源池**：`Arc<RwLock<ConnectionManager>>` 是引擎中唯一的共享可变状态。
+- **RAII 借出**：节点通过 `ConnectionGuard` 借出资源，Drop 时自动释放——即使节点 panic 也不会泄漏
+- **限流**：每个连接可配置最大并发借出数
+- **熔断器**：连续失败超阈值自动熔断，指数退避恢复
+- **健康状态机**：10 种状态（就绪/忙/熔断/无效配置/...）+ 诊断建议
+- **细粒度锁**：按连接 ID 分片的 sync Mutex（避免全局 RwLock 竞争），见 ADR-0005
 
 ## 运行时能力
 
 ### 多工作流并发
+Tauri 壳支持同时部署多个工作流：
+- **作用域事件** `workflow://node-status-v2` / `workflow://result-v2` 携带 `workflow_id` 区分
+- **活动工作流切换** `set_active_runtime_workflow` 命令
+- **运行时摘要** `list_runtime_workflows` 查询
 
-Tauri 壳支持同时部署多个工作流，每个工作流拥有独立的 DAG 任务树：
-
-- **作用域事件**：`workflow://node-status-v2` 和 `workflow://result-v2` 携带 `workflow_id`，区分不同工作流的事件。
-- **活动工作流切换**：`set_active_runtime_workflow` 命令切换前端焦点工作流。
-- **运行时摘要**：`list_runtime_workflows` 命令获取所有运行中工作流的状态。
-
-### 派发路由
-
-`dispatch_payload` 支持三种派发模式：
-
-- **手动派发**：前端直接提交载荷到活动工作流。
-- **定时触发**：`Timer` 节点按间隔自动派发。
-- **串口触发**：`SerialTrigger` 节点收到数据帧后触发。
-
-派发层内置背压、重试和死信队列（`list_dead_letters`），防止过载丢失数据。
+### 派发路由 & 背压
+`dispatch_payload` 内置**背压策略 + 重试 + 死信队列**，三种派发源：
+- 前端手动派发
+- 定时器 tick
+- 外部触发（串口帧 / MQTT 消息）
 
 ### 可观测性
-
-`ObservabilityStore` 基于 JSONL 文件记录：
-
-- **执行事件**：每个节点的 Started / Completed / Failed / Output 事件。
-- **审计日志**：部署、派发、卸载等操作记录。
-- **告警记录**：连接熔断、节点失败等异常告警。
-- **Trace 查询**：`query_observability` 命令支持按工作流、节点、时间范围查询。
+`ObservabilityStore` 基于 JSONL 本地记录：
+- 每节点 Started / Completed / Failed / Output 事件
+- 部署/派发/卸载审计
+- 告警记录（熔断、失败等）
+- `query_observability` 命令按 trace / 节点 / 时间范围查询
 
 ### 部署持久化
-
-- 部署会话持久化到磁盘（JSONL 格式），应用重启后可恢复运行中的工作流状态。
-- 项目库和连接定义分别持久化为 `project-library.json` 和 `connections.json`。
-
-## IPC 命令
-
-Tauri 壳暴露 22 个 IPC 命令：
-
-### 工作流生命周期
-
-| 命令 | 说明 |
-|------|------|
-| `deploy_workflow` | 部署 DAG（含连接、运行策略、可观测性上下文） |
-| `dispatch_payload` | 向运行中的工作流提交载荷 |
-| `undeploy_workflow` | 卸载工作流并中止触发器任务 |
-| `list_node_types` | 获取已注册节点类型及别名 |
-| `list_runtime_workflows` | 列出所有运行中工作流 |
-| `set_active_runtime_workflow` | 切换活动工作流 |
-| `list_dead_letters` | 查看死信队列 |
-
-### 连接管理
-
-| 命令 | 说明 |
-|------|------|
-| `list_connections` | 连接池快照 |
-| `load_connection_definitions` | 加载连接定义 |
-| `save_connection_definitions` | 保存连接定义 |
-
-### 串口
-
-| 命令 | 说明 |
-|------|------|
-| `list_serial_ports` | 枚举系统串口 |
-| `test_serial_connection` | 测试串口连通性 |
-
-### 可观测性
-
-| 命令 | 说明 |
-|------|------|
-| `query_observability` | 查询事件/审计/告警/Trace |
-
-### 部署持久化
-
-| 命令 | 说明 |
-|------|------|
-| `load_deployment_session_file` | 加载部署会话 |
-| `save_deployment_session_file` | 保存部署会话 |
-| `remove_deployment_session_file` | 删除部署会话 |
-| `clear_deployment_session_file` | 清空部署会话 |
-
-### 项目库
-
-| 命令 | 说明 |
-|------|------|
-| `load_project_library_file` | 加载项目库 |
-| `save_project_library_file` | 保存项目库 |
-
-### 事件通道
-
-| 事件 | 方向 | 用途 |
-|------|------|------|
-| `workflow://node-status` | Rust → JS | 活动工作流节点状态 |
-| `workflow://node-status-v2` | Rust → JS | 作用域节点状态（多工作流） |
-| `workflow://result` | Rust → JS | 活动工作流结果 |
-| `workflow://result-v2` | Rust → JS | 作用域结果（多工作流） |
-| `workflow://deployed` | Rust → JS | 部署完成通知 |
-| `workflow://undeployed` | Rust → JS | 卸载完成通知 |
-| `workflow://runtime-focus` | Rust → JS | 工作流焦点切换 |
-
-## 桌面工作台
-
-| 面板 | 说明 |
-|------|------|
-| **Dashboard** | 工程数量、节点/边统计、运行态分布、会话热度、部署摘要 |
-| **Boards** | 工程看板，切入具体项目画布 |
-| **Project Workspace** | 节点库 + FlowGram 画布 + 运行工具栏 + 底部运行观测面板 |
-| **Connection Studio** | 连接定义 CRUD、串口测试、健康状态展示、引用关系同步 |
-| **Runtime Manager** | 多工作流运行时管理、死信查看、派发控制 |
-| **Logs** | 可观测性日志查看、审计记录、告警浏览 |
-| **Payload** | 测试载荷编辑与结果回流 |
-| **Settings** | 主题、强调色、密度、动画、启动页偏好 |
-| **Plugin** | 插件管理（占位） |
-
-## 界面预览
-
-### Dashboard
-
-![Nazh Desktop Dashboard](docs/screenshots/desktop-dashboard.png)
-
-### 项目工作区
-
-![Nazh Project Workspace](docs/screenshots/project.png)
-
-### 连接资源编辑
-
-![Nazh Connection Studio](docs/screenshots/连接资源管理器.png)
-
-## 技术栈
-
-| 层 | 技术 |
-|----|------|
-| 引擎 | Rust (Edition 2021) · Tokio · Serde · Rhai · Rusqlite · Reqwest |
-| 桌面壳 | Tauri v2 · Serialport |
-| 前端 | React 18 · TypeScript · Vite |
-| 画布 | FlowGram.AI (free-layout-editor) |
-| 类型契约 | ts-rs (Rust → TypeScript 自动生成) |
-| 通信 | Tauri `invoke` + `Window::emit` |
+- 部署会话 JSONL 磁盘持久化，重启恢复
+- 项目库 (`project-library.json`) 与连接定义 (`connections.json`) 独立文件
 
 ## 快速开始
 
 ### 环境要求
+- Rust stable（工具链见 `rust-toolchain.toml`，当前 1.94）
+- Node.js 20+ / npm
+- macOS: Xcode Command Line Tools；Linux: 系统 WebKit2GTK；Windows: WebView2
 
-- Node.js 20+
-- npm
-- Rust stable toolchain
-- macOS: Xcode Command Line Tools
-
-### 1. 安装前端依赖
+### 启动
 
 ```bash
+# 1. 安装前端依赖
 npm --prefix web install
-```
 
-### 2. 启动桌面开发版
-
-```bash
+# 2. 启动桌面开发版（Vite 自动启动于 1420 端口）
 cd src-tauri && ../web/node_modules/.bin/tauri dev --no-watch
 ```
 
-### 3. 验证
+### 验证
 
 ```bash
-cargo test                                    # Rust 引擎测试 (16 个)
-cargo check --manifest-path src-tauri/Cargo.toml  # 桌面壳编译
-npm --prefix web run test                     # 前端单元测试 (83 个)
-npm --prefix web run build                    # 前端构建
+cargo test --workspace              # 全部 Rust 测试
+cargo clippy --all-targets -- -D warnings
+cargo fmt --all -- --check
+npm --prefix web run test           # 前端单元测试
+npm --prefix web run build          # 前端构建
 ```
 
 ## 开发命令
 
 | 目标 | 命令 |
 |------|------|
-| Rust 引擎测试 | `cargo test` |
-| 桌面壳编译检查 | `cargo check --manifest-path src-tauri/Cargo.toml` |
+| Workspace 测试 | `cargo test --workspace` |
+| 单测试 | `cargo test <test_name>` |
+| 壳层编译检查 | `cargo check --manifest-path src-tauri/Cargo.toml` |
 | 前端单元测试 | `npm --prefix web run test` |
-| 前端 E2E 测试 | `npm --prefix web run test:e2e` |
+| 前端 E2E | `npm --prefix web run test:e2e` |
 | 前端构建 | `npm --prefix web run build` |
 | 导出 ts-rs 类型 | `cargo test --workspace --lib export_bindings` |
-| 代码格式检查 | `cargo fmt --all -- --check` |
-| Clippy 检查 | `cargo clippy --all-targets -- -D warnings` |
+| 代码格式 | `cargo fmt --all` |
+| Clippy | `cargo clippy --all-targets -- -D warnings` |
+| 依赖审计 | `cargo deny check` |
 | 运行示例 | `cargo run --example phase1_demo` |
-| 生成文档 | `cargo doc --no-deps --open` |
+| 生成 rustdoc | `cargo doc --no-deps --open` |
 
 ## 仓库结构
 
 ```
 .
-├── src/                        # Rust 引擎核心 (nazh-engine crate)
-│   ├── lib.rs                  # Crate 根，模块声明与重导出
-│   ├── context.rs              # WorkflowContext 数据载体
-│   ├── event.rs                # ExecutionEvent 统一事件
-│   ├── error.rs                # EngineError 18 种错误变体
-│   ├── ipc.rs                  # IPC 响应类型 (DeployResponse 等)
-│   ├── guard.rs                # panic 隔离 + 超时保护
-│   ├── registry.rs             # NodeRegistry 节点工厂注册表
-│   ├── connection.rs           # ConnectionManager 连接治理
-│   ├── graph/                  # DAG 解析、校验、部署、实例化、运行
-│   │   ├── types.rs            #   WorkflowGraph, WorkflowNodeDefinition, WorkflowEdge
-│   │   ├── topology.rs         #   Kahn 拓扑排序、环检测
-│   │   ├── deploy.rs           #   deploy_workflow() 主入口
-│   │   ├── instantiate.rs      #   register_standard_nodes() 工厂注册
-│   │   └── runner.rs           #   run_node() 单节点执行循环
-│   ├── nodes/                  # NodeTrait 与 12 种节点实现
-│   │   ├── mod.rs              #   NodeTrait 定义、辅助宏
-│   │   ├── helpers.rs          #   RhaiNodeBase, with_connection 等通用工具
-│   │   ├── native.rs           #   Native 原生节点
-│   │   ├── rhai.rs             #   Rhai 脚本节点
-│   │   ├── timer.rs            #   Timer 定时触发
-│   │   ├── serial_trigger.rs   #   SerialTrigger 串口触发
-│   │   ├── modbus_read.rs      #   ModbusRead 寄存器读取
-│   │   ├── if_node.rs          #   If 条件分支
-│   │   ├── switch_node.rs      #   Switch 多分支路由
-│   │   ├── try_catch.rs        #   TryCatch 异常捕获
-│   │   ├── loop_node.rs        #   Loop 迭代循环
-│   │   ├── http_client.rs      #   HttpClient HTTP 请求
-│   │   ├── sql_writer.rs       #   SqlWriter SQLite 持久化
-│   │   ├── debug_console.rs    #   DebugConsole 控制台输出
-│   │   └── template.rs         #   {{placeholder}} 模板引擎
-│   └── pipeline/               # 线性 Pipeline 顺序执行
-│       ├── types.rs            #   PipelineStage, build_linear_pipeline()
-│       └── runner.rs           #   run_stage() 阶段执行循环
-├── src-tauri/                  # Tauri 桌面壳
+├── crates/                          # Ring 0 + Ring 1 库
+│   ├── core/                        #   Ring 0 引擎内核
+│   ├── pipeline/                    #   线性流水线
+│   ├── connections/                 #   连接资源池
+│   ├── scripting/                   #   Rhai 引擎 + AI 桥
+│   ├── nodes-flow/                  #   if/switch/loop/tryCatch/code
+│   ├── nodes-io/                    #   timer/serial/modbus/http/mqtt/bark/sql/debug
+│   └── ai/                          #   AiService + OpenAI 兼容客户端
+├── src/                             # nazh-engine facade crate
+│   ├── lib.rs                       #   re-export + standard_registry()
+│   ├── registry.rs                  #   工厂注册聚合
+│   └── graph/                       #   DAG 编排
+│       ├── types.rs                 #     WorkflowGraph / WorkflowEdge
+│       ├── topology.rs              #     Kahn 算法 + 环检测
+│       ├── deploy.rs                #     deploy_workflow[_with_ai]()
+│       └── runner.rs                #     per-node run loop
+├── src-tauri/                       # Tauri 桌面壳
 │   └── src/
-│       ├── main.rs             # 入口
-│       ├── lib.rs              # 22 个 IPC 命令、派发路由、持久化
-│       └── observability.rs    # ObservabilityStore JSONL 日志
-├── web/                        # React + FlowGram 前端工作台
+│       ├── main.rs
+│       ├── lib.rs                   #   ~22 IPC 命令 + 触发器监督
+│       └── observability.rs         #   JSONL 事件存储
+├── web/                             # 前端工作台
 │   └── src/
-│       ├── App.tsx             # 主编排器
-│       ├── types.ts            # IPC 类型重导出 + 前端扩展类型
-│       ├── generated/          # ts-rs 自动生成（勿手动编辑）
-│       ├── lib/                # 业务逻辑库
-│       ├── hooks/              # React hooks
-│       └── components/         # UI 组件
-├── tests/                      # Rust 集成测试
-│   ├── workflow.rs             # DAG 端到端、全部 12 种节点、连接池
-│   └── pipeline.rs             # 线性管道、错误恢复、panic 隔离、超时
-├── docs/                       # 文档
-│   ├── adr/                    # 7 篇架构决策记录
-│   ├── rfcs/                   # RFC：节点插件化
-│   └── screenshots/            # 界面截图
-└── examples/                   # 示例
-    ├── phase1_demo.rs          # 线性管道温度转换
-    └── graph_demo.rs           # DAG 工作流演示
+│       ├── generated/               #   ts-rs 自动生成（勿手改）
+│       ├── lib/                     #   业务逻辑库
+│       ├── hooks/                   #   自定义 React hooks
+│       ├── components/              #   UI 组件
+│       ├── styles/                  #   拆分后的样式表
+│       └── App.tsx
+├── tests/                           # Rust 集成测试
+│   ├── pipeline.rs
+│   └── workflow.rs
+├── docs/
+│   ├── adr/                         # 20 条架构决策记录（ADR-0001 ~ 0020）
+│   ├── rfcs/                        # RFC：节点插件化、分层内核
+│   ├── superpowers/
+│   │   ├── plans/                   #   实施计划
+│   │   └── specs/                   #   设计规格
+│   └── screenshots/
+├── examples/                        # 可执行示例
+├── AGENTS.md                        # 贡献者与 AI 助手指引（单一事实源）
+├── CLAUDE.md                        # 软链接 → AGENTS.md（Claude Code 工具找得到）
+└── README.md                        # 本文件
 ```
 
-### 阅读顺序
+## 设计原则 & 协作约定
 
-1. `README.md` — 整体定位与架构。
-2. `src/` — 运行时模型、节点抽象和连接治理。
-3. `src-tauri/` — 前后端 IPC 边界。
-4. `web/` — FlowGram 画布、状态管理与桌面工作区。
-5. `docs/adr/` — 关键架构决策背景。
+完整的设计原则、编码约束、文档规则、Git/ADR/RFC/Review 流程和团队协作约定请阅读 [**`AGENTS.md`**](./AGENTS.md)（`CLAUDE.md` 是它的软链接，供 Claude Code / OpenCode / Cursor 等工具识别）。以下是三条最重要的：
 
-## 编码规范
+1. **Ring 0 不含协议**。Ring 0（`crates/core/`）不依赖 `reqwest`/`rumqttc`/`rusqlite`/`tokio-modbus` 等任何协议栈。
+2. **元数据不入 payload**。节点执行元数据通过 `NodeOutput::metadata` + `NodeExecution::with_metadata()` 返回，Runner 将其合并到 `ExecutionEvent::Completed` 事件。业务 payload 只装业务数据。
+3. **禁 `unwrap()` / `expect()` / `unsafe`**。所有错误通过 `Result<T, EngineError>` 传播；`unsafe_code = "forbid"`、`clippy::unwrap_used = "deny"`、`clippy::expect_used = "deny"` 在 workspace 级别强制。
 
-- **禁止 `unwrap()` / `expect()`**：`clippy::unwrap_used = "deny"` + `clippy::expect_used = "deny"`，所有错误通过 `EngineError` 传播。
-- **禁止 `unsafe`**：`unsafe_code = "forbid"`。
-- **panic 隔离**：所有节点执行包裹在 `AssertUnwindSafe + catch_unwind` 中。
-- **硬件解耦**：节点不直连硬件，统一通过 `ConnectionManager` 借出/归还。
-- **通道优先**：节点间数据流使用 Tokio MPSC 通道，`ConnectionManager` 是唯一的共享可变状态。
-- **脚本步数上限**：Rhai 节点设置 `max_operations`（默认 50k），防止死循环。
-- **中文注释**：所有代码注释、文档注释、错误信息、日志消息使用中文。
-- **元数据与载荷分离**：节点执行元数据（定时触发、HTTP 请求、Modbus 采样、串口帧、SQLite 写入、调试输出、连接信息等）必须通过 `NodeOutput::metadata` + `with_metadata()` 返回，使用无下划线前缀的键名（如 `"timer"`、`"http"`、`"modbus"`），由 Runner 合并到 `ExecutionEvent::Completed` 事件通道独立传递，不得混入业务 payload。仅路由上下文（`_loop`、`_error`）允许保留在 payload 中。
-- **NodeTrait 签名**：`transform(trace_id, payload) → NodeExecution`，节点不得接触 `DataStore`，Runner 全权负责 store 读写。
+## 架构决策记录（ADR）
 
-## 测试
+已有 20 条 ADR，完整列表见 [`docs/adr/README.md`](./docs/adr/README.md)。节选：
 
-| 类型 | 数量 | 覆盖范围 |
-|------|------|----------|
-| Rust 集成测试 | 16 | Pipeline 4 (线性/错误/panic/超时) + Workflow 12 (全部节点 + DAG + 连接池) |
-| Rust 内联单测 | 12 | guard/registry/template |
-| 前端单元测试 | 83 | 事件解析、状态归约、工作流状态、设置、图解析、布局、FlowGram 转换、项目 CRUD、部署会话 |
-| E2E 测试 | 3 | 部署/卸载生命周期、错误处理、载荷派发 |
+| ADR | 主题 | 状态 |
+|-----|------|------|
+| [0001](./docs/adr/0001-tokio-mpsc-dag-调度.md) | Tokio MPSC DAG 调度 | 已接受 |
+| [0002](./docs/adr/0002-rhai-作为脚本引擎.md) | Rhai 作为脚本引擎 | 已接受 |
+| [0003](./docs/adr/0003-tauri-ipc-不用-http.md) | Tauri IPC 而非 HTTP | 已接受 |
+| [0005](./docs/adr/0005-连接管理器细粒度锁.md) | 连接管理器细粒度锁 | 已接受 |
+| [0007](./docs/adr/0007-ts-rs-前后端类型契约守卫.md) | ts-rs 类型契约守卫 | 已实施 |
+| [0008](./docs/adr/0008-节点输出元数据通道.md) | 节点输出元数据通道 | 已接受 |
+| [0009](./docs/adr/0009-节点生命周期钩子.md) | 节点生命周期钩子 + RAII | 提议中 |
+| [0010](./docs/adr/0010-pin-声明系统.md) | Pin 声明系统 | 提议中 |
+| [0011](./docs/adr/0011-节点能力标签.md) | 节点能力标签 | 提议中 |
+| [0012](./docs/adr/0012-工作流变量.md) | 工作流变量 | 提议中 |
+| [0013](./docs/adr/0013-子图与宏系统.md) | 子图与宏系统 | 提议中 |
+| [0014](./docs/adr/0014-执行边与数据边分离.md) | 执行/数据边分离 | 提议中 |
+| [0015](./docs/adr/0015-反应式数据引脚.md) | 反应式数据引脚 | 提议中 |
+| [0016](./docs/adr/0016-边级可观测性.md) | 边级可观测性 | 提议中 |
+| [0017](./docs/adr/0017-ipc-与-ts-rs-导出归宿.md) | IPC / ts-rs 从 Ring 0 迁出 | 提议中 |
+| [0018](./docs/adr/0018-nodes-io-按协议-feature-门控.md) | nodes-io 按协议 feature 门控 | 提议中 |
+| [0019](./docs/adr/0019-ai-能力依赖反转.md) | AI 能力依赖反转 | 提议中 |
+| [0020](./docs/adr/0020-graph-编排层长期归属.md) | graph 编排层归属（评估） | 提议中 |
 
-## 当前限制
+## 当前限制与路线图
 
-- `Modbus Read` 仍为模拟实现，MQTT 驱动未实现。
-- 串口触发、HTTP Client、SQL Writer 已跑通桌面链路，但重试/重连/健康检查仍在路线图中。
-- 项目库持久化已完成，缺少文件锁、冲突处理和 schema migration。
-- 桌面端尚未提供账号体系、RBAC、凭据加密等安全能力。
-- 交付形态仍偏开发态，安装包、签名、公证、自动更新未补齐。
-- Web 产物体积偏大，后续需做分包优化。
+### 已完成
+- ✅ Rust 2024 + Cargo workspace（Phase 1-5）
+- ✅ Plugin 系统 + NodeRegistry，零硬编码节点
+- ✅ Control/Data plane 分离（ADR-0008）
+- ✅ Modbus TCP / MQTT / Bark 真实驱动
+- ✅ AI 流式输出 + 思考模式 + DeepSeek 集成
+- ✅ 多工作流并发运行时 + 死信队列 + 背压
+- ✅ 部署持久化 + 重启恢复
+- ✅ 前端样式模块化（11 个子样式表替代 8500 行单文件）
 
-## 路线图
+### 进行中 / 近期
+- 🚧 节点生命周期钩子（ADR-0009）→ 把 MQTT/Timer/Serial 从壳层迁回引擎
+- 🚧 Pin 声明系统（ADR-0010）→ 类型化端口 + 部署期 DAG 校验
+- 🚧 IPC / ts-rs 迁出 Ring 0（ADR-0017）→ 新建 `crates/tauri-bindings/`
 
-### P0：试点可用
+### 中期
+- 节点能力标签（ADR-0011）+ 工作流变量（ADR-0012）+ 子图（ADR-0013）
+- nodes-io 按协议 feature 门控（ADR-0018）
+- 安全：账号体系、RBAC、凭据加密、操作审计
+- 交付：安装包签名、公证、自动更新
 
-- 真实 Modbus TCP/RTU 读写驱动，MQTT Pub/Sub 节点。
-- Schema migration 与项目文件治理。
-- 结构化日志（`tracing` 替代 `println!`），节点耗时 trace。
+### 长期
+- 执行/数据边分离 + 反应式引脚（ADR-0014 / 0015）
+- 边级可观测性（ADR-0016）+ EventBus
+- WASM 插件（RFC-0002 Phase 7）
+- AI 扩展：embedding 向量检索、视觉识别、语音
 
-### P1：生产准备
+## 贡献
 
-- 账号体系、RBAC、凭据加密、操作审计。
-- 安装包、签名、公证、升级策略。
-- 协议集成测试、长稳压测、故障注入。
+**先读 [`AGENTS.md`](./AGENTS.md)**——它是单一事实源，包含设计原则、编码约束、文档规则、Git/ADR/RFC/Review/Memory 等完整协作约定。
 
-### P2：平台化
-
-- 多项目、多设备、多现场的资产模型与统一元数据目录。
-- 发布审批、灰度、回滚、跨环境发布。
-- 节点插件化机制（`NodePlugin` trait）。
-
-### P3：增强能力
-
-- AI Copilot：基于 `ai_description` 的 LLM 脚本生成与节点建议。
-- 设备状态记忆系统，支持历史数据查询与多时间窗口聚合。
-- 行业模板库与标准化集成接口。
-
-## 相关文档
-
-- `CLAUDE.md` — AI 助手开发指南
-- `docs/adr/` — 架构决策记录（MPSC 调度、Rhai 选型、Tauri IPC、事件模型、连接管理、节点注册、ts-rs）
-- `docs/rfcs/` — RFC：节点插件化
-- `CHANGELOG.md` — 版本变更记录
-- `src/README.md`、`src-tauri/README.md`、`web/README.md`、`tests/README.md` — 子模块说明
+快速清单：
+- 每个 commit 必须 `git commit -s` 带 Signed-off-by
+- 代码注释、错误消息、日志消息、commit message 使用中文
+- 提交前跑 `cargo test --workspace` + `cargo clippy --all-targets -- -D warnings` + `cargo fmt --all --check`
+- 改动 `#[ts(export)]` 类型后跑 `cargo test --workspace --lib export_bindings` 并提交生成的 TS
+- 重大架构变更先写 ADR（`docs/adr/NNNN-title.md`），可追记式（ADR-0008 即为例）
 
 ## License
 

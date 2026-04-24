@@ -10,7 +10,7 @@
 
 mod observability;
 
-use nazh_ai_core::{
+use ai::{
     AiCompletionRequest, AiCompletionResponse, AiConfigFile, AiConfigUpdate, AiConfigView,
     AiProviderDraft, AiService, AiTestResult, OpenAiCompatibleService,
 };
@@ -2396,13 +2396,13 @@ fn collect_timer_root_specs(graph: &WorkflowGraph) -> Result<Vec<TimerRootSpec>,
             continue;
         }
 
-        if node_definition.node_type != "timer" {
+        if node_definition.node_type() != "timer" {
             continue;
         }
 
-        let config: TimerNodeConfig = serde_json::from_value(node_definition.config.clone())
+        let config: TimerNodeConfig = serde_json::from_value(node_definition.config().clone())
             .map_err(|error| {
-                EngineError::node_config(node_definition.id.clone(), error.to_string())
+                EngineError::node_config(node_definition.id().to_owned(), error.to_string())
             })?;
 
         timer_roots.push(TimerRootSpec {
@@ -2438,13 +2438,12 @@ async fn collect_serial_root_specs(
             continue;
         }
 
-        if !is_serial_trigger_type(&node_definition.node_type) {
+        if !is_serial_trigger_type(node_definition.node_type()) {
             continue;
         }
 
         let connection_id = node_definition
-            .connection_id
-            .as_deref()
+            .connection_id()
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .ok_or_else(|| {
@@ -2467,10 +2466,10 @@ async fn collect_serial_root_specs(
 
         let mut config: SerialTriggerNodeConfig = serde_json::from_value(connection.metadata)
             .map_err(|error| {
-                EngineError::node_config(node_definition.id.clone(), error.to_string())
+                EngineError::node_config(node_definition.id().to_owned(), error.to_string())
             })?;
         if let Some(inject) = node_definition
-            .config
+            .config()
             .get("inject")
             .and_then(Value::as_object)
         {
@@ -2598,13 +2597,13 @@ async fn collect_mqtt_root_specs(
             None => continue,
         };
 
-        if node_definition.node_type != "mqttClient" {
+        if node_definition.node_type() != "mqttClient" {
             continue;
         }
 
         let config: nazh_engine::MqttClientNodeConfig =
             node_definition.parse_config().map_err(|error| {
-                EngineError::node_config(node_definition.id.clone(), error.to_string())
+                EngineError::node_config(node_definition.id().to_owned(), error.to_string())
             })?;
 
         if config.mode.trim().to_ascii_lowercase() != "subscribe" {
@@ -2614,7 +2613,7 @@ async fn collect_mqtt_root_specs(
         let Some(connection_id) = config
             .connection_id
             .as_deref()
-            .or_else(|| node_definition.connection_id.as_deref())
+            .or_else(|| node_definition.connection_id())
         else {
             continue;
         };
@@ -2796,10 +2795,7 @@ async fn run_mqtt_root_subscriber(
         };
 
         if !connected {
-            let reason = format!(
-                "MQTT {}:{} 连接失败",
-                mqtt_root.host, mqtt_root.port
-            );
+            let reason = format!("MQTT {}:{} 连接失败", mqtt_root.host, mqtt_root.port);
             let retry_after_ms = connection_manager
                 .record_connect_failure(&mqtt_root.connection_id, &reason)
                 .await
@@ -2916,20 +2912,14 @@ async fn run_mqtt_root_subscriber(
 
         if cancel.load(Ordering::Relaxed) {
             let _ = connection_manager.release(&mqtt_root.connection_id).await;
-            let reason = format!(
-                "MQTT {}:{} 订阅已停止",
-                mqtt_root.host, mqtt_root.port
-            );
+            let reason = format!("MQTT {}:{} 订阅已停止", mqtt_root.host, mqtt_root.port);
             let _ = connection_manager
                 .mark_disconnected(&mqtt_root.connection_id, &reason)
                 .await;
             return;
         }
 
-        let reason = format!(
-            "MQTT {}:{} 连接已断开",
-            mqtt_root.host, mqtt_root.port
-        );
+        let reason = format!("MQTT {}:{} 连接已断开", mqtt_root.host, mqtt_root.port);
         let retry_after_ms = connection_manager
             .record_connect_failure(&mqtt_root.connection_id, &reason)
             .await
@@ -3251,7 +3241,14 @@ fn emit_serial_trigger_failure(
     node_id: &str,
     message: String,
 ) {
-    emit_trigger_failure(app, workflow_id, observability, node_id, "串口触发失败", message);
+    emit_trigger_failure(
+        app,
+        workflow_id,
+        observability,
+        node_id,
+        "串口触发失败",
+        message,
+    );
 }
 
 fn emit_mqtt_trigger_failure(
@@ -3261,7 +3258,14 @@ fn emit_mqtt_trigger_failure(
     node_id: &str,
     message: String,
 ) {
-    emit_trigger_failure(app, workflow_id, observability, node_id, "MQTT 触发失败", message);
+    emit_trigger_failure(
+        app,
+        workflow_id,
+        observability,
+        node_id,
+        "MQTT 触发失败",
+        message,
+    );
 }
 
 fn emit_trigger_failure(
@@ -3447,11 +3451,12 @@ fn normalize_sql_writer_paths(
         .map_err(|error| EngineError::invalid_graph(format!("无法解析桌面数据目录: {error}")))?;
 
     for node_definition in graph.nodes.values_mut() {
-        if node_definition.node_type != "sqlWriter" && node_definition.node_type != "sql/writer" {
+        if node_definition.node_type() != "sqlWriter" && node_definition.node_type() != "sql/writer"
+        {
             continue;
         }
 
-        let Some(config_map) = node_definition.config.as_object_mut() else {
+        let Some(config_map) = node_definition.config_mut().as_object_mut() else {
             continue;
         };
 

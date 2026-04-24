@@ -21,17 +21,18 @@ impl WorkflowGraph {
             .map_err(|error| EngineError::graph_deserialization(error.to_string()))?;
 
         for (node_id, node_definition) in &mut graph.nodes {
-            if node_definition.id.is_empty() {
-                node_definition.id.clone_from(node_id);
-            }
-
-            if node_definition.connection_id.is_none() {
-                node_definition.connection_id = node_definition
-                    .config
-                    .get("connection_id")
-                    .and_then(Value::as_str)
-                    .map(ToOwned::to_owned);
-            }
+            // 只有当节点还没有 connection_id 时才去 config 里找 fallback；避免无谓的 String 分配
+            let fallback_connection_id: Option<String> =
+                if node_definition.connection_id().is_none() {
+                    node_definition
+                        .config()
+                        .get("connection_id")
+                        .and_then(Value::as_str)
+                        .map(ToOwned::to_owned)
+                } else {
+                    None
+                };
+            node_definition.normalize(node_id, fallback_connection_id.as_deref());
         }
 
         graph.validate()?;

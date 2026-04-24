@@ -14,8 +14,8 @@ workspace = true
 [dependencies]
 nazh-core.workspace = true
 chrono.workspace = true
-reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 ts-rs.workspace = true
+url.workspace = true

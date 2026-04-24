@@ -29,5 +29,5 @@ tauri = { version = "2", features = [] }
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
-nazh-ai-core = { path = "../crates/nazh-ai-core" }
+ai.workspace = true
 uuid.workspace = true

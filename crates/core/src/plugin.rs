@@ -66,23 +66,28 @@ fn default_node_buffer() -> usize {
 }
 
 /// 工作流图中的单节点配置。
+///
+/// 字段私有以防止未来引入校验/不变量时被外部直接绕过。外部读取通过
+/// 同名访问器（`id()` / `node_type()` / ...），规范化缺省值通过 [`normalize`] 方法。
+///
+/// [`normalize`]: WorkflowNodeDefinition::normalize
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct WorkflowNodeDefinition {
     #[serde(default)]
-    pub id: String,
+    id: String,
     #[serde(rename = "type")]
-    pub node_type: String,
+    node_type: String,
     #[serde(default)]
     #[ts(optional)]
-    pub connection_id: Option<String>,
+    connection_id: Option<String>,
     #[serde(default)]
-    pub config: Value,
+    config: Value,
     #[serde(default)]
     #[ts(optional, type = "number")]
-    pub timeout_ms: Option<u64>,
+    timeout_ms: Option<u64>,
     #[serde(default = "default_node_buffer")]
-    pub buffer: usize,
+    buffer: usize,
 }
 
 impl<'de> Deserialize<'de> for WorkflowNodeDefinition {
@@ -119,6 +124,53 @@ impl<'de> Deserialize<'de> for WorkflowNodeDefinition {
 }
 
 impl WorkflowNodeDefinition {
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    /// 节点类型名称（如 `"code"`、`"timer"`、`"modbusRead"`）。
+    pub fn node_type(&self) -> &str {
+        &self.node_type
+    }
+
+    /// 节点绑定的连接资源标识（若有）。
+    pub fn connection_id(&self) -> Option<&str> {
+        self.connection_id.as_deref()
+    }
+
+    pub fn config(&self) -> &Value {
+        &self.config
+    }
+
+    /// 仅用于部署前小幅改写 config JSON（如 sqlite 相对路径 → 绝对路径）。
+    pub fn config_mut(&mut self) -> &mut Value {
+        &mut self.config
+    }
+
+    pub fn timeout_ms(&self) -> Option<u64> {
+        self.timeout_ms
+    }
+
+    pub fn buffer(&self) -> usize {
+        self.buffer
+    }
+
+    /// 规范化节点定义的缺省值：
+    /// - `id` 为空时填入 `fallback_id`（通常是图中的节点键）；
+    /// - `connection_id` 为 `None` 时填入 `fallback_connection_id`。
+    ///
+    /// 该方法仅填充缺失字段，不覆盖已有值。
+    pub fn normalize(&mut self, fallback_id: &str, fallback_connection_id: Option<&str>) {
+        if self.id.is_empty() {
+            fallback_id.clone_into(&mut self.id);
+        }
+        if self.connection_id.is_none()
+            && let Some(value) = fallback_connection_id
+        {
+            self.connection_id = Some(value.to_owned());
+        }
+    }
+
     pub fn parse_config<T: serde::de::DeserializeOwned>(&self) -> Result<T, EngineError> {
         serde_json::from_value(self.config.clone())
             .map_err(|error| EngineError::node_config(self.id.clone(), error.to_string()))
@@ -162,8 +214,8 @@ impl NodeRegistry {
     ) -> Result<Arc<dyn NodeTrait>, EngineError> {
         let factory = self
             .factories
-            .get(&definition.node_type)
-            .ok_or_else(|| EngineError::unsupported_node_type(&definition.node_type))?;
+            .get(definition.node_type())
+            .ok_or_else(|| EngineError::unsupported_node_type(definition.node_type()))?;
         factory(definition, resources)
     }
 

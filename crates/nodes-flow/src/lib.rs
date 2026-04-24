@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use nazh_ai_core::AiService;
+use ai::AiService;
 use nazh_core::{NodeRegistry, Plugin, PluginManifest};
 
 mod code_node;
@@ -31,27 +31,31 @@ impl Plugin for FlowPlugin {
         registry.register("code", |def, res| {
             let config: CodeNodeConfig = def.parse_config()?;
             let ai_service = res.get::<Arc<dyn AiService>>();
-            Ok(Arc::new(CodeNode::new(def.id.clone(), config, ai_service)?))
+            Ok(Arc::new(CodeNode::new(
+                def.id().to_owned(),
+                config,
+                ai_service,
+            )?))
         });
 
         registry.register("if", |def, _res| {
             let config: IfNodeConfig = def.parse_config()?;
-            Ok(Arc::new(IfNode::new(def.id.clone(), config)?))
+            Ok(Arc::new(IfNode::new(def.id().to_owned(), config)?))
         });
 
         registry.register("switch", |def, _res| {
             let config: SwitchNodeConfig = def.parse_config()?;
-            Ok(Arc::new(SwitchNode::new(def.id.clone(), config)?))
+            Ok(Arc::new(SwitchNode::new(def.id().to_owned(), config)?))
         });
 
         registry.register("tryCatch", |def, _res| {
             let config: TryCatchNodeConfig = def.parse_config()?;
-            Ok(Arc::new(TryCatchNode::new(def.id.clone(), config)?))
+            Ok(Arc::new(TryCatchNode::new(def.id().to_owned(), config)?))
         });
 
         registry.register("loop", |def, _res| {
             let config: LoopNodeConfig = def.parse_config()?;
-            Ok(Arc::new(LoopNode::new(def.id.clone(), config)?))
+            Ok(Arc::new(LoopNode::new(def.id().to_owned(), config)?))
         });
     }
 }
