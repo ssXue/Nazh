@@ -1,5 +1,8 @@
 import { startTransition, useEffect, useMemo, useRef, useState } from 'react';
 
+import { useAiConfigState } from './hooks/use-ai-config-state';
+import { useAppNavigation } from './hooks/use-app-navigation';
+import { useDeploymentRestore } from './hooks/use-deployment-restore';
 import { useProjectLibrary } from './hooks/use-project-library';
 import { useSettings } from './hooks/use-settings';
 import { useWorkflowEngine } from './hooks/use-workflow-engine';
@@ -8,36 +11,19 @@ import { useConnectionLibrary } from './hooks/use-connection-library';
 import { AboutPanel } from './components/app/AboutPanel';
 import { AiConfigPanel } from './components/app/AiConfigPanel';
 import { AiWorkflowComposer } from './components/app/AiWorkflowComposer';
+import { BoardWorkspace, type BoardWorkspaceHandle } from './components/app/BoardWorkspace';
 import { BoardsPanel, type BoardItem } from './components/app/BoardsPanel';
 import { DashboardPanel } from './components/app/DashboardPanel';
 import { LogsPanel } from './components/app/LogsPanel';
 import { PayloadPanel } from './components/app/PayloadPanel';
 import { PluginPanel } from './components/app/PluginPanel';
-import { ProjectWorkspaceHeader } from './components/app/ProjectWorkspaceHeader';
-import { RuntimeDock } from './components/app/RuntimeDock';
+import { RestoreDeploymentDialog } from './components/app/RestoreDeploymentDialog';
 import { RuntimeManagerPanel } from './components/app/RuntimeManagerPanel';
 import { SettingsPanel } from './components/app/SettingsPanel';
 import { SidebarNav } from './components/app/SidebarNav';
-import type { SidebarSection } from './components/app/types';
 import { ConnectionStudio } from './components/ConnectionStudio';
-import { FlowgramCanvas, type FlowgramCanvasHandle } from './components/FlowgramCanvas';
-import {
-  clearDeploymentSession,
-  loadDeploymentSessionState,
-  removeDeploymentSession,
-  saveDeploymentSession,
-  setDeploymentSessionActiveProject,
-  type PersistedDeploymentSession,
-} from './lib/deployment-session';
 import { parseWorkflowGraph } from './lib/graph';
 import { formatWorkflowGraph } from './lib/flowgram';
-import {
-  arePersistedDeploymentSessionStatesEqual,
-  getPreferredRestoreSession,
-  mergePersistedDeploymentSessionStates,
-  normalizePersistedDeploymentSessionState,
-  sortPersistedDeploymentSessions,
-} from './lib/persisted-deployment-state';
 import {
   applyEnvironmentToConnectionDefinitions,
   CURRENT_USER_NAME,
@@ -63,22 +49,12 @@ import {
   type WorkflowOrchestrationSessionState,
 } from './lib/workflow-orchestrator';
 import {
-  clearDeploymentSessionFile,
-  deployWorkflow,
   dispatchPayload,
   hasTauriRuntime,
-  loadDeploymentSessionStateFile,
   listRuntimeWorkflows,
-  removeDeploymentSessionFile,
-  saveDeploymentSessionFile,
-  setDeploymentSessionActiveProjectFile,
   undeployWorkflow,
-  loadAiConfig,
-  saveAiConfig,
-  testAiProvider,
 } from './lib/tauri';
 import type { ConnectionDefinition, WorkflowResult, WorkflowNodeDefinition } from './types';
-import type { AiConfigUpdate, AiConfigView, AiProviderDraft, AiTestResult } from './types';
 import { describeUnknownError } from './lib/workflow-events';
 import {
   deriveWorkflowStatus,
@@ -211,19 +187,16 @@ function App() {
   const settings = useSettings();
   const projectLibrary = useProjectLibrary(settings.projectWorkspacePath);
   const connectionLibrary = useConnectionLibrary(settings.projectWorkspacePath);
-  const [activeBoardId, setActiveBoardId] = useState<string | null>(null);
-  const [sidebarSection, setSidebarSection] = useState<SidebarSection>(settings.startupPage);
-  const [pendingRestoreSessions, setPendingRestoreSessions] =
-    useState<PersistedDeploymentSession[]>([]);
-  const [pendingRestoreActiveProjectId, setPendingRestoreActiveProjectId] = useState<string | null>(null);
-  const [restoreCountdown, setRestoreCountdown] = useState(10);
-  const [isRestoreCheckPaused, setIsRestoreCheckPaused] = useState(false);
+  const {
+    aiConfig,
+    aiConfigError,
+    aiConfigLoading,
+    aiTesting,
+    aiTestResult,
+    handleAiConfigSave,
+    handleAiProviderTest,
+  } = useAiConfigState();
   const [runtimeWorkflowCount, setRuntimeWorkflowCount] = useState(0);
-  const [aiConfig, setAiConfig] = useState<AiConfigView | null>(null);
-  const [aiConfigLoading, setAiConfigLoading] = useState(true);
-  const [aiConfigError, setAiConfigError] = useState<string | null>(null);
-  const [aiTestResult, setAiTestResult] = useState<AiTestResult | null>(null);
-  const [aiTesting, setAiTesting] = useState(false);
   const [aiComposerOpen, setAiComposerOpen] = useState(false);
   const [aiComposerMode, setAiComposerMode] = useState<WorkflowOrchestrationMode>('create');
   const [aiComposerRequirement, setAiComposerRequirement] = useState('');
@@ -235,17 +208,10 @@ function App() {
   const [aiComposerThinkingText, setAiComposerThinkingText] = useState<string | null>(null);
   const [aiComposerState, setAiComposerState] =
     useState<WorkflowOrchestrationSessionState | null>(null);
-  const flowgramCanvasRef = useRef<FlowgramCanvasHandle | null>(null);
+  const flowgramCanvasRef = useRef<BoardWorkspaceHandle | null>(null);
   const aiComposerTargetProjectIdRef = useRef<string | null>(null);
   const aiComposerSessionIdRef = useRef(0);
   const aiComposerGenerating = aiComposerStatus === 'generating';
-  const restoreLookupRef = useRef<{
-    scope: string | null;
-    status: 'idle' | 'loading' | 'prompted' | 'handled' | 'none';
-  }>({
-    scope: null,
-    status: 'idle',
-  });
   const migrationDoneRef = useRef(false);
   const preferredWorkflowAiProvider = useMemo(
     () => resolvePreferredWorkflowAiProvider(aiConfig),
@@ -274,14 +240,19 @@ function App() {
       })),
     [projectLibrary.projects],
   );
-  const activeBoard = useMemo(
-    () => boardItems.find((board) => board.id === activeBoardId) ?? null,
-    [activeBoardId, boardItems],
-  );
-  const activeProject = useMemo(
-    () => projectLibrary.projects.find((project) => project.id === activeBoardId) ?? null,
-    [activeBoardId, projectLibrary.projects],
-  );
+  const {
+    activeBoard,
+    activeBoardId,
+    activeProject,
+    clearActiveBoard,
+    openBoard,
+    setSidebarSection,
+    sidebarSection,
+  } = useAppNavigation({
+    boards: boardItems,
+    projects: projectLibrary.projects,
+    startupPage: settings.startupPage,
+  });
   const currentProject = activeProject ?? projectLibrary.projects[0] ?? null;
   const connectionUsageById = useMemo(
     () => buildConnectionUsageMap(projectLibrary.projects),
@@ -333,51 +304,6 @@ function App() {
       window.clearInterval(timer);
     };
   }, [settings.projectWorkspacePath]);
-
-  useEffect(() => {
-    if (!hasTauriRuntime()) {
-      setAiConfigLoading(false);
-      return;
-    }
-
-    let cancelled = false;
-
-    const load = async () => {
-      try {
-        const config = await loadAiConfig();
-        if (!cancelled) {
-          setAiConfig(config);
-          setAiConfigError(null);
-        }
-      } catch (error) {
-        if (!cancelled) {
-          setAiConfigError(describeUnknownError(error).message);
-        }
-      } finally {
-        if (!cancelled) {
-          setAiConfigLoading(false);
-        }
-      }
-    };
-
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!activeBoardId) {
-      return;
-    }
-
-    if (projectLibrary.projects.some((project) => project.id === activeBoardId)) {
-      return;
-    }
-
-    setActiveBoardId(null);
-    setSidebarSection('boards');
-  }, [activeBoardId, projectLibrary.projects]);
 
   useEffect(() => {
     if (!connectionLibrary.storage.isReady || !projectLibrary.storage.isReady) {
@@ -587,8 +513,7 @@ function App() {
       nextDraft.description.trim() || 'AI 正在编排工作流。',
     );
     aiComposerTargetProjectIdRef.current = nextProject.id;
-    setActiveBoardId(nextProject.id);
-    setSidebarSection('boards');
+    openBoard(nextProject.id);
     engine.resetWorkspaceRuntime(`AI 正在编排工程 ${nextProject.name}。`);
     engine.appendRuntimeLog('ai', 'info', '已创建 AI 编排草稿工程', nextProject.name);
     return nextProject.id;
@@ -754,8 +679,7 @@ function App() {
   }
 
   function handleOpenBoard(board: BoardItem) {
-    setActiveBoardId(board.id);
-    setSidebarSection('boards');
+    openBoard(board.id);
 
     if (getDeployProjectId(engine.deployInfo) === board.id) {
       engine.setStatusMessage(`已进入工程 ${board.name}，已保留当前运行态。`);
@@ -766,15 +690,13 @@ function App() {
   }
 
   function handleBackToBoards() {
-    setSidebarSection('boards');
-    setActiveBoardId(null);
+    clearActiveBoard();
     engine.resetWorkspaceRuntime('已返回所有看板。');
   }
 
   function handleCreateBoard() {
     const nextProject = projectLibrary.createProject();
-    setActiveBoardId(nextProject.id);
-    setSidebarSection('boards');
+    openBoard(nextProject.id);
     engine.resetWorkspaceRuntime(`已创建工程 ${nextProject.name}。`);
     engine.appendRuntimeLog('project', 'success', '已创建工程', nextProject.name);
   }
@@ -786,8 +708,7 @@ function App() {
       const nextProject = result.importedProjects[0] ?? null;
 
       if (nextProject) {
-        setActiveBoardId(nextProject.id);
-        setSidebarSection('boards');
+        openBoard(nextProject.id);
       }
 
       const detail = result.migrationNotes.length > 0 ? result.migrationNotes.join('\n') : null;
@@ -812,8 +733,7 @@ function App() {
     }
 
     if (activeBoardId === board.id) {
-      setActiveBoardId(null);
-      setSidebarSection('boards');
+      clearActiveBoard();
     }
 
     engine.setStatusMessage(`已删除工程 ${deletedProject.name}。`);
@@ -1019,344 +939,31 @@ function App() {
     };
   }
 
-  async function persistDeploymentSnapshot(snapshot: Pick<
-    DeploymentSnapshot,
-    'projectId' | 'projectName' | 'environmentId' | 'environmentName' | 'runtimeAstText' | 'runtimeConnections'
-  >) {
-    const session = {
-      version: 1 as const,
-      projectId: snapshot.projectId,
-      projectName: snapshot.projectName,
-      environmentId: snapshot.environmentId,
-      environmentName: snapshot.environmentName,
-      deployedAt: new Date().toISOString(),
-      runtimeAstText: snapshot.runtimeAstText,
-      runtimeConnections: snapshot.runtimeConnections,
-    };
-    const activeProjectId = snapshot.projectId;
-
-    saveDeploymentSession(settings.projectWorkspacePath, session, activeProjectId);
-
-    if (!hasTauriRuntime()) {
-      return;
-    }
-
-    try {
-      await saveDeploymentSessionFile(settings.projectWorkspacePath, session, activeProjectId);
-    } catch (error) {
-      const { message, detail } = describeUnknownError(error);
-      engine.appendAppError('command', '写入部署会话失败，已降级为本地缓存', detail ?? message);
-    }
-  }
-
-  async function persistActiveDeploymentProject(projectId: string | null) {
-    const targetProjectId = projectId?.trim() || null;
-    setDeploymentSessionActiveProject(settings.projectWorkspacePath, targetProjectId);
-
-    if (!hasTauriRuntime()) {
-      return;
-    }
-
-    try {
-      await setDeploymentSessionActiveProjectFile(settings.projectWorkspacePath, targetProjectId);
-    } catch (error) {
-      const { message, detail } = describeUnknownError(error);
-      engine.appendAppError('command', '更新主控工作流失败，已降级为本地缓存', detail ?? message);
-    }
-  }
-
-  async function removePersistedDeploymentSnapshot(projectId: string) {
-    const targetProjectId = projectId.trim();
-    if (!targetProjectId) {
-      return;
-    }
-
-    removeDeploymentSession(settings.projectWorkspacePath, targetProjectId);
-
-    if (!hasTauriRuntime()) {
-      return;
-    }
-
-    try {
-      await removeDeploymentSessionFile(settings.projectWorkspacePath, targetProjectId);
-    } catch (error) {
-      const { message, detail } = describeUnknownError(error);
-      engine.appendAppError('command', '清理部署会话失败', detail ?? message);
-    }
-  }
-
-  async function clearPersistedDeploymentSnapshots() {
-    clearDeploymentSession(settings.projectWorkspacePath);
-
-    if (!hasTauriRuntime()) {
-      return;
-    }
-
-    try {
-      await clearDeploymentSessionFile(settings.projectWorkspacePath);
-    } catch (error) {
-      const { message, detail } = describeUnknownError(error);
-      engine.appendAppError('command', '清理部署会话失败', detail ?? message);
-    }
-  }
-
-  async function loadPersistedDeploymentSnapshots() {
-    const localState = normalizePersistedDeploymentSessionState(
-      loadDeploymentSessionState(settings.projectWorkspacePath),
-    );
-
-    if (!hasTauriRuntime()) {
-      return localState;
-    }
-
-    let fileState = normalizePersistedDeploymentSessionState({
-      sessions: [],
-      activeProjectId: null,
-    });
-    let fileLoaded = false;
-
-    try {
-      fileState = normalizePersistedDeploymentSessionState(
-        await loadDeploymentSessionStateFile(settings.projectWorkspacePath),
-      );
-      fileLoaded = true;
-    } catch (error) {
-      const { message, detail } = describeUnknownError(error);
-      engine.appendAppError('command', '读取部署会话失败，尝试使用本地缓存', detail ?? message);
-    }
-
-    const mergedState = mergePersistedDeploymentSessionStates(
-      fileState,
-      localState,
-    );
-
-    if (!fileLoaded) {
-      return mergedState;
-    }
-
-    const localHasFallbackState =
-      localState.sessions.length > 0 || localState.activeProjectId !== null;
-    const fileNeedsSync = !arePersistedDeploymentSessionStatesEqual(fileState, mergedState);
-
-    if (fileNeedsSync) {
-      try {
-        if (mergedState.sessions.length === 0) {
-          await clearDeploymentSessionFile(settings.projectWorkspacePath);
-        } else {
-          for (const session of mergedState.sessions) {
-            await saveDeploymentSessionFile(settings.projectWorkspacePath, session);
-          }
-          await setDeploymentSessionActiveProjectFile(
-            settings.projectWorkspacePath,
-            mergedState.activeProjectId,
-          );
-        }
-        clearDeploymentSession(settings.projectWorkspacePath);
-      } catch (error) {
-        const { message, detail } = describeUnknownError(error);
-        engine.appendAppError('command', '迁移旧部署会话失败', detail ?? message);
-        return mergedState;
-      }
-    } else if (localHasFallbackState) {
-      clearDeploymentSession(settings.projectWorkspacePath);
-    }
-
-    return mergedState;
-  }
-
-  async function runDeploymentSnapshot(
-    snapshot: Pick<
-      DeploymentSnapshot,
-      'projectId' | 'projectName' | 'environmentId' | 'environmentName' | 'runtimeAstText' | 'runtimeConnections'
-    >,
-    source: 'manual' | 'restore',
-  ) {
-    if (!hasTauriRuntime()) {
-      const statusMessage =
-        source === 'restore'
-          ? `预览模式下已跳过 ${snapshot.projectName} 的自动恢复部署。`
-          : `预览模式下已完成 ${snapshot.environmentName} 的部署校验。`;
-      engine.setStatusMessage(statusMessage);
-      engine.appendRuntimeLog(
-        'project',
-        'info',
-        source === 'restore' ? '预览模式下跳过自动恢复部署' : '预览模式下跳过实际部署',
-        `${snapshot.projectName} · ${snapshot.environmentName}`,
-      );
-      return true;
-    }
-
-    try {
-      const response = await deployWorkflow(snapshot.runtimeAstText, snapshot.runtimeConnections, {
-        workspacePath: settings.projectWorkspacePath,
-        projectId: snapshot.projectId,
-        projectName: snapshot.projectName,
-        environmentId: snapshot.environmentId,
-        environmentName: snapshot.environmentName,
-        deploymentSource: source,
-      }, {
-        workflowId: snapshot.projectId,
-      });
-      engine.applyDeploymentState(
-        response,
-        source === 'restore'
-          ? `已恢复 ${snapshot.projectName} 的部署，节点数 ${response.nodeCount}，边数 ${response.edgeCount}，环境 ${snapshot.environmentName}。`
-          : `部署完成，节点数 ${response.nodeCount}，边数 ${response.edgeCount}，环境 ${snapshot.environmentName}。`,
-      );
-      await persistDeploymentSnapshot(snapshot);
-      if (source === 'restore') {
-        engine.appendRuntimeLog(
-          'system',
-          'success',
-          '已恢复上次部署',
-          `${snapshot.projectName} · ${snapshot.environmentName}`,
-        );
-      }
-      await engine.refreshConnections();
-      return true;
-    } catch (error) {
-      const { message, detail } = describeUnknownError(error);
-      engine.appendAppError(
-        'command',
-        source === 'restore' ? '自动恢复部署失败' : '部署工作流失败',
-        detail ?? message,
-      );
-      engine.setStatusMessage(
-        source === 'restore' ? `自动恢复部署失败: ${message}` : message,
-      );
-      return false;
-    }
-  }
-
-  async function handleSkipRestore() {
-    if (pendingRestoreSessions.length === 0) {
-      return;
-    }
-
-    const skippedSessions = pendingRestoreSessions;
-    const leadSession = getPreferredRestoreSession(
-      skippedSessions,
-      pendingRestoreActiveProjectId,
-    );
-    restoreLookupRef.current = {
-      scope: deploymentRestoreScope,
-      status: 'handled',
-    };
-    setPendingRestoreSessions([]);
-    setPendingRestoreActiveProjectId(null);
-    setRestoreCountdown(10);
-    await clearPersistedDeploymentSnapshots();
-    engine.setStatusMessage(
-      skippedSessions.length > 1
-        ? `已取消恢复最近 ${skippedSessions.length} 个工程的上次部署。`
-        : `已取消恢复 ${leadSession?.projectName ?? '当前工程'} 的上次部署。`,
-    );
-    engine.appendRuntimeLog(
-      'system',
-      'info',
-      '已取消自动恢复部署',
-      skippedSessions.length > 1
-        ? `共 ${skippedSessions.length} 个工程`
-        : `${leadSession?.projectName ?? '未知工程'} · ${leadSession?.environmentName ?? '默认环境'}`,
-    );
-  }
-
-  async function handleConfirmRestore(sessions = pendingRestoreSessions) {
-    const restoreSessions = sortPersistedDeploymentSessions(sessions);
-    if (restoreSessions.length === 0) {
-      return;
-    }
-
-    const validSessions: PersistedDeploymentSession[] = [];
-    const missingSessions: PersistedDeploymentSession[] = [];
-
-    for (const session of restoreSessions) {
-      const targetProject = projectLibrary.projects.find((project) => project.id === session.projectId);
-      if (targetProject) {
-        validSessions.push(session);
-      } else {
-        missingSessions.push(session);
-      }
-    }
-
-    restoreLookupRef.current = {
-      scope: deploymentRestoreScope,
-      status: 'handled',
-    };
-    setPendingRestoreSessions([]);
-    setPendingRestoreActiveProjectId(null);
-    setRestoreCountdown(10);
-
-    for (const missingSession of missingSessions) {
-      await removePersistedDeploymentSnapshot(missingSession.projectId);
-      engine.appendRuntimeLog(
-        'system',
-        'warn',
-        '恢复目标不存在，已清理部署记录',
-        missingSession.projectName,
-      );
-    }
-
-    if (validSessions.length === 0) {
-      engine.setStatusMessage('恢复失败：目标工程不存在，已清理部署记录。');
-      return;
-    }
-
-    const restoreState = normalizePersistedDeploymentSessionState({
-      sessions: validSessions,
-      activeProjectId: pendingRestoreActiveProjectId,
-    });
-    const leadSession = getPreferredRestoreSession(
-      restoreState.sessions,
-      restoreState.activeProjectId,
-    );
-    const restoreQueue = [
-      ...[...restoreState.sessions.filter((session) => session.projectId !== leadSession?.projectId)].reverse(),
-      ...(leadSession ? [leadSession] : []),
-    ];
-    engine.appendRuntimeLog(
-      'system',
-      'info',
-      validSessions.length > 1 ? '正在批量恢复上次部署' : '正在恢复上次部署',
-      validSessions.length > 1
-        ? `共 ${validSessions.length} 个工程，主控工程为 ${leadSession?.projectName ?? validSessions[0].projectName}`
-        : `${leadSession?.projectName ?? validSessions[0].projectName} · ${leadSession?.environmentName ?? validSessions[0].environmentName}`,
-    );
-
-    let restoredCount = 0;
-    let lastSuccessfulSession: PersistedDeploymentSession | null = null;
-    for (const session of restoreQueue) {
-      const restored = await runDeploymentSnapshot(
-        {
-          projectId: session.projectId,
-          projectName: session.projectName,
-          environmentId: session.environmentId,
-          environmentName: session.environmentName,
-          runtimeAstText: session.runtimeAstText,
-          runtimeConnections: session.runtimeConnections,
-        },
-        'restore',
-      );
-      if (restored) {
-        restoredCount += 1;
-        lastSuccessfulSession = session;
-      }
-    }
-
-    if (lastSuccessfulSession) {
-      setSidebarSection('boards');
-      setActiveBoardId(lastSuccessfulSession.projectId);
-    }
-
-    if (validSessions.length > 1) {
-      engine.appendRuntimeLog(
-        'system',
-        restoredCount === validSessions.length ? 'success' : 'warn',
-        '批量恢复完成',
-        `成功 ${restoredCount}/${validSessions.length} 个工程`,
-      );
-    }
-  }
+  const {
+    beginRestoreCheckPause,
+    endRestoreCheckPause,
+    handleConfirmRestore,
+    handleSkipRestore,
+    pendingRestoreLeadSession,
+    pendingRestoreSessions,
+    persistActiveDeploymentProject,
+    removePersistedDeploymentSnapshot,
+    restoreCountdown,
+    runDeploymentSnapshot,
+  } = useDeploymentRestore({
+    workspacePath: settings.projectWorkspacePath,
+    projects: projectLibrary.projects,
+    projectStorageReady: projectLibrary.storage.isReady,
+    connectionStorageReady: connectionLibrary.storage.isReady,
+    deployInfo: engine.deployInfo,
+    runtimeWorkflowCount,
+    appendAppError: engine.appendAppError,
+    appendRuntimeLog: engine.appendRuntimeLog,
+    applyDeploymentState: engine.applyDeploymentState,
+    refreshConnections: engine.refreshConnections,
+    setStatusMessage: engine.setStatusMessage,
+    onRestoreProject: openBoard,
+  });
 
   async function handleDeploy() {
     if (!activeBoard || !activeProject) {
@@ -1496,11 +1103,6 @@ function App() {
   const canDispatchPayload =
     Boolean(activeBoard) && (!isTauriRuntime || Boolean(currentBoardDeployInfo));
   const connectionPreview = engine.connections.slice(0, 4);
-  const deploymentRestoreScope = settings.projectWorkspacePath.trim() || '__default__';
-  const pendingRestoreLeadSession = getPreferredRestoreSession(
-    pendingRestoreSessions,
-    pendingRestoreActiveProjectId,
-  );
   const sidebarSections = buildSidebarSections(
     workflowStatusLabel,
     runtimeWorkflowCount,
@@ -1511,281 +1113,23 @@ function App() {
     activeBoard?.name ?? null,
   );
 
-  function beginRestoreCheckPause() {
-    restoreLookupRef.current = {
-      scope: null,
-      status: 'handled',
-    };
-    setIsRestoreCheckPaused(true);
-    setPendingRestoreSessions([]);
-    setPendingRestoreActiveProjectId(null);
-    setRestoreCountdown(10);
-  }
-
-  function endRestoreCheckPause() {
-    restoreLookupRef.current = {
-      scope: deploymentRestoreScope,
-      status: 'idle',
-    };
-    setIsRestoreCheckPaused(false);
-  }
-
-  useEffect(() => {
-    restoreLookupRef.current = {
-      scope: deploymentRestoreScope,
-      status: 'idle',
-    };
-    setPendingRestoreSessions([]);
-    setPendingRestoreActiveProjectId(null);
-    setRestoreCountdown(10);
-    setIsRestoreCheckPaused(false);
-  }, [deploymentRestoreScope]);
-
-  const handleConfirmRestoreRef = useRef(handleConfirmRestore);
-  handleConfirmRestoreRef.current = handleConfirmRestore;
-
-  useEffect(() => {
-    if (pendingRestoreSessions.length === 0) {
-      return;
-    }
-
-    if (restoreCountdown <= 0) {
-      void handleConfirmRestoreRef.current(pendingRestoreSessions);
-      return;
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      setRestoreCountdown((current) => current - 1);
-    }, 1000);
-
-    return () => {
-      window.clearTimeout(timeoutId);
-    };
-  }, [pendingRestoreSessions, restoreCountdown]);
-
-  useEffect(() => {
-    if (pendingRestoreSessions.length === 0) {
-      return;
-    }
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        void handleSkipRestore();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [pendingRestoreSessions]);
-
-  useEffect(() => {
-    if (!engine.deployInfo || pendingRestoreSessions.length === 0) {
-      return;
-    }
-
-    setPendingRestoreSessions([]);
-    setPendingRestoreActiveProjectId(null);
-    setRestoreCountdown(10);
-  }, [engine.deployInfo, pendingRestoreSessions]);
-
-  useEffect(() => {
-    if (
-      !hasTauriRuntime() ||
-      !projectLibrary.storage.isReady ||
-      !connectionLibrary.storage.isReady ||
-      isRestoreCheckPaused ||
-      engine.deployInfo ||
-      runtimeWorkflowCount > 0
-    ) {
-      return;
-    }
-
-    if (restoreLookupRef.current.scope !== deploymentRestoreScope) {
-      restoreLookupRef.current = {
-        scope: deploymentRestoreScope,
-        status: 'idle',
-      };
-    }
-
-    if (restoreLookupRef.current.status !== 'idle') {
-      return;
-    }
-
-    restoreLookupRef.current = {
-      scope: deploymentRestoreScope,
-      status: 'loading',
-    };
-
-    void loadPersistedDeploymentSnapshots().then((restoredState) => {
-      if (restoreLookupRef.current.scope !== deploymentRestoreScope) {
-        return;
-      }
-
-      if (restoredState.sessions.length === 0) {
-        restoreLookupRef.current = {
-          scope: deploymentRestoreScope,
-          status: 'none',
-        };
-        return;
-      }
-
-      const knownSessions = restoredState.sessions.filter((session) =>
-        projectLibrary.projects.some((project) => project.id === session.projectId),
-      );
-      const unknownSessions = restoredState.sessions.filter(
-        (session) => !knownSessions.some((item) => item.projectId === session.projectId),
-      );
-
-      if (unknownSessions.length > 0) {
-        for (const session of unknownSessions) {
-          void removePersistedDeploymentSnapshot(session.projectId);
-        }
-        engine.appendRuntimeLog(
-          'system',
-          'warn',
-          '已清理失效部署记录',
-          unknownSessions.map((session) => session.projectName).join('、'),
-        );
-      }
-
-      if (knownSessions.length === 0) {
-        restoreLookupRef.current = {
-          scope: deploymentRestoreScope,
-          status: 'handled',
-        };
-        return;
-      }
-
-      const promptState = normalizePersistedDeploymentSessionState({
-        sessions: knownSessions,
-        activeProjectId: restoredState.activeProjectId,
-      });
-      const leadSession = getPreferredRestoreSession(
-        promptState.sessions,
-        promptState.activeProjectId,
-      );
-      engine.appendRuntimeLog(
-        'system',
-        'warn',
-        '检测到可恢复部署',
-        knownSessions.length > 1
-          ? `共 ${knownSessions.length} 个工程，主控工程为 ${leadSession?.projectName ?? knownSessions[0].projectName}`
-          : `${leadSession?.projectName ?? knownSessions[0].projectName} · ${leadSession?.environmentName ?? knownSessions[0].environmentName}`,
-      );
-      engine.setStatusMessage(
-        knownSessions.length > 1
-          ? `检测到 ${knownSessions.length} 个工程的上次部署，10 秒后将自动恢复。`
-          : `检测到 ${leadSession?.projectName ?? knownSessions[0].projectName} 的上次部署，10 秒后将自动恢复。`,
-      );
-      restoreLookupRef.current = {
-        scope: deploymentRestoreScope,
-        status: 'prompted',
-      };
-      setPendingRestoreSessions(promptState.sessions);
-      setPendingRestoreActiveProjectId(promptState.activeProjectId);
-      setRestoreCountdown(10);
-    });
-  }, [
-    connectionLibrary.storage.isReady,
-    deploymentRestoreScope,
-    engine,
-    isRestoreCheckPaused,
-    projectLibrary.projects,
-    projectLibrary.storage.isReady,
-    runtimeWorkflowCount,
-    settings.projectWorkspacePath,
-  ]);
-
-  const handleAiConfigSave = async (update: AiConfigUpdate) => {
-    try {
-      const saved = await saveAiConfig(update);
-      setAiConfig(saved);
-      setAiConfigError(null);
-    } catch (error) {
-      setAiConfigError(describeUnknownError(error).message);
-    }
-  };
-
-  const handleAiProviderTest = async (draft: AiProviderDraft) => {
-    setAiTesting(true);
-    setAiTestResult(null);
-    try {
-      const result = await testAiProvider(draft);
-      setAiTestResult(result);
-    } catch (error) {
-      setAiTestResult({
-        success: false,
-        message: describeUnknownError(error).message,
-      });
-    } finally {
-      setAiTesting(false);
-    }
-  };
-
   function renderRestoreDialog() {
     if (pendingRestoreSessions.length === 0 || !pendingRestoreLeadSession) {
       return null;
     }
 
-    const progress = `${Math.max(0, Math.min(100, (restoreCountdown / 10) * 100))}%`;
-
     return (
-      <div className="restore-dialog-layer" data-no-window-drag>
-        <div
-          className="restore-dialog"
-          role="alertdialog"
-          aria-modal="true"
-          aria-labelledby="restore-dialog-title"
-          aria-describedby="restore-dialog-description"
-          onClick={(event) => event.stopPropagation()}
-        >
-          <div className="restore-dialog__header">
-            <div className="restore-dialog__eyebrow">
-              <span className="restore-dialog__eyebrow-dot" />
-              <span>启动恢复</span>
-            </div>
-            <span className="restore-dialog__timer">{restoreCountdown}s</span>
-          </div>
-
-          <div className="restore-dialog__body">
-            <strong id="restore-dialog-title">
-              {pendingRestoreSessions.length > 1
-                ? `恢复最近 ${pendingRestoreSessions.length} 个工程的上次部署？`
-                : `恢复“${pendingRestoreLeadSession.projectName}”的上次部署？`}
-            </strong>
-            <p id="restore-dialog-description">
-              {pendingRestoreSessions.length > 1
-                ? `将批量恢复最近 ${pendingRestoreSessions.length} 个工程的成功部署，并以“${pendingRestoreLeadSession.projectName}”作为当前工程。若不操作，${restoreCountdown} 秒后自动恢复。`
-                : `将恢复环境“${pendingRestoreLeadSession.environmentName}”下的最后一次成功部署。若不操作，${restoreCountdown} 秒后自动恢复。`}
-            </p>
-          </div>
-
-          <div className="restore-dialog__countdown" aria-hidden="true">
-            <div className="restore-dialog__countdown-bar" style={{ width: progress }} />
-          </div>
-
-          <div className="restore-dialog__actions">
-            <button
-              type="button"
-              className="restore-dialog__action"
-              onClick={() => {
-                void handleSkipRestore();
-              }}
-            >
-              不恢复
-            </button>
-            <button
-              type="button"
-              className="restore-dialog__action restore-dialog__action--primary"
-              onClick={() => {
-                void handleConfirmRestore();
-              }}
-            >
-              立即恢复
-            </button>
-          </div>
-        </div>
-      </div>
+      <RestoreDeploymentDialog
+        sessions={pendingRestoreSessions}
+        leadSession={pendingRestoreLeadSession}
+        countdown={restoreCountdown}
+        onSkip={() => {
+          void handleSkipRestore();
+        }}
+        onConfirm={() => {
+          void handleConfirmRestore();
+        }}
+      />
     );
   }
 
@@ -1828,58 +1172,60 @@ function App() {
 
     return (
       <section className="studio-content studio-content--board">
-        <div
-          className={`studio-board-workspace ${engine.isRuntimeDockCollapsed ? 'is-runtime-collapsed' : ''}`}
-        >
-          <ProjectWorkspaceHeader
-            project={activeProject}
-            nodeCount={graphNodeCount}
-            onBack={handleBackToBoards}
-            onCreateSnapshot={handleCreateSnapshot}
-            onDeleteSnapshot={handleDeleteSnapshot}
-            onRollbackSnapshot={handleRollbackSnapshot}
-            onEnvironmentChange={handleEnvironmentChange}
-            onEnvironmentSave={handleEnvironmentSave}
-            onDuplicateEnvironment={handleDuplicateEnvironment}
-            onDeleteEnvironment={handleDeleteEnvironment}
-            onOpenAiComposer={handleOpenAiEdit}
-            aiActionTitle={aiWorkflowActionTitle}
-            aiActionDisabled={!preferredWorkflowAiProvider || aiComposerGenerating}
-            aiActionLoading={aiComposerGenerating && aiComposerMode === 'edit'}
-          />
-
-          <FlowgramCanvas
-            ref={flowgramCanvasRef}
-            graph={graphState.graph}
-            connections={connectionLibrary.connections}
-            aiProviders={aiConfig?.providers ?? []}
-            activeAiProviderId={aiConfig?.activeProviderId ?? null}
-            copilotParams={aiConfig?.copilotParams ?? {}}
-            runtimeState={engine.runtimeState}
-            workflowStatus={workflowStatus}
-            accentHex={settings.accentHex}
-            nodeCodeColor={settings.accentThemeVariables['--node-code']}
-            workspacePath={settings.projectWorkspacePath}
-            workflowName={activeProject.name}
-            onRunRequested={handleDeploy}
-            onStopRequested={handleUndeploy}
-            onDispatchRequested={handleDispatchPayload}
-            canDispatchPayload={canDispatchPayload}
-            onGraphChange={handleGraphChange}
-            onError={engine.handleFlowgramError}
-            onStatusMessage={engine.setStatusMessage}
-          />
-
-          <RuntimeDock
-            eventFeed={engine.eventFeed}
-            appErrors={engine.appErrors}
-            results={engine.results}
-            connectionPreview={connectionPreview}
-            themeMode={settings.themeMode}
-            isCollapsed={engine.isRuntimeDockCollapsed}
-            onToggleCollapsed={() => engine.setIsRuntimeDockCollapsed((current) => !current)}
-          />
-        </div>
+        <BoardWorkspace
+          ref={flowgramCanvasRef}
+          project={activeProject}
+          graph={graphState.graph}
+          nodeCount={graphNodeCount}
+          connectionPreview={connectionPreview}
+          themeMode={settings.themeMode}
+          isRuntimeDockCollapsed={engine.isRuntimeDockCollapsed}
+          flowgramResources={{
+            connections: connectionLibrary.connections,
+            aiProviders: aiConfig?.providers ?? [],
+            activeAiProviderId: aiConfig?.activeProviderId ?? null,
+            copilotParams: aiConfig?.copilotParams ?? {},
+          }}
+          flowgramRuntime={{
+            runtimeState: engine.runtimeState,
+            workflowStatus,
+            canDispatchPayload,
+          }}
+          flowgramAppearance={{
+            accentHex: settings.accentHex,
+            nodeCodeColor: settings.accentThemeVariables['--node-code'],
+          }}
+          flowgramExportTarget={{
+            workspacePath: settings.projectWorkspacePath,
+            workflowName: activeProject.name,
+          }}
+          flowgramActions={{
+            onRunRequested: handleDeploy,
+            onStopRequested: handleUndeploy,
+            onDispatchRequested: handleDispatchPayload,
+            onGraphChange: handleGraphChange,
+            onError: engine.handleFlowgramError,
+            onStatusMessage: engine.setStatusMessage,
+          }}
+          runtimeDock={{
+            eventFeed: engine.eventFeed,
+            appErrors: engine.appErrors,
+            results: engine.results,
+          }}
+          onToggleRuntimeDockCollapsed={() => engine.setIsRuntimeDockCollapsed((current) => !current)}
+          onBack={handleBackToBoards}
+          onCreateSnapshot={handleCreateSnapshot}
+          onDeleteSnapshot={handleDeleteSnapshot}
+          onRollbackSnapshot={handleRollbackSnapshot}
+          onEnvironmentChange={handleEnvironmentChange}
+          onEnvironmentSave={handleEnvironmentSave}
+          onDuplicateEnvironment={handleDuplicateEnvironment}
+          onDeleteEnvironment={handleDeleteEnvironment}
+          onOpenAiComposer={handleOpenAiEdit}
+          aiActionTitle={aiWorkflowActionTitle}
+          aiActionDisabled={!preferredWorkflowAiProvider || aiComposerGenerating}
+          aiActionLoading={aiComposerGenerating && aiComposerMode === 'edit'}
+        />
       </section>
     );
   }

@@ -79,25 +79,45 @@ import type {
   WorkflowWindowStatus,
 } from '../types';
 
-interface FlowgramCanvasProps {
-  graph: WorkflowGraph | null;
+export interface FlowgramCanvasResources {
   connections: ConnectionDefinition[];
   aiProviders: AiProviderView[];
   activeAiProviderId: string | null;
   copilotParams: AiGenerationParams;
+}
+
+export interface FlowgramCanvasRuntime {
   runtimeState: WorkflowRuntimeState;
   workflowStatus: WorkflowWindowStatus;
+  canDispatchPayload?: boolean;
+}
+
+export interface FlowgramCanvasAppearance {
   accentHex: string;
   nodeCodeColor: string;
+}
+
+export interface FlowgramCanvasExportTarget {
   workspacePath?: string;
   workflowName?: string | null;
+}
+
+export interface FlowgramCanvasActions {
   onRunRequested?: () => void;
   onStopRequested?: () => void;
   onDispatchRequested?: () => void;
-  canDispatchPayload?: boolean;
   onGraphChange: (nextAstText: string) => void;
   onError?: (title: string, detail?: string | null) => void;
   onStatusMessage?: (message: string) => void;
+}
+
+interface FlowgramCanvasProps {
+  graph: WorkflowGraph | null;
+  resources: FlowgramCanvasResources;
+  runtime: FlowgramCanvasRuntime;
+  appearance: FlowgramCanvasAppearance;
+  exportTarget?: FlowgramCanvasExportTarget;
+  actions: FlowgramCanvasActions;
 }
 
 export interface FlowgramCanvasHandle {
@@ -1079,24 +1099,24 @@ function FlowgramToolbar({
 
 export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasProps>(function FlowgramCanvas({
   graph,
-  connections,
-  aiProviders,
-  activeAiProviderId,
-  copilotParams,
-  runtimeState,
-  workflowStatus,
-  accentHex,
-  nodeCodeColor,
-  workspacePath,
-  workflowName,
-  onRunRequested,
-  onStopRequested,
-  onDispatchRequested,
-  canDispatchPayload = false,
-  onGraphChange,
-  onError,
-  onStatusMessage,
+  resources,
+  runtime,
+  appearance,
+  exportTarget,
+  actions,
 }, ref) {
+  const { connections, aiProviders, activeAiProviderId, copilotParams } = resources;
+  const { runtimeState, workflowStatus, canDispatchPayload = false } = runtime;
+  const { accentHex, nodeCodeColor } = appearance;
+  const { workspacePath, workflowName } = exportTarget ?? {};
+  const {
+    onRunRequested,
+    onStopRequested,
+    onDispatchRequested,
+    onGraphChange,
+    onError,
+    onStatusMessage,
+  } = actions;
   const [lastChange, setLastChange] = useState<string | null>(null);
   const [editorCtx, setEditorCtx] = useState<FreeLayoutPluginContext | null>(null);
   const [hasSelection, setHasSelection] = useState(false);
