@@ -346,12 +346,23 @@ Located in `docs/superpowers/plans/` and `docs/superpowers/specs/`. These are **
 
 **Immediate known tech debt:**
 - MQTT subscriber / Timer / Serial root lifecycle is owned by the Tauri shell (`src-tauri/src/lib.rs:2499-2740+`). ADR-0009 plans to migrate this into engine-level `on_deploy` hooks.
-- IPC response types in `crates/core/` contradict Ring 0 purity. ADR-0017 plans to extract `crates/tauri-bindings/`.
+- ~~IPC response types in `crates/core/` contradict Ring 0 purity. ADR-0017 plans to extract `crates/tauri-bindings/`.~~ **已偿还（2026-04-24，ADR-0017 已实施）**
 - Known clippy warnings in `crates/nodes-io/src/http_client.rs` and `bark_push.rs` (`too_many_lines`, `collapsible_if`) — pre-existing, to be addressed in a dedicated cleanup PR.
 
-**Roadmap next:**
-1. Low-risk crate hygiene PRs (already clean: A1 ai-core Cargo, B2 url instead of reqwest, E1 modern mod.rs, F1 WorkflowNodeDefinition getters).
-2. ADR-0009 lifecycle hooks — unblocks clean MQTT/Modbus driver integration.
-3. ADR-0010 Pin system — foundation for subgraphs, variables, reactive data.
-4. Real protocol drivers beyond Modbus TCP / MQTT / Bark: OPC-UA, Kafka consumers.
-5. AI capabilities expansion (embeddings, vision — future ADR).
+**ADR Execution Order**（2026-04-24 共识，依赖与独立性已分析过）：
+
+> 0. ✅ **ADR-0017** IPC + ts-rs 迁出 Ring 0 — 已实施（独立支线，crate 卫生）
+> 1. **ADR-0011** 节点能力标签 — 轻量首发，加 `NodeTrait::capabilities()` 默认空集合，可与 0017 后续工作并行
+> 2. **ADR-0009** 生命周期钩子（`on_deploy` + `LifecycleGuard`）— 偿还 MQTT/Timer/Serial 壳层债务，为真实协议驱动铺路
+> 3. **ADR-0010** Pin 声明系统 — 是 0012/0013/0014/0015 的共同基础，**不要先做后续四条**
+> 4. **ADR-0018 / ADR-0019**（独立支线）— `nodes-io` 协议 feature 门控 / AI 依赖反转，可任意时候穿插
+> 5. **ADR-0012** 工作流变量（依赖 0009 + 0010）
+> 6. **ADR-0013** 子图与宏（依赖 0010）
+> 7. **Phase 6 (RFC-0002)** EventBus + EdgeBackpressure + ConcurrencyPolicy — 与 Pin 系统可并行
+> 8. **ADR-0014** Exec/Data 边分离 — 本批最重，待 Pin 系统稳定后再启动
+> 9. **ADR-0015 / ADR-0016** 反应式数据引脚 + 边级可观测性 — polish 阶段
+> 10. 真实协议驱动扩展（OPC-UA、Kafka 消费者等）
+> 11. AI 能力扩展（embeddings、vision，未来 ADR）
+
+**评估性 ADR**：
+- ADR-0020 `src/graph/` 编排层归属 — 当前不实施，待触发条件出现（见 ADR 正文）。
