@@ -10,6 +10,7 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
+#[cfg(feature = "ts-export")]
 use ts_rs::TS;
 
 use crate::{EngineError, NodeTrait};
@@ -71,20 +72,20 @@ fn default_node_buffer() -> usize {
 /// 同名访问器（`id()` / `node_type()` / ...），规范化缺省值通过 [`normalize`] 方法。
 ///
 /// [`normalize`]: WorkflowNodeDefinition::normalize
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
 pub struct WorkflowNodeDefinition {
     #[serde(default)]
     id: String,
     #[serde(rename = "type")]
     node_type: String,
     #[serde(default)]
-    #[ts(optional)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
     connection_id: Option<String>,
     #[serde(default)]
     config: Value,
     #[serde(default)]
-    #[ts(optional, type = "number")]
+    #[cfg_attr(feature = "ts-export", ts(optional, type = "number"))]
     timeout_ms: Option<u64>,
     #[serde(default = "default_node_buffer")]
     buffer: usize,
@@ -220,20 +221,11 @@ impl NodeRegistry {
     }
 
     /// 返回所有已注册的节点类型名称。
+    ///
+    /// 顺序未定义；调用方需要排序请自行处理。Tauri IPC 层在
+    /// `tauri_bindings::list_node_types_response` 中负责字母排序与封装。
     pub fn registered_types(&self) -> Vec<&str> {
         self.factories.keys().map(String::as_str).collect()
-    }
-
-    /// 返回已注册节点类型的列表。
-    pub fn registered_types_list(&self) -> Vec<crate::NodeTypeEntry> {
-        let mut names: Vec<&str> = self.factories.keys().map(String::as_str).collect();
-        names.sort_unstable();
-        names
-            .into_iter()
-            .map(|name| crate::NodeTypeEntry {
-                name: name.to_owned(),
-            })
-            .collect()
     }
 }
 

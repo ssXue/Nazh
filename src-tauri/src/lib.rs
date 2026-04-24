@@ -15,9 +15,8 @@ use ai::{
     AiProviderDraft, AiService, AiTestResult, OpenAiCompatibleService,
 };
 use nazh_engine::{
-    ConnectionDefinition, ConnectionRecord, DeployResponse, DispatchResponse, EngineError,
-    ExecutionEvent, ListNodeTypesResponse, SerialTriggerNodeConfig, TimerNodeConfig,
-    UndeployResponse, WorkflowContext, WorkflowGraph, WorkflowIngress,
+    ConnectionDefinition, ConnectionRecord, EngineError, ExecutionEvent, SerialTriggerNodeConfig,
+    TimerNodeConfig, WorkflowContext, WorkflowGraph, WorkflowIngress,
     deploy_workflow_with_ai as deploy_workflow_graph, shared_connection_manager, standard_registry,
 };
 use observability::{
@@ -27,6 +26,10 @@ use observability::{
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tauri::{AppHandle, Emitter, Manager, State};
+use tauri_bindings::{
+    DeployResponse, DispatchResponse, ListNodeTypesResponse, UndeployResponse,
+    list_node_types_response,
+};
 use tokio::fs;
 use tokio::sync::{Mutex, RwLock, mpsc};
 
@@ -1382,9 +1385,7 @@ async fn list_connections(state: State<'_, DesktopState>) -> Result<Vec<Connecti
 #[tauri::command]
 async fn list_node_types() -> Result<ListNodeTypesResponse, String> {
     let registry = standard_registry();
-    Ok(ListNodeTypesResponse {
-        types: registry.registered_types_list(),
-    })
+    Ok(list_node_types_response(&registry))
 }
 
 #[tauri::command]

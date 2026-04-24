@@ -8,7 +8,7 @@ It is read by both humans and AI agents (Claude Code, OpenCode, Cursor, etc.). `
 
 Nazh is an industrial-edge workflow orchestration engine with AI as a first-class capability. It connects device ingestion, data transformation, scripted logic, AI-assisted authoring, and a desktop operations UI into a single local runtime.
 
-Stack: **Rust engine (Cargo workspace, 8 crates) + Tauri v2 desktop shell + React 18 / FlowGram.AI canvas**.
+Stack: **Rust engine (Cargo workspace, 9 crates) + Tauri v2 desktop shell + React 18 / FlowGram.AI canvas**.
 
 Everything runs in one process — no HTTP/gRPC server, no external broker. AI features (script generation, thinking-mode completions, workflow composition) are integrated into the engine via the `ai` crate.
 
@@ -25,7 +25,8 @@ cd src-tauri && ../web/node_modules/.bin/tauri dev --no-watch
 cargo test --workspace
 
 # Re-generate TypeScript types from Rust (ts-rs)
-cargo test --workspace --lib export_bindings
+# 经 tauri-bindings 的 ts-export feature 传递触发全工作区导出（ADR-0017）
+cargo test -p tauri-bindings --features ts-export export_bindings
 
 # Tauri shell compile-check only
 cargo check --manifest-path src-tauri/Cargo.toml
@@ -53,7 +54,7 @@ cargo deny check
 
 ### Three-Layer Stack
 
-1. **Rust Engine** — Cargo workspace rooted at `/` with 8 crates (see below). Public facade is the `nazh-engine` library crate at `src/lib.rs`.
+1. **Rust Engine** — Cargo workspace rooted at `/` with 9 crates (see below). Public facade is the `nazh-engine` library crate at `src/lib.rs`.
 2. **Tauri Shell** (`src-tauri/`) — Desktop app binary `nazh-desktop`. Exposes IPC commands to the frontend, bridges engine events to the UI, manages shell-side concerns (observability store, project library files, MQTT/Timer/Serial trigger supervisors).
 3. **React Frontend** (`web/`) — Vite + React 18 + TypeScript + FlowGram.AI. Communicates **exclusively** via Tauri `invoke` / `Window::emit` — no HTTP or gRPC.
 
@@ -69,13 +70,14 @@ crates/
   nodes-flow/        # Ring 1 — if / switch / loop / tryCatch / code (Rhai script)
   nodes-io/          # Ring 1 — timer / serial / native / modbus / http / mqtt / bark / sql / debugConsole
   ai/                # Ring 1 — AiService trait + OpenAI-compatible client (streaming, thinking-mode)
+  tauri-bindings/    # IPC — Tauri 命令请求/响应类型 + ts-rs 导出汇总（ADR-0017）
 src/                 # Root facade crate `nazh-engine` — DAG orchestration + `standard_registry()`
 src-tauri/           # Tauri shell binary `nazh-desktop`
 web/                 # Frontend workspace
 ```
 
 **Ring rules** (enforced by convention, verified at review):
-- Ring 0 (`crates/core/`) depends on no other workspace crate. It may depend on `tokio`, `serde`, `ts-rs`, etc. — but never on protocol crates (`reqwest`, `rumqttc`, `rusqlite`, `tokio-modbus`).
+- Ring 0 (`crates/core/`) depends on no other workspace crate. It may depend on `tokio`, `serde`, `thiserror`, `chrono`, `dashmap`, etc. — but never on protocol crates (`reqwest`, `rumqttc`, `rusqlite`, `tokio-modbus`) and never on `ts-rs` as a hard dependency (`ts-rs` is feature-gated via `ts-export`，详见 ADR-0017).
 - Ring 1 crates may depend on Ring 0 and on sibling Ring 1 crates where it makes sense (`nodes-io` depends on `connections`). Avoid creating cycles.
 - The facade (`src/`) may depend on everything.
 - The Tauri shell (`src-tauri/`) depends on the facade.
@@ -109,10 +111,10 @@ React / FlowGram canvas
 
 IPC boundary types are defined once in Rust and auto-generated to TypeScript via **ts-rs**, ensuring frontend/backend type safety at compile time.
 
-- Rust structs annotated with `#[derive(TS)]` + `#[ts(export)]` generate `.ts` files to `web/src/generated/`.
+- Rust structs use `#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]`（不再无条件 `#[derive(TS)]`），生成 `.ts` 文件到 `web/src/generated/`。
 - `web/src/types.ts` re-exports generated types and extends them with frontend-only fields.
-- `tsc` errors if Rust types change without regenerating — run `cargo test --workspace --lib export_bindings` after any Rust type change.
-- IPC response types (`DeployResponse`, `DispatchResponse`, `UndeployResponse`, `NodeTypeEntry`, `ListNodeTypesResponse`) currently live in `crates/core/src/ipc.rs`. ADR-0017 proposes moving them to a dedicated `crates/tauri-bindings/` crate.
+- `tsc` errors if Rust types change without regenerating — run `cargo test -p tauri-bindings --features ts-export export_bindings` after any Rust type change.
+- IPC response types (`DeployResponse`, `DispatchResponse`, `UndeployResponse`, `NodeTypeEntry`, `ListNodeTypesResponse`) live in `crates/tauri-bindings/src/lib.rs`（since ADR-0017 已实施）。该 crate 还提供 `list_node_types_response(&NodeRegistry)` 与统一的 `export_all()` ts-rs 入口。`ts-rs` 在各 crate 中通过 `ts-export` feature 门控；只需启用 `tauri-bindings` 的 `ts-export` feature 即可经依赖传递触发全工作区导出。
 
 ### Tauri IPC Surface (`src-tauri/src/lib.rs`)
 
@@ -339,7 +341,8 @@ Located in `docs/superpowers/plans/` and `docs/superpowers/specs/`. These are **
 
 **Current batch of ADRs** (2026-04-17 to 2026-04-24):
 - ADR-0008 (metadata separation) — **accepted / landed**
-- ADR-0009 ~ ADR-0020 — **proposed**, awaiting review. See `docs/adr/README.md` for the index.
+- ADR-0017 (IPC + ts-rs 迁出 Ring 0) — **已实施**（2026-04-24，见 `crates/tauri-bindings/`）
+- ADR-0009 ~ ADR-0016, ADR-0018 ~ ADR-0020 — **proposed**, awaiting review. See `docs/adr/README.md` for the index.
 
 **Immediate known tech debt:**
 - MQTT subscriber / Timer / Serial root lifecycle is owned by the Tauri shell (`src-tauri/src/lib.rs:2499-2740+`). ADR-0009 plans to migrate this into engine-level `on_deploy` hooks.

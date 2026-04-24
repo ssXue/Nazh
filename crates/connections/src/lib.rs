@@ -13,6 +13,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use tokio::sync::RwLock;
+#[cfg(feature = "ts-export")]
 use ts_rs::TS;
 use url::Url;
 
@@ -22,8 +23,8 @@ use nazh_core::EngineError;
 pub type SharedConnectionManager = Arc<ConnectionManager>;
 
 /// 连接资源的声明式定义（用于全局连接资源库）。
-#[derive(Debug, Clone, Serialize, PartialEq, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
 pub struct ConnectionDefinition {
     pub id: String,
     #[serde(rename = "type")]
@@ -75,8 +76,8 @@ pub fn connection_metadata(
 }
 
 /// 连接健康阶段。
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub enum ConnectionHealthState {
     Idle,
@@ -92,41 +93,41 @@ pub enum ConnectionHealthState {
 }
 
 /// 连接治理运行时快照。
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct ConnectionHealthSnapshot {
     pub phase: ConnectionHealthState,
-    #[ts(optional)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
     pub diagnosis: Option<String>,
-    #[ts(optional)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
     pub recommended_action: Option<String>,
-    #[ts(optional)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
     pub last_state_changed_at: Option<DateTime<Utc>>,
-    #[ts(optional)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
     pub last_connected_at: Option<DateTime<Utc>>,
-    #[ts(optional)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
     pub last_heartbeat_at: Option<DateTime<Utc>>,
-    #[ts(optional)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
     pub last_checked_at: Option<DateTime<Utc>>,
-    #[ts(optional)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
     pub last_released_at: Option<DateTime<Utc>>,
-    #[ts(optional)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
     pub last_failure_at: Option<DateTime<Utc>>,
-    #[ts(optional)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
     pub last_failure_reason: Option<String>,
-    #[ts(optional)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
     pub next_retry_at: Option<DateTime<Utc>>,
-    #[ts(optional)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
     pub circuit_open_until: Option<DateTime<Utc>>,
-    #[ts(optional)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
     pub rate_limited_until: Option<DateTime<Utc>>,
     pub consecutive_failures: u32,
     pub total_failures: u32,
     pub timeout_count: u32,
     pub rate_limit_hits: u32,
     pub reconnect_attempts: u32,
-    #[ts(optional)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
     pub last_latency_ms: Option<u64>,
 }
 
@@ -157,14 +158,14 @@ impl Default for ConnectionHealthSnapshot {
 }
 
 /// 已注册连接的内部记录，追踪其借出状态与治理健康信息。
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
 pub struct ConnectionRecord {
     pub id: String,
     pub kind: String,
     pub metadata: Value,
     pub in_use: bool,
-    #[ts(optional)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
     pub last_borrowed_at: Option<DateTime<Utc>>,
     #[serde(default)]
     pub health: ConnectionHealthSnapshot,
@@ -281,21 +282,20 @@ impl ConnectionGovernancePolicy {
     }
 }
 
-#[cfg(test)]
-mod export_bindings {
-    //! ts-rs 类型导出入口，通过 `cargo test --workspace --lib export_bindings` 触发生成。
+/// ts-rs 类型导出入口。仅在 `ts-export` feature 启用时编译。
+#[cfg(feature = "ts-export")]
+pub mod export_bindings {
+    use super::{
+        ConnectionDefinition, ConnectionHealthSnapshot, ConnectionHealthState, ConnectionRecord,
+    };
+    use ts_rs::{ExportError, TS};
 
-    use super::*;
-    use ts_rs::TS;
-
-    #[test]
-    fn export_connection_types() {
-        let _ =
-            std::fs::create_dir_all(std::env::var("OUT_DIR").unwrap_or_else(|_| "/tmp".to_owned()));
-        let _ = ConnectionDefinition::export();
-        let _ = ConnectionHealthSnapshot::export();
-        let _ = ConnectionHealthState::export();
-        let _ = ConnectionRecord::export();
+    pub fn export_all() -> Result<(), ExportError> {
+        ConnectionDefinition::export()?;
+        ConnectionHealthSnapshot::export()?;
+        ConnectionHealthState::export()?;
+        ConnectionRecord::export()?;
+        Ok(())
     }
 }
 

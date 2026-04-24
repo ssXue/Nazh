@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "crates/core", "crates/pipeline", "crates/connections", "crates/scripting", "crates/nodes-flow", "crates/nodes-io", "crates/ai", "src-tauri"]
+members = [".", "crates/core", "crates/pipeline", "crates/connections", "crates/scripting", "crates/nodes-flow", "crates/nodes-io", "crates/ai", "crates/tauri-bindings", "src-tauri"]
 exclude = ["crates/nazh-core"]
 resolver = "2"
 
@@ -24,12 +24,14 @@ missing_errors_doc = "allow"
 
 [workspace.dependencies]
 nazh-core = { path = "crates/core" }
+nazh-engine = { path = "." }
 ai = { path = "crates/ai" }
 pipeline = { path = "crates/pipeline" }
 connections = { path = "crates/connections" }
 scripting = { path = "crates/scripting" }
 nodes-flow = { path = "crates/nodes-flow" }
 nodes-io = { path = "crates/nodes-io" }
+tauri-bindings = { path = "crates/tauri-bindings" }
 async-trait = "0.1"
 chrono = { version = "0.4", features = ["clock", "serde"] }
 dashmap = "6"
@@ -85,7 +87,17 @@ serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 tracing.workspace = true
-ts-rs.workspace = true
+ts-rs = { workspace = true, optional = true }
+
+[features]
+default = []
+# ts-rs 类型导出。生产构建不启用，由 tauri-bindings 在 CI 中触发。
+ts-export = [
+    "dep:ts-rs",
+    "nazh-core/ts-export",
+    "connections/ts-export",
+    "ai/ts-export",
+]
 
 [dev-dependencies]
 async-trait.workspace = true

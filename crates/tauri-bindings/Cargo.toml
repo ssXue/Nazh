@@ -1,0 +1,32 @@
+[package]
+name = "tauri-bindings"
+description = "Nazh Tauri 命令的请求/响应类型与 ts-rs 导出汇总入口"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+nazh-core.workspace = true
+nazh-engine.workspace = true
+connections.workspace = true
+ai.workspace = true
+serde.workspace = true
+ts-rs = { workspace = true, optional = true }
+
+[features]
+default = []
+# 启用 ts-rs 类型导出能力。生产构建无需此 feature。
+# CI 通过 `cargo test -p tauri-bindings --features ts-export export_bindings` 触发全量导出。
+ts-export = [
+    "dep:ts-rs",
+    "nazh-core/ts-export",
+    "connections/ts-export",
+    "ai/ts-export",
+    "nazh-engine/ts-export",
+]

@@ -46,6 +46,18 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --all
 
+  rust-ts-export:
+    name: TS Export Bindings
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: 触发 ts-rs 类型导出
+        run: cargo test -p tauri-bindings --features ts-export export_bindings
+      - name: 校验 web/src/generated/ 与提交一致
+        run: git diff --exit-code -- web/src/generated/
+
   rust-doc:
     name: Doc
     runs-on: ubuntu-latest

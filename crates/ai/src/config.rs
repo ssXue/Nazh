@@ -8,6 +8,7 @@
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "ts-export")]
 use ts_rs::TS;
 
 use crate::error::AiError;
@@ -132,14 +133,15 @@ fn merge_provider_upsert(
 }
 
 /// 前端读取配置时使用的只读视图（不含明文密钥）。
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(feature = "ts-export", ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct AiConfigView {
     pub version: u8,
     pub providers: Vec<AiProviderView>,
     #[serde(default)]
-    #[ts(optional)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
     pub active_provider_id: Option<String>,
     #[serde(default)]
     pub copilot_params: AiGenerationParams,
@@ -148,15 +150,16 @@ pub struct AiConfigView {
 }
 
 /// 前端保存配置时使用的写入模型。
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(feature = "ts-export", ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct AiConfigUpdate {
     pub version: u8,
     #[serde(default)]
     pub providers: Vec<AiProviderUpsert>,
     #[serde(default)]
-    #[ts(optional)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
     pub active_provider_id: Option<String>,
     #[serde(default)]
     pub copilot_params: AiGenerationParams,
@@ -165,15 +168,16 @@ pub struct AiConfigUpdate {
 }
 
 /// 全局脚本 AI 代理设置。
-#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(feature = "ts-export", ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct AiAgentSettings {
     #[serde(default)]
-    #[ts(optional)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
     pub system_prompt: Option<String>,
     #[serde(default)]
-    #[ts(optional)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
     pub timeout_ms: Option<u64>,
 }
 
@@ -225,8 +229,9 @@ impl AiProviderSecretRecord {
 }
 
 /// 前端可见的提供商配置视图。
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(feature = "ts-export", ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct AiProviderView {
     pub id: String,
@@ -242,8 +247,9 @@ pub struct AiProviderView {
 }
 
 /// 前端保存配置时的提供商输入。
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(feature = "ts-export", ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct AiProviderUpsert {
     pub id: String,
@@ -259,8 +265,9 @@ pub struct AiProviderUpsert {
 }
 
 /// API Key 的写入指令，避免前端回读已保存明文。
-#[derive(Debug, Clone, Serialize, Deserialize, TS, Default)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(feature = "ts-export", ts(export))]
 #[serde(rename_all = "camelCase", tag = "kind", content = "value")]
 pub enum AiSecretInput {
     #[default]
@@ -270,17 +277,18 @@ pub enum AiSecretInput {
 }
 
 /// 测试连接时使用的草稿输入。
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(feature = "ts-export", ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct AiProviderDraft {
     #[serde(default)]
-    #[ts(optional)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
     pub id: Option<String>,
     pub name: String,
     pub base_url: String,
     #[serde(default)]
-    #[ts(optional)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
     pub api_key: Option<String>,
     pub default_model: String,
     #[serde(default)]
@@ -290,8 +298,9 @@ pub struct AiProviderDraft {
 }
 
 /// DeepSeek/OpenAI 兼容的思考模式开关。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(feature = "ts-export", ts(export))]
 #[serde(rename_all = "lowercase")]
 pub enum AiThinkingMode {
     Enabled,
@@ -299,8 +308,9 @@ pub enum AiThinkingMode {
 }
 
 /// DeepSeek/OpenAI 兼容的思考模式配置。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(feature = "ts-export", ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct AiThinkingConfig {
     #[serde(rename = "type")]
@@ -308,8 +318,9 @@ pub struct AiThinkingConfig {
 }
 
 /// DeepSeek 推理强度。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(feature = "ts-export", ts(export))]
 #[serde(rename_all = "lowercase")]
 pub enum AiReasoningEffort {
     High,
@@ -317,24 +328,25 @@ pub enum AiReasoningEffort {
 }
 
 /// Copilot 默认生成参数。
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(feature = "ts-export", ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct AiGenerationParams {
     #[serde(default = "default_copilot_temperature")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
     pub temperature: Option<f32>,
     #[serde(default = "default_copilot_max_tokens")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
     pub max_tokens: Option<u32>,
     #[serde(default = "default_copilot_top_p")]
-    #[ts(optional)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
     pub top_p: Option<f32>,
     #[serde(default)]
-    #[ts(optional)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
     pub thinking: Option<AiThinkingConfig>,
     #[serde(default)]
-    #[ts(optional)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
     pub reasoning_effort: Option<AiReasoningEffort>,
 }
 

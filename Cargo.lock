@@ -2131,6 +2131,7 @@ dependencies = [
  "serde_json",
  "serialport",
  "tauri",
+ "tauri-bindings",
  "tauri-build",
  "tokio",
  "tracing",
@@ -4119,6 +4120,18 @@ dependencies = [
  "webview2-com",
  "window-vibrancy",
  "windows",
+]
+
+[[package]]
+name = "tauri-bindings"
+version = "0.1.0"
+dependencies = [
+ "ai",
+ "connections",
+ "nazh-core",
+ "nazh-engine",
+ "serde",
+ "ts-rs",
 ]
 
 [[package]]

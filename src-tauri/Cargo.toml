@@ -20,6 +20,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 nazh-engine = { path = ".." }
+tauri-bindings.workspace = true
 chrono.workspace = true
 rumqttc.workspace = true
 serde.workspace = true

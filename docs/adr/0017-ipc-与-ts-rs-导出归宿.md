@@ -1,6 +1,6 @@
 # ADR-0017: IPC 响应类型与 ts-rs 导出从 Ring 0 迁出
 
-- **状态**: 提议中
+- **状态**: 已实施
 - **日期**: 2026-04-24
 - **决策者**: Niu Zhihong
 - **关联**: 回溯评估 Phase 1（`5cc9e9b`）与 Phase 4（`7e7d5af`）的 ts-rs 集中策略；影响 ADR-0007（ts-rs 类型契约守卫）
@@ -139,3 +139,14 @@ CI 命令变成：`cargo test --features ts-export export_bindings`。
 - 本 ADR 推翻的是 Phase 1/Phase 4 的"集中便利性"决策。原决策在当时是对的（项目早期，crate 少，ts-rs 集中最省心），现在 crate 数量增加、Ring 分层成熟，便利性已被架构债反噬。
 - 实施建议按顺序：(1) 先把 `nazh-core::ipc` 的 `export_bindings` 改为 `pub fn`；(2) 创建 `crates/tauri-bindings/` 把类型移过去；(3) 加 ts-export feature 到各 crate；(4) 删 `crates/core/src/ipc.rs`；(5) CI 脚本调整。
 - 与 ADR-0007（ts-rs 类型契约守卫）兼容——该 ADR 确立的是"类型契约在编译期守卫"的原则，本 ADR 只是改变承载位置，不改变守卫机制。
+
+### 实施记录（2026-04-24）
+
+实施时一次性完成全部 5 步：
+
+- 新增 `crates/tauri-bindings/`（`Cargo.toml` + `src/lib.rs`），承载 `DeployResponse`、`DispatchResponse`、`UndeployResponse`、`NodeTypeEntry`、`ListNodeTypesResponse`，并提供 `list_node_types_response(&NodeRegistry) -> ListNodeTypesResponse` helper。
+- 删 `crates/core/src/ipc.rs`；同步删除 Ring 0 内污染的 `NodeRegistry::registered_types_list()`（它返回 IPC 类型）——该方法的"排序+包装"逻辑下沉到 `tauri-bindings` 的 helper，Ring 0 只保留 `registered_types() -> Vec<&str>` 原语。
+- 各业务 crate（`nazh-core` / `connections` / `ai` / `nazh-engine`）的 `ts-rs` 全部改为 `optional = true`，新增 `ts-export = ["dep:ts-rs"]` feature；`#[derive(.., TS)]` + `#[ts(...)]` 注解一律改写为 `#[cfg_attr(feature = "ts-export", derive(TS), ts(...))]` 形式；`mod export_bindings` 升级为 `pub mod export_bindings { pub fn export_all() -> Result<(), ts_rs::ExportError> }`，由上游 `tauri-bindings::export_all()` 统一调用。
+- `tauri-bindings::ts-export` feature 通过 `nazh-engine/ts-export` 等传递依赖，一条命令 `cargo test -p tauri-bindings --features ts-export export_bindings` 即可触发全工作区 33 个 TS 类型导出。
+- CI（`.github/workflows/ci.yml`）新增 `rust-ts-export` job：跑上述命令并用 `git diff --exit-code -- web/src/generated/` 校验生成结果与提交一致——防止开发者改了 Rust 类型却忘了重新生成 TS。
+- 验证：`cargo test --workspace` 全绿；`cargo fmt --check` 通过；`cargo clippy --workspace --all-targets` 错误数与迁移前一致（5 个 pre-existing `expect_used`，均不在本次改动范围内）；`web/src/generated/*.ts` 33 个文件 md5 与迁移前完全一致——契约零变化。

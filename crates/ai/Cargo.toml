@@ -20,8 +20,12 @@ futures-util.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
-ts-rs.workspace = true
+ts-rs = { workspace = true, optional = true }
 uuid.workspace = true
+
+[features]
+default = []
+ts-export = ["dep:ts-rs"]
 
 [dev-dependencies]
 tokio.workspace = true

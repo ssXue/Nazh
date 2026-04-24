@@ -23,33 +23,38 @@ pub use types::{
     AiCompletionRequest, AiCompletionResponse, AiMessage, AiMessageRole, AiTestResult, AiTokenUsage,
 };
 
-#[cfg(test)]
-mod export_bindings {
-    //! ts-rs 类型导出入口，通过 `cargo test export_bindings` 触发生成。
+/// ts-rs 类型导出入口。仅在 `ts-export` feature 启用时编译。
+#[cfg(feature = "ts-export")]
+pub mod export_bindings {
+    use super::{
+        AiCompletionRequest, AiCompletionResponse, AiMessage, AiMessageRole, AiTestResult,
+        AiTokenUsage,
+    };
+    use crate::config::{
+        AiAgentSettings, AiConfigUpdate, AiConfigView, AiGenerationParams, AiProviderDraft,
+        AiProviderUpsert, AiProviderView, AiReasoningEffort, AiSecretInput, AiThinkingConfig,
+        AiThinkingMode,
+    };
+    use ts_rs::{ExportError, TS};
 
-    use super::*;
-    use ts_rs::TS;
-
-    #[test]
-    fn export_ai_types() {
-        let _ =
-            std::fs::create_dir_all(std::env::var("OUT_DIR").unwrap_or_else(|_| "/tmp".to_owned()));
-        let _ = AiAgentSettings::export();
-        let _ = AiConfigView::export();
-        let _ = AiConfigUpdate::export();
-        let _ = AiGenerationParams::export();
-        let _ = AiThinkingConfig::export();
-        let _ = AiThinkingMode::export();
-        let _ = AiReasoningEffort::export();
-        let _ = AiProviderView::export();
-        let _ = AiProviderUpsert::export();
-        let _ = AiProviderDraft::export();
-        let _ = AiSecretInput::export();
-        let _ = AiCompletionRequest::export();
-        let _ = AiCompletionResponse::export();
-        let _ = AiMessage::export();
-        let _ = AiMessageRole::export();
-        let _ = AiTestResult::export();
-        let _ = AiTokenUsage::export();
+    pub fn export_all() -> Result<(), ExportError> {
+        AiAgentSettings::export()?;
+        AiConfigView::export()?;
+        AiConfigUpdate::export()?;
+        AiGenerationParams::export()?;
+        AiThinkingConfig::export()?;
+        AiThinkingMode::export()?;
+        AiReasoningEffort::export()?;
+        AiProviderView::export()?;
+        AiProviderUpsert::export()?;
+        AiProviderDraft::export()?;
+        AiSecretInput::export()?;
+        AiCompletionRequest::export()?;
+        AiCompletionResponse::export()?;
+        AiMessage::export()?;
+        AiMessageRole::export()?;
+        AiTestResult::export()?;
+        AiTokenUsage::export()?;
+        Ok(())
     }
 }

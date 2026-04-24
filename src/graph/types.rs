@@ -14,14 +14,15 @@ use crate::{
 };
 use serde::{Deserialize, Deserializer, Serialize};
 use tokio::sync::mpsc;
+#[cfg(feature = "ts-export")]
 use ts_rs::TS;
 
 /// 从前端 AST 反序列化得到的顶层工作流定义。
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
 pub struct WorkflowGraph {
     #[serde(default)]
-    #[ts(optional)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
     pub name: Option<String>,
     #[serde(default)]
     pub connections: Vec<crate::ConnectionDefinition>,
@@ -32,16 +33,16 @@ pub struct WorkflowGraph {
 }
 
 /// 工作流 DAG 中连接两个节点的有向边。
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
 pub struct WorkflowEdge {
     pub from: String,
     pub to: String,
     #[serde(default)]
-    #[ts(optional)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
     pub source_port_id: Option<String>,
     #[serde(default)]
-    #[ts(optional)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
     pub target_port_id: Option<String>,
 }
 

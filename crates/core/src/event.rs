@@ -9,6 +9,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use tokio::sync::mpsc;
+#[cfg(feature = "ts-export")]
 use ts_rs::TS;
 use uuid::Uuid;
 
@@ -18,8 +19,8 @@ use crate::error::EngineError;
 ///
 /// DAG 工作流和线性流水线共享同一事件类型，
 /// 前端只需注册一个事件监听器即可处理所有执行模式。
-#[derive(Debug, Clone, PartialEq, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
 pub enum ExecutionEvent {
     /// 阶段/节点开始执行。
     Started { stage: String, trace_id: Uuid },
@@ -38,14 +39,14 @@ pub enum ExecutionEvent {
 }
 
 /// 阶段/节点执行完成事件的详细载荷。
-#[derive(Debug, Clone, PartialEq, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
 pub struct CompletedExecutionEvent {
     pub stage: String,
     pub trace_id: Uuid,
     /// 节点执行元数据（协议参数、连接信息等），与业务 payload 完全分离。
     /// 无元数据时为 `None`，序列化时省略该字段。
-    #[ts(optional)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
     pub metadata: Option<Map<String, Value>>,
 }
 

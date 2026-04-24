@@ -4,13 +4,15 @@
 //!
 //! 本 crate 不包含任何具体节点实现、脚本引擎或协议驱动，
 //! 仅提供引擎运行所需的最小类型集合。
+//!
+//! Tauri IPC 命令的请求/响应类型已迁出至 `tauri-bindings` crate，
+//! `ts-rs` 由 `ts-export` feature 按需启用。详见 ADR-0017。
 
 pub mod context;
 pub mod data;
 pub mod error;
 pub mod event;
 pub mod guard;
-pub mod ipc;
 pub mod node;
 pub mod plugin;
 
@@ -19,9 +21,6 @@ pub use data::{ArenaDataStore, DataId, DataStore};
 pub use error::EngineError;
 pub use event::CompletedExecutionEvent;
 pub use event::ExecutionEvent;
-pub use ipc::{
-    DeployResponse, DispatchResponse, ListNodeTypesResponse, NodeTypeEntry, UndeployResponse,
-};
 pub use node::{NodeDispatch, NodeExecution, NodeOutput, NodeTrait, into_payload_map};
 pub use plugin::{
     NodeRegistry, Plugin, PluginHost, PluginManifest, RuntimeResources, SharedResources,
@@ -29,25 +28,20 @@ pub use plugin::{
 };
 pub use uuid::Uuid;
 
-#[cfg(test)]
-mod export_bindings {
-    //! ts-rs 类型导出入口，通过 `cargo test --workspace --lib export_bindings` 触发生成。
+/// ts-rs 类型导出入口。仅在 `ts-export` feature 启用时编译。
+///
+/// CI 通过 `tauri_bindings::export_all()` 间接调用本模块的 `export_all()`。
+#[cfg(feature = "ts-export")]
+pub mod export_bindings {
+    use super::{CompletedExecutionEvent, ExecutionEvent, WorkflowContext, WorkflowNodeDefinition};
+    use ts_rs::{ExportError, TS};
 
-    use super::*;
-    use ts_rs::TS;
-
-    #[test]
-    fn export_core_types() {
-        let _ =
-            std::fs::create_dir_all(std::env::var("OUT_DIR").unwrap_or_else(|_| "/tmp".to_owned()));
-        let _ = CompletedExecutionEvent::export();
-        let _ = DeployResponse::export();
-        let _ = DispatchResponse::export();
-        let _ = ExecutionEvent::export();
-        let _ = ListNodeTypesResponse::export();
-        let _ = NodeTypeEntry::export();
-        let _ = UndeployResponse::export();
-        let _ = WorkflowContext::export();
-        let _ = WorkflowNodeDefinition::export();
+    /// 导出本 crate 的所有 ts-rs 类型到 `web/src/generated/`。
+    pub fn export_all() -> Result<(), ExportError> {
+        CompletedExecutionEvent::export()?;
+        ExecutionEvent::export()?;
+        WorkflowContext::export()?;
+        WorkflowNodeDefinition::export()?;
+        Ok(())
     }
 }

@@ -16,15 +16,15 @@
 //! | Ring 1 | `nodes-flow` | 流程控制节点（if/switch/loop/tryCatch/code） |
 //! | Ring 1 | `nodes-io` | I/O 节点（native/timer/serial/modbus/http/bark/sql/debug） |
 //! | Facade | `nazh-engine`（本 crate） | 组装 Ring 0 + Ring 1，DAG 部署编排 |
+//! | IPC | `tauri-bindings` | Tauri 命令请求/响应类型 + ts-rs 导出汇总 |
 
 pub mod graph;
 mod registry;
 
 pub use nazh_core::{
-    ArenaDataStore, CompletedExecutionEvent, ContextRef, DataId, DataStore, DeployResponse,
-    DispatchResponse, EngineError, ExecutionEvent, ListNodeTypesResponse, NodeDispatch,
-    NodeExecution, NodeOutput, NodeRegistry, NodeTrait, NodeTypeEntry, Plugin, PluginHost,
-    PluginManifest, RuntimeResources, SharedResources, UndeployResponse, WorkflowContext,
+    ArenaDataStore, CompletedExecutionEvent, ContextRef, DataId, DataStore, EngineError,
+    ExecutionEvent, NodeDispatch, NodeExecution, NodeOutput, NodeRegistry, NodeTrait, Plugin,
+    PluginHost, PluginManifest, RuntimeResources, SharedResources, WorkflowContext,
     WorkflowNodeDefinition, into_payload_map,
 };
 
@@ -61,19 +61,15 @@ pub fn standard_registry() -> NodeRegistry {
     host.into_registry()
 }
 
-#[cfg(test)]
-mod export_bindings {
-    //! ts-rs 类型导出入口，通过 `cargo test --workspace --lib export_bindings` 触发生成。
+/// ts-rs 类型导出入口。仅在 `ts-export` feature 启用时编译。
+#[cfg(feature = "ts-export")]
+pub mod export_bindings {
+    use crate::graph::{WorkflowEdge, WorkflowGraph};
+    use ts_rs::{ExportError, TS};
 
-    use super::*;
-    use crate::graph::WorkflowEdge;
-    use ts_rs::TS;
-
-    #[test]
-    fn export_engine_types() {
-        let _ =
-            std::fs::create_dir_all(std::env::var("OUT_DIR").unwrap_or_else(|_| "/tmp".to_owned()));
-        let _ = WorkflowEdge::export();
-        let _ = WorkflowGraph::export();
+    pub fn export_all() -> Result<(), ExportError> {
+        WorkflowEdge::export()?;
+        WorkflowGraph::export()?;
+        Ok(())
     }
 }
