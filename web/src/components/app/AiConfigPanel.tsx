@@ -474,6 +474,7 @@ export function AiConfigPanel({
           <button
             type="button"
             className="ai-config-panel__action"
+            data-testid="ai-agent-settings"
             onClick={() => setShowAgentDialog(true)}
           >
             <SlidersIcon />
@@ -482,6 +483,7 @@ export function AiConfigPanel({
           <button
             type="button"
             className="ai-config-panel__action"
+            data-testid="ai-provider-add"
             onClick={handleStartAddProvider}
           >
             <PlusIcon />
@@ -539,7 +541,7 @@ export function AiConfigPanel({
 
             <div className="ai-config-panel__section">
               {aiConfig.providers.length === 0 ? (
-                <p className="ai-config-panel__hint">尚未配置任何提供商。</p>
+                <p className="ai-config-panel__hint" data-testid="ai-provider-empty-state">尚未配置任何提供商。</p>
               ) : (
                 <div className="ai-config-panel__card-list">
                   {aiConfig.providers.map((provider) => {
@@ -548,6 +550,7 @@ export function AiConfigPanel({
                       <article
                         key={provider.id}
                         className={`ai-provider-card${isGlobalProvider ? ' ai-provider-card--active' : ''}`}
+                        data-testid="ai-provider-card"
                       >
                         <div className="ai-provider-card__top">
                           <strong className="ai-provider-card__name">{provider.name}</strong>
@@ -661,6 +664,7 @@ export function AiConfigPanel({
                             ? 'settings-accent-chip is-active'
                             : 'settings-accent-chip'
                         }
+                        data-testid="ai-provider-preset"
                         onClick={() => handleSelectPreset(preset)}
                       >
                         <span>{preset.label}</span>
@@ -786,6 +790,7 @@ export function AiConfigPanel({
                   type="button"
                   className="settings-inline-button"
                   disabled={!isFormValid || (isEditingProvider && !hasPendingProviderEdits)}
+                  data-testid="ai-provider-save"
                   onClick={handleConfirmAdd}
                 >
                   <SaveIcon className="ai-btn-icon" />

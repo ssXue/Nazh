@@ -427,7 +427,7 @@ export function RuntimeManagerPanel({
 
           <div className="runtime-manager__workflow-list">
             {workflows.length === 0 ? (
-              <div className="runtime-manager__empty">
+              <div className="runtime-manager__empty" data-testid="runtime-empty-state">
                 <strong>当前没有在线工作流</strong>
                 <span>部署工程后，运行实例会出现在这里。</span>
               </div>
@@ -446,6 +446,7 @@ export function RuntimeManagerPanel({
                         ? 'runtime-manager__workflow-row is-selected'
                         : 'runtime-manager__workflow-row'
                     }
+                    data-testid="runtime-workflow-item"
                     onClick={() => setSelectedWorkflowId(workflow.workflowId)}
                   >
                     <div className="runtime-manager__workflow-row-top">
@@ -669,6 +670,7 @@ export function RuntimeManagerPanel({
                           ? 'runtime-manager__dead-row is-selected'
                           : 'runtime-manager__dead-row'
                       }
+                      data-testid="runtime-dead-letter-item"
                       onClick={() => setSelectedDeadLetterId(entry.id)}
                     >
                       <div className="runtime-manager__dead-row-top">

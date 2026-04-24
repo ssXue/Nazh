@@ -77,7 +77,7 @@ export function SettingsPanel({
 
           <article className="settings-row">
             <strong className="settings-row__label">主题模式</strong>
-            <div className="settings-segment" role="group" aria-label="主题模式">
+            <div className="settings-segment" role="group" aria-label="主题模式" data-testid="settings-theme-toggle">
               <button
                 type="button"
                 className={themeMode === 'light' ? 'settings-segment__button is-active' : 'settings-segment__button'}
@@ -99,7 +99,7 @@ export function SettingsPanel({
 
           <article className="settings-row">
             <strong className="settings-row__label">主题色</strong>
-            <div className="settings-accent-inline" role="group" aria-label="主题色">
+            <div className="settings-accent-inline" role="group" aria-label="主题色" data-testid="settings-accent-preset">
               {accentOptions.map((option) => (
                 <button
                   key={option.key}
@@ -186,6 +186,7 @@ export function SettingsPanel({
                 value={workspaceDraft}
                 placeholder={isTauriRuntime ? '例如：~/Documents/Nazh Workspace' : '仅桌面端可设置'}
                 disabled={!isTauriRuntime || projectWorkspaceIsSyncing}
+                data-testid="settings-workspace-input"
                 onChange={(event) => setWorkspaceDraft(event.target.value)}
               />
 
@@ -194,6 +195,7 @@ export function SettingsPanel({
                   type="button"
                   className="settings-inline-button"
                   disabled={!isTauriRuntime || !isWorkspaceDirty || projectWorkspaceIsSyncing}
+                  data-testid="settings-workspace-apply"
                   onClick={() => onProjectWorkspacePathChange(workspaceDraft.trim())}
                 >
                   应用

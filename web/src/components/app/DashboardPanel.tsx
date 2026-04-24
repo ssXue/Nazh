@@ -209,7 +209,7 @@ export function DashboardPanel({
       </div>
 
       <div className="dashboard-panel__actions">
-        <button type="button" className="dashboard-action-card" onClick={onNavigateToBoards}>
+        <button type="button" className="dashboard-action-card" data-testid="dashboard-navigate-boards" onClick={onNavigateToBoards}>
           <strong>所有看板</strong>
           <span>查看并管理所有工程看板</span>
           <span className="dashboard-action-card__arrow">→</span>

@@ -91,6 +91,7 @@ export function BoardsPanel({
           <button
             type="button"
             className="boards-panel__action"
+            data-testid="board-import"
             onClick={() => importInputRef.current?.click()}
           >
             <UploadIcon />
@@ -145,7 +146,7 @@ export function BoardsPanel({
         </button>
 
         {boards.length === 0 ? (
-          <div className="boards-panel__empty">
+          <div className="boards-panel__empty" data-testid="board-empty-state">
             <strong>当前没有工程</strong>
             <span>可以先创建一个工程，或从右上角导入已有项目包。</span>
           </div>
@@ -188,6 +189,7 @@ export function BoardsPanel({
                   className="board-card__delete"
                   aria-label={`删除工程 ${board.name}`}
                   title={`删除工程 ${board.name}`}
+                  data-testid="board-delete"
                   data-no-window-drag
                   onClick={(event) => {
                     event.stopPropagation();
@@ -226,6 +228,7 @@ export function BoardsPanel({
               <button
                 type="button"
                 className="boards-panel__confirm-action"
+                data-testid="board-delete-cancel"
                 onClick={() => setPendingDeleteBoard(null)}
               >
                 取消
@@ -233,6 +236,7 @@ export function BoardsPanel({
               <button
                 type="button"
                 className="boards-panel__confirm-action boards-panel__confirm-action--danger"
+                data-testid="board-delete-confirm"
                 onClick={() => {
                   onDeleteBoard(pendingDeleteBoard);
                   setPendingDeleteBoard(null);

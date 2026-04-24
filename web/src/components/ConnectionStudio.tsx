@@ -940,6 +940,7 @@ export function ConnectionStudio({
                 key={template.key}
                 type="button"
                 className="connection-toolbar__button"
+                data-testid="connection-add"
                 onClick={() => handleAddConnection(template)}
               >
                 <strong>{template.label}</strong>
@@ -949,12 +950,12 @@ export function ConnectionStudio({
           </div>
 
           {isLoading ? (
-            <div className="connection-empty">
+            <div className="connection-empty" data-testid="connection-empty-state">
               <span className="connection-loading-spinner" aria-hidden="true" />
               <p>正在加载连接资源…</p>
             </div>
           ) : connections.length === 0 ? (
-            <div className="connection-empty">
+            <div className="connection-empty" data-testid="connection-empty-state">
               <p>暂无连接</p>
             </div>
           ) : (
@@ -974,6 +975,7 @@ export function ConnectionStudio({
                   <article
                     key={`${connection.id || 'connection'}-${index}`}
                     className={`connection-card ${isActive ? 'is-active' : ''}`}
+                    data-testid="connection-card"
                   >
                     <div className="connection-card__main">
                       <div className="connection-card__icon">
@@ -1806,6 +1808,7 @@ export function ConnectionStudio({
                 <button
                   type="button"
                   className={`ghost connection-card__delete ${isDeletePending ? 'is-pending' : ''}`}
+                  data-testid="connection-delete"
                   onClick={() => handleRemoveConnection(activeConnectionIndex)}
                 >
                   <DeleteActionIcon />

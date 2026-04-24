@@ -360,7 +360,7 @@ export function LogsPanel({
                 />
               </label>
 
-              <section className="logs-panel__group" aria-label="按类型筛选">
+              <section className="logs-panel__group" aria-label="按类型筛选" data-testid="log-type-filter">
                 <div className="logs-panel__group-title">类型</div>
                 <div className="logs-panel__chip-grid">
                   {TYPE_FILTERS.map((filter) => (
@@ -381,7 +381,7 @@ export function LogsPanel({
                 </div>
               </section>
 
-              <section className="logs-panel__group" aria-label="按级别筛选">
+              <section className="logs-panel__group" aria-label="按级别筛选" data-testid="log-level-filter">
                 <div className="logs-panel__group-title">级别</div>
                 <div className="logs-panel__chip-grid">
                   {LEVEL_FILTERS.map((filter) => {
@@ -523,7 +523,7 @@ export function LogsPanel({
 
             <div className="logs-panel__stream-list" role="list">
               {filteredEntries.length === 0 ? (
-                <div className="logs-panel__empty">
+                <div className="logs-panel__empty" data-testid="log-empty-state">
                   <strong>暂无匹配日志</strong>
                   <span>调整筛选条件后再查看。</span>
                 </div>
@@ -538,6 +538,7 @@ export function LogsPanel({
                         : `logs-panel__entry logs-panel__entry--${entry.level}`
                     }
                     role="listitem"
+                    data-testid="log-entry"
                     onClick={() => setSelectedEntryId(entry.id)}
                   >
                     <div className="logs-panel__entry-top">
@@ -562,7 +563,7 @@ export function LogsPanel({
             </div>
           </section>
 
-          <aside className="logs-panel__inspector" aria-label="日志详情">
+          <aside className="logs-panel__inspector" aria-label="日志详情" data-testid="log-inspector">
             <div className="logs-panel__section-head">
               <div>
                 <h3>详情</h3>
