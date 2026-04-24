@@ -3,6 +3,11 @@ import { useEffect, useMemo, useState } from 'react';
 import type { NodeTypeEntry } from '../../types';
 import { hasTauriRuntime, listNodeTypes } from '../../lib/tauri';
 import { NODE_CATEGORIES, NODE_CATEGORY_MAP } from '../../lib/node-catalog';
+import {
+  NODE_CAPABILITY_LABELS,
+  capabilityNames,
+  type NodeCapabilityName,
+} from '../../lib/node-capabilities';
 
 interface PluginPanelProps {
   isTauriRuntime: boolean;
@@ -12,6 +17,7 @@ interface PluginDisplayEntry {
   name: string;
   category: string;
   description: string;
+  capabilities: NodeCapabilityName[];
 }
 
 export function PluginPanel({ isTauriRuntime }: PluginPanelProps) {
@@ -39,6 +45,7 @@ export function PluginPanel({ isTauriRuntime }: PluginPanelProps) {
               name: nodeType.name,
               category: meta?.category ?? '其他',
               description: meta?.description ?? '',
+              capabilities: capabilityNames(nodeType.capabilities),
             };
           },
         );
@@ -151,6 +158,19 @@ export function PluginPanel({ isTauriRuntime }: PluginPanelProps) {
                     {item.description && (
                       <div className="plugin-panel__card-desc">
                         {item.description}
+                      </div>
+                    )}
+                    {item.capabilities.length > 0 && (
+                      <div className="plugin-panel__card-caps">
+                        {item.capabilities.map((cap) => (
+                          <span
+                            key={cap}
+                            className={`plugin-panel__cap plugin-panel__cap--${cap.toLowerCase()}`}
+                            title={cap}
+                          >
+                            {NODE_CAPABILITY_LABELS[cap]}
+                          </span>
+                        ))}
                       </div>
                     )}
                   </div>

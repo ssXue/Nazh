@@ -56,12 +56,20 @@ pub struct UndeployResponse {
 }
 
 /// 已注册节点类型的信息条目。
+///
+/// `capabilities` 是 [`nazh_core::NodeCapabilities`] 的原始位图（`u32::bits()`），
+/// 前端需按 ADR-0011 定义的位分配解读。位分配与常量表同步在
+/// `web/src/lib/nodeCapabilities.ts`。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct NodeTypeEntry {
     /// 节点类型主名称（如 "code"）。
     pub name: String,
+    /// 类型级能力标签位图（详见 ADR-0011）。
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(type = "number"))]
+    pub capabilities: u32,
 }
 
 /// `list_node_types` IPC 命令的响应。
@@ -85,7 +93,10 @@ pub fn list_node_types_response(registry: &NodeRegistry) -> ListNodeTypesRespons
     ListNodeTypesResponse {
         types: names
             .into_iter()
-            .map(|name| NodeTypeEntry { name })
+            .map(|name| {
+                let capabilities = registry.capabilities_of(&name).unwrap_or_default().bits();
+                NodeTypeEntry { name, capabilities }
+            })
             .collect(),
     }
 }
@@ -113,7 +124,9 @@ pub fn export_all() -> Result<(), ts_rs::ExportError> {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use nazh_core::{EngineError, NodeTrait, SharedResources, WorkflowNodeDefinition};
+    use nazh_core::{
+        EngineError, NodeCapabilities, NodeTrait, SharedResources, WorkflowNodeDefinition,
+    };
     use std::sync::Arc;
 
     fn stub_factory(
@@ -142,6 +155,29 @@ mod tests {
         let registry = NodeRegistry::new();
         let response = list_node_types_response(&registry);
         assert!(response.types.is_empty());
+    }
+
+    #[test]
+    fn list_node_types_response_透传能力标签位图() {
+        let mut registry = NodeRegistry::new();
+        registry.register_with_capabilities("timer", NodeCapabilities::TRIGGER, stub_factory);
+        registry.register_with_capabilities(
+            "modbusRead",
+            NodeCapabilities::DEVICE_IO,
+            stub_factory,
+        );
+        registry.register("plain", stub_factory);
+
+        let response = list_node_types_response(&registry);
+        let by_name: std::collections::HashMap<&str, u32> = response
+            .types
+            .iter()
+            .map(|entry| (entry.name.as_str(), entry.capabilities))
+            .collect();
+
+        assert_eq!(by_name["timer"], NodeCapabilities::TRIGGER.bits());
+        assert_eq!(by_name["modbusRead"], NodeCapabilities::DEVICE_IO.bits());
+        assert_eq!(by_name["plain"], 0);
     }
 
     #[cfg(feature = "ts-export")]

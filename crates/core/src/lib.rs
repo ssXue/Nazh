@@ -21,7 +21,9 @@ pub use data::{ArenaDataStore, DataId, DataStore};
 pub use error::EngineError;
 pub use event::CompletedExecutionEvent;
 pub use event::ExecutionEvent;
-pub use node::{NodeDispatch, NodeExecution, NodeOutput, NodeTrait, into_payload_map};
+pub use node::{
+    NodeCapabilities, NodeDispatch, NodeExecution, NodeOutput, NodeTrait, into_payload_map,
+};
 pub use plugin::{
     NodeRegistry, Plugin, PluginHost, PluginManifest, RuntimeResources, SharedResources,
     WorkflowNodeDefinition,

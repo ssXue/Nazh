@@ -8,12 +8,140 @@
 //! 节点通过 [`NodeOutput::metadata`] 返回执行元数据（协议参数、连接信息等），
 //! 与业务 payload 在结构上完全分离。元数据通过 [`ExecutionEvent::Completed`]
 //! 事件通道传递给前端，不进入 payload。
+//!
+//! ## 节点能力标签
+//!
+//! 节点类型的能力（[`NodeCapabilities`]）在注册时通过
+//! [`NodeRegistry::register_with_capabilities`](crate::NodeRegistry::register_with_capabilities)
+//! 声明；消费者（IPC / Runner / 可观测性）通过
+//! [`NodeRegistry::capabilities_of`](crate::NodeRegistry::capabilities_of) 查询，
+//! 无需实例化节点。详见 ADR-0011。
 
 use async_trait::async_trait;
+use bitflags::bitflags;
 use serde_json::{Map, Value};
 use uuid::Uuid;
 
 use crate::EngineError;
+
+bitflags! {
+    /// 节点类型的能力标签位图（ADR-0011）。
+    ///
+    /// # 这是什么
+    ///
+    /// 标签属于「类型级别」的契约——同类型的**所有实例、所有 config 组合**都必须满足该
+    /// 标签对应的不变量。若某能力只在某些 config 下成立（如 `mqttClient` 仅在 subscribe
+    /// 模式下才是 `TRIGGER`），**不要**在类型级别声明，保守空着。
+    ///
+    /// # 语义治理（为什么要严格）
+    ///
+    /// bitflags 的值很便宜、位的含义很贵。一旦 `PURE` 被错误地打在有副作用的节点上，
+    /// 未来的 Runner 缓存层就会静默吐脏数据。因此本枚举有三道防线：
+    ///
+    /// 1. **位分配**：由 `node_capabilities_位分配与_adr_0011_一致` 单测锁死；任何
+    ///    位值改动会立刻 CI 报错，反向保护 IPC 契约（位图会直接发给前端）。
+    /// 2. **语义契约**：每个常量的 doc 注释写明「契约 / 反例 / 消费者」三段。PR review
+    ///    的职责是对着这段检查作者有没有撒谎——特别是 `PURE` 和 `BLOCKING`。
+    /// 3. **内置节点映射**：`src/registry.rs::标准注册表节点能力标签与_adr_0011_契约一致`
+    ///    把 ADR 表格的 14 个条目固化为测试，任何节点的能力变化都要同步改 ADR + 测试。
+    ///
+    /// # 新增或修改能力位的 checklist
+    ///
+    /// 走 ADR 流程（新 ADR 或修订 ADR-0011），**同一 PR 必须**同步：
+    /// 1. 本枚举位值
+    /// 2. `crates/core/src/node.rs` 的位分配单测
+    /// 3. `web/src/lib/node-capabilities.ts` 前端常量表（位值、名字、label、颜色）
+    /// 4. `src/registry.rs` 的契约测试（若影响已有节点）
+    /// 5. ADR-0011 的实施记录表格
+    ///
+    /// # 消费者
+    ///
+    /// - **Runner**（ADR-0011 第二、三阶段待做）：按 [`BLOCKING`](Self::BLOCKING)
+    ///   自动 `spawn_blocking`；按 [`PURE`](Self::PURE) 启用 input-hash 缓存。
+    ///   通过 `registry.capabilities_of(node.kind())` 查询，不在 `NodeTrait` 上读。
+    /// - **Tauri IPC**：[`bits()`](Self::bits) 以 `u32` 发前端，前端常量表解位。
+    /// - **可观测性**：按 IO 类标签分桶统计 p99 / 失败率。
+    ///
+    /// # 为什么 `NodeTrait` 没有 `capabilities()` 方法
+    ///
+    /// 能力只在**注册表**登记，不在 `NodeTrait` 上。首次实施时两处都加过，review
+    /// 发现 trait 方法零消费者、11 个 override 全是类型级值的复读，遂移除。
+    /// 未来若需要**实例级精化**（如 mqttClient 按 mode 返回不同 bits），请新增
+    /// `fn instance_capabilities(&self, type_caps: NodeCapabilities) -> NodeCapabilities`
+    /// 而非恢复旧方法。详见 `crates/core/AGENTS.md`。
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+    pub struct NodeCapabilities: u32 {
+        /// **纯计算**：同输入必得同输出、无任何外部副作用。
+        ///
+        /// **契约**（作者声明 `PURE` 时等于承诺以下全部为真）：
+        /// - `transform` 只读 `payload` 参数，不读文件/网络/环境变量/时钟；
+        /// - `transform` 不写磁盘、不发网络、不改全局可变状态、不取连接；
+        /// - `tracing::info!` / `trace_id` 相关日志**不算副作用**（可容忍）；
+        /// - 返回的 `metadata` 字段也必须是 payload 的确定性函数。
+        ///
+        /// **反例**（下列节点**不应**打 `PURE`）：
+        /// - 用 `chrono::Utc::now()` 打时间戳 —— 时钟不是输入；
+        /// - 读取 `connection_id` 获取连接 —— 状态机依赖；
+        /// - 含 Rhai / WASM 等用户脚本（`code` 节点）—— 无法静态保证。
+        ///
+        /// **消费者**：Runner 第三阶段将以 `hash(payload) → cached_output` 缓存
+        /// 纯节点结果。若此处撒谎，缓存命中会返回过期/错误的 payload，非常难调试。
+        const PURE         = 0b0000_0001;
+
+        /// **网络 I/O**：通过网络栈与远端通信（TCP/UDP/HTTP/MQTT/gRPC/Kafka 等）。
+        ///
+        /// **契约**：`transform` 路径上至少有一次网络往返。
+        /// **反例**：纯本地计算节点（`if` / `switch`）、只访问本地文件的节点（`sqlWriter`）。
+        /// **消费者**：前端画布渲染蓝色 badge；监控按此类聚合 p99 延迟 / 失败率。
+        const NETWORK_IO   = 0b0000_0010;
+
+        /// **文件/本地数据库 I/O**：读写本地磁盘文件、sqlite、日志等。
+        ///
+        /// **契约**：涉及文件系统调用或本地持久化层。
+        /// **反例**：不包含内存缓存、共享内存等"不落盘"的存储。
+        /// **消费者**：紫色 badge；便于运维识别"这个节点会吃磁盘 IOPS"。
+        const FILE_IO      = 0b0000_0100;
+
+        /// **设备 I/O**：通过工业总线/外设接口通信（Modbus / 串口 / OPC-UA / GPIO / CAN 等）。
+        ///
+        /// **契约**：访问受限的物理资源，通常需要独占借出连接。
+        /// **反例**：走 TCP 上层协议（MQTT、HTTP）即使目的是设备也归为 [`NETWORK_IO`](Self::NETWORK_IO)。
+        /// **消费者**：橙色 badge；未来可用于"设备节点并发上限 = N"的 ConcurrencyPolicy。
+        const DEVICE_IO    = 0b0000_1000;
+
+        /// **触发器**：不依赖上游 payload，由外部时钟/事件驱动生成执行。
+        ///
+        /// **契约**：该节点在 DAG 中位于根部（或由外部任务推入），不是被动响应上游。
+        /// **反例**：`mqttClient` 在 `publish` 模式下是普通变换节点——`TRIGGER` 只属于
+        /// "订阅/定时"类型的**恒成立**节点；混合语义节点在类型级别不声明 `TRIGGER`。
+        /// **消费者**：前端画布自动把触发器布局在顶端；未来调度层识别入口。
+        const TRIGGER      = 0b0001_0000;
+
+        /// **分支节点**：按条件路由到下游的一部分端口（[`NodeDispatch::Route`]）。
+        ///
+        /// **契约**：`transform` 的输出 `dispatch` 使用 `Route` 而非 `Broadcast`。
+        /// **反例**：始终广播的节点（`native` / `timer`）。
+        /// **消费者**：前端画布识别分支，给出多端口视觉；DAG 校验器对分支分析更精确。
+        const BRANCHING    = 0b0010_0000;
+
+        /// **多输出**：单次 `transform` 产出多条 [`NodeOutput`]（循环展开、批处理拆分等）。
+        ///
+        /// **契约**：`NodeExecution::outputs.len() > 1` 在某些 payload 下成立。
+        /// **反例**：总是单条输出的节点（即使 `Broadcast` 给多下游）。
+        /// **消费者**：事件系统知道一次 tick 会产生多个 Completed；监控分桶时避免误算。
+        const MULTI_OUTPUT = 0b0100_0000;
+
+        /// **同步阻塞**：`transform` 内部使用阻塞 API，需要 Runner 包 `spawn_blocking`。
+        ///
+        /// **契约**：transform 路径上使用 `std::fs` / `std::net` / `rusqlite` 同步 API
+        /// 等**未在异步运行时上**的阻塞调用，且**节点内部没有自行** `spawn_blocking`。
+        /// **反例**：`sqlWriter` 虽用 `rusqlite`（同步），但在 `transform` 内部已
+        /// `tokio::task::spawn_blocking` 包装，对外是 async-friendly，**不应**标 `BLOCKING`。
+        /// **消费者**：Runner 第二阶段将把带此标签的节点统一包 `spawn_blocking`，
+        /// 避免它们占用 Tokio worker 导致饿死其他节点。
+        const BLOCKING     = 0b1000_0000;
+    }
+}
 
 /// 节点输出的分发策略。
 #[derive(Debug, Clone)]
@@ -149,4 +277,38 @@ macro_rules! impl_node_meta {
             $kind
         }
     };
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    /// 位分配由 ADR-0011 锁死；任何改动都会破坏 IPC 契约与前端常量表，必须同步。
+    #[test]
+    fn node_capabilities_位分配与_adr_0011_一致() {
+        assert_eq!(NodeCapabilities::PURE.bits(), 0b0000_0001);
+        assert_eq!(NodeCapabilities::NETWORK_IO.bits(), 0b0000_0010);
+        assert_eq!(NodeCapabilities::FILE_IO.bits(), 0b0000_0100);
+        assert_eq!(NodeCapabilities::DEVICE_IO.bits(), 0b0000_1000);
+        assert_eq!(NodeCapabilities::TRIGGER.bits(), 0b0001_0000);
+        assert_eq!(NodeCapabilities::BRANCHING.bits(), 0b0010_0000);
+        assert_eq!(NodeCapabilities::MULTI_OUTPUT.bits(), 0b0100_0000);
+        assert_eq!(NodeCapabilities::BLOCKING.bits(), 0b1000_0000);
+    }
+
+    #[test]
+    fn node_capabilities_可按位组合() {
+        let caps = NodeCapabilities::PURE | NodeCapabilities::BRANCHING;
+        assert!(caps.contains(NodeCapabilities::PURE));
+        assert!(caps.contains(NodeCapabilities::BRANCHING));
+        assert!(!caps.contains(NodeCapabilities::NETWORK_IO));
+    }
+
+    #[test]
+    fn node_capabilities_default_是空集合() {
+        let caps = NodeCapabilities::default();
+        assert!(caps.is_empty());
+        assert_eq!(caps.bits(), 0);
+    }
 }

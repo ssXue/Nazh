@@ -13,7 +13,7 @@ use serde_json::Value;
 #[cfg(feature = "ts-export")]
 use ts_rs::TS;
 
-use crate::{EngineError, NodeTrait};
+use crate::{EngineError, NodeCapabilities, NodeTrait};
 
 /// 部署时传递给节点工厂的共享资源包。
 ///
@@ -183,20 +183,32 @@ type FactoryFn = dyn Fn(&WorkflowNodeDefinition, SharedResources) -> Result<Arc<
     + Send
     + Sync;
 
-/// 节点注册表，管理节点类型名称到工厂函数的映射。
+/// 注册表中单个节点类型的全部信息——工厂 + 类型级能力标签。
+struct NodeEntry {
+    factory: Arc<FactoryFn>,
+    capabilities: NodeCapabilities,
+}
+
+/// 节点注册表，管理节点类型名称到工厂函数与能力标签的映射。
+///
+/// 能力标签 [`NodeCapabilities`] 在注册时以「类型级别」登记，供前端渲染、
+/// 可观测性分桶与未来调度策略使用，无需实例化节点即可查询。
 pub struct NodeRegistry {
-    factories: HashMap<String, Arc<FactoryFn>>,
+    entries: HashMap<String, NodeEntry>,
 }
 
 impl NodeRegistry {
     /// 创建一个空的注册表。
     pub fn new() -> Self {
         Self {
-            factories: HashMap::new(),
+            entries: HashMap::new(),
         }
     }
 
-    /// 注册一个节点工厂。若该名称已存在，新工厂会覆盖旧工厂。
+    /// 注册一个节点工厂，能力标签默认为空集合。
+    ///
+    /// 若需声明能力标签，请改用 [`register_with_capabilities`](Self::register_with_capabilities)。
+    /// 若该名称已存在，新工厂会覆盖旧工厂，同时把能力标签重置为空集合。
     pub fn register<F>(&mut self, node_type: impl Into<String>, factory: F)
     where
         F: Fn(&WorkflowNodeDefinition, SharedResources) -> Result<Arc<dyn NodeTrait>, EngineError>
@@ -204,7 +216,30 @@ impl NodeRegistry {
             + Sync
             + 'static,
     {
-        self.factories.insert(node_type.into(), Arc::new(factory));
+        self.register_with_capabilities(node_type, NodeCapabilities::empty(), factory);
+    }
+
+    /// 注册节点工厂并声明类型级能力标签（ADR-0011）。
+    ///
+    /// 若该名称已存在，新工厂与新能力标签均会覆盖旧值。
+    pub fn register_with_capabilities<F>(
+        &mut self,
+        node_type: impl Into<String>,
+        capabilities: NodeCapabilities,
+        factory: F,
+    ) where
+        F: Fn(&WorkflowNodeDefinition, SharedResources) -> Result<Arc<dyn NodeTrait>, EngineError>
+            + Send
+            + Sync
+            + 'static,
+    {
+        self.entries.insert(
+            node_type.into(),
+            NodeEntry {
+                factory: Arc::new(factory),
+                capabilities,
+            },
+        );
     }
 
     /// 根据节点定义中的 `node_type` 查找工厂并创建节点实例。
@@ -213,11 +248,11 @@ impl NodeRegistry {
         definition: &WorkflowNodeDefinition,
         resources: SharedResources,
     ) -> Result<Arc<dyn NodeTrait>, EngineError> {
-        let factory = self
-            .factories
+        let entry = self
+            .entries
             .get(definition.node_type())
             .ok_or_else(|| EngineError::unsupported_node_type(definition.node_type()))?;
-        factory(definition, resources)
+        (entry.factory)(definition, resources)
     }
 
     /// 返回所有已注册的节点类型名称。
@@ -225,7 +260,15 @@ impl NodeRegistry {
     /// 顺序未定义；调用方需要排序请自行处理。Tauri IPC 层在
     /// `tauri_bindings::list_node_types_response` 中负责字母排序与封装。
     pub fn registered_types(&self) -> Vec<&str> {
-        self.factories.keys().map(String::as_str).collect()
+        self.entries.keys().map(String::as_str).collect()
+    }
+
+    /// 查询指定节点类型声明的能力标签。
+    ///
+    /// 未注册的类型返回 `None`；通过 [`register`](Self::register) 注册但未声明
+    /// 能力的类型返回 `Some(NodeCapabilities::empty())`。
+    pub fn capabilities_of(&self, node_type: &str) -> Option<NodeCapabilities> {
+        self.entries.get(node_type).map(|entry| entry.capabilities)
     }
 }
 
@@ -401,6 +444,42 @@ mod tests {
                 .create(&node_def("n2", "beta"), stub_resources())
                 .is_ok()
         );
+    }
+
+    #[test]
+    fn register_with_capabilities_登记类型级能力() {
+        let mut registry = NodeRegistry::new();
+        let caps = NodeCapabilities::NETWORK_IO | NodeCapabilities::TRIGGER;
+        registry.register_with_capabilities("mqtt", caps, |def, _res| {
+            Ok(Arc::new(StubNode {
+                id: def.id.clone(),
+                kind: "mqtt",
+            }))
+        });
+
+        assert_eq!(registry.capabilities_of("mqtt"), Some(caps));
+    }
+
+    #[test]
+    fn register_不声明能力时默认为空集合() {
+        let mut registry = NodeRegistry::new();
+        registry.register("plain", |def, _res| {
+            Ok(Arc::new(StubNode {
+                id: def.id.clone(),
+                kind: "plain",
+            }))
+        });
+
+        assert_eq!(
+            registry.capabilities_of("plain"),
+            Some(NodeCapabilities::empty())
+        );
+    }
+
+    #[test]
+    fn capabilities_of_未注册类型返回_none() {
+        let registry = NodeRegistry::new();
+        assert!(registry.capabilities_of("nonexistent").is_none());
     }
 
     #[test]

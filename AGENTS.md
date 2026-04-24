@@ -191,6 +191,10 @@ Documents rot silently. These rules exist to keep docs synchronized with code so
 
 **`AGENTS.md` is the authority.** `CLAUDE.md` is a symlink to `AGENTS.md` — both names exist so that Claude Code, OpenCode, Cursor, and other agent tools find it via their native conventions, but the content is one file.
 
+**Per-crate AGENTS.md** — Each workspace crate (`crates/*/`) has exactly one `AGENTS.md` documenting crate-specific design intent and conventions. No `README.md` / `CLAUDE.md` at the crate level — AGENTS.md is the cross-vendor agent convention (Claude Code, Copilot CLI, Codex, Aider all find it), so one file is enough. Root `AGENTS.md` owns cross-cutting rules (language, git, testing, layout); crate `AGENTS.md` owns that crate's internal contracts, dependency constraints, and "how to modify" checklists. If they conflict, root wins.
+
+**约定（conventions）住在 AGENTS.md，不住在 ADR 里。** ADR 记录的是"我们做了什么决定、为什么"——一次性的架构抉择。落地后的"位分配表 / 节点能力对照 / checklist / 修改时同步哪些文件"这类**随代码演进而更新**的约定，放在对应 crate 的 `AGENTS.md` 或 rustdoc 里。ADR 通常不再更新，约定随时可更新。
+
 When `AGENTS.md` conflicts with any other doc (README / rustdoc / ADR / memory / comment), **`AGENTS.md` wins and the conflict is a bug to fix**. Open a PR to resolve.
 
 ### Freshness Contract
@@ -206,16 +210,18 @@ When `AGENTS.md` conflicts with any other doc (README / rustdoc / ADR / memory /
 
 | When you ... | You must update ... |
 |--------------|---------------------|
-| Add / rename / remove a crate | `AGENTS.md` workspace layout + `README.md` crate table |
-| Add a new `#[ts(export)]` type or rename one | Run `cargo test --workspace --lib export_bindings`; commit the diff in `web/src/generated/` |
-| Add / remove a `NodeTrait` implementation | `AGENTS.md` node inventory note + `README.md` node catalog |
-| Accept / implement / deprecate an ADR | The ADR's own status + `docs/adr/README.md` index row |
-| Add a Tauri IPC command or event channel | `AGENTS.md` Tauri IPC surface + `README.md` IPC tables |
-| Change any Critical Coding Constraint | `AGENTS.md` (this file) + signal explicitly in PR description |
+| Add / rename / remove a crate | Root `AGENTS.md` workspace layout + root `README.md` crate table + new crate's own `AGENTS.md` (single file, no symlinks) |
+| Change a crate's public API, internal contracts, or dependency constraints | That crate's `AGENTS.md` (the "对外暴露" / "内部约定" / "依赖约束" / "修改本 crate 时" sections) in the same PR |
+| Add a new `#[ts(export)]` type or rename one | Run `cargo test -p tauri-bindings --features ts-export export_bindings`; commit the diff in `web/src/generated/` |
+| Add / remove a `NodeTrait` implementation | The owning crate's `AGENTS.md` node inventory table + `src/registry.rs` contract test + root `README.md` node catalog |
+| Change a node's `capabilities()` | The owning crate's `AGENTS.md` capability table + `src/registry.rs` contract test — both in the same PR (one without the other fails CI) |
+| Accept / implement / deprecate an ADR | The ADR's own status + `docs/adr/README.md` index row (do **not** update past ADRs with new implementation details — put those in the relevant crate `AGENTS.md`) |
+| Add a Tauri IPC command or event channel | Root `AGENTS.md` Tauri IPC surface + root `README.md` IPC tables + `crates/tauri-bindings/AGENTS.md` if it introduces new response types |
+| Change any Critical Coding Constraint | Root `AGENTS.md` (this file) + signal explicitly in PR description |
 | Complete a roadmap item in RFC-0002 | Update the RFC's "Implementation Progress" section |
 | Land work matching a 提案 in architecture review memory | Update `memory/project_architecture_review_2026_04.md` status mapping |
-| Add or rewrite a large module | Ensure `//!` module-level doc reflects purpose; run `cargo doc --no-deps` to sanity-check |
-| Rename or move a file cited in an ADR/README | Update the citation; don't leave dead paths |
+| Add or rewrite a large module | Ensure `//!` module-level doc reflects purpose; run `cargo doc --no-deps` to sanity-check; update crate `AGENTS.md` if the module is part of public API |
+| Rename or move a file cited in an ADR/README/crate AGENTS.md | Update the citation; don't leave dead paths |
 
 ### ADR Writing Requirements
 
@@ -342,7 +348,8 @@ Located in `docs/superpowers/plans/` and `docs/superpowers/specs/`. These are **
 **Current batch of ADRs** (2026-04-17 to 2026-04-24):
 - ADR-0008 (metadata separation) — **accepted / landed**
 - ADR-0017 (IPC + ts-rs 迁出 Ring 0) — **已实施**（2026-04-24，见 `crates/tauri-bindings/`）
-- ADR-0009 ~ ADR-0016, ADR-0018 ~ ADR-0020 — **proposed**, awaiting review. See `docs/adr/README.md` for the index.
+- ADR-0011 (节点能力标签 `NodeCapabilities`) — **已实施**（2026-04-24，位图落在 `crates/core/src/node.rs`，前端常量表 `web/src/lib/node-capabilities.ts`）
+- ADR-0009 / ADR-0010 / ADR-0012 ~ ADR-0016 / ADR-0018 ~ ADR-0020 — **proposed**, awaiting review. See `docs/adr/README.md` for the index.
 
 **Immediate known tech debt:**
 - MQTT subscriber / Timer / Serial root lifecycle is owned by the Tauri shell (`src-tauri/src/lib.rs:2499-2740+`). ADR-0009 plans to migrate this into engine-level `on_deploy` hooks.
@@ -352,7 +359,7 @@ Located in `docs/superpowers/plans/` and `docs/superpowers/specs/`. These are **
 **ADR Execution Order**（2026-04-24 共识，依赖与独立性已分析过）：
 
 > 0. ✅ **ADR-0017** IPC + ts-rs 迁出 Ring 0 — 已实施（独立支线，crate 卫生）
-> 1. **ADR-0011** 节点能力标签 — 轻量首发，加 `NodeTrait::capabilities()` 默认空集合，可与 0017 后续工作并行
+> 1. ✅ **ADR-0011** 节点能力标签 — 已实施（首发第一阶段：`NodeTrait::capabilities()`、`NodeRegistry::register_with_capabilities`、IPC `NodeTypeEntry.capabilities` 透传、前端 badges；Runner 侧 `spawn_blocking` / 缓存等调度决策按 ADR 后续阶段推进）
 > 2. **ADR-0009** 生命周期钩子（`on_deploy` + `LifecycleGuard`）— 偿还 MQTT/Timer/Serial 壳层债务，为真实协议驱动铺路
 > 3. **ADR-0010** Pin 声明系统 — 是 0012/0013/0014/0015 的共同基础，**不要先做后续四条**
 > 4. **ADR-0018 / ADR-0019**（独立支线）— `nodes-io` 协议 feature 门控 / AI 依赖反转，可任意时候穿插

@@ -4,7 +4,8 @@ use std::sync::Arc;
 
 use connections::SharedConnectionManager;
 use nazh_core::{
-    EngineError, NodeRegistry, Plugin, PluginManifest, SharedResources, WorkflowNodeDefinition,
+    EngineError, NodeCapabilities, NodeRegistry, Plugin, PluginManifest, SharedResources,
+    WorkflowNodeDefinition,
 };
 
 pub mod template;
@@ -55,78 +56,102 @@ impl Plugin for IoPlugin {
     }
 
     fn register(&self, registry: &mut NodeRegistry) {
-        registry.register("native", |def, res| {
+        registry.register_with_capabilities("native", NodeCapabilities::empty(), |def, res| {
             let mut config: NativeNodeConfig = def.parse_config()?;
             inherit_connection_id(&mut config.connection_id, def);
             let cm = downcast_connection_manager(&res)?;
             Ok(Arc::new(NativeNode::new(def.id().to_owned(), config, cm)))
         });
 
-        registry.register("timer", |def, _res| {
+        registry.register_with_capabilities("timer", NodeCapabilities::TRIGGER, |def, _res| {
             let config: TimerNodeConfig = def.parse_config()?;
             Ok(Arc::new(TimerNode::new(def.id().to_owned(), config)))
         });
 
-        registry.register("serialTrigger", |def, _res| {
-            let config: SerialTriggerNodeConfig = def.parse_config()?;
-            Ok(Arc::new(SerialTriggerNode::new(
-                def.id().to_owned(),
-                config,
-            )))
-        });
+        registry.register_with_capabilities(
+            "serialTrigger",
+            NodeCapabilities::TRIGGER | NodeCapabilities::DEVICE_IO,
+            |def, _res| {
+                let config: SerialTriggerNodeConfig = def.parse_config()?;
+                Ok(Arc::new(SerialTriggerNode::new(
+                    def.id().to_owned(),
+                    config,
+                )))
+            },
+        );
 
-        registry.register("modbusRead", |def, res| {
-            let mut config: ModbusReadNodeConfig = def.parse_config()?;
-            inherit_connection_id(&mut config.connection_id, def);
-            let cm = downcast_connection_manager(&res)?;
-            Ok(Arc::new(ModbusReadNode::new(
-                def.id().to_owned(),
-                config,
-                cm,
-            )))
-        });
+        registry.register_with_capabilities(
+            "modbusRead",
+            NodeCapabilities::DEVICE_IO,
+            |def, res| {
+                let mut config: ModbusReadNodeConfig = def.parse_config()?;
+                inherit_connection_id(&mut config.connection_id, def);
+                let cm = downcast_connection_manager(&res)?;
+                Ok(Arc::new(ModbusReadNode::new(
+                    def.id().to_owned(),
+                    config,
+                    cm,
+                )))
+            },
+        );
 
-        registry.register("httpClient", |def, res| {
-            let mut config: HttpClientNodeConfig = def.parse_config()?;
-            inherit_connection_id(&mut config.connection_id, def);
-            let cm = downcast_connection_manager(&res)?;
-            Ok(Arc::new(HttpClientNode::new(
-                def.id().to_owned(),
-                config,
-                cm,
-            )?))
-        });
+        registry.register_with_capabilities(
+            "httpClient",
+            NodeCapabilities::NETWORK_IO,
+            |def, res| {
+                let mut config: HttpClientNodeConfig = def.parse_config()?;
+                inherit_connection_id(&mut config.connection_id, def);
+                let cm = downcast_connection_manager(&res)?;
+                Ok(Arc::new(HttpClientNode::new(
+                    def.id().to_owned(),
+                    config,
+                    cm,
+                )?))
+            },
+        );
 
-        registry.register("barkPush", |def, res| {
-            let mut config: BarkPushNodeConfig = def.parse_config()?;
-            inherit_connection_id(&mut config.connection_id, def);
-            let cm = downcast_connection_manager(&res)?;
-            Ok(Arc::new(BarkPushNode::new(
-                def.id().to_owned(),
-                config,
-                cm,
-            )?))
-        });
+        registry.register_with_capabilities(
+            "barkPush",
+            NodeCapabilities::NETWORK_IO,
+            |def, res| {
+                let mut config: BarkPushNodeConfig = def.parse_config()?;
+                inherit_connection_id(&mut config.connection_id, def);
+                let cm = downcast_connection_manager(&res)?;
+                Ok(Arc::new(BarkPushNode::new(
+                    def.id().to_owned(),
+                    config,
+                    cm,
+                )?))
+            },
+        );
 
-        registry.register("sqlWriter", |def, _res| {
+        registry.register_with_capabilities("sqlWriter", NodeCapabilities::FILE_IO, |def, _res| {
             let config: SqlWriterNodeConfig = def.parse_config()?;
             Ok(Arc::new(SqlWriterNode::new(def.id().to_owned(), config)))
         });
 
-        registry.register("debugConsole", |def, _res| {
-            let config: DebugConsoleNodeConfig = def.parse_config()?;
-            Ok(Arc::new(DebugConsoleNode::new(def.id().to_owned(), config)))
-        });
+        registry.register_with_capabilities(
+            "debugConsole",
+            NodeCapabilities::empty(),
+            |def, _res| {
+                let config: DebugConsoleNodeConfig = def.parse_config()?;
+                Ok(Arc::new(DebugConsoleNode::new(def.id().to_owned(), config)))
+            },
+        );
 
-        registry.register("mqttClient", |def, res| {
-            let mut config: MqttClientNodeConfig = def.parse_config()?;
-            inherit_connection_id(&mut config.connection_id, def);
-            let cm = downcast_connection_manager(&res)?;
-            Ok(Arc::new(MqttClientNode::new(
-                def.id().to_owned(),
-                config,
-                cm,
-            )))
-        });
+        registry.register_with_capabilities(
+            "mqttClient",
+            NodeCapabilities::NETWORK_IO,
+            |def, res| {
+                let mut config: MqttClientNodeConfig = def.parse_config()?;
+                inherit_connection_id(&mut config.connection_id, def);
+                let cm = downcast_connection_manager(&res)?;
+                Ok(Arc::new(MqttClientNode::new(
+                    def.id().to_owned(),
+                    config,
+                    cm,
+                )))
+            },
+        );
     }
 }

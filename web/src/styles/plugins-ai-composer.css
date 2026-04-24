@@ -52,6 +52,66 @@
   margin-top: 4px;
 }
 
+.plugin-panel__card-caps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.plugin-panel__cap {
+  font-size: 10px;
+  line-height: 1;
+  padding: 3px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border, rgba(0, 0, 0, 0.08));
+  background: var(--bg-subtle, rgba(0, 0, 0, 0.03));
+  color: var(--text-soft);
+}
+
+.plugin-panel__cap--pure {
+  background: rgba(52, 211, 153, 0.12);
+  border-color: rgba(52, 211, 153, 0.35);
+  color: rgb(4, 120, 87);
+}
+
+.plugin-panel__cap--network_io {
+  background: rgba(59, 130, 246, 0.12);
+  border-color: rgba(59, 130, 246, 0.35);
+  color: rgb(29, 78, 216);
+}
+
+.plugin-panel__cap--file_io {
+  background: rgba(168, 85, 247, 0.12);
+  border-color: rgba(168, 85, 247, 0.35);
+  color: rgb(126, 34, 206);
+}
+
+.plugin-panel__cap--device_io {
+  background: rgba(249, 115, 22, 0.12);
+  border-color: rgba(249, 115, 22, 0.35);
+  color: rgb(194, 65, 12);
+}
+
+.plugin-panel__cap--trigger {
+  background: rgba(234, 179, 8, 0.14);
+  border-color: rgba(234, 179, 8, 0.4);
+  color: rgb(161, 98, 7);
+}
+
+.plugin-panel__cap--branching,
+.plugin-panel__cap--multi_output {
+  background: rgba(148, 163, 184, 0.15);
+  border-color: rgba(148, 163, 184, 0.35);
+  color: rgb(71, 85, 105);
+}
+
+.plugin-panel__cap--blocking {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.35);
+  color: rgb(185, 28, 28);
+}
+
 .plugin-panel__loading,
 .plugin-panel__error,
 .plugin-panel__empty {

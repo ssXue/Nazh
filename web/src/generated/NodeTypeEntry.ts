@@ -2,9 +2,17 @@
 
 /**
  * 已注册节点类型的信息条目。
+ *
+ * `capabilities` 是 [`nazh_core::NodeCapabilities`] 的原始位图（`u32::bits()`），
+ * 前端需按 ADR-0011 定义的位分配解读。位分配与常量表同步在
+ * `web/src/lib/nodeCapabilities.ts`。
  */
 export type NodeTypeEntry = { 
 /**
  * 节点类型主名称（如 "code"）。
  */
-name: string, };
+name: string, 
+/**
+ * 类型级能力标签位图（详见 ADR-0011）。
+ */
+capabilities: number, };

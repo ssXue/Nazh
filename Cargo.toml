@@ -33,6 +33,7 @@ nodes-flow = { path = "crates/nodes-flow" }
 nodes-io = { path = "crates/nodes-io" }
 tauri-bindings = { path = "crates/tauri-bindings" }
 async-trait = "0.1"
+bitflags = { version = "2", features = ["serde"] }
 chrono = { version = "0.4", features = ["clock", "serde"] }
 dashmap = "6"
 futures-util = "0.3"
