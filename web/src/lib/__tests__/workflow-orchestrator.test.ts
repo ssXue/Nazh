@@ -199,35 +199,168 @@ describe('streamWorkflowOrchestration', () => {
   it('流结束但缺少 done 操作时会抛出中断错误，并保留已解析的草稿', async () => {
     const { copilotCompleteStream } = await import('../../lib/tauri');
     const mocked = vi.mocked(copilotCompleteStream);
-    mocked.mockImplementationOnce(async (_request, onDelta) => {
-      const lines = [
-        '{"type":"project","name":"未完成工程"}\n',
-        '{"type":"upsert_node","id":"timer_trigger","nodeType":"timer","label":"定时触发","config":{"interval_ms":3000}}\n',
-      ];
-      let accumulated = '';
-      for (const line of lines) {
-        accumulated += line;
-        onDelta(accumulated);
-      }
-      return {
-        text: accumulated,
-        finishReason: 'length',
-      };
+    mocked
+      .mockImplementationOnce(async (_request, onDelta) => {
+        const lines = [
+          '{"type":"project","name":"未完成工程"}\n',
+          '{"type":"upsert_node","id":"timer_trigger","nodeType":"timer","label":"定时触发","config":{"interval_ms":3000}}\n',
+        ];
+        let accumulated = '';
+        for (const line of lines) {
+          accumulated += line;
+          onDelta(accumulated);
+        }
+        return {
+          text: accumulated,
+          finishReason: 'length',
+        };
+      })
+      .mockImplementationOnce(async (_request, onDelta) => {
+        const lines = [
+          '{"type":"upsert_node","id":"debug_console","nodeType":"debugConsole","label":"调试输出","config":{"label":"resume"}}\n',
+          '{"type":"upsert_edge","from":"timer_trigger","to":"debug_console"}\n',
+          '{"type":"done","summary":"续传完成"}',
+        ];
+        let accumulated = '';
+        for (const line of lines) {
+          accumulated += line;
+          onDelta(accumulated);
+        }
+        return {
+          text: accumulated,
+          finishReason: 'stop',
+        };
+      });
+
+    const retries: Array<'retry' | 'resume' | 'restart'> = [];
+    const result = await streamWorkflowOrchestration({
+      mode: 'create',
+      requirement: '做一个会中断的示例',
+      providerId: 'test-provider',
+      onRetry: (_attempt, _error, _state, strategy) => {
+        retries.push(strategy);
+      },
     });
 
-    const seenOperations: string[] = [];
+    expect(retries).toEqual(['resume']);
+    expect(result.summary).toBe('续传完成');
+    expect(result.draft.graph.nodes['timer_trigger']?.type).toBe('timer');
+    expect(result.draft.graph.nodes['debug_console']?.type).toBe('debugConsole');
+    expect(result.draft.graph.edges).toEqual([
+      {
+        from: 'timer_trigger',
+        to: 'debug_console',
+        source_port_id: undefined,
+        target_port_id: undefined,
+      },
+    ]);
+  });
 
-    await expect(
-      streamWorkflowOrchestration({
-        mode: 'create',
-        requirement: '做一个会中断的示例',
-        providerId: 'test-provider',
-        onOperation: (operation) => {
-          seenOperations.push(operation.type);
-        },
-      }),
-    ).rejects.toThrow('token 上限提前结束');
+  it('只有思考流中断且尚未进入协议输出时，会原位重试当前请求', async () => {
+    const { copilotCompleteStream } = await import('../../lib/tauri');
+    const mocked = vi.mocked(copilotCompleteStream);
+    mocked
+      .mockImplementationOnce(async (_request, _onDelta, onThinking) => {
+        onThinking?.('先想一下');
+        throw new Error('AI 网络错误: error decoding response body');
+      })
+      .mockImplementationOnce(async (_request, onDelta) => {
+        const lines = [
+          '{"type":"project","name":"重试成功工程"}\n',
+          '{"type":"upsert_node","id":"timer_trigger","nodeType":"timer","label":"定时触发","config":{"interval_ms":1000}}\n',
+          '{"type":"done","summary":"重试成功"}',
+        ];
+        let accumulated = '';
+        for (const line of lines) {
+          accumulated += line;
+          onDelta(accumulated);
+        }
+        return {
+          text: accumulated,
+          finishReason: 'stop',
+        };
+      });
 
-    expect(seenOperations).toEqual(['project', 'upsert_node']);
+    const retries: Array<'retry' | 'resume' | 'restart'> = [];
+    const thinkingSnapshots: string[] = [];
+    const result = await streamWorkflowOrchestration({
+      mode: 'create',
+      requirement: '做一个先思考后输出的示例',
+      providerId: 'test-provider',
+      onThinking: (thinking) => {
+        thinkingSnapshots.push(thinking);
+      },
+      onRetry: (_attempt, _error, _state, strategy) => {
+        retries.push(strategy);
+      },
+    });
+
+    expect(retries).toEqual(['retry']);
+    expect(thinkingSnapshots).toContain('先想一下');
+    expect(thinkingSnapshots).toContain('');
+    expect(result.draft.name).toBe('重试成功工程');
+    expect(result.summary).toBe('重试成功');
+  });
+
+  it('续传阶段若只发生传输中断，会原位重试同一个 continuation 请求', async () => {
+    const { copilotCompleteStream } = await import('../../lib/tauri');
+    const mocked = vi.mocked(copilotCompleteStream);
+    const requestMessages: string[] = [];
+    mocked
+      .mockImplementationOnce(async (request, onDelta) => {
+        requestMessages.push(JSON.stringify(request.messages));
+        const lines = [
+          '{"type":"project","name":"续传工程"}\n',
+          '{"type":"upsert_node","id":"timer_trigger","nodeType":"timer","label":"定时触发","config":{"interval_ms":3000}}\n',
+        ];
+        let accumulated = '';
+        for (const line of lines) {
+          accumulated += line;
+          onDelta(accumulated);
+        }
+        return {
+          text: accumulated,
+          finishReason: 'length',
+        };
+      })
+      .mockImplementationOnce(async (request, _onDelta, onThinking) => {
+        requestMessages.push(JSON.stringify(request.messages));
+        onThinking?.('继续补全中');
+        throw new Error('AI 网络错误: error decoding response body');
+      })
+      .mockImplementationOnce(async (request, onDelta) => {
+        requestMessages.push(JSON.stringify(request.messages));
+        const lines = [
+          '{"type":"upsert_node","id":"debug_console","nodeType":"debugConsole","label":"调试输出","config":{"label":"resume"}}\n',
+          '{"type":"upsert_edge","from":"timer_trigger","to":"debug_console"}\n',
+          '{"type":"done","summary":"续传完成"}',
+        ];
+        let accumulated = '';
+        for (const line of lines) {
+          accumulated += line;
+          onDelta(accumulated);
+        }
+        return {
+          text: accumulated,
+          finishReason: 'stop',
+        };
+      });
+
+    const retries: Array<'retry' | 'resume' | 'restart'> = [];
+    const result = await streamWorkflowOrchestration({
+      mode: 'create',
+      requirement: '做一个续传后仍可能波动的示例',
+      providerId: 'test-provider',
+      onRetry: (_attempt, _error, _state, strategy) => {
+        retries.push(strategy);
+      },
+    });
+
+    expect(retries).toEqual(['resume', 'retry']);
+    expect(requestMessages).toHaveLength(3);
+    expect(requestMessages[1]).toBe(requestMessages[2]);
+    expect(requestMessages[0]).not.toBe(requestMessages[1]);
+    expect(result.summary).toBe('续传完成');
+    expect(result.draft.graph.nodes['debug_console']?.type).toBe('debugConsole');
   });
 });

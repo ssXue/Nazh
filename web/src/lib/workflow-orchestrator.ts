@@ -20,6 +20,9 @@ import { copilotCompleteStream } from './tauri';
 import { isUsableGlobalAiProvider, resolveGlobalAiProvider } from './workflow-ai';
 
 const DEFAULT_WORKFLOW_TIMEOUT_MS = 90_000;
+const MAX_WORKFLOW_TRANSPORT_RETRY_ATTEMPTS = 2;
+const MAX_WORKFLOW_RESUME_ATTEMPTS = 2;
+const MAX_WORKFLOW_RESTART_ATTEMPTS = 1;
 const DEFAULT_COPILOT_PARAMS: AiGenerationParams = {
   temperature: 0.45,
   maxTokens: 4096,
@@ -153,8 +156,11 @@ export interface StreamWorkflowOrchestrationOptions {
     attempt: number,
     error: Error,
     nextState: WorkflowOrchestrationSessionState,
+    strategy: WorkflowOrchestrationRetryStrategy,
   ) => void;
 }
+
+export type WorkflowOrchestrationRetryStrategy = 'retry' | 'resume' | 'restart';
 
 function buildIncompleteProtocolError(
   rawText: string,
@@ -213,6 +219,68 @@ function normalizeAllowedNodeKind(value: unknown): NazhNodeKind | null {
     default:
       return null;
   }
+}
+
+function isRecoverableWorkflowOrchestrationError(error: Error): boolean {
+  const message = error.message.trim().toLowerCase();
+  return [
+    'error decoding response body',
+    '未收到结束信号',
+    'connection reset',
+    'broken pipe',
+    'unexpected eof',
+    'unexpected end of file',
+    'token 上限提前结束',
+    '缺少 done 操作',
+    '没有返回可解析的工作流操作',
+    '没有返回任何工作流操作',
+    'stream interrupted',
+  ].some((pattern) => message.includes(pattern));
+}
+
+function isRecoverableWorkflowTransportError(error: Error): boolean {
+  const message = error.message.trim().toLowerCase();
+  return [
+    'error decoding response body',
+    '未收到结束信号',
+    'connection reset',
+    'broken pipe',
+    'unexpected eof',
+    'unexpected end of file',
+    'stream interrupted',
+  ].some((pattern) => message.includes(pattern));
+}
+
+function hasWorkflowProtocolFragment(rawText: string): boolean {
+  const trimmed = rawText.trim();
+  if (!trimmed) {
+    return false;
+  }
+
+  if (parseOperationLine(trimmed) !== null) {
+    return true;
+  }
+
+  return trimmed
+    .split(/\r?\n/)
+    .some((line) => {
+      const normalizedLine = line.trim().replace(/^data:\s*/i, '');
+      return normalizedLine.startsWith('{') || normalizedLine.includes('"type"');
+    });
+}
+
+function canResumeWorkflowOrchestration(
+  state: WorkflowOrchestrationSessionState,
+  rawText: string,
+): boolean {
+  return state.operations.length > 0 || hasWorkflowProtocolFragment(rawText);
+}
+
+async function waitForWorkflowRetry(attempt: number): Promise<void> {
+  const delayMs = Math.min(400 * 2 ** Math.max(0, attempt - 1), 1_500);
+  await new Promise<void>((resolve) => {
+    globalThis.setTimeout(resolve, delayMs);
+  });
 }
 
 function readString(record: Record<string, unknown>, keys: string[]): string | undefined {
@@ -533,6 +601,57 @@ ${NODE_GUIDE_TEXT}
   ];
 }
 
+function buildWorkflowOrchestrationContinuationPrompt(options: {
+  mode: WorkflowOrchestrationMode;
+  requirement: string;
+  acceptedState: WorkflowOrchestrationSessionState;
+  rawText: string;
+  error: Error;
+  attempt: number;
+}): AiMessage[] {
+  const baseMessages = buildWorkflowOrchestrationPrompt({
+    mode: options.mode,
+    requirement: options.requirement,
+    baseDraft: options.acceptedState.draft,
+  });
+  const acceptedOperationsText = options.acceptedState.operations
+    .map((operation) => JSON.stringify(operation))
+    .join('\n');
+  const normalizedRawText = options.rawText.trim();
+  const rawLines = normalizedRawText ? normalizedRawText.split(/\r?\n/) : [];
+  const lastRawLine = rawLines[rawLines.length - 1] ?? '';
+  const isLastLineComplete = parseOperationLine(lastRawLine) !== null;
+  const assistantTranscript = [
+    acceptedOperationsText,
+    normalizedRawText && !isLastLineComplete ? lastRawLine : '',
+  ]
+    .filter((segment) => segment.trim().length > 0)
+    .join('\n');
+
+  return [
+    baseMessages[0],
+    baseMessages[1],
+    {
+      role: 'assistant',
+      content: assistantTranscript,
+    },
+    {
+      role: 'user',
+      content: `上一条 assistant 输出在流式传输中断了，这是第 ${options.attempt} 次续传。
+
+中断原因：
+${options.error.message}
+
+继续规则：
+- 把上面的 assistant 内容视为你已经成功输出并已被系统应用
+- 不要重复任何已经完整输出过的 JSON Lines 操作
+- 如果最后一行是不完整片段，直接从下一条完整操作继续，不要回头解释
+- 从现在开始直接输出剩余 JSON Lines；不要补写思考说明、不要输出 Markdown
+- 只在确实完成后输出 {"type":"done", ...}`,
+    },
+  ];
+}
+
 function toPositiveRoundedNumber(value: number | undefined): number | null | undefined {
   if (value === undefined) {
     return undefined;
@@ -829,65 +948,209 @@ function extractTrailingOperation(rawText: string): WorkflowOrchestrationOperati
   return parseOperationLine(lastLine);
 }
 
-export async function streamWorkflowOrchestration(
-  options: StreamWorkflowOrchestrationOptions,
-): Promise<WorkflowOrchestrationSessionState> {
-  const messages = buildWorkflowOrchestrationPrompt({
-    mode: options.mode,
-    requirement: options.requirement,
-    baseDraft: options.baseDraft,
-  });
-  const request: AiCompletionRequest = {
-    providerId: options.providerId,
-    model: options.model ?? undefined,
-    messages,
-    params: resolveGenerationParams(options.params),
-    timeoutMs: options.timeoutMs ?? DEFAULT_WORKFLOW_TIMEOUT_MS,
-  };
-
-  let nextState = createWorkflowOrchestrationState(options.baseDraft);
-  let processedLength = 0;
-
-  const streamResult = await copilotCompleteStream(
-    request,
-    (accumulatedText) => {
-      options.onRawText?.(accumulatedText);
-      const parsed = consumeOperationLines(accumulatedText, processedLength);
-      processedLength = parsed.nextProcessedLength;
-
-      for (const operation of parsed.operations) {
-        nextState = applyWorkflowOrchestrationOperation(nextState, operation);
-        options.onOperation?.(operation, nextState);
-      }
-    },
-    options.onThinking,
-    {
-      maxRetries: 1,
-      onRetryStart: async (attempt, error) => {
-        processedLength = 0;
-        nextState = createWorkflowOrchestrationState(options.baseDraft);
-        options.onRetry?.(attempt, error, nextState);
-      },
-    },
-  );
-  const rawText = streamResult.text;
-
+function applyTrailingOperationIfNeeded(
+  state: WorkflowOrchestrationSessionState,
+  rawText: string,
+  onOperation?: StreamWorkflowOrchestrationOptions['onOperation'],
+): WorkflowOrchestrationSessionState {
   const trailingOperation = extractTrailingOperation(rawText);
-  const lastAppliedOperation = nextState.operations[nextState.operations.length - 1] ?? null;
+  const lastAppliedOperation = state.operations[state.operations.length - 1] ?? null;
   const shouldApplyTrailingOperation =
     trailingOperation !== null &&
     (!lastAppliedOperation ||
       JSON.stringify(lastAppliedOperation) !== JSON.stringify(trailingOperation));
 
-  if (shouldApplyTrailingOperation) {
-    nextState = applyWorkflowOrchestrationOperation(nextState, trailingOperation);
-    options.onOperation?.(trailingOperation, nextState);
+  if (!shouldApplyTrailingOperation) {
+    return state;
   }
 
-  const hasCompletionOperation = nextState.operations.some((operation) => operation.type === 'done');
-  if (!hasCompletionOperation) {
-    throw buildIncompleteProtocolError(rawText, nextState, streamResult.finishReason);
-  }
-
+  const nextState = applyWorkflowOrchestrationOperation(state, trailingOperation);
+  onOperation?.(trailingOperation, nextState);
   return nextState;
+}
+
+export async function streamWorkflowOrchestration(
+  options: StreamWorkflowOrchestrationOptions,
+): Promise<WorkflowOrchestrationSessionState> {
+  let nextState = createWorkflowOrchestrationState(options.baseDraft);
+  let transportRetryCount = 0;
+  let resumeAttemptCount = 0;
+  let restartAttemptCount = 0;
+  let nextAttemptMode: 'initial' | 'resume' | 'restart' = 'initial';
+  let lastInterruptedRawText = '';
+  let lastInterruptedError: Error | null = null;
+  let combinedThinkingText = '';
+  let lastDeliveredThinkingText = '';
+  let preserveThinkingOnNextResume = false;
+  let combinedRawText = '';
+  let lastDeliveredRawText = '';
+  let preserveRawTextOnNextResume = false;
+
+  while (true) {
+    const messages =
+      nextAttemptMode === 'resume' && lastInterruptedError
+        ? buildWorkflowOrchestrationContinuationPrompt({
+            mode: options.mode,
+            requirement: options.requirement,
+            acceptedState: nextState,
+            rawText: lastInterruptedRawText,
+            error: lastInterruptedError,
+            attempt: resumeAttemptCount,
+          })
+        : buildWorkflowOrchestrationPrompt({
+            mode: options.mode,
+            requirement: options.requirement,
+            baseDraft: options.baseDraft,
+          });
+
+    const request: AiCompletionRequest = {
+      providerId: options.providerId,
+      model: options.model ?? undefined,
+      messages,
+      params: resolveGenerationParams(options.params),
+      timeoutMs: options.timeoutMs ?? DEFAULT_WORKFLOW_TIMEOUT_MS,
+    };
+
+    const attemptStartOperationCount = nextState.operations.length;
+    const attemptBaseRawText = combinedRawText;
+    const attemptBaseThinkingText = combinedThinkingText;
+    let processedLength = 0;
+    let currentAttemptRawText = '';
+
+    try {
+      const streamResult = await copilotCompleteStream(
+        request,
+        (accumulatedText) => {
+          currentAttemptRawText = accumulatedText;
+          const visibleRawText =
+            preserveRawTextOnNextResume && combinedRawText.trim().length > 0
+              ? `${combinedRawText}\n${accumulatedText}`
+              : accumulatedText;
+          lastDeliveredRawText = visibleRawText;
+          options.onRawText?.(visibleRawText);
+          const parsed = consumeOperationLines(accumulatedText, processedLength);
+          processedLength = parsed.nextProcessedLength;
+
+          for (const operation of parsed.operations) {
+            nextState = applyWorkflowOrchestrationOperation(nextState, operation);
+            options.onOperation?.(operation, nextState);
+          }
+        },
+        (thinkingText) => {
+          if (preserveThinkingOnNextResume && nextState.operations.length > 0) {
+            return;
+          }
+          const visibleThinkingText =
+            preserveThinkingOnNextResume && combinedThinkingText.trim().length > 0
+              ? `${combinedThinkingText}\n${thinkingText}`
+              : thinkingText;
+          lastDeliveredThinkingText = visibleThinkingText;
+          options.onThinking?.(visibleThinkingText);
+        },
+        {
+          maxRetries: 0,
+        },
+      );
+      const rawText = streamResult.text;
+      combinedRawText = lastDeliveredRawText || rawText;
+      combinedThinkingText = lastDeliveredThinkingText;
+      preserveThinkingOnNextResume = false;
+      preserveRawTextOnNextResume = false;
+      transportRetryCount = 0;
+      nextState = applyTrailingOperationIfNeeded(nextState, rawText, options.onOperation);
+
+      const hasCompletionOperation = nextState.operations.some((operation) => operation.type === 'done');
+      if (!hasCompletionOperation) {
+        throw buildIncompleteProtocolError(rawText, nextState, streamResult.finishReason);
+      }
+
+      return nextState;
+    } catch (error) {
+      const normalizedError =
+        error instanceof Error ? error : new Error(String(error));
+      nextState = applyTrailingOperationIfNeeded(nextState, currentAttemptRawText, options.onOperation);
+      combinedRawText = lastDeliveredRawText || combinedRawText;
+      combinedThinkingText = lastDeliveredThinkingText || combinedThinkingText;
+      const attemptProducedProtocolProgress =
+        nextState.operations.length > attemptStartOperationCount ||
+        hasWorkflowProtocolFragment(currentAttemptRawText);
+      const shouldResumeCurrentAttempt = canResumeWorkflowOrchestration(
+        nextState,
+        currentAttemptRawText,
+      );
+
+      if (
+        isRecoverableWorkflowTransportError(normalizedError) &&
+        !attemptProducedProtocolProgress &&
+        transportRetryCount < MAX_WORKFLOW_TRANSPORT_RETRY_ATTEMPTS
+      ) {
+        transportRetryCount += 1;
+        combinedRawText = attemptBaseRawText;
+        combinedThinkingText = attemptBaseThinkingText;
+        lastDeliveredRawText = attemptBaseRawText;
+        lastDeliveredThinkingText = attemptBaseThinkingText;
+        options.onRetry?.(transportRetryCount, normalizedError, nextState, 'retry');
+        options.onRawText?.(attemptBaseRawText);
+        options.onThinking?.(attemptBaseThinkingText);
+        await waitForWorkflowRetry(transportRetryCount);
+        continue;
+      }
+
+      if (!isRecoverableWorkflowOrchestrationError(normalizedError)) {
+        throw normalizedError;
+      }
+
+      transportRetryCount = 0;
+      const shouldResume =
+        shouldResumeCurrentAttempt &&
+        resumeAttemptCount < MAX_WORKFLOW_RESUME_ATTEMPTS &&
+        (attemptProducedProtocolProgress || nextAttemptMode !== 'resume');
+      if (shouldResume) {
+        resumeAttemptCount += 1;
+        lastInterruptedRawText = currentAttemptRawText;
+        lastInterruptedError = normalizedError;
+        nextAttemptMode = 'resume';
+        preserveThinkingOnNextResume = nextState.operations.length > 0;
+        preserveRawTextOnNextResume = true;
+        if (!preserveRawTextOnNextResume) {
+          combinedRawText = '';
+        }
+        if (!preserveThinkingOnNextResume) {
+          combinedThinkingText = '';
+        }
+        options.onRetry?.(resumeAttemptCount, normalizedError, nextState, 'resume');
+        if (!preserveRawTextOnNextResume) {
+          lastDeliveredRawText = '';
+          options.onRawText?.('');
+        }
+        if (!preserveThinkingOnNextResume) {
+          lastDeliveredThinkingText = '';
+          options.onThinking?.('');
+        }
+        continue;
+      }
+
+      const shouldRestart =
+        nextState.operations.length === 0 && restartAttemptCount < MAX_WORKFLOW_RESTART_ATTEMPTS;
+      if (shouldRestart) {
+        restartAttemptCount += 1;
+        nextState = createWorkflowOrchestrationState(options.baseDraft);
+        lastInterruptedRawText = '';
+        lastInterruptedError = normalizedError;
+        nextAttemptMode = 'restart';
+        combinedThinkingText = '';
+        combinedRawText = '';
+        lastDeliveredThinkingText = '';
+        lastDeliveredRawText = '';
+        preserveThinkingOnNextResume = false;
+        preserveRawTextOnNextResume = false;
+        options.onRetry?.(restartAttemptCount, normalizedError, nextState, 'restart');
+        options.onRawText?.('');
+        options.onThinking?.('');
+        continue;
+      }
+
+      throw normalizedError;
+    }
+  }
 }

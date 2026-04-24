@@ -620,7 +620,7 @@ function App() {
             );
           }
         },
-        onRetry: (attempt, error, retryState) => {
+        onRetry: (attempt, error, retryState, strategy) => {
           if (aiComposerSessionIdRef.current !== sessionId) {
             return;
           }
@@ -628,20 +628,32 @@ function App() {
           setAiComposerError(null);
           startTransition(() => {
             setAiComposerState(retryState);
-            if (mode === 'edit' || aiComposerTargetProjectIdRef.current) {
+            if (strategy === 'restart' && (mode === 'edit' || aiComposerTargetProjectIdRef.current)) {
               applyAiComposerDraft(mode, retryState);
             }
           });
           engine.appendRuntimeLog(
             'ai',
             'warn',
-            `AI 输出中断，正在自动重试（第 ${attempt} 次）`,
+            strategy === 'retry'
+              ? `AI 输出波动，正在原位重试（第 ${attempt} 次）`
+              : strategy === 'resume'
+                ? `AI 输出中断，正在断点续传（第 ${attempt} 次）`
+                : `AI 输出中断，正在重新开始（第 ${attempt} 次）`,
             error.message,
           );
           engine.setStatusMessage(
-            mode === 'create'
-              ? 'AI 输出中断，正在自动重试编排。'
-              : 'AI 输出中断，正在自动重试编辑。',
+            strategy === 'retry'
+              ? mode === 'create'
+                ? 'AI 输出波动，正在重试当前编排请求。'
+                : 'AI 输出波动，正在重试当前编辑请求。'
+              : strategy === 'resume'
+              ? mode === 'create'
+                ? 'AI 输出中断，正在断点续传编排。'
+                : 'AI 输出中断，正在断点续传编辑。'
+              : mode === 'create'
+                ? 'AI 输出中断，正在重新开始编排。'
+                : 'AI 输出中断，正在重新开始编辑。',
           );
         },
       });
