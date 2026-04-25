@@ -218,7 +218,7 @@ cd src-tauri && ../web/node_modules/.bin/tauri dev --no-watch
 
 ```bash
 cargo test --workspace              # 全部 Rust 测试
-cargo clippy --all-targets -- -D warnings
+cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all -- --check
 npm --prefix web run test           # 前端单元测试
 npm --prefix web run build          # 前端构建
@@ -236,7 +236,7 @@ npm --prefix web run build          # 前端构建
 | 前端构建 | `npm --prefix web run build` |
 | 导出 ts-rs 类型 | `cargo test --workspace --lib export_bindings` |
 | 代码格式 | `cargo fmt --all` |
-| Clippy | `cargo clippy --all-targets -- -D warnings` |
+| Clippy | `cargo clippy --workspace --all-targets -- -D warnings` |
 | 依赖审计 | `cargo deny check` |
 | 运行示例 | `cargo run --example phase1_demo` |
 | 生成 rustdoc | `cargo doc --no-deps --open` |
@@ -359,7 +359,7 @@ npm --prefix web run build          # 前端构建
 快速清单：
 - 每个 commit 必须 `git commit -s` 带 Signed-off-by
 - 代码注释、错误消息、日志消息、commit message 使用中文
-- 提交前跑 `cargo test --workspace` + `cargo clippy --all-targets -- -D warnings` + `cargo fmt --all --check`
+- 提交前跑 `cargo test --workspace` + `cargo clippy --workspace --all-targets -- -D warnings` + `cargo fmt --all --check`
 - 改动 `#[ts(export)]` 类型后跑 `cargo test --workspace --lib export_bindings` 并提交生成的 TS
 - 重大架构变更先写 ADR（`docs/adr/NNNN-title.md`），可追记式（ADR-0008 即为例）
 

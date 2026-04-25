@@ -38,7 +38,7 @@ npm --prefix web run build         # Production build
 
 # Lint & format (run both before committing)
 cargo fmt --all -- --check
-cargo clippy --all-targets -- -D warnings
+cargo clippy --workspace --all-targets -- -D warnings
 
 # Single test by name
 cargo test <test_name>
@@ -168,7 +168,7 @@ These principles guide day-to-day decisions. When in doubt, reach for the princi
 
 - **Check invariants** from the "Critical Coding Constraints" list — they're not just style preferences, they are reliability claims.
 - **Trait signatures and public APIs** are contract changes. Flag them in the PR description. Private field changes behind getters are OK as long as the getter surface is preserved.
-- **Run `cargo test --workspace` + `cargo clippy --all-targets -- -D warnings` + `cargo fmt --all -- --check`** locally before requesting review. CI enforces all three.
+- **Run `cargo test --workspace` + `cargo clippy --workspace --all-targets -- -D warnings` + `cargo fmt --all -- --check`** locally before requesting review. CI enforces all three.
 - **Regenerate `web/src/generated/` types** if you changed any `#[ts(export)]` struct. Diff-check the generated TS before committing.
 - **UI/frontend changes:** start the dev server and exercise the feature in a browser. Type-checking passes ≠ feature works.
 
