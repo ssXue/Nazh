@@ -134,7 +134,7 @@ fn resolve_bark_endpoint(server_url: &str, key_or_url: &str) -> Result<String, S
         endpoint.set_fragment(None);
         endpoint
             .path_segments_mut()
-            .map_err(|_| "无法解析 Bark 推送 URL".to_owned())?
+            .map_err(|()| "无法解析 Bark 推送 URL".to_owned())?
             .clear()
             .push(&device_key);
         return Ok(endpoint.to_string().trim_end_matches('/').to_owned());
@@ -213,6 +213,192 @@ impl Default for BarkPushNodeConfig {
             request_timeout_ms: default_bark_request_timeout_ms(),
         }
     }
+}
+
+fn build_bark_request_body(
+    config: &BarkPushNodeConfig,
+    vars: &TemplateVars<'_>,
+    content_mode: &str,
+    level: &str,
+    archive_mode: &str,
+    node_id: &str,
+    trace_id: Uuid,
+) -> Result<Value, EngineError> {
+    let title = render_optional_template(&config.title_template, vars);
+    let subtitle = render_optional_template(&config.subtitle_template, vars);
+    let content = render_optional_template(
+        if config.body_template.trim().is_empty() {
+            default_bark_body_template()
+        } else {
+            config.body_template.as_str()
+        },
+        vars,
+    );
+    let badge = parse_badge_value(node_id, trace_id, &config.badge)?;
+    let sound = render_optional_template(&config.sound, vars);
+    let icon = render_optional_template(&config.icon, vars);
+    let group = render_optional_template(&config.group, vars);
+    let jump_url = render_optional_template(&config.url, vars);
+    let copy = render_optional_template(&config.copy, vars);
+    let image = render_optional_template(&config.image, vars);
+
+    let mut request_body = Map::new();
+    if let Some(value) = title {
+        request_body.insert("title".to_owned(), Value::String(value));
+    }
+    if let Some(value) = subtitle {
+        request_body.insert("subtitle".to_owned(), Value::String(value));
+    }
+    if let Some(value) = content {
+        request_body.insert(
+            if content_mode == "markdown" {
+                "markdown".to_owned()
+            } else {
+                "body".to_owned()
+            },
+            Value::String(value),
+        );
+    }
+    if let Some(value) = badge {
+        request_body.insert("badge".to_owned(), json!(value));
+    }
+    if let Some(value) = sound {
+        request_body.insert("sound".to_owned(), Value::String(value));
+    }
+    if let Some(value) = icon {
+        request_body.insert("icon".to_owned(), Value::String(value));
+    }
+    if let Some(value) = group {
+        request_body.insert("group".to_owned(), Value::String(value));
+    }
+    if let Some(value) = jump_url {
+        request_body.insert("url".to_owned(), Value::String(value));
+    }
+    if let Some(value) = copy {
+        request_body.insert("copy".to_owned(), Value::String(value));
+    }
+    if let Some(value) = image {
+        request_body.insert("image".to_owned(), Value::String(value));
+    }
+
+    request_body.insert("level".to_owned(), Value::String(level.to_owned()));
+    if config.auto_copy {
+        request_body.insert("autoCopy".to_owned(), Value::String("1".to_owned()));
+    }
+    if config.call {
+        request_body.insert("call".to_owned(), Value::String("1".to_owned()));
+    }
+    match archive_mode {
+        "archive" => {
+            request_body.insert("isArchive".to_owned(), json!(1));
+        }
+        "skip" => {
+            request_body.insert("isArchive".to_owned(), json!(0));
+        }
+        _ => {}
+    }
+
+    Ok(Value::Object(request_body))
+}
+
+fn validate_bark_response(status_code: u16, response_value: &Value) -> Result<(), String> {
+    if status_code >= 400 {
+        return Err(format!(
+            "Bark 推送返回错误状态码 {status_code}: {}",
+            template::truncate(&template::value_to_display_string(response_value), 240)
+        ));
+    }
+
+    if let Some(code) = response_value.get("code").and_then(Value::as_i64)
+        && code != 200
+    {
+        let message = response_value
+            .get("message")
+            .and_then(Value::as_str)
+            .map_or_else(|| "Bark 服务返回业务错误".to_owned(), str::to_owned);
+        return Err(format!("Bark 推送失败: {message} (code={code})"));
+    }
+
+    Ok(())
+}
+
+struct BarkPushResult {
+    status_code: u16,
+    response_value: Value,
+    request_body_preview: String,
+}
+
+async fn send_bark_push(
+    client: &reqwest::Client,
+    endpoint: &str,
+    request_body_value: &Value,
+    request_timeout_ms: u64,
+) -> Result<BarkPushResult, String> {
+    let request_body_preview =
+        template::truncate(&template::value_to_display_string(request_body_value), 320);
+
+    let response = client
+        .post(endpoint)
+        .timeout(std::time::Duration::from_millis(request_timeout_ms))
+        .header("Content-Type", "application/json; charset=utf-8")
+        .json(request_body_value)
+        .send()
+        .await
+        .map_err(|error| format!("Bark 推送失败: {error}"))?;
+
+    let status_code = response.status().as_u16();
+    let response_body = response
+        .text()
+        .await
+        .map_err(|error| format!("读取 Bark 响应体失败: {error}"))?;
+
+    Ok(BarkPushResult {
+        status_code,
+        response_value: parse_json_or_string(&response_body),
+        request_body_preview,
+    })
+}
+
+struct BarkMetadataParams<'a> {
+    node_id: &'a str,
+    endpoint: &'a str,
+    content_mode: &'a str,
+    level: &'a str,
+    status_code: u16,
+    request_timeout_ms: u64,
+    requested_at: &'a str,
+    request_body_preview: &'a str,
+}
+
+fn build_bark_metadata(params: &BarkMetadataParams<'_>) -> serde_json::Map<String, Value> {
+    let mut metadata = serde_json::Map::new();
+    metadata.insert(
+        "http".to_owned(),
+        json!({
+            "node_id": params.node_id,
+            "url": params.endpoint,
+            "method": "POST",
+            "webhook_kind": "bark",
+            "body_mode": params.content_mode,
+            "content_type": "application/json",
+            "request_timeout_ms": params.request_timeout_ms,
+            "status": params.status_code,
+            "requested_at": params.requested_at,
+            "request_body_preview": params.request_body_preview,
+        }),
+    );
+    metadata.insert(
+        "bark".to_owned(),
+        json!({
+            "node_id": params.node_id,
+            "endpoint": params.endpoint,
+            "content_mode": params.content_mode,
+            "level": params.level,
+            "request_timeout_ms": params.request_timeout_ms,
+            "requested_at": params.requested_at,
+        }),
+    );
+    metadata
 }
 
 pub struct BarkPushNode {
@@ -308,96 +494,26 @@ impl NodeTrait for BarkPushNode {
             extras: &[("requested_at", requested_at.as_str())],
         };
 
-        let title = render_optional_template(&resolved_config.title_template, &vars);
-        let subtitle = render_optional_template(&resolved_config.subtitle_template, &vars);
-        let content = render_optional_template(
-            if resolved_config.body_template.trim().is_empty() {
-                default_bark_body_template()
-            } else {
-                resolved_config.body_template.as_str()
-            },
+        let request_body_value = build_bark_request_body(
+            &resolved_config,
             &vars,
-        );
-        let badge = parse_badge_value(&self.id, trace_id, &resolved_config.badge)?;
-        let sound = render_optional_template(&resolved_config.sound, &vars);
-        let icon = render_optional_template(&resolved_config.icon, &vars);
-        let group = render_optional_template(&resolved_config.group, &vars);
-        let jump_url = render_optional_template(&resolved_config.url, &vars);
-        let copy = render_optional_template(&resolved_config.copy, &vars);
-        let image = render_optional_template(&resolved_config.image, &vars);
+            content_mode,
+            level,
+            archive_mode,
+            &self.id,
+            trace_id,
+        )?;
 
-        let mut request_body = Map::new();
-        if let Some(value) = title.clone() {
-            request_body.insert("title".to_owned(), Value::String(value));
-        }
-        if let Some(value) = subtitle.clone() {
-            request_body.insert("subtitle".to_owned(), Value::String(value));
-        }
-        if let Some(value) = content.clone() {
-            request_body.insert(
-                if content_mode == "markdown" {
-                    "markdown".to_owned()
-                } else {
-                    "body".to_owned()
-                },
-                Value::String(value),
-            );
-        }
-        if let Some(value) = badge {
-            request_body.insert("badge".to_owned(), json!(value));
-        }
-        if let Some(value) = sound.clone() {
-            request_body.insert("sound".to_owned(), Value::String(value));
-        }
-        if let Some(value) = icon.clone() {
-            request_body.insert("icon".to_owned(), Value::String(value));
-        }
-        if let Some(value) = group.clone() {
-            request_body.insert("group".to_owned(), Value::String(value));
-        }
-        if let Some(value) = jump_url.clone() {
-            request_body.insert("url".to_owned(), Value::String(value));
-        }
-        if let Some(value) = copy.clone() {
-            request_body.insert("copy".to_owned(), Value::String(value));
-        }
-        if let Some(value) = image.clone() {
-            request_body.insert("image".to_owned(), Value::String(value));
-        }
-
-        request_body.insert("level".to_owned(), Value::String(level.to_owned()));
-        if resolved_config.auto_copy {
-            request_body.insert("autoCopy".to_owned(), Value::String("1".to_owned()));
-        }
-        if resolved_config.call {
-            request_body.insert("call".to_owned(), Value::String("1".to_owned()));
-        }
-        match archive_mode {
-            "archive" => {
-                request_body.insert("isArchive".to_owned(), json!(1));
-            }
-            "skip" => {
-                request_body.insert("isArchive".to_owned(), json!(0));
-            }
-            _ => {}
-        }
-
-        let request_body_value = Value::Object(request_body);
-        let request_body_preview =
-            template::truncate(&template::value_to_display_string(&request_body_value), 320);
-
-        let response = match self
-            .client
-            .post(&endpoint)
-            .timeout(std::time::Duration::from_millis(request_timeout_ms))
-            .header("Content-Type", "application/json; charset=utf-8")
-            .json(&request_body_value)
-            .send()
-            .await
+        let result = match send_bark_push(
+            &self.client,
+            &endpoint,
+            &request_body_value,
+            request_timeout_ms,
+        )
+        .await
         {
-            Ok(response) => response,
-            Err(error) => {
-                let message = format!("Bark 推送失败: {error}");
+            Ok(result) => result,
+            Err(message) => {
                 if let Some(connection_guard) = &mut guard {
                     connection_guard.mark_failure(&message);
                 }
@@ -409,28 +525,7 @@ impl NodeTrait for BarkPushNode {
             }
         };
 
-        let status_code = response.status().as_u16();
-        let response_body = match response.text().await {
-            Ok(body) => body,
-            Err(error) => {
-                let message = format!("读取 Bark 响应体失败: {error}");
-                if let Some(connection_guard) = &mut guard {
-                    connection_guard.mark_failure(&message);
-                }
-                return Err(EngineError::stage_execution(
-                    self.id.clone(),
-                    trace_id,
-                    message,
-                ));
-            }
-        };
-        let response_value = parse_json_or_string(&response_body);
-
-        if status_code >= 400 {
-            let message = format!(
-                "Bark 推送返回错误状态码 {status_code}: {}",
-                template::truncate(&template::value_to_display_string(&response_value), 240)
-            );
+        if let Err(message) = validate_bark_response(result.status_code, &result.response_value) {
             if let Some(connection_guard) = &mut guard {
                 connection_guard.mark_failure(&message);
             }
@@ -441,56 +536,25 @@ impl NodeTrait for BarkPushNode {
             ));
         }
 
-        if let Some(code) = response_value.get("code").and_then(Value::as_i64) {
-            if code != 200 {
-                let message = response_value
-                    .get("message")
-                    .and_then(Value::as_str)
-                    .map_or_else(|| "Bark 服务返回业务错误".to_owned(), str::to_owned);
-                let full_message = format!("Bark 推送失败: {message} (code={code})");
-                if let Some(connection_guard) = &mut guard {
-                    connection_guard.mark_failure(&full_message);
-                }
-                return Err(EngineError::stage_execution(
-                    self.id.clone(),
-                    trace_id,
-                    full_message,
-                ));
-            }
-        }
-
         let mut payload_map = into_payload_map(payload);
-        payload_map.insert("bark_response".to_owned(), response_value.clone());
+        payload_map.insert("bark_response".to_owned(), result.response_value);
 
-        let bark_metadata = json!({
-            "node_id": self.id,
-            "endpoint": endpoint,
-            "content_mode": content_mode,
-            "level": level,
-            "request_timeout_ms": request_timeout_ms,
-            "requested_at": requested_at,
-        });
         let mut metadata = serde_json::Map::new();
         if let Some(connection_guard) = guard.as_ref() {
             let (key, value) = connection_metadata(&self.id, connection_guard.lease())?;
             metadata.insert(key, value);
         }
-        metadata.insert(
-            "http".to_owned(),
-            json!({
-                "node_id": self.id,
-                "url": endpoint,
-                "method": "POST",
-                "webhook_kind": "bark",
-                "body_mode": content_mode,
-                "content_type": "application/json",
-                "request_timeout_ms": request_timeout_ms,
-                "status": status_code,
-                "requested_at": requested_at,
-                "request_body_preview": request_body_preview,
-            }),
-        );
-        metadata.insert("bark".to_owned(), bark_metadata);
+        let bark_meta = build_bark_metadata(&BarkMetadataParams {
+            node_id: &self.id,
+            endpoint: &endpoint,
+            content_mode,
+            level,
+            status_code: result.status_code,
+            request_timeout_ms,
+            requested_at: &requested_at,
+            request_body_preview: &result.request_body_preview,
+        });
+        metadata.extend(bark_meta);
 
         if let Some(connection_guard) = &mut guard {
             connection_guard.mark_success();

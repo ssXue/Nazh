@@ -1,12 +1,12 @@
-use std::time::{SystemTime, UNIX_EPOCH};
-
 use rhai::{
-    Dynamic, EvalAltResult, ImmutableString, def_package,
-    plugin::*,
-    serde::{from_dynamic, to_dynamic},
+    EvalAltResult, def_package,
+    plugin::{
+        FuncRegistration, Module, NativeCallContext, PluginFunc, RhaiResult, TypeId,
+        combine_with_exported_module, export_module, mem,
+    },
 };
-use serde_json::Value;
 
+#[allow(clippy::unnecessary_box_returns)]
 fn to_package_error(message: impl Into<String>) -> Box<EvalAltResult> {
     Box::new(EvalAltResult::ErrorRuntime(
         message.into().into(),
@@ -16,7 +16,13 @@ fn to_package_error(message: impl Into<String>) -> Box<EvalAltResult> {
 
 #[export_module]
 mod nazh_script_helpers {
-    use super::*;
+    use super::{EvalAltResult, to_package_error};
+    use rhai::{
+        Dynamic, ImmutableString,
+        serde::{from_dynamic, to_dynamic},
+    };
+    use serde_json::Value;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     /// 生成闭区间随机整数。
     ///

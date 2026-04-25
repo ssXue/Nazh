@@ -24,7 +24,7 @@ use crate::types::{
 pub struct StreamChunk {
     /// 本次 chunk 的文本片段。
     pub delta: String,
-    /// 本次 chunk 的思考过程片段（DeepSeek 等模型的 reasoning_content）。
+    /// 本次 chunk 的思考过程片段（DeepSeek 等模型的 `reasoning_content`）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thinking: Option<String>,
     /// 提供商返回的结束原因，例如 stop / length。
@@ -47,7 +47,7 @@ impl OpenAiCompatibleService {
     /// 创建新的客户端实例。
     pub fn new(config: Arc<RwLock<AiConfigFile>>) -> Self {
         let http = reqwest::Client::builder()
-            .timeout(Duration::from_secs(60))
+            .timeout(Duration::from_mins(1))
             .build()
             .unwrap_or_default();
         Self { config, http }
@@ -65,15 +65,15 @@ impl OpenAiCompatibleService {
     }
 
     async fn resolve_draft(&self, draft: &AiProviderDraft) -> Result<ResolvedProvider, AiError> {
-        if let Some(ref api_key) = draft.api_key {
-            if !api_key.trim().is_empty() {
-                return Ok(ResolvedProvider {
-                    base_url: draft.base_url.clone(),
-                    api_key: api_key.clone(),
-                    default_model: draft.default_model.clone(),
-                    extra_headers: draft.extra_headers.clone(),
-                });
-            }
+        if let Some(ref api_key) = draft.api_key
+            && !api_key.trim().is_empty()
+        {
+            return Ok(ResolvedProvider {
+                base_url: draft.base_url.clone(),
+                api_key: api_key.clone(),
+                default_model: draft.default_model.clone(),
+                extra_headers: draft.extra_headers.clone(),
+            });
         }
 
         if let Some(ref id) = draft.id {
@@ -605,8 +605,8 @@ impl AiService for OpenAiCompatibleService {
         let (tx, rx) = tokio::sync::mpsc::channel(32);
 
         tokio::spawn(async move {
-            let mut stream = response.bytes_stream();
             use futures_util::StreamExt;
+            let mut stream = response.bytes_stream();
             let mut buffer = String::new();
             let newline = char::from(10);
             let mut saw_explicit_completion = false;

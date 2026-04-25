@@ -38,7 +38,7 @@ fn downcast_connection_manager(
         .ok_or_else(|| EngineError::invalid_graph("部署资源中缺少 ConnectionManager"))
 }
 
-/// 若节点 config 未指定 connection_id，则从 `WorkflowNodeDefinition` 顶层字段继承。
+/// 若节点 config 未指定 `connection_id`，则从 `WorkflowNodeDefinition` 顶层字段继承。
 fn inherit_connection_id(config_conn: &mut Option<String>, def: &WorkflowNodeDefinition) {
     if config_conn.is_none() {
         *config_conn = def.connection_id().map(str::to_owned);

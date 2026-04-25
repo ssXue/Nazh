@@ -160,9 +160,12 @@ async fn code_node_can_generate_random_integer_in_range() {
         match result {
             Ok(execution) => match execution.first() {
                 Some(first_output) => {
-                    let value = match first_output.payload.get("value").and_then(|v| v.as_i64()) {
-                        Some(value) => value,
-                        None => panic!("random result should be an integer"),
+                    let Some(value) = first_output
+                        .payload
+                        .get("value")
+                        .and_then(serde_json::Value::as_i64)
+                    else {
+                        panic!("random result should be an integer");
                     };
                     assert!(
                         (3..=7).contains(&value),
@@ -216,13 +219,12 @@ async fn code_node_can_use_builtin_helper_package() {
                         > 0
                 );
 
-                let serialized = match first_output
+                let Some(serialized) = first_output
                     .payload
                     .get("serialized")
-                    .and_then(|value| value.as_str())
-                {
-                    Some(serialized) => serialized,
-                    None => panic!("serialized payload should be a JSON string"),
+                    .and_then(serde_json::Value::as_str)
+                else {
+                    panic!("serialized payload should be a JSON string");
                 };
                 let roundtrip: serde_json::Value = match serde_json::from_str(serialized) {
                     Ok(value) => value,

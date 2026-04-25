@@ -317,7 +317,7 @@ pub struct AiThinkingConfig {
     pub kind: AiThinkingMode,
 }
 
-/// DeepSeek 推理强度。
+/// `DeepSeek` 推理强度。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
 #[cfg_attr(feature = "ts-export", ts(export))]

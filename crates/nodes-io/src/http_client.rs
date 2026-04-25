@@ -268,6 +268,86 @@ impl HttpClientNode {
     }
 }
 
+async fn send_http_request(request: reqwest::RequestBuilder) -> Result<(u16, Value), String> {
+    let response = request
+        .send()
+        .await
+        .map_err(|error| format!("HTTP 请求失败: {error}"))?;
+
+    let status_code = response.status().as_u16();
+    let response_body = response
+        .text()
+        .await
+        .map_err(|error| format!("读取 HTTP 响应体失败: {error}"))?;
+
+    Ok((status_code, parse_json_or_string(&response_body)))
+}
+
+struct HttpMetadataParams<'a> {
+    node_id: &'a str,
+    url: &'a str,
+    method: &'a str,
+    webhook_kind: &'a str,
+    body_mode: &'a str,
+    content_type: &'a str,
+    request_timeout_ms: u64,
+    status_code: u16,
+    requested_at: &'a str,
+    body_preview: &'a str,
+}
+
+fn build_http_response_metadata(params: &HttpMetadataParams<'_>) -> serde_json::Map<String, Value> {
+    let mut metadata = serde_json::Map::new();
+    metadata.insert(
+        "http".to_owned(),
+        json!({
+            "node_id": params.node_id,
+            "url": params.url,
+            "method": params.method,
+            "webhook_kind": params.webhook_kind,
+            "body_mode": params.body_mode,
+            "content_type": params.content_type,
+            "request_timeout_ms": params.request_timeout_ms,
+            "status": params.status_code,
+            "requested_at": params.requested_at,
+            "request_body_preview": params.body_preview,
+        }),
+    );
+    metadata
+}
+
+fn build_http_request(
+    node: &HttpClientNode,
+    method: &reqwest::Method,
+    url: &str,
+    request_timeout_ms: u64,
+    payload_body: String,
+    content_type: &str,
+    resolved_config: &HttpClientNodeConfig,
+) -> reqwest::RequestBuilder {
+    let mut request = node
+        .client
+        .request(method.clone(), url)
+        .timeout(std::time::Duration::from_millis(request_timeout_ms));
+
+    for (key, value) in &resolved_config.headers {
+        request = request.header(key.as_str(), value_to_header_string(value));
+    }
+
+    if *method != reqwest::Method::GET && *method != reqwest::Method::HEAD {
+        let has_content_type_header = resolved_config
+            .headers
+            .keys()
+            .any(|key| key.eq_ignore_ascii_case("content-type"));
+        if !has_content_type_header && !content_type.is_empty() {
+            request = request.header("Content-Type", content_type);
+        }
+        request = request.body(payload_body);
+    }
+
+    request
+}
+
 #[async_trait]
 impl NodeTrait for HttpClientNode {
     nazh_core::impl_node_meta!("httpClient");
@@ -315,31 +395,20 @@ impl NodeTrait for HttpClientNode {
             EngineError::node_config(self.id.clone(), format!("无效的 HTTP 方法: {error}"))
         })?;
 
-        let mut request = self
-            .client
-            .request(reqwest_method, &url)
-            .timeout(std::time::Duration::from_millis(request_timeout_ms));
-
-        for (key, value) in &resolved_config.headers {
-            request = request.header(key.as_str(), value_to_header_string(value));
-        }
-
         let body_preview = template::truncate(&payload_body, 320);
-        if method != "GET" && method != "HEAD" {
-            let has_content_type_header = resolved_config
-                .headers
-                .keys()
-                .any(|key| key.eq_ignore_ascii_case("content-type"));
-            if !has_content_type_header && !content_type.is_empty() {
-                request = request.header("Content-Type", content_type.as_str());
-            }
-            request = request.body(payload_body);
-        }
+        let request = build_http_request(
+            self,
+            &reqwest_method,
+            &url,
+            request_timeout_ms,
+            payload_body,
+            &content_type,
+            &resolved_config,
+        );
 
-        let response = match request.send().await {
-            Ok(response) => response,
-            Err(error) => {
-                let message = format!("HTTP 请求失败: {error}");
+        let (status_code, response_value) = match send_http_request(request).await {
+            Ok(result) => result,
+            Err(message) => {
                 if let Some(connection_guard) = &mut guard {
                     connection_guard.mark_failure(&message);
                 }
@@ -350,23 +419,6 @@ impl NodeTrait for HttpClientNode {
                 ));
             }
         };
-
-        let status_code = response.status().as_u16();
-        let response_body = match response.text().await {
-            Ok(body) => body,
-            Err(error) => {
-                let message = format!("读取 HTTP 响应体失败: {error}");
-                if let Some(connection_guard) = &mut guard {
-                    connection_guard.mark_failure(&message);
-                }
-                return Err(EngineError::stage_execution(
-                    self.id.clone(),
-                    trace_id,
-                    message,
-                ));
-            }
-        };
-        let response_value = parse_json_or_string(&response_body);
 
         if status_code >= 400 {
             let message = format!(
@@ -391,21 +443,19 @@ impl NodeTrait for HttpClientNode {
             let (key, value) = connection_metadata(&self.id, connection_guard.lease())?;
             metadata.insert(key, value);
         }
-        metadata.insert(
-            "http".to_owned(),
-            json!({
-                "node_id": self.id,
-                "url": url,
-                "method": method,
-                "webhook_kind": webhook_kind,
-                "body_mode": body_mode,
-                "content_type": content_type,
-                "request_timeout_ms": request_timeout_ms,
-                "status": status_code,
-                "requested_at": requested_at,
-                "request_body_preview": body_preview,
-            }),
-        );
+        let http_meta = build_http_response_metadata(&HttpMetadataParams {
+            node_id: &self.id,
+            url: &url,
+            method: &method,
+            webhook_kind: &webhook_kind,
+            body_mode: &body_mode,
+            content_type: &content_type,
+            request_timeout_ms,
+            status_code,
+            requested_at: &requested_at,
+            body_preview: &body_preview,
+        });
+        metadata.extend(http_meta);
 
         if let Some(connection_guard) = &mut guard {
             connection_guard.mark_success();
