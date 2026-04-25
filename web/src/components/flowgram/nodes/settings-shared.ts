@@ -53,7 +53,12 @@ export interface SelectedNodeDraft {
 export interface NodeValidation {
   tone: 'info' | 'warning' | 'danger';
   message: string;
+  field?: string;
 }
+
+export type FieldValidatorResult = string | { message: string; tone: 'info' | 'warning' | 'danger' } | null;
+
+export type FieldValidator = (value: string) => FieldValidatorResult;
 
 export interface NodeSettingsProps {
   draft: SelectedNodeDraft;
@@ -257,4 +262,62 @@ export function getPrimaryEditorLabel(nodeType: string): string {
     default:
       return '脚本';
   }
+}
+
+export function requiresConnectionBinding(nodeType: string): boolean {
+  return nodeType === 'serialTrigger' || nodeType === 'httpClient' || nodeType === 'barkPush';
+}
+
+export function validateConnectionBinding(params: {
+  draft: SelectedNodeDraft;
+  selectedConnection: ConnectionDefinition | null;
+  compatibleConnections: ConnectionDefinition[];
+  connections: ConnectionDefinition[];
+}): NodeValidation[] {
+  const { draft, selectedConnection, compatibleConnections, connections } = params;
+  const result: NodeValidation[] = [];
+
+  if (!supportsConnectionBinding(draft.nodeType)) {
+    return result;
+  }
+
+  if (draft.connectionId && !selectedConnection) {
+    result.push({ tone: 'danger', message: `连接 ${draft.connectionId} 未注册。` });
+    return result;
+  }
+
+  if (selectedConnection) {
+    const matched = connectionMatchesNodeType(draft.nodeType, selectedConnection);
+    result.push({
+      tone: matched ? 'info' : 'danger',
+      message: matched
+        ? `已绑定 ${selectedConnection.id} · ${selectedConnection.type}`
+        : `${draft.nodeType} 节点需要绑定 ${compatibleConnectionHint(draft.nodeType)} 类型连接，当前为 ${selectedConnection.type}。`,
+    });
+    return result;
+  }
+
+  if (requiresConnectionBinding(draft.nodeType)) {
+    const hint = compatibleConnectionHint(draft.nodeType);
+    const noConn = compatibleConnections.length === 0;
+    const labels: Record<string, string> = {
+      serialTrigger: '串口触发',
+      httpClient: 'HTTP Client',
+      barkPush: 'Bark Push',
+    };
+    const label = labels[draft.nodeType] || draft.nodeType;
+    result.push({
+      tone: 'danger',
+      message: noConn
+        ? `当前还没有 ${hint} 类型连接，请先在 Connection Studio 中新增并绑定。`
+        : `${label} 节点必须绑定 Connection Studio 中的 ${hint} 连接。`,
+    });
+    return result;
+  }
+
+  if (connections.length > 0) {
+    result.push({ tone: 'warning', message: '当前节点未绑定连接资源。' });
+  }
+
+  return result;
 }

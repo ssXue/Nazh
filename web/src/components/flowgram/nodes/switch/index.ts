@@ -1,4 +1,4 @@
-import { type NodeDefinition, type NodeSeed, normalizeNodeConfig } from '../shared';
+import { type NodeDefinition, type NodeSeed, type NodeValidationContext, type NodeValidation, normalizeNodeConfig } from '../shared';
 
 export const definition: NodeDefinition = {
   kind: 'switch',
@@ -36,5 +36,13 @@ export const definition: NodeDefinition = {
       defaultPorts: [{ type: 'input' as const }],
       useDynamicPort: true,
     };
+  },
+
+  validate(ctx: NodeValidationContext): NodeValidation[] {
+    const result: NodeValidation[] = [];
+    if (ctx.draft.branches.length === 0) {
+      result.push({ tone: 'warning', message: 'Switch 节点至少建议保留一个自定义分支。' });
+    }
+    return result;
   },
 };

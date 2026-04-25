@@ -1,15 +1,23 @@
 import {
   type NodeDefinition,
   type NodeSeed,
+  type NodeValidationContext,
+  type NodeValidation,
   normalizeNodeConfig,
   DEFAULT_BARK_TITLE_TEMPLATE,
   DEFAULT_BARK_BODY_TEMPLATE,
 } from '../shared';
+import { parseNonNegativeInteger } from '../settings-shared';
 
 export const definition: NodeDefinition = {
   kind: 'barkPush',
   catalog: { category: '外部通信', description: '向 Bark 服务发送 iOS 推送通知' },
   fallbackLabel: 'Bark Push',
+  requiresConnection: true,
+
+  fieldValidators: {
+    barkBadge: v => v.trim() && parseNonNegativeInteger(v) === null ? 'Bark badge 必须是大于等于 0 的整数。' : null,
+  },
 
   buildDefaultSeed(): NodeSeed {
     return {
@@ -47,5 +55,13 @@ export const definition: NodeDefinition = {
 
   buildRegistryMeta() {
     return { defaultExpanded: true, size: this.getNodeSize() };
+  },
+
+  validate(ctx: NodeValidationContext): NodeValidation[] {
+    const result: NodeValidation[] = [];
+    if (!ctx.draft.barkTitleTemplate.trim() && !ctx.draft.barkBodyTemplate.trim()) {
+      result.push({ tone: 'warning', message: '建议至少填写标题模板或消息模板。' });
+    }
+    return result;
   },
 };

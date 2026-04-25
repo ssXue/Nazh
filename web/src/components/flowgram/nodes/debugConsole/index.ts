@@ -1,4 +1,4 @@
-import { type NodeDefinition, type NodeSeed, normalizeNodeConfig } from '../shared';
+import { type NodeDefinition, type NodeSeed, type NodeValidationContext, type NodeValidation, normalizeNodeConfig } from '../shared';
 
 export const definition: NodeDefinition = {
   kind: 'debugConsole',
@@ -25,5 +25,9 @@ export const definition: NodeDefinition = {
 
   buildRegistryMeta() {
     return { defaultExpanded: true, size: this.getNodeSize() };
+  },
+
+  validate(ctx: NodeValidationContext): NodeValidation[] {
+    return [{ tone: 'info', message: ctx.draft.debugPretty ? '当前以格式化 JSON 输出。' : '当前以紧凑 JSON 输出。' }];
   },
 };

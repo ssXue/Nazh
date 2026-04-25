@@ -1,9 +1,10 @@
-import { type NodeDefinition, type NodeSeed, normalizeNodeConfig } from '../shared';
+import { type NodeDefinition, type NodeSeed, type NodeValidationContext, type NodeValidation, normalizeNodeConfig } from '../shared';
 
 export const definition: NodeDefinition = {
   kind: 'serialTrigger',
   catalog: { category: '硬件接口', description: '接收串口外设数据流并触发工作流' },
   fallbackLabel: 'Serial Trigger',
+  requiresConnection: true,
 
   buildDefaultSeed(): NodeSeed {
     return {
@@ -25,5 +26,9 @@ export const definition: NodeDefinition = {
 
   buildRegistryMeta() {
     return { defaultExpanded: true, size: this.getNodeSize() };
+  },
+
+  validate(_ctx: NodeValidationContext): NodeValidation[] {
+    return [];
   },
 };

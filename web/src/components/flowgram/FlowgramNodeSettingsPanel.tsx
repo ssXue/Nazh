@@ -14,7 +14,9 @@ import {
   normalizeHttpBodyMode,
   parseTimeoutMs,
   type FlowgramLogicBranch,
+  getNodeDefinition,
 } from './flowgram-node-library';
+import type { NodeValidationContext } from './nodes/shared';
 import { generateScriptStream, getNodeContext } from '../../lib/script-generation';
 import type { AiGenerationParams, AiProviderView, ConnectionDefinition } from '../../types';
 
@@ -22,6 +24,7 @@ import {
   type SelectedNodeDraft,
   type NodeValidation,
   type NodeSettingsProps,
+  type FieldValidatorResult,
   isRecord,
   readString,
   readBoolean,
@@ -37,6 +40,7 @@ import {
   supportsScriptAi,
   isUsableAiProvider,
   usesDynamicPorts,
+  validateConnectionBinding,
 } from './nodes/settings-shared';
 
 import { NativeNodeSettings } from './nodes/native/settings';
@@ -332,7 +336,6 @@ function FlowgramNodeSettingsPanel({
 
     const nextDiagnostics: NodeValidation[] = [];
     const parsedTimeoutMs = parseTimeoutMs(draft.timeoutMs);
-    const parsedBarkBadge = draft.barkBadge.trim() ? parseNonNegativeInteger(draft.barkBadge) : 0;
 
     if (stats) {
       if (stats.incoming === 0 && stats.outgoing === 0) {
@@ -346,90 +349,52 @@ function FlowgramNodeSettingsPanel({
       }
     }
 
-    if (supportsConnectionBinding(draft.nodeType)) {
-      if (draft.connectionId && !selectedConnection) {
-        nextDiagnostics.push({ tone: 'danger', message: `连接 ${draft.connectionId} 未注册。` });
-      } else if (selectedConnection) {
-        nextDiagnostics.push({
-          tone: !connectionMatchesNodeType(draft.nodeType, selectedConnection) ? 'danger' : 'info',
-          message: !connectionMatchesNodeType(draft.nodeType, selectedConnection)
-            ? `${draft.nodeType} 节点需要绑定 ${compatibleConnectionHint(draft.nodeType)} 类型连接，当前为 ${selectedConnection.type}。`
-            : `已绑定 ${selectedConnection.id} · ${selectedConnection.type}`,
-        });
-      } else if (draft.nodeType === 'serialTrigger') {
-        nextDiagnostics.push({ tone: 'danger', message: '串口触发节点需要在连接资源中绑定一个串口连接。' });
-      } else if (draft.nodeType === 'httpClient') {
-        nextDiagnostics.push({ tone: 'danger', message: compatibleConnections.length > 0 ? 'HTTP Client 节点必须绑定 Connection Studio 中的 HTTP / Webhook 连接。' : '当前还没有 HTTP / Webhook 连接，请先在 Connection Studio 中新增并绑定。' });
-      } else if (draft.nodeType === 'barkPush') {
-        nextDiagnostics.push({ tone: 'danger', message: compatibleConnections.length > 0 ? 'Bark Push 节点必须绑定 Connection Studio 中的 Bark 连接。' : '当前还没有 Bark 连接，请先在 Connection Studio 中新增并绑定。' });
-      } else if (connections.length > 0) {
-        nextDiagnostics.push({ tone: 'warning', message: '当前节点未绑定连接资源。' });
-      }
-    }
+    nextDiagnostics.push(...validateConnectionBinding({
+      draft,
+      selectedConnection,
+      compatibleConnections,
+      connections,
+    }));
 
     if (draft.timeoutMs.trim() && parsedTimeoutMs === null) {
-      nextDiagnostics.push({ tone: 'danger', message: '超时值必须是大于 0 的数字。' });
-    }
-
-    if (draft.nodeType === 'native' && !draft.message.trim()) {
-      nextDiagnostics.push({ tone: 'warning', message: '消息内容为空。' });
+      nextDiagnostics.push({ tone: 'danger', message: '超时值必须是大于 0 的数字。', field: 'timeoutMs' });
     }
 
     if (isScriptNode(draft.nodeType) && !draft.script.trim()) {
-      nextDiagnostics.push({ tone: 'danger', message: '脚本为空。' });
+      nextDiagnostics.push({ tone: 'danger', message: '脚本为空。', field: 'script' });
     }
 
-    if (supportsScriptAi(draft.nodeType)) {
-      if (aiProviders.length === 0) {
-        nextDiagnostics.push({ tone: 'warning', message: '当前尚未配置全局 AI，运行时将无法完成 AI 调用。' });
-      } else if (activeAiProviderId && !activeCopilotProvider) {
-        nextDiagnostics.push({ tone: 'danger', message: `全局 AI ${activeAiProviderId} 未在配置中找到。` });
-      } else if (!resolvedGlobalAiProvider) {
-        nextDiagnostics.push({ tone: 'warning', message: '当前还没有选中全局 AI，请先前往 AI 配置页设置。' });
-      } else if (!resolvedGlobalAiProvider.enabled) {
-        nextDiagnostics.push({ tone: 'danger', message: `全局 AI ${resolvedGlobalAiProvider.name} 已被禁用。` });
-      } else if (!resolvedGlobalAiProvider.hasApiKey) {
-        nextDiagnostics.push({ tone: 'danger', message: `全局 AI ${resolvedGlobalAiProvider.name} 尚未配置 API Key。` });
-      } else {
-        nextDiagnostics.push({ tone: 'info', message: `默认使用全局 AI · ${resolvedGlobalAiProvider.name}${resolvedGlobalAiProvider.defaultModel.trim() ? ` · ${resolvedGlobalAiProvider.defaultModel.trim()}` : ' · 使用提供商默认模型'}` });
+    const nodeDef = getNodeDefinition(draft.nodeType as import('./nodes/shared').NazhNodeKind);
+    if (nodeDef) {
+      if (nodeDef.fieldValidators) {
+        for (const [field, validator] of Object.entries(nodeDef.fieldValidators)) {
+          if (!validator) { continue; }
+          const value = (draft as unknown as Record<string, unknown>)[field];
+          if (typeof value !== 'string') { continue; }
+          const result: FieldValidatorResult = validator(value);
+          if (result === null) { continue; }
+          if (typeof result === 'string') {
+            nextDiagnostics.push({ tone: 'danger', message: result, field });
+          } else {
+            nextDiagnostics.push({ tone: result.tone, message: result.message, field });
+          }
+        }
       }
-    }
 
-    if (draft.nodeType === 'switch' && draft.branches.length === 0) {
-      nextDiagnostics.push({ tone: 'warning', message: 'Switch 节点至少建议保留一个自定义分支。' });
-    }
-
-    if (draft.nodeType === 'timer' && parsePositiveInteger(draft.timerIntervalMs) === null) {
-      nextDiagnostics.push({ tone: 'danger', message: '定时间隔必须是大于 0 的毫秒数。' });
-    }
-
-    if (draft.nodeType === 'modbusRead' && (parsePositiveInteger(draft.modbusUnitId) === null || parsePositiveInteger(draft.modbusRegister) === null || parsePositiveInteger(draft.modbusQuantity) === null || parseFiniteNumber(draft.modbusBaseValue) === null || parseFiniteNumber(draft.modbusAmplitude) === null)) {
-      nextDiagnostics.push({ tone: 'danger', message: 'Modbus 参数必须是有效数字。' });
-    }
-
-    if (draft.nodeType === 'mqttClient' && !draft.mqttTopic.trim()) {
-      nextDiagnostics.push({ tone: 'danger', message: 'MQTT 主题不能为空。' });
-    }
-
-    if (draft.nodeType === 'httpClient') {
-      if (!usesManagedHttpConnection) { nextDiagnostics.push({ tone: 'danger', message: 'HTTP Client 节点需要绑定有效的 HTTP / Webhook 连接。' }); }
-      if (resolvedHttpBodyMode === 'template' && !draft.httpBodyTemplate.trim()) { nextDiagnostics.push({ tone: 'warning', message: '自定义模板模式下建议填写消息模板。' }); }
-      if (resolvedHttpBodyMode === 'dingtalk_markdown' && !draft.httpTitleTemplate.trim()) { nextDiagnostics.push({ tone: 'warning', message: '钉钉 Markdown 模式建议填写标题模板。' }); }
-    }
-
-    if (draft.nodeType === 'barkPush') {
-      if (!usesManagedBarkConnection) { nextDiagnostics.push({ tone: 'danger', message: 'Bark Push 节点需要绑定有效的 Bark 连接。' }); }
-      if (draft.barkBadge.trim() && parsedBarkBadge === null) { nextDiagnostics.push({ tone: 'danger', message: 'Bark badge 必须是大于等于 0 的整数。' }); }
-      if (!draft.barkTitleTemplate.trim() && !draft.barkBodyTemplate.trim()) { nextDiagnostics.push({ tone: 'warning', message: '建议至少填写标题模板或消息模板。' }); }
-    }
-
-    if (draft.nodeType === 'sqlWriter') {
-      if (!draft.sqlDatabasePath.trim()) { nextDiagnostics.push({ tone: 'warning', message: '数据库路径为空。' }); }
-      if (!draft.sqlTable.trim()) { nextDiagnostics.push({ tone: 'danger', message: '表名不能为空。' }); }
-    }
-
-    if (draft.nodeType === 'debugConsole') {
-      nextDiagnostics.push({ tone: 'info', message: draft.debugPretty ? '当前以格式化 JSON 输出。' : '当前以紧凑 JSON 输出。' });
+      const validationCtx: NodeValidationContext = {
+        draft,
+        selectedConnection,
+        compatibleConnections,
+        connections,
+        resolvedHttpWebhookKind,
+        resolvedHttpBodyMode,
+        aiProviders,
+        activeAiProviderId,
+        resolvedGlobalAiProvider,
+        preferredCopilotProvider,
+        usesManagedConnection: draft.nodeType === 'httpClient' ? usesManagedHttpConnection : draft.nodeType === 'barkPush' ? usesManagedBarkConnection : false,
+      };
+      nextDiagnostics.push(...nodeDef.validate(validationCtx));
     }
 
     return nextDiagnostics;

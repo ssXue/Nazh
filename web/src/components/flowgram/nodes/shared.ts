@@ -549,10 +549,31 @@ export function getFallbackNodeLabel(kind: NazhNodeKind): string {
   }
 }
 
+export interface NodeValidation {
+  tone: 'info' | 'warning' | 'danger';
+  message: string;
+}
+
+export interface NodeValidationContext {
+  draft: import('./settings-shared').SelectedNodeDraft;
+  selectedConnection: import('../../../types').ConnectionDefinition | null;
+  compatibleConnections: import('../../../types').ConnectionDefinition[];
+  connections: import('../../../types').ConnectionDefinition[];
+  resolvedHttpWebhookKind: string;
+  resolvedHttpBodyMode: string;
+  aiProviders: import('../../../types').AiProviderView[];
+  activeAiProviderId: string | null;
+  resolvedGlobalAiProvider: import('../../../types').AiProviderView | null;
+  preferredCopilotProvider: import('../../../types').AiProviderView | null;
+  usesManagedConnection: boolean;
+}
+
 export interface NodeDefinition {
   kind: NazhNodeKind;
   catalog: NodeCatalogInfo;
   fallbackLabel: string;
+  requiresConnection?: boolean;
+  fieldValidators?: Partial<Record<keyof import('./settings-shared').SelectedNodeDraft, import('./settings-shared').FieldValidator>>;
   buildDefaultSeed(): NodeSeed;
   normalizeConfig(config: unknown): NodeSeed['config'];
   getNodeSize(): { width: number; height: number };
@@ -562,6 +583,7 @@ export interface NodeDefinition {
     defaultPorts?: Array<{ type: 'input' | 'output' }>;
     useDynamicPort?: boolean;
   };
+  validate(ctx: NodeValidationContext): NodeValidation[];
 }
 
 export function normalizeNodeConfig(

@@ -1,9 +1,13 @@
-import { type NodeDefinition, type NodeSeed, normalizeNodeConfig } from '../shared';
+import { type NodeDefinition, type NodeSeed, type NodeValidationContext, type NodeValidation, normalizeNodeConfig } from '../shared';
 
 export const definition: NodeDefinition = {
   kind: 'mqttClient',
   catalog: { category: '硬件接口', description: '发布或订阅 MQTT 消息' },
   fallbackLabel: 'MQTT Client',
+
+  fieldValidators: {
+    mqttTopic: v => !v.trim() ? 'MQTT 主题不能为空。' : null,
+  },
 
   buildDefaultSeed(): NodeSeed {
     return {
@@ -25,5 +29,9 @@ export const definition: NodeDefinition = {
 
   buildRegistryMeta() {
     return { defaultExpanded: true, size: this.getNodeSize() };
+  },
+
+  validate(_ctx: NodeValidationContext): NodeValidation[] {
+    return [];
   },
 };

@@ -1,4 +1,4 @@
-import { type NodeDefinition, type NodeSeed, normalizeNodeConfig } from '../shared';
+import { type NodeDefinition, type NodeSeed, type NodeValidationContext, type NodeValidation, normalizeNodeConfig } from '../shared';
 
 export const definition: NodeDefinition = {
   kind: 'if',
@@ -30,5 +30,9 @@ export const definition: NodeDefinition = {
       defaultPorts: [{ type: 'input' as const }],
       useDynamicPort: true,
     };
+  },
+
+  validate(_ctx: NodeValidationContext): NodeValidation[] {
+    return [];
   },
 };
