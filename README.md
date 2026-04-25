@@ -5,34 +5,8 @@
 <h1 align="center">Nazh</h1>
 
 <p align="center">
-  <a href="https://github.com/ssXue/Nazh/actions/workflows/ci.yml">
-    <img src="https://github.com/ssXue/Nazh/actions/workflows/ci.yml/badge.svg" alt="CI" />
-  </a>
-  <a href="https://github.com/ssXue/Nazh/blob/main/LICENSE">
-    <img src="https://img.shields.io/github/license/ssXue/Nazh" alt="License" />
-  </a>
-  <a href="https://github.com/ssXue/Nazh/stargazers">
-    <img src="https://img.shields.io/github/stars/ssXue/Nazh" alt="Stars" />
-  </a>
-  <a href="https://www.rust-lang.org/">
-    <img src="https://img.shields.io/badge/Rust-2024-000000?logo=rust&logoColor=white" alt="Rust 2024" />
-  </a>
-  <a href="https://tauri.app/">
-    <img src="https://img.shields.io/badge/Tauri-v2-24C8DB?logo=tauri&logoColor=white" alt="Tauri v2" />
-  </a>
-  <a href="https://react.dev/">
-    <img src="https://img.shields.io/badge/React-18-20232A?logo=react&logoColor=61DAFB" alt="React 18" />
-  </a>
-  <a href="https://github.com/bytedance/flowgram.ai">
-    <img src="https://img.shields.io/badge/FlowGram.AI-Editor-6366F1" alt="FlowGram.AI" />
-  </a>
+  <code>AI原生工业边缘工作流编排引擎 —— 把设备数据流变成可执行的业务逻辑</code> · <code>Rust + Tauri + React</code>
 </p>
-
-<p align="center">
-  <code>工业边缘工作流编排引擎</code> · <code>AI 驱动</code> · <code>Rust + Tauri + React</code>
-</p>
-
-> 工业边缘工作流编排引擎 —— 把设备数据流变成可执行的业务逻辑
 
 ## 项目定位
 
@@ -108,9 +82,7 @@ flowchart TB
 
 - **Payload（业务数据）** 走 `DataStore`（`ArenaDataStore` 内存默认实现），通过 `ContextRef`（~64 字节）在 MPSC 通道传递
 - **Metadata（执行元数据：协议参数、连接信息、触发时刻）** 走 `ExecutionEvent::Completed` 事件通道，**不污染 payload**
-- **Configuration（未来共享状态）** 将通过 `WorkflowVariables` 承载（ADR-0012，提议中）
-
-详见 [ADR-0008](./docs/adr/0008-节点输出元数据通道.md) 与 [ADR-0012](./docs/adr/0012-工作流变量.md)。
+- **Configuration（未来共享状态）** 将通过 `WorkflowVariables` 承载
 
 ## 内置节点
 
@@ -160,11 +132,7 @@ curl -fsSL https://nazh.dev/install.sh | bash
 nazh-desktop
 ```
 
-> 💡 **预编译包预计 Q3 上线**，当前可从 [Releases](../../releases) 下载测试版
-
 ### 源码编译
-
-如需定制开发：
 
 ```bash
 npm --prefix web install
@@ -183,11 +151,3 @@ web/             # React + FlowGram.AI 前端
 tests/           # 集成测试
 docs/            # 架构决策记录（ADR）与 RFC
 ```
-
-## 架构决策
-
-关键设计决策记录见 [`docs/adr/`](./docs/adr/)（20 条 ADR）。
-
-## License
-
-MIT
