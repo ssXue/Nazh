@@ -37,7 +37,7 @@ crates/core/src/
 关键类型：
 - `NodeTrait` — `src/node.rs:164`
 - `NodeCapabilities` bitflags — `src/node.rs:26`
-- `NodeRegistry::{register, register_with_capabilities, capabilities_of}` — `src/plugin.rs:196`
+- `NodeRegistry::{register_with_capabilities, capabilities_of}` — `src/plugin.rs:196`
 - `DataStore` trait — `src/data.rs`
 - `ExecutionEvent` — `src/event.rs`
 - `WorkflowNodeDefinition` — `src/plugin.rs:75`
@@ -101,7 +101,7 @@ fn instance_capabilities(&self, type_caps: NodeCapabilities) -> NodeCapabilities
 ### 注册表契约（`NodeRegistry`）
 
 1. **Ring 0 无硬编码节点**。`NodeRegistry` 只是工厂 + 能力 map 的壳，全部节点由 Ring 1 的 `Plugin::register()` 注入。facade 的 `standard_registry()` 是组合策略，不属于 Ring 0。
-2. **注册时应声明能力标签**。生产 crate 统一走 `register_with_capabilities`；旧 `register` 仅作向后兼容（能力默认为空），给第三方 / 实验性节点留口子。
+2. **注册时必须声明能力标签**。所有节点统一走 `register_with_capabilities`；确实没有特殊能力时显式传 `NodeCapabilities::empty()`。
 3. **`capabilities_of()` 的返回值语义**：`None` = 未注册；`Some(empty())` = 注册了但显式声明空集合。不要把二者混为一谈。
 
 ### 数据平面契约（`DataStore` / `ContextRef`）

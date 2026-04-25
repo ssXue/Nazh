@@ -93,7 +93,7 @@ React / FlowGram canvas
   → Rust: parse AST → validate DAG (Kahn) → per-node Tokio task via NodeRegistry
   → Nodes communicate via MPSC channels carrying ContextRef (~64 bytes)
   → Actual payloads live in DataStore (ArenaDataStore by default)
-  → Events via Window::emit("workflow://node-status-v2", "workflow://result-v2")
+  → Events via Window::emit("workflow://node-status", "workflow://result")
   → Frontend updates canvas highlights, Runtime dock, log panel
 ```
 
@@ -120,7 +120,7 @@ IPC boundary types are defined once in Rust and auto-generated to TypeScript via
 
 ~22 commands covering: workflow lifecycle (`deploy_workflow`, `dispatch_payload`, `undeploy_workflow`, `list_runtime_workflows`, `set_active_runtime_workflow`, `list_dead_letters`, `list_node_types`), connections (`list_connections`, `load/save_connection_definitions`), serial (`list_serial_ports`, `test_serial_connection`), AI (`list_ai_providers`, `save_ai_provider`, `delete_ai_provider`, `test_ai_provider`, `copilotComplete`), observability (`query_observability`), deployment persistence, project library.
 
-Event channels: `workflow://node-status` & `-v2`, `workflow://result` & `-v2`, `workflow://deployed`, `workflow://undeployed`, `workflow://runtime-focus`.
+Event channels: `workflow://node-status`, `workflow://result`, `workflow://deployed`, `workflow://undeployed`, `workflow://runtime-focus`. Runtime result/status events are scoped payloads with `workflow_id`.
 
 ## Critical Coding Constraints
 
