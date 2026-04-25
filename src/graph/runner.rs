@@ -6,7 +6,7 @@
 //!
 //! ## 元数据通道
 //!
-//! 节点返回的 [`NodeOutput::metadata`] 不进入 payload，而是通过
+//! 节点返回的 [`nazh_core::NodeOutput::metadata`] 不进入 payload，而是通过
 //! [`ExecutionEvent::Completed`] 事件独立传递给前端，实现业务数据与执行元数据的完全分离。
 
 use std::{sync::Arc, time::Duration};
