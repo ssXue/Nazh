@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 
 import type { NodeTypeEntry } from '../../types';
 import { hasTauriRuntime, listNodeTypes } from '../../lib/tauri';
-import { NODE_CATEGORIES, NODE_CATEGORY_MAP } from '../../lib/node-catalog';
+import { NODE_CATEGORIES, NODE_CATEGORY_MAP } from '../flowgram/flowgram-node-library';
 import {
   NODE_CAPABILITY_LABELS,
   capabilityNames,

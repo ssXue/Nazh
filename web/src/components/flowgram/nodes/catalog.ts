@@ -1,4 +1,3 @@
-/** 节点类型分类标签枚举（按展示顺序排列）。 */
 export const NODE_CATEGORIES = [
   '流程控制',
   '脚本执行',
@@ -11,7 +10,6 @@ export const NODE_CATEGORIES = [
 
 export type NodeCategory = (typeof NODE_CATEGORIES)[number];
 
-/** 节点主名称到分类元数据的静态映射。 */
 export const NODE_CATEGORY_MAP: Record<
   string,
   { category: NodeCategory; description: string }
@@ -31,6 +29,7 @@ export const NODE_CATEGORY_MAP: Record<
     category: '硬件接口',
     description: '读取 Modbus 寄存器并将遥测数据写入 payload',
   },
+  mqttClient: { category: '硬件接口', description: '发布或订阅 MQTT 消息' },
   httpClient: { category: '外部通信', description: '将 payload 发送到 HTTP 端点' },
   barkPush: { category: '外部通信', description: '向 Bark 服务发送 iOS 推送通知' },
   sqlWriter: { category: '持久化', description: '将当前 payload 持久化到本地 SQLite 表' },
