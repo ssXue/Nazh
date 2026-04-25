@@ -618,7 +618,7 @@ async fn invalid_graph_rejects_cycles() {
 }
 
 #[tokio::test]
-async fn connection_manager_borrows_and_releases_connections() {
+async fn connection_manager_uses_raii_guard_to_release_connections() {
     let manager = ConnectionManager::default();
     let register_result = manager
         .register_connection(ConnectionDefinition {
@@ -629,10 +629,12 @@ async fn connection_manager_borrows_and_releases_connections() {
         .await;
     assert!(register_result.is_ok(), "connection should register");
 
-    let lease = manager.borrow("plc-1").await;
-    assert!(lease.is_ok(), "connection should be borrowable");
+    let mut guard = match manager.acquire("plc-1").await {
+        Ok(guard) => guard,
+        Err(error) => panic!("connection should be borrowable: {error}"),
+    };
 
-    let second_borrow = manager.borrow("plc-1").await;
+    let second_borrow = manager.acquire("plc-1").await;
     match second_borrow {
         Ok(_) => panic!("second borrow should fail"),
         Err(EngineError::ConnectionBusy(connection_id)) => {
@@ -641,8 +643,14 @@ async fn connection_manager_borrows_and_releases_connections() {
         Err(error) => panic!("unexpected error: {error}"),
     }
 
-    let release_result = manager.release("plc-1").await;
-    assert!(release_result.is_ok(), "connection should release");
+    guard.mark_success();
+    drop(guard);
+
+    let reacquired = manager.acquire("plc-1").await;
+    assert!(
+        reacquired.is_ok(),
+        "connection should release on guard drop"
+    );
 }
 
 #[tokio::test]

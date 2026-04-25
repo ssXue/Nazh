@@ -4,7 +4,7 @@
 //! 连接列表、运行时状态机）及其对应的 useEffect 副作用逻辑，
 //! 包括 Tauri 事件监听、全局错误捕获和自适应窗口大小。
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import type { BoardItem } from '../components/app/BoardsPanel';
 import type { SidebarSection } from '../components/app/types';
@@ -108,6 +108,11 @@ export function useWorkflowEngine(
   const [connections, setConnections] = useState<ConnectionRecord[]>([]);
   const [runtimeState, setRuntimeState] = useState<WorkflowRuntimeState>(EMPTY_RUNTIME_STATE);
   const [isRuntimeDockCollapsed, setIsRuntimeDockCollapsed] = useState(false);
+  const activeWorkflowIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    activeWorkflowIdRef.current = deployInfo?.workflowId?.trim() || null;
+  }, [deployInfo?.workflowId]);
 
   function appendRuntimeLog(
     source: string,
@@ -283,8 +288,12 @@ export function useWorkflowEngine(
       if (!alive) {
         return;
       }
+      const activeWorkflowId = activeWorkflowIdRef.current;
+      if (activeWorkflowId && payload.workflowId !== activeWorkflowId) {
+        return;
+      }
 
-      const parsedEvent = parseWorkflowEventPayload(payload);
+      const parsedEvent = parseWorkflowEventPayload(payload.event);
       if (parsedEvent) {
         setRuntimeState((current) => reduceRuntimeState(current, parsedEvent));
 
@@ -318,8 +327,12 @@ export function useWorkflowEngine(
       if (!alive) {
         return;
       }
+      const activeWorkflowId = activeWorkflowIdRef.current;
+      if (activeWorkflowId && payload.workflowId !== activeWorkflowId) {
+        return;
+      }
 
-      setResults((current) => [payload, ...current].slice(0, 8));
+      setResults((current) => [payload.result, ...current].slice(0, 8));
     }).then((cleanup) => {
       if (alive) {
         cleanups.push(cleanup);

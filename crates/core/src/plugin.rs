@@ -205,20 +205,6 @@ impl NodeRegistry {
         }
     }
 
-    /// 注册一个节点工厂，能力标签默认为空集合。
-    ///
-    /// 若需声明能力标签，请改用 [`register_with_capabilities`](Self::register_with_capabilities)。
-    /// 若该名称已存在，新工厂会覆盖旧工厂，同时把能力标签重置为空集合。
-    pub fn register<F>(&mut self, node_type: impl Into<String>, factory: F)
-    where
-        F: Fn(&WorkflowNodeDefinition, SharedResources) -> Result<Arc<dyn NodeTrait>, EngineError>
-            + Send
-            + Sync
-            + 'static,
-    {
-        self.register_with_capabilities(node_type, NodeCapabilities::empty(), factory);
-    }
-
     /// 注册节点工厂并声明类型级能力标签（ADR-0011）。
     ///
     /// 若该名称已存在，新工厂与新能力标签均会覆盖旧值。
@@ -370,7 +356,7 @@ mod tests {
         }
 
         fn register(&self, registry: &mut NodeRegistry) {
-            registry.register("alpha", |def, _res| {
+            registry.register_with_capabilities("alpha", NodeCapabilities::empty(), |def, _res| {
                 Ok(Arc::new(StubNode {
                     id: def.id.clone(),
                     kind: "alpha",
@@ -390,7 +376,7 @@ mod tests {
         }
 
         fn register(&self, registry: &mut NodeRegistry) {
-            registry.register("beta", |def, _res| {
+            registry.register_with_capabilities("beta", NodeCapabilities::empty(), |def, _res| {
                 Ok(Arc::new(StubNode {
                     id: def.id.clone(),
                     kind: "beta",
@@ -461,9 +447,9 @@ mod tests {
     }
 
     #[test]
-    fn register_不声明能力时默认为空集合() {
+    fn register_with_capabilities_可显式声明空能力() {
         let mut registry = NodeRegistry::new();
-        registry.register("plain", |def, _res| {
+        registry.register_with_capabilities("plain", NodeCapabilities::empty(), |def, _res| {
             Ok(Arc::new(StubNode {
                 id: def.id.clone(),
                 kind: "plain",
@@ -497,7 +483,7 @@ mod tests {
         struct Marker(u64);
 
         let mut registry = NodeRegistry::new();
-        registry.register("check", |def, res| {
+        registry.register_with_capabilities("check", NodeCapabilities::empty(), |def, res| {
             let marker = res
                 .get::<Marker>()
                 .ok_or_else(|| EngineError::invalid_graph("downcast 失败"))?;

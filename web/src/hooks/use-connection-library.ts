@@ -6,6 +6,7 @@ import {
   loadConnectionDefinitions,
   saveConnectionDefinitions,
 } from '../lib/tauri';
+import { buildDefaultConnectionDefinitions } from '../lib/projects';
 
 const CONNECTION_LIBRARY_STORAGE_KEY = 'nazh.connection-library';
 
@@ -28,21 +29,38 @@ function buildLocalStorageKey(workspacePath: string): string {
     : CONNECTION_LIBRARY_STORAGE_KEY;
 }
 
-function loadLocalConnections(workspacePath: string): ConnectionDefinition[] {
+interface LoadedConnectionDefinitions {
+  definitions: ConnectionDefinition[];
+  fileExists: boolean;
+}
+
+function loadLocalConnections(workspacePath: string): LoadedConnectionDefinitions {
   if (typeof window === 'undefined') {
-    return [];
+    return {
+      definitions: buildDefaultConnectionDefinitions(),
+      fileExists: false,
+    };
   }
 
   try {
     const raw = window.localStorage.getItem(buildLocalStorageKey(workspacePath));
     if (!raw) {
-      return [];
+      return {
+        definitions: buildDefaultConnectionDefinitions(),
+        fileExists: false,
+      };
     }
 
     const parsed = JSON.parse(raw) as unknown;
-    return Array.isArray(parsed) ? (parsed as ConnectionDefinition[]) : [];
+    return {
+      definitions: Array.isArray(parsed) ? (parsed as ConnectionDefinition[]) : [],
+      fileExists: true,
+    };
   } catch {
-    return [];
+    return {
+      definitions: buildDefaultConnectionDefinitions(),
+      fileExists: false,
+    };
   }
 }
 
@@ -76,9 +94,13 @@ function describeConnectionStorageError(error: unknown): string {
 export function useConnectionLibrary(workspacePath = ''): UseConnectionLibraryResult {
   const desktopStorageEnabled = hasTauriRuntime();
   const normalizedWorkspacePath = workspacePath.trim();
-  const [connections, setConnections] = useState<ConnectionDefinition[]>(() =>
-    desktopStorageEnabled ? [] : loadLocalConnections(normalizedWorkspacePath),
-  );
+  const [connections, setConnections] = useState<ConnectionDefinition[]>(() => {
+    if (desktopStorageEnabled) {
+      return [];
+    }
+
+    return loadLocalConnections(normalizedWorkspacePath).definitions;
+  });
   const [storage, setStorage] = useState<ConnectionLibraryStorageState>(() => ({
     isReady: !desktopStorageEnabled,
     isSyncing: false,
@@ -96,14 +118,16 @@ export function useConnectionLibrary(workspacePath = ''): UseConnectionLibraryRe
   useEffect(() => {
     if (!desktopStorageEnabled) {
       const localConnections = loadLocalConnections(normalizedWorkspacePath);
-      setConnections(localConnections);
+      setConnections(localConnections.definitions);
       setStorage({
         isReady: true,
         isSyncing: false,
         error: null,
       });
       setHydratedWorkspacePath(normalizedWorkspacePath);
-      lastSyncedSignatureRef.current = JSON.stringify(localConnections);
+      lastSyncedSignatureRef.current = localConnections.fileExists
+        ? JSON.stringify(localConnections.definitions)
+        : null;
       lastFailedSignatureRef.current = null;
       return;
     }
@@ -117,11 +141,14 @@ export function useConnectionLibrary(workspacePath = ''): UseConnectionLibraryRe
     });
 
     void loadConnectionDefinitions(normalizedWorkspacePath)
-      .then((definitions) => {
+      .then((result) => {
         if (cancelled) {
           return;
         }
 
+        const definitions = result.fileExists
+          ? result.definitions
+          : buildDefaultConnectionDefinitions();
         setConnections(definitions);
         setStorage({
           isReady: true,
@@ -129,7 +156,7 @@ export function useConnectionLibrary(workspacePath = ''): UseConnectionLibraryRe
           error: null,
         });
         setHydratedWorkspacePath(normalizedWorkspacePath);
-        lastSyncedSignatureRef.current = JSON.stringify(definitions);
+        lastSyncedSignatureRef.current = result.fileExists ? JSON.stringify(definitions) : null;
         lastFailedSignatureRef.current = null;
       })
       .catch((error) => {
@@ -226,13 +253,15 @@ export function useConnectionLibrary(workspacePath = ''): UseConnectionLibraryRe
   async function refreshConnections() {
     if (!desktopStorageEnabled) {
       const localConnections = loadLocalConnections(normalizedWorkspacePath);
-      setConnections(localConnections);
+      setConnections(localConnections.definitions);
       setStorage({
         isReady: true,
         isSyncing: false,
         error: null,
       });
-      lastSyncedSignatureRef.current = JSON.stringify(localConnections);
+      lastSyncedSignatureRef.current = localConnections.fileExists
+        ? JSON.stringify(localConnections.definitions)
+        : null;
       lastFailedSignatureRef.current = null;
       return;
     }
@@ -244,7 +273,10 @@ export function useConnectionLibrary(workspacePath = ''): UseConnectionLibraryRe
     }));
 
     try {
-      const definitions = await loadConnectionDefinitions(normalizedWorkspacePath);
+      const result = await loadConnectionDefinitions(normalizedWorkspacePath);
+      const definitions = result.fileExists
+        ? result.definitions
+        : buildDefaultConnectionDefinitions();
       setConnections(definitions);
       setStorage({
         isReady: true,
@@ -252,7 +284,7 @@ export function useConnectionLibrary(workspacePath = ''): UseConnectionLibraryRe
         error: null,
       });
       setHydratedWorkspacePath(normalizedWorkspacePath);
-      lastSyncedSignatureRef.current = JSON.stringify(definitions);
+      lastSyncedSignatureRef.current = result.fileExists ? JSON.stringify(definitions) : null;
       lastFailedSignatureRef.current = null;
     } catch (error) {
       setStorage((current) => ({

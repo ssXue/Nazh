@@ -41,8 +41,6 @@ export interface ProjectWorkspaceStorageInfo {
   boardsDirectoryPath: string;
   usingDefaultLocation: boolean;
   boardFileCount: number;
-  legacyLibraryFilePath: string;
-  legacyLibraryExists: boolean;
 }
 
 export interface ProjectWorkspaceBoardFile {
@@ -53,11 +51,25 @@ export interface ProjectWorkspaceBoardFile {
 export interface ProjectWorkspaceLoadResult {
   storage: ProjectWorkspaceStorageInfo;
   boardFiles: ProjectWorkspaceBoardFile[];
-  legacyLibraryText: string | null;
 }
 
 export interface SavedWorkspaceFile {
   filePath: string;
+}
+
+export interface ConnectionDefinitionsLoadResult {
+  definitions: ConnectionDefinition[];
+  fileExists: boolean;
+}
+
+export interface ScopedWorkflowEvent {
+  workflowId: string;
+  event: unknown;
+}
+
+export interface ScopedWorkflowResult {
+  workflowId: string;
+  result: WorkflowResult;
 }
 
 export function hasTauriRuntime(): boolean {
@@ -428,8 +440,8 @@ export async function queryObservability(
 
 export async function loadConnectionDefinitions(
   workspacePath: string,
-): Promise<ConnectionDefinition[]> {
-  return invoke<ConnectionDefinition[]>('load_connection_definitions', {
+): Promise<ConnectionDefinitionsLoadResult> {
+  return invoke<ConnectionDefinitionsLoadResult>('load_connection_definitions', {
     workspacePath: workspacePath.trim() || null,
   });
 }
@@ -574,9 +586,9 @@ export async function testSerialConnection(
 }
 
 export async function onWorkflowEvent(
-  handler: (payload: unknown) => void,
+  handler: (payload: ScopedWorkflowEvent) => void,
 ): Promise<() => void> {
-  const unlisten = await listen('workflow://node-status', (event) => {
+  const unlisten = await listen<ScopedWorkflowEvent>('workflow://node-status', (event) => {
     handler(event.payload);
   });
 
@@ -586,9 +598,9 @@ export async function onWorkflowEvent(
 }
 
 export async function onWorkflowResult(
-  handler: (payload: WorkflowResult) => void,
+  handler: (payload: ScopedWorkflowResult) => void,
 ): Promise<() => void> {
-  const unlisten = await listen<WorkflowResult>('workflow://result', (event) => {
+  const unlisten = await listen<ScopedWorkflowResult>('workflow://result', (event) => {
     handler(event.payload);
   });
 

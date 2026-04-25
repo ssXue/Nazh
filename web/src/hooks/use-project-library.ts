@@ -12,7 +12,6 @@ import {
   loadProjectLibrary,
   mergeImportedProjects,
   parseProjectBoardFiles,
-  parseProjectLibraryText,
   persistProjectLibrary,
   renameProjectRecord,
   rollbackProjectToSnapshot,
@@ -152,8 +151,6 @@ export function useProjectLibrary(workspacePath = ''): UseProjectLibraryResult {
 
         if (result.boardFiles.length > 0) {
           nextLibrary = parseProjectBoardFiles(result.boardFiles);
-        } else if (result.legacyLibraryText) {
-          nextLibrary = parseProjectLibraryText(result.legacyLibraryText);
         } else {
           nextStorage = await saveProjectBoardFiles(
             normalizedWorkspacePath,
