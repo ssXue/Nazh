@@ -414,7 +414,7 @@ impl WorkflowDispatchRouter {
         self.enqueue_blocking(
             &self.trigger_tx,
             &self.trigger_metrics,
-            self.policy.trigger_backpressure_strategy.clone(),
+            &self.policy.trigger_backpressure_strategy,
             envelope,
         )
     }
@@ -490,7 +490,7 @@ impl WorkflowDispatchRouter {
         &self,
         tx: &mpsc::Sender<DispatchEnvelope>,
         metrics: &Arc<DispatchLaneMetrics>,
-        strategy: RuntimeBackpressureStrategy,
+        strategy: &RuntimeBackpressureStrategy,
         envelope: DispatchEnvelope,
     ) -> Result<(), String> {
         match strategy {
@@ -819,7 +819,7 @@ struct PersistedDeploymentSessionState {
     sessions: Vec<PersistedDeploymentSession>,
 }
 
-fn sort_deployment_sessions_by_freshness(sessions: &mut Vec<PersistedDeploymentSession>) {
+fn sort_deployment_sessions_by_freshness(sessions: &mut [PersistedDeploymentSession]) {
     sessions.sort_by(|left, right| right.deployed_at.cmp(&left.deployed_at));
 }
 
@@ -944,6 +944,7 @@ async fn write_deployment_session_state_to_path(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_lines)]
 async fn deploy_workflow(
     app: AppHandle,
     state: State<'_, DesktopState>,
@@ -956,14 +957,14 @@ async fn deploy_workflow(
     if ast.len() > MAX_IPC_INPUT_BYTES {
         return Err("AST 超过最大允许大小（10 MB）".to_owned());
     }
-    let mut graph = WorkflowGraph::from_json(&ast).map_err(stringify_error)?;
+    let mut graph = WorkflowGraph::from_json(&ast).map_err(|e| stringify_error(&e))?;
     let (workspace_dir, _) = resolve_project_workspace_dir(
         &app,
         observability_context
             .as_ref()
             .map(|context| context.workspace_path.as_str()),
     )?;
-    normalize_sql_writer_paths(&mut graph, &workspace_dir).map_err(stringify_error)?;
+    normalize_sql_writer_paths(&mut graph, &workspace_dir).map_err(|e| stringify_error(&e))?;
     let workflow_id = derive_workflow_id(
         workflow_id.as_deref(),
         graph.name.as_deref(),
@@ -1020,13 +1021,13 @@ async fn deploy_workflow(
     } else {
         None
     };
-    let timer_roots = collect_timer_root_specs(&graph).map_err(stringify_error)?;
+    let timer_roots = collect_timer_root_specs(&graph).map_err(|e| stringify_error(&e))?;
     let serial_roots = collect_serial_root_specs(&graph, state.connection_manager.clone())
         .await
-        .map_err(stringify_error)?;
+        .map_err(|e| stringify_error(&e))?;
     let mqtt_roots = collect_mqtt_root_specs(&graph, state.connection_manager.clone())
         .await
-        .map_err(stringify_error)?;
+        .map_err(|e| stringify_error(&e))?;
     let node_count = graph.nodes.len();
     let edge_count = graph.edges.len();
     let registry = standard_registry();
@@ -1052,7 +1053,7 @@ async fn deploy_workflow(
                     )
                     .await;
             }
-            return Err(stringify_error(error));
+            return Err(stringify_error(&error));
         }
     };
     let (ingress, streams) = deployment.into_parts();
@@ -1076,21 +1077,21 @@ async fn deploy_workflow(
         existing.abort_triggers().await;
     }
 
-    let mut trigger_tasks = spawn_timer_root_tasks(dispatch_router.clone(), timer_roots);
+    let mut trigger_tasks = spawn_timer_root_tasks(&dispatch_router, timer_roots);
     trigger_tasks.extend(spawn_serial_root_tasks(
-        app.clone(),
-        dispatch_router.clone(),
-        state.connection_manager.clone(),
-        observability_store.clone(),
-        workflow_id.clone(),
+        &app,
+        &dispatch_router,
+        &state.connection_manager,
+        observability_store.as_ref(),
+        &workflow_id,
         serial_roots,
     ));
     trigger_tasks.extend(spawn_mqtt_root_tasks(
-        app.clone(),
-        dispatch_router.clone(),
-        state.connection_manager.clone(),
-        observability_store.clone(),
-        workflow_id.clone(),
+        &app,
+        &dispatch_router,
+        &state.connection_manager,
+        observability_store.as_ref(),
+        &workflow_id,
         mqtt_roots,
     ));
 
@@ -1121,9 +1122,8 @@ async fn deploy_workflow(
     runtime_tasks.push(tauri::async_runtime::spawn(async move {
         while let Some(ctx_ref) = result_rx.recv().await {
             // 从 DataStore 重建 WorkflowContext
-            let payload = match result_store_ref.read(&ctx_ref.data_id) {
-                Ok(p) => p,
-                Err(_) => continue,
+            let Ok(payload) = result_store_ref.read(&ctx_ref.data_id) else {
+                continue;
             };
             result_store_ref.release(&ctx_ref.data_id);
             let result = nazh_engine::WorkflowContext::from_parts(
@@ -1220,12 +1220,12 @@ async fn dispatch_payload(
     let target_workflow_id = state
         .resolve_workflow_id(workflow_id.as_deref())
         .await?
-        .ok_or_else(|| stringify_error(EngineError::WorkflowUnavailable))?;
+        .ok_or_else(|| stringify_error(&EngineError::WorkflowUnavailable))?;
     let (dispatch_router, observability_store) = {
         let workflows = state.workflows.lock().await;
         let workflow = workflows
             .get(&target_workflow_id)
-            .ok_or_else(|| stringify_error(EngineError::WorkflowUnavailable))?;
+            .ok_or_else(|| stringify_error(&EngineError::WorkflowUnavailable))?;
         (
             workflow.dispatch_router.clone(),
             workflow.observability.clone(),
@@ -1329,7 +1329,7 @@ async fn undeploy_workflow(
     if active_before.as_deref() == Some(target_workflow_id.as_str()) {
         let fallback_active = state.choose_fallback_active_workflow().await;
         let mut active_workflow_id = state.active_workflow_id.lock().await;
-        *active_workflow_id = fallback_active.clone();
+        (*active_workflow_id).clone_from(&fallback_active);
         drop(active_workflow_id);
 
         if let Some(fallback_workflow_id) = fallback_active {
@@ -1789,9 +1789,9 @@ fn classify_serial_port(path: &str) -> String {
     let path_lower = path.to_lowercase();
     if path_lower.contains("bluetooth") || path_lower.contains("bt-") {
         "bluetooth".to_string()
-    } else if path_lower.contains("/dev/cu.") || path_lower.contains("/dev/tty.") {
-        "usb-serial".to_string()
-    } else if path_lower.contains("/dev/ttyusb")
+    } else if path_lower.contains("/dev/cu.")
+        || path_lower.contains("/dev/tty.")
+        || path_lower.contains("/dev/ttyusb")
         || path_lower.contains("/dev/ttyacm")
         || path_lower.contains("/dev/ttyama")
     {
@@ -1978,7 +1978,7 @@ async fn save_flowgram_export_file(
     })
 }
 
-fn stringify_error(error: EngineError) -> String {
+fn stringify_error(error: &EngineError) -> String {
     error.to_string()
 }
 
@@ -2334,7 +2334,6 @@ fn spawn_dispatch_lane_task(
                             envelope.attempts,
                         )))
                         .await;
-                        continue;
                     }
                     Err(error) => {
                         metrics.dead_lettered.fetch_add(1, Ordering::Relaxed);
@@ -2497,7 +2496,7 @@ async fn collect_serial_root_specs(
 }
 
 fn spawn_timer_root_tasks(
-    dispatch_router: WorkflowDispatchRouter,
+    dispatch_router: &WorkflowDispatchRouter,
     timer_roots: Vec<TimerRootSpec>,
 ) -> Vec<DesktopTriggerTask> {
     timer_roots
@@ -2511,7 +2510,7 @@ fn spawn_timer_root_tasks(
                     let _ = dispatch_router
                         .submit_trigger_to(
                             &timer_root.node_id,
-                            WorkflowContext::new(Value::Object(Default::default())),
+                            WorkflowContext::new(Value::Object(serde_json::Map::default())),
                             format!("timer:{}", timer_root.node_id),
                         )
                         .await;
@@ -2527,7 +2526,7 @@ fn spawn_timer_root_tasks(
                     let _ = dispatch_router
                         .submit_trigger_to(
                             &timer_root.node_id,
-                            WorkflowContext::new(Value::Object(Default::default())),
+                            WorkflowContext::new(Value::Object(serde_json::Map::default())),
                             format!("timer:{}", timer_root.node_id),
                         )
                         .await;
@@ -2543,11 +2542,11 @@ fn spawn_timer_root_tasks(
 }
 
 fn spawn_serial_root_tasks(
-    app: AppHandle,
-    dispatch_router: WorkflowDispatchRouter,
-    connection_manager: nazh_engine::SharedConnectionManager,
-    observability: Option<SharedObservabilityStore>,
-    workflow_id: String,
+    app: &AppHandle,
+    dispatch_router: &WorkflowDispatchRouter,
+    connection_manager: &nazh_engine::SharedConnectionManager,
+    observability: Option<&SharedObservabilityStore>,
+    workflow_id: &str,
     serial_roots: Vec<SerialRootSpec>,
 ) -> Vec<DesktopTriggerTask> {
     serial_roots
@@ -2556,19 +2555,19 @@ fn spawn_serial_root_tasks(
             let app = app.clone();
             let dispatch_router = dispatch_router.clone();
             let connection_manager = connection_manager.clone();
-            let observability = observability.clone();
-            let workflow_id = workflow_id.clone();
+            let observability = observability.cloned();
+            let workflow_id = workflow_id.to_owned();
             let cancel = Arc::new(AtomicBool::new(false));
             let task_cancel = Arc::clone(&cancel);
             let join = std::thread::spawn(move || {
                 run_serial_root_reader(
-                    app,
-                    dispatch_router,
-                    connection_manager,
-                    observability,
-                    workflow_id,
-                    serial_root,
-                    task_cancel,
+                    &app,
+                    &dispatch_router,
+                    &connection_manager,
+                    observability.as_ref(),
+                    &workflow_id,
+                    &serial_root,
+                    &task_cancel,
                 );
             });
 
@@ -2593,9 +2592,8 @@ async fn collect_mqtt_root_specs(
             continue;
         }
 
-        let node_definition = match graph.nodes.get(node_id) {
-            Some(def) => def,
-            None => continue,
+        let Some(node_definition) = graph.nodes.get(node_id) else {
+            continue;
         };
 
         if node_definition.node_type() != "mqttClient" {
@@ -2607,7 +2605,7 @@ async fn collect_mqtt_root_specs(
                 EngineError::node_config(node_definition.id().to_owned(), error.to_string())
             })?;
 
-        if config.mode.trim().to_ascii_lowercase() != "subscribe" {
+        if !config.mode.trim().eq_ignore_ascii_case("subscribe") {
             continue;
         }
 
@@ -2678,11 +2676,11 @@ async fn collect_mqtt_root_specs(
 
 /// 为每个 MQTT 订阅根节点生成后台订阅任务。
 fn spawn_mqtt_root_tasks(
-    app: AppHandle,
-    dispatch_router: WorkflowDispatchRouter,
-    connection_manager: nazh_engine::SharedConnectionManager,
-    observability: Option<SharedObservabilityStore>,
-    workflow_id: String,
+    app: &AppHandle,
+    dispatch_router: &WorkflowDispatchRouter,
+    connection_manager: &nazh_engine::SharedConnectionManager,
+    observability: Option<&SharedObservabilityStore>,
+    workflow_id: &str,
     mqtt_roots: Vec<MqttRootSpec>,
 ) -> Vec<DesktopTriggerTask> {
     mqtt_roots
@@ -2691,19 +2689,19 @@ fn spawn_mqtt_root_tasks(
             let app = app.clone();
             let dispatch_router = dispatch_router.clone();
             let connection_manager = connection_manager.clone();
-            let observability = observability.clone();
-            let workflow_id = workflow_id.clone();
+            let observability = observability.cloned();
+            let workflow_id = workflow_id.to_owned();
             let cancel = Arc::new(AtomicBool::new(false));
             let task_cancel = Arc::clone(&cancel);
             let join = tauri::async_runtime::spawn(async move {
                 run_mqtt_root_subscriber(
-                    app,
-                    dispatch_router,
-                    connection_manager,
-                    observability,
-                    workflow_id,
-                    mqtt_root,
-                    task_cancel,
+                    &app,
+                    &dispatch_router,
+                    &connection_manager,
+                    observability.as_ref(),
+                    &workflow_id,
+                    &mqtt_root,
+                    &task_cancel,
                 )
                 .await;
             });
@@ -2716,14 +2714,15 @@ fn spawn_mqtt_root_tasks(
         .collect()
 }
 
+#[allow(clippy::too_many_lines)]
 async fn run_mqtt_root_subscriber(
-    app: AppHandle,
-    dispatch_router: WorkflowDispatchRouter,
-    connection_manager: nazh_engine::SharedConnectionManager,
-    observability: Option<SharedObservabilityStore>,
-    workflow_id: String,
-    mqtt_root: MqttRootSpec,
-    cancel: Arc<AtomicBool>,
+    app: &AppHandle,
+    dispatch_router: &WorkflowDispatchRouter,
+    connection_manager: &nazh_engine::SharedConnectionManager,
+    observability: Option<&SharedObservabilityStore>,
+    workflow_id: &str,
+    mqtt_root: &MqttRootSpec,
+    cancel: &Arc<AtomicBool>,
 ) {
     let client_id = format!(
         "nazh-sub-{}",
@@ -2745,9 +2744,9 @@ async fn run_mqtt_root_subscriber(
             Err(error) => {
                 let retry_after_ms = retry_delay_from_error(&error).unwrap_or(800);
                 emit_mqtt_trigger_failure(
-                    &app,
-                    &workflow_id,
-                    observability.as_ref(),
+                    app,
+                    workflow_id,
+                    observability,
                     &mqtt_root.node_id,
                     error.to_string(),
                 );
@@ -2791,7 +2790,7 @@ async fn run_mqtt_root_subscriber(
                     );
                     break false;
                 }
-                _ => continue,
+                _ => {}
             }
         };
 
@@ -2802,13 +2801,7 @@ async fn run_mqtt_root_subscriber(
                 .await
                 .unwrap_or(800);
             let _ = connection_manager.release(&mqtt_root.connection_id).await;
-            emit_mqtt_trigger_failure(
-                &app,
-                &workflow_id,
-                observability.as_ref(),
-                &mqtt_root.node_id,
-                reason,
-            );
+            emit_mqtt_trigger_failure(app, workflow_id, observability, &mqtt_root.node_id, reason);
             tokio::time::sleep(std::time::Duration::from_millis(retry_after_ms)).await;
             continue;
         }
@@ -2836,13 +2829,7 @@ async fn run_mqtt_root_subscriber(
                 .await
                 .unwrap_or(800);
             let _ = connection_manager.release(&mqtt_root.connection_id).await;
-            emit_mqtt_trigger_failure(
-                &app,
-                &workflow_id,
-                observability.as_ref(),
-                &mqtt_root.node_id,
-                reason,
-            );
+            emit_mqtt_trigger_failure(app, workflow_id, observability, &mqtt_root.node_id, reason);
             tokio::time::sleep(std::time::Duration::from_millis(retry_after_ms)).await;
             continue;
         }
@@ -2873,11 +2860,11 @@ async fn run_mqtt_root_subscriber(
                         .await
                     {
                         emit_mqtt_trigger_failure(
-                            &app,
-                            &workflow_id,
-                            observability.as_ref(),
+                            app,
+                            workflow_id,
+                            observability,
                             &mqtt_root.node_id,
-                            error.to_string(),
+                            error.clone(),
                         );
                     }
 
@@ -2898,7 +2885,7 @@ async fn run_mqtt_root_subscriber(
                         "MQTT 消息已投递到 DAG"
                     );
                 }
-                Ok(Ok(_)) => continue,
+                Ok(Ok(_)) | Err(_) => {}
                 Ok(Err(error)) => {
                     tracing::warn!(
                         node_id = %mqtt_root.node_id,
@@ -2907,7 +2894,6 @@ async fn run_mqtt_root_subscriber(
                     );
                     break;
                 }
-                Err(_) => continue,
             }
         }
 
@@ -2926,31 +2912,33 @@ async fn run_mqtt_root_subscriber(
             .await
             .unwrap_or(800);
         let _ = connection_manager.release(&mqtt_root.connection_id).await;
-        emit_mqtt_trigger_failure(
-            &app,
-            &workflow_id,
-            observability.as_ref(),
-            &mqtt_root.node_id,
-            reason,
-        );
+        emit_mqtt_trigger_failure(app, workflow_id, observability, &mqtt_root.node_id, reason);
         tokio::time::sleep(std::time::Duration::from_millis(retry_after_ms)).await;
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn run_serial_root_reader(
-    app: AppHandle,
-    dispatch_router: WorkflowDispatchRouter,
-    connection_manager: nazh_engine::SharedConnectionManager,
-    observability: Option<SharedObservabilityStore>,
-    workflow_id: String,
-    serial_root: SerialRootSpec,
-    cancel: Arc<AtomicBool>,
+    app: &AppHandle,
+    dispatch_router: &WorkflowDispatchRouter,
+    connection_manager: &nazh_engine::SharedConnectionManager,
+    observability: Option<&SharedObservabilityStore>,
+    workflow_id: &str,
+    serial_root: &SerialRootSpec,
+    cancel: &Arc<AtomicBool>,
 ) {
     let config = serial_root.config.clone();
     let read_timeout = Duration::from_millis(config.read_timeout_ms.clamp(10, 2_000));
     let idle_gap = Duration::from_millis(config.idle_gap_ms.clamp(1, 10_000));
     let max_frame_bytes = config.max_frame_bytes.clamp(1, 8_192);
     let delimiter = decode_serial_delimiter(&config.delimiter);
+    let ctx = SerialDispatchContext {
+        app,
+        dispatch_router,
+        workflow_id,
+        serial_root,
+        observability,
+    };
 
     while !cancel.load(Ordering::Relaxed) {
         let lease = match tauri::async_runtime::block_on(
@@ -2960,13 +2948,13 @@ fn run_serial_root_reader(
             Err(error) => {
                 let retry_after_ms = retry_delay_from_error(&error).unwrap_or(800);
                 emit_serial_trigger_failure(
-                    &app,
-                    &workflow_id,
-                    observability.as_ref(),
-                    &serial_root.node_id,
+                    ctx.app,
+                    ctx.workflow_id,
+                    ctx.observability,
+                    &ctx.serial_root.node_id,
                     error.to_string(),
                 );
-                sleep_with_cancel(&cancel, Duration::from_millis(retry_after_ms));
+                sleep_with_cancel(cancel, Duration::from_millis(retry_after_ms));
                 continue;
             }
         };
@@ -2986,7 +2974,8 @@ fn run_serial_root_reader(
             .open();
         let mut port = match port_result {
             Ok(port) => {
-                let connect_latency_ms = connect_started_at.elapsed().as_millis() as u64;
+                let connect_latency_ms =
+                    u64::try_from(connect_started_at.elapsed().as_millis()).unwrap_or(u64::MAX);
                 let _ = tauri::async_runtime::block_on(connection_manager.record_connect_success(
                     &serial_root.connection_id,
                     format!("串口 {} 已建立监听，等待外设上报数据", config.port_path),
@@ -3004,13 +2993,13 @@ fn run_serial_root_reader(
                     connection_manager.release(&serial_root.connection_id),
                 );
                 emit_serial_trigger_failure(
-                    &app,
-                    &workflow_id,
-                    observability.as_ref(),
-                    &serial_root.node_id,
+                    ctx.app,
+                    ctx.workflow_id,
+                    ctx.observability,
+                    &ctx.serial_root.node_id,
                     reason,
                 );
-                sleep_with_cancel(&cancel, Duration::from_millis(retry_after_ms));
+                sleep_with_cancel(cancel, Duration::from_millis(retry_after_ms));
                 continue;
             }
         };
@@ -3024,16 +3013,7 @@ fn run_serial_root_reader(
         while !cancel.load(Ordering::Relaxed) {
             match port.read(&mut scratch) {
                 Ok(0) => {
-                    flush_idle_serial_frame(
-                        &app,
-                        &dispatch_router,
-                        &workflow_id,
-                        &serial_root,
-                        observability.as_ref(),
-                        &mut buffer,
-                        last_byte_at,
-                        idle_gap,
-                    );
+                    flush_idle_serial_frame(&ctx, &mut buffer, last_byte_at, idle_gap);
 
                     if last_heartbeat_sent_at.elapsed() >= heartbeat_interval {
                         let _ =
@@ -3055,26 +3035,12 @@ fn run_serial_root_reader(
                     last_heartbeat_sent_at = Instant::now();
 
                     while let Some(frame) = drain_serial_delimited_frame(&mut buffer, &delimiter) {
-                        submit_serial_frame(
-                            &app,
-                            &dispatch_router,
-                            &workflow_id,
-                            &serial_root,
-                            observability.as_ref(),
-                            &frame,
-                        );
+                        submit_serial_frame(&ctx, &frame);
                     }
 
                     if buffer.len() >= max_frame_bytes {
                         let frame = buffer.drain(..max_frame_bytes).collect::<Vec<_>>();
-                        submit_serial_frame(
-                            &app,
-                            &dispatch_router,
-                            &workflow_id,
-                            &serial_root,
-                            observability.as_ref(),
-                            &frame,
-                        );
+                        submit_serial_frame(&ctx, &frame);
                     }
                 }
                 Err(error) if error.kind() == std::io::ErrorKind::TimedOut => {
@@ -3099,16 +3065,7 @@ fn run_serial_root_reader(
                         continue;
                     }
 
-                    flush_idle_serial_frame(
-                        &app,
-                        &dispatch_router,
-                        &workflow_id,
-                        &serial_root,
-                        observability.as_ref(),
-                        &mut buffer,
-                        last_byte_at,
-                        idle_gap,
-                    );
+                    flush_idle_serial_frame(&ctx, &mut buffer, last_byte_at, idle_gap);
                 }
                 Err(error) => {
                     disconnected_reason = Some(format!("串口读取失败: {error}"));
@@ -3118,14 +3075,7 @@ fn run_serial_root_reader(
         }
 
         if !cancel.load(Ordering::Relaxed) && !buffer.is_empty() {
-            submit_serial_frame(
-                &app,
-                &dispatch_router,
-                &workflow_id,
-                &serial_root,
-                observability.as_ref(),
-                &buffer,
-            );
+            submit_serial_frame(&ctx, &buffer);
         }
 
         if cancel.load(Ordering::Relaxed) {
@@ -3148,22 +3098,26 @@ fn run_serial_root_reader(
         let _ =
             tauri::async_runtime::block_on(connection_manager.release(&serial_root.connection_id));
         emit_serial_trigger_failure(
-            &app,
-            &workflow_id,
-            observability.as_ref(),
-            &serial_root.node_id,
+            ctx.app,
+            ctx.workflow_id,
+            ctx.observability,
+            &ctx.serial_root.node_id,
             reason,
         );
-        sleep_with_cancel(&cancel, Duration::from_millis(retry_after_ms));
+        sleep_with_cancel(cancel, Duration::from_millis(retry_after_ms));
     }
 }
 
+struct SerialDispatchContext<'a> {
+    app: &'a AppHandle,
+    dispatch_router: &'a WorkflowDispatchRouter,
+    workflow_id: &'a str,
+    serial_root: &'a SerialRootSpec,
+    observability: Option<&'a SharedObservabilityStore>,
+}
+
 fn flush_idle_serial_frame(
-    app: &AppHandle,
-    dispatch_router: &WorkflowDispatchRouter,
-    workflow_id: &str,
-    serial_root: &SerialRootSpec,
-    observability: Option<&SharedObservabilityStore>,
+    ctx: &SerialDispatchContext<'_>,
     buffer: &mut Vec<u8>,
     last_byte_at: Option<Instant>,
     idle_gap: Duration,
@@ -3174,14 +3128,7 @@ fn flush_idle_serial_frame(
 
     if last_byte_at.is_some_and(|instant| instant.elapsed() >= idle_gap) {
         let frame = std::mem::take(buffer);
-        submit_serial_frame(
-            app,
-            dispatch_router,
-            workflow_id,
-            serial_root,
-            observability,
-            &frame,
-        );
+        submit_serial_frame(ctx, &frame);
     }
 }
 
@@ -3198,14 +3145,7 @@ fn drain_serial_delimited_frame(buffer: &mut Vec<u8>, delimiter: &[u8]) -> Optio
     Some(frame)
 }
 
-fn submit_serial_frame(
-    app: &AppHandle,
-    dispatch_router: &WorkflowDispatchRouter,
-    workflow_id: &str,
-    serial_root: &SerialRootSpec,
-    observability: Option<&SharedObservabilityStore>,
-    frame: &[u8],
-) {
+fn submit_serial_frame(ctx: &SerialDispatchContext<'_>, frame: &[u8]) {
     if frame.is_empty() {
         return;
     }
@@ -3215,23 +3155,29 @@ fn submit_serial_frame(
             "ascii": String::from_utf8_lossy(frame).to_string(),
             "hex": bytes_to_hex(frame),
             "byte_len": frame.len(),
-            "port_path": serial_root.config.port_path.as_str(),
-            "connection_id": serial_root.connection_id.as_str(),
-            "baud_rate": serial_root.config.baud_rate,
-            "data_bits": serial_root.config.data_bits,
-            "parity": serial_root.config.parity.as_str(),
-            "stop_bits": serial_root.config.stop_bits,
-            "flow_control": serial_root.config.flow_control.as_str(),
-            "encoding": serial_root.config.encoding.as_str(),
+            "port_path": ctx.serial_root.config.port_path.as_str(),
+            "connection_id": ctx.serial_root.connection_id.as_str(),
+            "baud_rate": ctx.serial_root.config.baud_rate,
+            "data_bits": ctx.serial_root.config.data_bits,
+            "parity": ctx.serial_root.config.parity.as_str(),
+            "stop_bits": ctx.serial_root.config.stop_bits,
+            "flow_control": ctx.serial_root.config.flow_control.as_str(),
+            "encoding": ctx.serial_root.config.encoding.as_str(),
         }
     });
 
-    if let Err(error) = dispatch_router.blocking_submit_trigger_to(
-        &serial_root.node_id,
+    if let Err(error) = ctx.dispatch_router.blocking_submit_trigger_to(
+        &ctx.serial_root.node_id,
         WorkflowContext::new(payload),
-        format!("serial:{}", serial_root.node_id),
+        format!("serial:{}", ctx.serial_root.node_id),
     ) {
-        emit_serial_trigger_failure(app, workflow_id, observability, &serial_root.node_id, error);
+        emit_serial_trigger_failure(
+            ctx.app,
+            ctx.workflow_id,
+            ctx.observability,
+            &ctx.serial_root.node_id,
+            error,
+        );
     }
 }
 
@@ -3277,7 +3223,7 @@ fn emit_trigger_failure(
     label: &str,
     message: String,
 ) {
-    let context = WorkflowContext::new(Value::Object(Default::default()));
+    let context = WorkflowContext::new(Value::Object(serde_json::Map::default()));
     if let Some(store) = observability {
         let _ = tauri::async_runtime::block_on(store.record_external_failure(
             node_id,
@@ -3393,12 +3339,11 @@ fn decode_serial_delimiter(value: &str) -> Vec<u8> {
             Some('n') => bytes.push(b'\n'),
             Some('r') => bytes.push(b'\r'),
             Some('t') => bytes.push(b'\t'),
-            Some('\\') => bytes.push(b'\\'),
+            Some('\\') | None => bytes.push(b'\\'),
             Some(other) => {
                 let mut encoded = [0_u8; 4];
                 bytes.extend_from_slice(other.encode_utf8(&mut encoded).as_bytes());
             }
-            None => bytes.push(b'\\'),
         }
     }
 
@@ -3562,17 +3507,14 @@ pub fn run() {
                 }
             });
             tauri::async_runtime::spawn(async move {
-                if let Ok(path) = DesktopState::ai_config_file_path(&app_handle) {
-                    if path.exists() {
-                        if let Ok(text) = tokio::fs::read_to_string(&path).await {
-                            if let Ok(mut file_config) = serde_json::from_str::<AiConfigFile>(&text)
-                            {
-                                file_config.normalize();
-                                let mut config = ai_config_arc.write().await;
-                                *config = file_config;
-                            }
-                        }
-                    }
+                if let Ok(path) = DesktopState::ai_config_file_path(&app_handle)
+                    && path.exists()
+                    && let Ok(text) = tokio::fs::read_to_string(&path).await
+                    && let Ok(mut file_config) = serde_json::from_str::<AiConfigFile>(&text)
+                {
+                    file_config.normalize();
+                    let mut config = ai_config_arc.write().await;
+                    *config = file_config;
                 }
             });
             Ok(())
