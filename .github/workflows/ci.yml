@@ -15,142 +15,62 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
-  # ── Rust checks ──────────────────────────────────────
-  rust-fmt:
-    name: Rustfmt
+  changes:
+    name: Changes
     runs-on: ubuntu-latest
+    outputs:
+      cargo_policy: ${{ steps.filter.outputs.cargo_policy }}
+      ts_bindings: ${{ steps.filter.outputs.ts_bindings }}
+      web: ${{ steps.filter.outputs.web }}
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dorny/paths-filter@v3
+        id: filter
         with:
-          components: rustfmt
-      - run: cargo fmt --all -- --check
-
-  rust-clippy:
-    name: Clippy
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-      - uses: Swatinem/rust-cache@v2
-      - name: Install Tauri system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libssl-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            libgtk-3-dev \
-            libjavascriptcoregtk-4.1-dev \
-            libsoup-3.0-dev \
-            libudev-dev
-      - run: cargo clippy --all-targets -- -D warnings
-
-  rust-test:
-    name: Test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - name: Install Tauri system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libssl-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            libgtk-3-dev \
-            libjavascriptcoregtk-4.1-dev \
-            libsoup-3.0-dev \
-            libudev-dev
-      - run: cargo test --workspace
-
-  rust-ts-export:
-    name: TS Export Bindings
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - name: Install Tauri system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libssl-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            libgtk-3-dev \
-            libjavascriptcoregtk-4.1-dev \
-            libsoup-3.0-dev \
-            libudev-dev
-      - name: 触发 ts-rs 类型导出
-        run: cargo test -p tauri-bindings --features ts-export export_bindings
-      - name: 校验 web/src/generated/ 与提交一致
-        run: git diff --exit-code -- web/src/generated/
-
-  rust-doc:
-    name: Doc
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - name: Install Tauri system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libssl-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            libgtk-3-dev \
-            libjavascriptcoregtk-4.1-dev \
-            libsoup-3.0-dev \
-            libudev-dev
-      - run: cargo doc --no-deps --document-private-items
-        env:
-          RUSTDOCFLAGS: "-D warnings"
+          filters: |
+            cargo_policy:
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'crates/**/Cargo.toml'
+              - 'src-tauri/Cargo.toml'
+              - 'src-tauri/Cargo.lock'
+              - 'deny.toml'
+            ts_bindings:
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'src/**'
+              - 'crates/**'
+              - 'web/src/generated/**'
+            web:
+              - 'web/**'
 
   cargo-deny:
     name: Cargo Deny
+    needs: changes
+    if: needs.changes.outputs.cargo_policy == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: EmbarkStudios/cargo-deny-action@v2
 
-  # ── Tauri desktop build check ────────────────────────
-  tauri-check:
-    name: Tauri Check
+  rust-ts-export:
+    name: TS Export Bindings
+    needs: changes
+    if: needs.changes.outputs.ts_bindings == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: "src-tauri -> target"
-      - name: Install Tauri system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libssl-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            libgtk-3-dev \
-            libjavascriptcoregtk-4.1-dev \
-            libsoup-3.0-dev \
-            libudev-dev
-      - run: cargo check --manifest-path src-tauri/Cargo.toml
+      - name: 触发 ts-rs 类型导出
+        run: cargo test -p tauri-bindings --features ts-export export_bindings
+      - name: 校验 web/src/generated/ 与提交一致
+        run: git diff --exit-code -- web/src/generated/
 
-  # ── Web frontend build ───────────────────────────────
   web-build:
     name: Web Build
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

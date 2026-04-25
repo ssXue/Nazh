@@ -46,7 +46,7 @@ serde_json = "1"
 thiserror = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
 tokio-modbus = { version = "0.15", default-features = false, features = ["tcp"] }
-rumqttc = { version = "0.24", features = ["use-rustls"] }
+rumqttc = { version = "0.25.1", default-features = false, features = ["use-native-tls"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ts-rs = { version = "10", features = ["serde-compat", "serde-json-impl", "chrono-impl", "uuid-impl"] }
