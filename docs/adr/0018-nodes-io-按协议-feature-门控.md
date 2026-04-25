@@ -96,15 +96,15 @@ mod template;
 
 impl Plugin for IoPlugin {
     fn register(&self, registry: &mut NodeRegistry) {
-        registry.register("timer", ... );
-        registry.register("debugConsole", ... );
-        registry.register("native", ... );
+        registry.register_with_capabilities("timer", NodeCapabilities::TRIGGER, ... );
+        registry.register_with_capabilities("debugConsole", NodeCapabilities::empty(), ... );
+        registry.register_with_capabilities("native", NodeCapabilities::empty(), ... );
 
         #[cfg(feature = "io-sql")]
-        registry.register("sqlWriter", ... );
+        registry.register_with_capabilities("sqlWriter", NodeCapabilities::FILE_IO, ... );
 
         #[cfg(feature = "io-http")]
-        registry.register("httpClient", ... );
+        registry.register_with_capabilities("httpClient", NodeCapabilities::NETWORK_IO, ... );
 
         // ...
     }

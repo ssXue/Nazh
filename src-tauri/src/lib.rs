@@ -763,8 +763,6 @@ struct ProjectWorkspaceStorageInfo {
     boards_directory_path: String,
     using_default_location: bool,
     board_file_count: usize,
-    legacy_library_file_path: String,
-    legacy_library_exists: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -772,7 +770,6 @@ struct ProjectWorkspaceStorageInfo {
 struct ProjectWorkspaceLoadResult {
     storage: ProjectWorkspaceStorageInfo,
     board_files: Vec<ProjectWorkspaceBoardFile>,
-    legacy_library_text: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -808,6 +805,13 @@ struct PersistedDeploymentSessionCollection {
     #[serde(default)]
     active_project_id: Option<String>,
     sessions: Vec<PersistedDeploymentSession>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ConnectionDefinitionsLoadResult {
+    definitions: Vec<ConnectionDefinition>,
+    file_exists: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1104,15 +1108,12 @@ async fn deploy_workflow(
                 let _ = store.record_execution_event(&event).await;
             }
             let _ = event_app.emit(
-                "workflow://node-status-v2",
+                "workflow://node-status",
                 ScopedExecutionEvent {
                     workflow_id: workflow_id_for_event.clone(),
-                    event: event.clone(),
+                    event,
                 },
             );
-            if is_active_workflow(&event_app, &workflow_id_for_event).await {
-                let _ = event_app.emit("workflow://node-status", event);
-            }
         }
     }));
 
@@ -1135,15 +1136,12 @@ async fn deploy_workflow(
                 let _ = store.record_result(&result).await;
             }
             let _ = result_app.emit(
-                "workflow://result-v2",
+                "workflow://result",
                 ScopedWorkflowResult {
                     workflow_id: workflow_id_for_result.clone(),
-                    result: result.clone(),
+                    result,
                 },
             );
-            if is_active_workflow(&result_app, &workflow_id_for_result).await {
-                let _ = result_app.emit("workflow://result", result);
-            }
         }
     }));
 
@@ -1499,14 +1497,18 @@ async fn load_connection_definitions(
     app: AppHandle,
     state: State<'_, DesktopState>,
     workspace_path: Option<String>,
-) -> Result<Vec<ConnectionDefinition>, String> {
+) -> Result<ConnectionDefinitionsLoadResult, String> {
     let path = DesktopState::connections_file_path(&app, workspace_path.as_deref())?;
+    let file_exists = path.exists();
     if !path.exists() {
         state
             .connection_manager
             .replace_connections(Vec::<ConnectionDefinition>::new())
             .await;
-        return Ok(Vec::new());
+        return Ok(ConnectionDefinitionsLoadResult {
+            definitions: Vec::new(),
+            file_exists,
+        });
     }
     let text = fs::read_to_string(&path)
         .await
@@ -1517,7 +1519,10 @@ async fn load_connection_definitions(
         .connection_manager
         .replace_connections(defs.clone())
         .await;
-    Ok(defs)
+    Ok(ConnectionDefinitionsLoadResult {
+        definitions: defs,
+        file_exists,
+    })
 }
 
 #[tauri::command]
@@ -1865,20 +1870,10 @@ async fn load_project_board_files(
             .to_owned();
         board_files.push(ProjectWorkspaceBoardFile { file_name, text });
     }
-    let legacy_library_text = if storage.legacy_library_exists {
-        Some(
-            fs::read_to_string(&storage.legacy_library_file_path)
-                .await
-                .map_err(|error| format!("读取旧版工程库失败: {error}"))?,
-        )
-    } else {
-        None
-    };
 
     Ok(ProjectWorkspaceLoadResult {
         storage,
         board_files,
-        legacy_library_text,
     })
 }
 
@@ -1989,15 +1984,12 @@ fn resolve_project_workspace_storage(
     let (workspace_dir, using_default_location) =
         resolve_project_workspace_dir(app, workspace_path)?;
     let boards_directory_path = workspace_dir.join(PROJECT_BOARDS_DIR);
-    let legacy_library_file_path = workspace_dir.join("project-library.json");
 
     Ok(ProjectWorkspaceStorageInfo {
         workspace_path: workspace_dir.to_string_lossy().to_string(),
         boards_directory_path: boards_directory_path.to_string_lossy().to_string(),
         using_default_location,
         board_file_count: count_project_board_files(&boards_directory_path)?,
-        legacy_library_file_path: legacy_library_file_path.to_string_lossy().to_string(),
-        legacy_library_exists: legacy_library_file_path.exists(),
     })
 }
 
@@ -2348,12 +2340,6 @@ fn spawn_dispatch_lane_task(
     })
 }
 
-async fn is_active_workflow(app: &AppHandle, workflow_id: &str) -> bool {
-    let state: State<'_, DesktopState> = app.state();
-
-    state.active_workflow_id.lock().await.as_deref() == Some(workflow_id)
-}
-
 fn expand_user_path(app: &AppHandle, raw_path: &str) -> Result<PathBuf, String> {
     if raw_path == "~" || raw_path.starts_with("~/") {
         let home_dir = app
@@ -2617,8 +2603,8 @@ async fn collect_mqtt_root_specs(
             continue;
         };
 
-        let lease = match connection_manager.borrow(connection_id).await {
-            Ok(lease) => lease,
+        let mut guard = match connection_manager.acquire(connection_id).await {
+            Ok(guard) => guard,
             Err(error) => {
                 let reason = format!("MQTT 连接资源 `{connection_id}` 借出失败: {error}");
                 let _ = connection_manager
@@ -2628,21 +2614,21 @@ async fn collect_mqtt_root_specs(
             }
         };
 
-        let host = lease
-            .metadata
+        let host = guard
+            .metadata()
             .get("host")
             .and_then(Value::as_str)
             .unwrap_or_default()
             .to_owned();
-        let port = lease
-            .metadata
+        let port = guard
+            .metadata()
             .get("port")
             .and_then(Value::as_u64)
             .and_then(|p| u16::try_from(p).ok())
             .unwrap_or(1883);
         let topic = if config.topic.is_empty() {
-            lease
-                .metadata
+            guard
+                .metadata()
                 .get("topic")
                 .and_then(Value::as_str)
                 .unwrap_or_default()
@@ -2653,13 +2639,16 @@ async fn collect_mqtt_root_specs(
 
         if topic.is_empty() {
             let reason = format!("MQTT 订阅节点 `{node_id}` 的主题不能为空");
+            guard.mark_failure(&reason);
             return Err(EngineError::node_config(node_id.clone(), reason));
         }
 
         if host.is_empty() {
             let reason = format!("MQTT 连接资源 `{connection_id}` 缺少 host 配置");
+            guard.mark_failure(&reason);
             return Err(EngineError::node_config(node_id.clone(), reason));
         }
+        guard.mark_success();
 
         mqtt_roots.push(MqttRootSpec {
             node_id: node_id.clone(),
@@ -2739,8 +2728,8 @@ async fn run_mqtt_root_subscriber(
     };
 
     while !cancel.load(Ordering::Relaxed) {
-        let _lease = match connection_manager.borrow(&mqtt_root.connection_id).await {
-            Ok(lease) => lease,
+        let mut guard = match connection_manager.acquire(&mqtt_root.connection_id).await {
+            Ok(guard) => guard,
             Err(error) => {
                 let retry_after_ms = retry_delay_from_error(&error).unwrap_or(800);
                 emit_mqtt_trigger_failure(
@@ -2796,11 +2785,12 @@ async fn run_mqtt_root_subscriber(
 
         if !connected {
             let reason = format!("MQTT {}:{} 连接失败", mqtt_root.host, mqtt_root.port);
+            guard.mark_failure(&reason);
             let retry_after_ms = connection_manager
                 .record_connect_failure(&mqtt_root.connection_id, &reason)
                 .await
                 .unwrap_or(800);
-            let _ = connection_manager.release(&mqtt_root.connection_id).await;
+            drop(guard);
             emit_mqtt_trigger_failure(app, workflow_id, observability, &mqtt_root.node_id, reason);
             tokio::time::sleep(std::time::Duration::from_millis(retry_after_ms)).await;
             continue;
@@ -2824,11 +2814,12 @@ async fn run_mqtt_root_subscriber(
                 "MQTT 订阅失败: {error}"
             );
             let reason = format!("MQTT 订阅主题 `{}` 失败: {error}", mqtt_root.topic);
+            guard.mark_failure(&reason);
             let retry_after_ms = connection_manager
                 .record_connect_failure(&mqtt_root.connection_id, &reason)
                 .await
                 .unwrap_or(800);
-            let _ = connection_manager.release(&mqtt_root.connection_id).await;
+            drop(guard);
             emit_mqtt_trigger_failure(app, workflow_id, observability, &mqtt_root.node_id, reason);
             tokio::time::sleep(std::time::Duration::from_millis(retry_after_ms)).await;
             continue;
@@ -2898,8 +2889,9 @@ async fn run_mqtt_root_subscriber(
         }
 
         if cancel.load(Ordering::Relaxed) {
-            let _ = connection_manager.release(&mqtt_root.connection_id).await;
+            guard.mark_success();
             let reason = format!("MQTT {}:{} 订阅已停止", mqtt_root.host, mqtt_root.port);
+            drop(guard);
             let _ = connection_manager
                 .mark_disconnected(&mqtt_root.connection_id, &reason)
                 .await;
@@ -2907,11 +2899,12 @@ async fn run_mqtt_root_subscriber(
         }
 
         let reason = format!("MQTT {}:{} 连接已断开", mqtt_root.host, mqtt_root.port);
+        guard.mark_failure(&reason);
         let retry_after_ms = connection_manager
             .record_connect_failure(&mqtt_root.connection_id, &reason)
             .await
             .unwrap_or(800);
-        let _ = connection_manager.release(&mqtt_root.connection_id).await;
+        drop(guard);
         emit_mqtt_trigger_failure(app, workflow_id, observability, &mqtt_root.node_id, reason);
         tokio::time::sleep(std::time::Duration::from_millis(retry_after_ms)).await;
     }
@@ -2941,10 +2934,10 @@ fn run_serial_root_reader(
     };
 
     while !cancel.load(Ordering::Relaxed) {
-        let lease = match tauri::async_runtime::block_on(
-            connection_manager.borrow(&serial_root.connection_id),
+        let mut guard = match tauri::async_runtime::block_on(
+            connection_manager.acquire(&serial_root.connection_id),
         ) {
-            Ok(lease) => lease,
+            Ok(guard) => guard,
             Err(error) => {
                 let retry_after_ms = retry_delay_from_error(&error).unwrap_or(800);
                 emit_serial_trigger_failure(
@@ -2959,7 +2952,7 @@ fn run_serial_root_reader(
             }
         };
         let heartbeat_interval = Duration::from_millis(
-            governance_u64(&lease.metadata, "heartbeat_interval_ms")
+            governance_u64(guard.metadata(), "heartbeat_interval_ms")
                 .unwrap_or(3_000)
                 .clamp(250, 30_000),
         );
@@ -2985,13 +2978,12 @@ fn run_serial_root_reader(
             }
             Err(error) => {
                 let reason = format!("串口打开失败: {error}");
+                guard.mark_failure(&reason);
                 let retry_after_ms = tauri::async_runtime::block_on(
                     connection_manager.record_connect_failure(&serial_root.connection_id, &reason),
                 )
                 .unwrap_or(800);
-                let _ = tauri::async_runtime::block_on(
-                    connection_manager.release(&serial_root.connection_id),
-                );
+                drop(guard);
                 emit_serial_trigger_failure(
                     ctx.app,
                     ctx.workflow_id,
@@ -3079,10 +3071,9 @@ fn run_serial_root_reader(
         }
 
         if cancel.load(Ordering::Relaxed) {
-            let _ = tauri::async_runtime::block_on(
-                connection_manager.release(&serial_root.connection_id),
-            );
+            guard.mark_success();
             let reason = format!("串口 {} 监听已停止", config.port_path);
+            drop(guard);
             let _ = tauri::async_runtime::block_on(
                 connection_manager.mark_disconnected(&serial_root.connection_id, &reason),
             );
@@ -3091,12 +3082,12 @@ fn run_serial_root_reader(
 
         let reason =
             disconnected_reason.unwrap_or_else(|| format!("串口 {} 连接已断开", config.port_path));
+        guard.mark_failure(&reason);
         let retry_after_ms = tauri::async_runtime::block_on(
             connection_manager.record_connect_failure(&serial_root.connection_id, &reason),
         )
         .unwrap_or(800);
-        let _ =
-            tauri::async_runtime::block_on(connection_manager.release(&serial_root.connection_id));
+        drop(guard);
         emit_serial_trigger_failure(
             ctx.app,
             ctx.workflow_id,
@@ -3239,15 +3230,12 @@ fn emit_trigger_failure(
         error: message,
     };
     let _ = app.emit(
-        "workflow://node-status-v2",
+        "workflow://node-status",
         ScopedExecutionEvent {
             workflow_id: workflow_id.to_owned(),
-            event: event.clone(),
+            event,
         },
     );
-    if tauri::async_runtime::block_on(is_active_workflow(app, workflow_id)) {
-        let _ = app.emit("workflow://node-status", event);
-    }
 }
 
 fn retry_delay_from_error(error: &EngineError) -> Option<u64> {

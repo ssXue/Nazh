@@ -302,7 +302,7 @@ pub mod export_bindings {
 /// 连接借出的 RAII 守卫。
 ///
 /// `Drop` 实现在任何退出路径（正常返回、错误返回、panic 展开）
-/// 都会自动释放连接，消除手动 `release_lease` 遗漏的可能性。
+/// 都会自动释放连接，消除手动归还遗漏的可能性。
 ///
 /// 默认假定操作失败（未显式调用 [`mark_success`](Self::mark_success)
 /// 即视为异常退出）。
@@ -622,54 +622,6 @@ impl ConnectionManager {
         })
     }
 
-    /// 排他借出一个连接（兼容旧接口）。
-    ///
-    /// 推荐使用 [`acquire`](Self::acquire) 替代，后者返回 RAII Guard。
-    pub async fn borrow(&self, connection_id: &str) -> Result<ConnectionLease, EngineError> {
-        let guard = self.acquire(connection_id).await?;
-        let lease = guard.lease.clone();
-        // 手动释放 guard 以保持 in_use=true（由调用者通过 release_lease 管理）
-        std::mem::forget(guard);
-        Ok(lease)
-    }
-
-    /// 根据租约结果释放连接，并回写治理诊断。
-    ///
-    /// 推荐使用 [`acquire`](Self::acquire) + [`ConnectionGuard`] 替代。
-    pub async fn release_lease(
-        &self,
-        lease: &ConnectionLease,
-        operation_succeeded: bool,
-        operation_error: Option<&str>,
-    ) -> Result<(), EngineError> {
-        let entry = self.entry(&lease.id).await?;
-        let mut record = entry
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let outcome = if operation_succeeded {
-            ConnectionOutcome::Success
-        } else {
-            ConnectionOutcome::Failure(operation_error.unwrap_or("").to_owned())
-        };
-        finalize_release(&mut record, lease.borrowed_at, &outcome);
-        Ok(())
-    }
-
-    /// 将已借出的连接归还到资源池，不额外写入诊断信息。
-    ///
-    /// # Errors
-    ///
-    /// 连接不存在时返回 [`EngineError::ConnectionNotFound`]。
-    pub async fn release(&self, connection_id: &str) -> Result<(), EngineError> {
-        let entry = self.entry(connection_id).await?;
-        let mut record = entry
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        record.in_use = false;
-        record.health.last_released_at = Some(Utc::now());
-        Ok(())
-    }
-
     /// 记录一次真实建连成功。
     ///
     /// # Errors
@@ -923,7 +875,7 @@ impl ConnectionManager {
 
 /// 释放连接时的共享状态机：超时检测 → 成功/失败/异常退出处理。
 ///
-/// 由 [`ConnectionGuard::drop`] 和 [`ConnectionManager::release_lease`] 共用。
+/// 由 [`ConnectionGuard::drop`] 统一调用。
 #[allow(clippy::cast_sign_loss)]
 fn finalize_release(
     record: &mut ConnectionRecord,

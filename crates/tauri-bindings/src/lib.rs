@@ -139,9 +139,9 @@ mod tests {
     #[test]
     fn list_node_types_response_排序后输出全部类型() {
         let mut registry = NodeRegistry::new();
-        registry.register("timer", stub_factory);
-        registry.register("code", stub_factory);
-        registry.register("native", stub_factory);
+        registry.register_with_capabilities("timer", NodeCapabilities::empty(), stub_factory);
+        registry.register_with_capabilities("code", NodeCapabilities::empty(), stub_factory);
+        registry.register_with_capabilities("native", NodeCapabilities::empty(), stub_factory);
 
         let response = list_node_types_response(&registry);
         assert_eq!(response.types.len(), 3);
@@ -166,7 +166,7 @@ mod tests {
             NodeCapabilities::DEVICE_IO,
             stub_factory,
         );
-        registry.register("plain", stub_factory);
+        registry.register_with_capabilities("plain", NodeCapabilities::empty(), stub_factory);
 
         let response = list_node_types_response(&registry);
         let by_name: std::collections::HashMap<&str, u32> = response

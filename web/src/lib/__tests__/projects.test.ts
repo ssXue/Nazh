@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   applyEnvironmentToConnectionDefinitions,
   applyEnvironmentToGraph,
+  buildDefaultConnectionDefinitions,
   buildDefaultProjectLibrary,
   deleteProjectSnapshot,
   importProjectsFromText,
@@ -125,10 +126,8 @@ describe('applyEnvironmentToConnectionDefinitions', () => {
     const library = buildDefaultProjectLibrary();
     const targetProject = library.projects[0];
     const targetEnvironment = targetProject.environments[1];
-    const graph = JSON.parse(targetProject.astText);
-
     const nextConnections = applyEnvironmentToConnectionDefinitions(
-      graph.connections ?? [],
+      buildDefaultConnectionDefinitions(),
       targetEnvironment,
     );
     const modbusConnection = nextConnections.find((connection) => connection.id === 'plc-main');

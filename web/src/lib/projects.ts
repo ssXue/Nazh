@@ -746,7 +746,7 @@ function buildSeedProjectRecord(
   payloadText: string,
   environments: ProjectEnvironment[],
 ): ProjectRecord {
-  const astText = formatWorkflowGraph(graph);
+  const astText = formatWorkflowGraph(stripGraphConnectionDefinitions(graph));
   const createdAt = nowIso();
   const record: ProjectRecord = {
     id,
@@ -865,6 +865,32 @@ function buildSeedProjects(): ProjectRecord[] {
       ],
     ),
   ];
+}
+
+function collectConnectionDefinitions(graphs: WorkflowGraph[]): ConnectionDefinition[] {
+  const knownIds = new Set<string>();
+  const definitions: ConnectionDefinition[] = [];
+
+  graphs.forEach((graph) => {
+    (graph.connections ?? []).forEach((connection) => {
+      if (knownIds.has(connection.id)) {
+        return;
+      }
+
+      knownIds.add(connection.id);
+      definitions.push(cloneJson(connection));
+    });
+  });
+
+  return definitions;
+}
+
+export function buildDefaultConnectionDefinitions(): ConnectionDefinition[] {
+  return collectConnectionDefinitions([
+    buildIndustrialAlarmExample('工业告警联动'),
+    buildDataPipelineExample('数据管道'),
+    buildNotificationExample('告警通知流'),
+  ]);
 }
 
 export function buildDefaultProjectLibrary(): ProjectLibraryState {
@@ -1031,7 +1057,7 @@ function normalizeProjectRecord(
         : formatWorkflowGraph(buildStarterWorkflow(fallbackName));
   const parsedGraph = parseWorkflowGraph(astTextCandidate);
   const astText = parsedGraph.graph
-    ? formatWorkflowGraph(parsedGraph.graph)
+    ? formatWorkflowGraph(stripGraphConnectionDefinitions(parsedGraph.graph))
     : formatWorkflowGraph(buildStarterWorkflow(fallbackName));
   const createdAt = normalizeString(source.createdAt, nowIso());
   const updatedAt = normalizeString(source.updatedAt, createdAt);
