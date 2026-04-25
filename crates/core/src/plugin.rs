@@ -408,7 +408,7 @@ mod tests {
             id: id.to_owned(),
             node_type: node_type.to_owned(),
             connection_id: None,
-            config: serde_json::Value::Object(Default::default()),
+            config: serde_json::Value::Object(serde_json::Map::default()),
             timeout_ms: None,
             buffer: 32,
         }

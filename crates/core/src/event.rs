@@ -263,7 +263,9 @@ mod tests {
             metadata: None,
         });
 
-        let value = serde_json::to_value(event).expect("事件应可序列化");
+        let Ok(value) = serde_json::to_value(event) else {
+            panic!("事件应可序列化");
+        };
 
         assert_eq!(
             value,
@@ -286,7 +288,10 @@ mod tests {
             }
         });
 
-        let event: ExecutionEvent = serde_json::from_value(value).expect("事件应可反序列化");
+        let Ok(event) = serde_json::from_value(value) else {
+            panic!("事件应可反序列化");
+        };
+        let event: ExecutionEvent = event;
 
         assert_eq!(
             event,

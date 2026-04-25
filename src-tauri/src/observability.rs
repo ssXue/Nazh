@@ -142,6 +142,64 @@ pub struct ObservabilityStore {
     state: Mutex<ObservabilityRuntimeState>,
 }
 
+struct ObservabilityEntryDraft {
+    level: String,
+    category: String,
+    source: String,
+    message: String,
+    detail: Option<String>,
+    trace_id: Option<String>,
+    node_id: Option<String>,
+    duration_ms: Option<u64>,
+    data: Option<Value>,
+    timestamp: DateTime<Utc>,
+    event_kind: Option<String>,
+}
+
+fn elapsed_ms_since(now: DateTime<Utc>, started_at: DateTime<Utc>) -> u64 {
+    (now - started_at).num_milliseconds().max(0).cast_unsigned()
+}
+
+impl ObservabilityEntryDraft {
+    fn execution(
+        level: &str,
+        kind: &str,
+        source: String,
+        message: String,
+        trace_id: String,
+        timestamp: DateTime<Utc>,
+    ) -> Self {
+        Self {
+            level: level.to_owned(),
+            category: "execution".to_owned(),
+            source,
+            message,
+            detail: None,
+            trace_id: Some(trace_id),
+            node_id: None,
+            duration_ms: None,
+            data: None,
+            timestamp,
+            event_kind: Some(kind.to_owned()),
+        }
+    }
+
+    fn with_detail(mut self, detail: Option<String>) -> Self {
+        self.detail = detail;
+        self
+    }
+
+    fn with_node_id(mut self, node_id: Option<String>) -> Self {
+        self.node_id = node_id;
+        self
+    }
+
+    fn with_duration_ms(mut self, duration_ms: Option<u64>) -> Self {
+        self.duration_ms = duration_ms;
+        self
+    }
+}
+
 impl ObservabilityStore {
     pub async fn new(
         workspace_dir: PathBuf,
@@ -168,144 +226,122 @@ impl ObservabilityStore {
         }))
     }
 
+    #[allow(clippy::too_many_lines)]
     pub async fn record_execution_event(
         &self,
         event: &ExecutionEvent,
     ) -> Result<ObservabilityEntry, String> {
         let now = Utc::now();
-        let mut state = self.state.lock().await;
+        let mut runtime_state = self.state.lock().await;
 
-        state
+        runtime_state
             .active_spans
             .retain(|_, started_at| (now - *started_at).num_seconds() < 3600);
 
-        let (entry, clear_span) = match event {
+        let (draft, clear_span) = match event {
             ExecutionEvent::Started { stage, trace_id } => {
-                state.active_spans.insert(span_key(trace_id, stage), now);
+                runtime_state
+                    .active_spans
+                    .insert(span_key(trace_id, stage), now);
                 (
-                    {
-                        let mut e = self.build_entry(
-                            "info",
-                            "execution",
-                            stage.clone(),
-                            "节点开始执行",
-                            None,
-                            Some(trace_id.to_string()),
-                            Some(stage.clone()),
-                            None,
-                            None,
-                            now,
-                        );
-                        e.event_kind = Some("started".to_owned());
-                        e
-                    },
+                    ObservabilityEntryDraft::execution(
+                        "info",
+                        "started",
+                        stage.clone(),
+                        "节点开始执行".to_owned(),
+                        trace_id.to_string(),
+                        now,
+                    )
+                    .with_node_id(Some(stage.clone())),
                     false,
                 )
             }
             ExecutionEvent::Completed(completed) => {
-                let stage = &completed.stage;
+                let node_stage = &completed.stage;
                 let trace_id = completed.trace_id;
                 let metadata = &completed.metadata;
-                let duration_ms = state
+                let duration_ms = runtime_state
                     .active_spans
-                    .get(&span_key(trace_id, stage))
-                    .map(|started_at| (now - *started_at).num_milliseconds().max(0) as u64);
-                if let Some(meta) = metadata
+                    .get(&span_key(trace_id, node_stage))
+                    .map(|started_at| elapsed_ms_since(now, *started_at));
+
+                let pending_alert = metadata
                     .as_ref()
                     .and_then(|m| m.get("http"))
                     .and_then(Value::as_object)
-                {
-                    if let Some(alert) =
-                        build_alert_delivery(&self.session, stage, trace_id, meta, now)
-                    {
-                        let _ = append_jsonl(self.root_dir.join(ALERTS_FILE), &alert).await;
-                    }
+                    .and_then(|meta| {
+                        build_alert_delivery(&self.session, node_stage, trace_id, meta, now)
+                    });
+                runtime_state
+                    .active_spans
+                    .remove(&span_key(trace_id, node_stage));
+
+                drop(runtime_state);
+
+                if let Some(alert) = pending_alert {
+                    let _ = append_jsonl(self.root_dir.join(ALERTS_FILE), &alert).await;
                 }
-                (
-                    {
-                        let mut e = self.build_entry(
-                            "success",
-                            "execution",
-                            stage.clone(),
-                            "节点执行完成",
-                            duration_ms.map(|ms| format!("节点耗时 {ms} ms")),
-                            Some(trace_id.to_string()),
-                            Some(stage.clone()),
-                            duration_ms,
-                            None,
-                            now,
-                        );
-                        e.event_kind = Some("completed".to_owned());
-                        e
-                    },
-                    true,
+
+                let draft = ObservabilityEntryDraft::execution(
+                    "success",
+                    "completed",
+                    node_stage.clone(),
+                    "节点执行完成".to_owned(),
+                    trace_id.to_string(),
+                    now,
                 )
+                .with_detail(duration_ms.map(|ms| format!("节点耗时 {ms} ms")))
+                .with_node_id(Some(node_stage.clone()))
+                .with_duration_ms(duration_ms);
+                let entry = self.build_entry(draft);
+                append_jsonl(self.root_dir.join(EVENTS_FILE), &entry).await?;
+                return Ok(entry);
             }
             ExecutionEvent::Failed {
                 stage,
                 trace_id,
                 error,
             } => {
-                let duration_ms = state
+                let duration_ms = runtime_state
                     .active_spans
                     .get(&span_key(trace_id, stage))
-                    .map(|started_at| (now - *started_at).num_milliseconds().max(0) as u64);
+                    .map(|started_at| elapsed_ms_since(now, *started_at));
                 (
-                    {
-                        let mut e = self.build_entry(
-                            "error",
-                            "execution",
-                            stage.clone(),
-                            "节点执行失败",
-                            Some(error.clone()),
-                            Some(trace_id.to_string()),
-                            Some(stage.clone()),
-                            duration_ms,
-                            None,
-                            now,
-                        );
-                        e.event_kind = Some("failed".to_owned());
-                        e
-                    },
+                    ObservabilityEntryDraft::execution(
+                        "error",
+                        "failed",
+                        stage.clone(),
+                        "节点执行失败".to_owned(),
+                        trace_id.to_string(),
+                        now,
+                    )
+                    .with_detail(Some(error.clone()))
+                    .with_node_id(Some(stage.clone()))
+                    .with_duration_ms(duration_ms),
                     true,
                 )
             }
             ExecutionEvent::Output { stage, trace_id } => (
-                {
-                    let mut e = self.build_entry(
-                        "success",
-                        "execution",
-                        stage.clone(),
-                        "节点产生输出",
-                        None,
-                        Some(trace_id.to_string()),
-                        Some(stage.clone()),
-                        None,
-                        None,
-                        now,
-                    );
-                    e.event_kind = Some("output".to_owned());
-                    e
-                },
+                ObservabilityEntryDraft::execution(
+                    "success",
+                    "output",
+                    stage.clone(),
+                    "节点产生输出".to_owned(),
+                    trace_id.to_string(),
+                    now,
+                )
+                .with_node_id(Some(stage.clone())),
                 false,
             ),
             ExecutionEvent::Finished { trace_id } => (
-                {
-                    let mut e = self.build_entry(
-                        "success",
-                        "execution",
-                        "workflow".to_owned(),
-                        "执行链路完成",
-                        None,
-                        Some(trace_id.to_string()),
-                        None,
-                        None,
-                        None,
-                        now,
-                    );
-                    e.event_kind = Some("finished".to_owned());
-                    e
-                },
+                ObservabilityEntryDraft::execution(
+                    "success",
+                    "finished",
+                    "workflow".to_owned(),
+                    "执行链路完成".to_owned(),
+                    trace_id.to_string(),
+                    now,
+                ),
                 false,
             ),
         };
@@ -313,38 +349,42 @@ impl ObservabilityStore {
         if clear_span {
             match event {
                 ExecutionEvent::Completed(completed) => {
-                    state
+                    runtime_state
                         .active_spans
                         .remove(&span_key(completed.trace_id, &completed.stage));
                 }
                 ExecutionEvent::Failed {
                     stage, trace_id, ..
                 } => {
-                    state.active_spans.remove(&span_key(trace_id, stage));
+                    runtime_state
+                        .active_spans
+                        .remove(&span_key(trace_id, stage));
                 }
                 _ => {}
             }
         }
-        drop(state);
+        drop(runtime_state);
 
+        let entry = self.build_entry(draft);
         append_jsonl(self.root_dir.join(EVENTS_FILE), &entry).await?;
         Ok(entry)
     }
 
     pub async fn record_result(&self, result: &WorkflowContext) -> Result<(), String> {
         let now = Utc::now();
-        let result_entry = self.build_entry(
-            "success",
-            "result",
-            "result".to_owned(),
-            "结果载荷输出",
-            None,
-            Some(result.trace_id.to_string()),
-            None,
-            None,
-            Some(summarize_payload(&result.payload)),
-            now,
-        );
+        let result_entry = self.build_entry(ObservabilityEntryDraft {
+            level: "success".to_owned(),
+            category: "result".to_owned(),
+            source: "result".to_owned(),
+            message: "结果载荷输出".to_owned(),
+            detail: None,
+            trace_id: Some(result.trace_id.to_string()),
+            node_id: None,
+            duration_ms: None,
+            data: Some(summarize_payload(&result.payload)),
+            timestamp: now,
+            event_kind: None,
+        });
         append_jsonl(self.root_dir.join(EVENTS_FILE), &result_entry).await?;
 
         Ok(())
@@ -359,18 +399,19 @@ impl ObservabilityStore {
         trace_id: Option<String>,
         data: Option<Value>,
     ) -> Result<(), String> {
-        let entry = self.build_entry(
-            level,
-            "audit",
-            source.to_owned(),
-            message.to_owned(),
+        let entry = self.build_entry(ObservabilityEntryDraft {
+            level: level.to_owned(),
+            category: "audit".to_owned(),
+            source: source.to_owned(),
+            message: message.to_owned(),
             detail,
             trace_id,
-            None,
-            None,
+            node_id: None,
+            duration_ms: None,
             data,
-            Utc::now(),
-        );
+            timestamp: Utc::now(),
+            event_kind: None,
+        });
         append_jsonl(self.root_dir.join(AUDIT_FILE), &entry).await
     }
 
@@ -382,52 +423,40 @@ impl ObservabilityStore {
         trace_id: Option<String>,
         data: Option<Value>,
     ) -> Result<(), String> {
-        let entry = self.build_entry(
-            "error",
-            "execution",
-            source.to_owned(),
+        let entry = self.build_entry(ObservabilityEntryDraft {
+            level: "error".to_owned(),
+            category: "execution".to_owned(),
+            source: source.to_owned(),
             message,
             detail,
             trace_id,
-            Some(source.to_owned()),
-            None,
+            node_id: Some(source.to_owned()),
+            duration_ms: None,
             data,
-            Utc::now(),
-        );
+            timestamp: Utc::now(),
+            event_kind: None,
+        });
         append_jsonl(self.root_dir.join(EVENTS_FILE), &entry).await
     }
 
-    fn build_entry(
-        &self,
-        level: impl Into<String>,
-        category: impl Into<String>,
-        source: String,
-        message: impl Into<String>,
-        detail: Option<String>,
-        trace_id: Option<String>,
-        node_id: Option<String>,
-        duration_ms: Option<u64>,
-        data: Option<Value>,
-        timestamp: DateTime<Utc>,
-    ) -> ObservabilityEntry {
-        let category = category.into();
+    fn build_entry(&self, draft: ObservabilityEntryDraft) -> ObservabilityEntry {
         ObservabilityEntry {
-            id: build_record_id(&category, &timestamp),
-            timestamp: timestamp.to_rfc3339(),
-            level: level.into(),
-            category,
-            source,
-            message: message.into(),
-            detail,
-            trace_id,
-            node_id,
-            duration_ms,
+            id: build_record_id(&draft.category, &draft.timestamp),
+            timestamp: draft.timestamp.to_rfc3339(),
+            level: draft.level,
+            category: draft.category,
+            source: draft.source,
+            message: draft.message,
+            detail: draft.detail,
+            trace_id: draft.trace_id,
+            node_id: draft.node_id,
+            duration_ms: draft.duration_ms,
             project_id: Some(self.session.project_id.clone()),
             project_name: Some(self.session.project_name.clone()),
             environment_id: Some(self.session.environment_id.clone()),
             environment_name: Some(self.session.environment_name.clone()),
-            data,
-            event_kind: None,
+            data: draft.data,
+            event_kind: draft.event_kind,
         }
     }
 }
@@ -491,28 +520,93 @@ pub async fn query_observability(
     })
 }
 
+#[derive(Default)]
+struct TraceAccumulator {
+    status: String,
+    started_at: Option<String>,
+    last_seen_at: Option<String>,
+    total_events: usize,
+    node_ids: HashSet<String>,
+    output_count: usize,
+    failure_count: usize,
+    total_duration_ms: u64,
+    has_duration: bool,
+    last_node_id: Option<String>,
+    project_name: Option<String>,
+    environment_name: Option<String>,
+}
+
+impl TraceAccumulator {
+    fn apply_entry(&mut self, entry: &ObservabilityEntry) {
+        self.total_events += 1;
+        self.last_seen_at = max_timestamp(self.last_seen_at.take(), Some(entry.timestamp.clone()));
+        self.started_at = min_timestamp(self.started_at.take(), Some(entry.timestamp.clone()));
+        self.project_name = self
+            .project_name
+            .clone()
+            .or_else(|| entry.project_name.clone());
+        self.environment_name = self
+            .environment_name
+            .clone()
+            .or_else(|| entry.environment_name.clone());
+
+        if let Some(node_id) = &entry.node_id {
+            self.node_ids.insert(node_id.clone());
+            self.last_node_id = Some(node_id.clone());
+        }
+        if entry.event_kind.as_deref() == Some("output") {
+            self.output_count += 1;
+        }
+        if entry.level == "error" {
+            self.failure_count += 1;
+            "failed".clone_into(&mut self.status);
+        } else if self.status.is_empty() {
+            self.status = if entry.event_kind.as_deref() == Some("completed") {
+                "completed".to_owned()
+            } else {
+                "running".to_owned()
+            };
+        }
+        if let Some(duration_ms) = entry.duration_ms {
+            self.total_duration_ms = self.total_duration_ms.saturating_add(duration_ms);
+            self.has_duration = true;
+        }
+    }
+
+    fn apply_alert(&mut self, alert: &AlertDeliveryRecord) {
+        self.project_name = Some(alert.project_name.clone());
+        self.environment_name = Some(alert.environment_name.clone());
+        self.last_seen_at = max_timestamp(self.last_seen_at.take(), Some(alert.timestamp.clone()));
+    }
+
+    fn finish(self, trace_id: String) -> ObservabilityTraceSummary {
+        ObservabilityTraceSummary {
+            trace_id,
+            status: if self.status.is_empty() {
+                "observed".to_owned()
+            } else {
+                self.status
+            },
+            started_at: self.started_at,
+            last_seen_at: self.last_seen_at,
+            total_events: self.total_events,
+            node_count: self.node_ids.len(),
+            output_count: self.output_count,
+            failure_count: self.failure_count,
+            total_duration_ms: self.has_duration.then_some(self.total_duration_ms),
+            last_node_id: self.last_node_id,
+            project_name: self.project_name,
+            environment_name: self.environment_name,
+        }
+    }
+}
+
 fn build_trace_summaries(
     events: &[ObservabilityEntry],
     alerts: &[AlertDeliveryRecord],
     trace_filter: Option<&str>,
     limit: usize,
 ) -> Vec<ObservabilityTraceSummary> {
-    #[derive(Default)]
-    struct TraceAccumulator {
-        status: String,
-        started_at: Option<String>,
-        last_seen_at: Option<String>,
-        total_events: usize,
-        node_ids: HashSet<String>,
-        output_count: usize,
-        failure_count: usize,
-        total_duration_ms: u64,
-        has_duration: bool,
-        last_node_id: Option<String>,
-        project_name: Option<String>,
-        environment_name: Option<String>,
-    }
-
     let mut traces: HashMap<String, TraceAccumulator> = HashMap::new();
 
     for entry in events {
@@ -522,83 +616,25 @@ fn build_trace_summaries(
         if trace_filter.is_some_and(|filter| filter != trace_id) {
             continue;
         }
-
-        let accumulator = traces.entry(trace_id.clone()).or_default();
-        accumulator.total_events += 1;
-        accumulator.last_seen_at = max_timestamp(
-            accumulator.last_seen_at.take(),
-            Some(entry.timestamp.clone()),
-        );
-        accumulator.started_at =
-            min_timestamp(accumulator.started_at.take(), Some(entry.timestamp.clone()));
-        accumulator.project_name = accumulator
-            .project_name
-            .clone()
-            .or_else(|| entry.project_name.clone());
-        accumulator.environment_name = accumulator
-            .environment_name
-            .clone()
-            .or_else(|| entry.environment_name.clone());
-
-        if let Some(node_id) = &entry.node_id {
-            accumulator.node_ids.insert(node_id.clone());
-            accumulator.last_node_id = Some(node_id.clone());
-        }
-        if entry.event_kind.as_deref() == Some("output") {
-            accumulator.output_count += 1;
-        }
-        if entry.level == "error" {
-            accumulator.failure_count += 1;
-            accumulator.status = "failed".to_owned();
-        } else if accumulator.status.is_empty() {
-            accumulator.status = if entry.event_kind.as_deref() == Some("completed") {
-                "completed".to_owned()
-            } else {
-                "running".to_owned()
-            };
-        }
-        if let Some(duration_ms) = entry.duration_ms {
-            accumulator.total_duration_ms =
-                accumulator.total_duration_ms.saturating_add(duration_ms);
-            accumulator.has_duration = true;
-        }
+        traces
+            .entry(trace_id.clone())
+            .or_default()
+            .apply_entry(entry);
     }
 
     for alert in alerts {
         if trace_filter.is_some_and(|filter| filter != alert.trace_id) {
             continue;
         }
-        let accumulator = traces.entry(alert.trace_id.clone()).or_default();
-        accumulator.project_name = Some(alert.project_name.clone());
-        accumulator.environment_name = Some(alert.environment_name.clone());
-        accumulator.last_seen_at = max_timestamp(
-            accumulator.last_seen_at.take(),
-            Some(alert.timestamp.clone()),
-        );
+        traces
+            .entry(alert.trace_id.clone())
+            .or_default()
+            .apply_alert(alert);
     }
 
     let mut result = traces
         .into_iter()
-        .map(|(trace_id, accumulator)| ObservabilityTraceSummary {
-            trace_id,
-            status: if accumulator.status.is_empty() {
-                "observed".to_owned()
-            } else {
-                accumulator.status
-            },
-            started_at: accumulator.started_at,
-            last_seen_at: accumulator.last_seen_at,
-            total_events: accumulator.total_events,
-            node_count: accumulator.node_ids.len(),
-            output_count: accumulator.output_count,
-            failure_count: accumulator.failure_count,
-            total_duration_ms: accumulator
-                .has_duration
-                .then_some(accumulator.total_duration_ms),
-            last_node_id: accumulator.last_node_id,
-            project_name: accumulator.project_name,
-            environment_name: accumulator.environment_name,
-        })
+        .map(|(trace_id, accumulator)| accumulator.finish(trace_id))
         .collect::<Vec<_>>();
 
     result.sort_by(|left, right| {
@@ -828,11 +864,8 @@ where
 
     let mut items = Vec::new();
     for line in text.lines().filter(|line| !line.trim().is_empty()) {
-        match serde_json::from_str::<T>(line) {
-            Ok(item) => items.push(item),
-            Err(_error) => {
-                continue;
-            }
+        if let Ok(item) = serde_json::from_str::<T>(line) {
+            items.push(item);
         }
     }
 
@@ -873,4 +906,61 @@ fn build_record_id(prefix: &str, timestamp: &DateTime<Utc>) -> String {
         timestamp.timestamp_millis(),
         timestamp.timestamp_subsec_nanos()
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ObservabilityContextInput, ObservabilityStore, span_key};
+    use nazh_engine::{CompletedExecutionEvent, ExecutionEvent};
+    use uuid::Uuid;
+
+    fn test_context() -> ObservabilityContextInput {
+        ObservabilityContextInput {
+            workspace_path: String::new(),
+            project_id: "project-test".to_owned(),
+            project_name: "测试项目".to_owned(),
+            environment_id: "env-test".to_owned(),
+            environment_name: "测试环境".to_owned(),
+            deployment_source: "test".to_owned(),
+        }
+    }
+
+    #[tokio::test]
+    async fn completed_事件会清理_active_span() {
+        let workspace =
+            std::env::temp_dir().join(format!("nazh-observability-test-{}", Uuid::new_v4()));
+        let Ok(store) = ObservabilityStore::new(workspace.clone(), test_context()).await else {
+            panic!("观测存储应可创建");
+        };
+        let trace_id = Uuid::new_v4();
+        let node_stage = "node_a";
+        let span_key = span_key(trace_id, node_stage);
+
+        let started = ExecutionEvent::Started {
+            stage: node_stage.to_owned(),
+            trace_id,
+        };
+        let Ok(_) = store.record_execution_event(&started).await else {
+            panic!("started 事件应可记录");
+        };
+        {
+            let runtime_state = store.state.lock().await;
+            assert!(runtime_state.active_spans.contains_key(&span_key));
+        }
+
+        let completed = ExecutionEvent::Completed(CompletedExecutionEvent {
+            stage: node_stage.to_owned(),
+            trace_id,
+            metadata: None,
+        });
+        let Ok(_) = store.record_execution_event(&completed).await else {
+            panic!("completed 事件应可记录");
+        };
+        {
+            let runtime_state = store.state.lock().await;
+            assert!(!runtime_state.active_spans.contains_key(&span_key));
+        }
+
+        let _ = std::fs::remove_dir_all(workspace);
+    }
 }

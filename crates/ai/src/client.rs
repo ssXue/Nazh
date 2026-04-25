@@ -145,7 +145,9 @@ mod tests {
             false,
             provider_accepts_deepseek_options(&provider, &provider.default_model),
         );
-        let json = serde_json::to_value(payload).expect("payload serializes");
+        let Ok(json) = serde_json::to_value(payload) else {
+            panic!("payload serializes");
+        };
 
         assert_eq!(json["model"], "deepseek-v4-pro");
         assert_eq!(json["thinking"]["type"], "enabled");
@@ -175,7 +177,9 @@ mod tests {
             false,
             provider_accepts_deepseek_options(&provider, &provider.default_model),
         );
-        let json = serde_json::to_value(payload).expect("payload serializes");
+        let Ok(json) = serde_json::to_value(payload) else {
+            panic!("payload serializes");
+        };
 
         assert!(json.get("thinking").is_none());
         assert!(json.get("reasoning_effort").is_none());
@@ -197,7 +201,9 @@ mod tests {
             false,
             provider_accepts_deepseek_options(&provider, &provider.default_model),
         );
-        let json = serde_json::to_value(payload).expect("payload serializes");
+        let Ok(json) = serde_json::to_value(payload) else {
+            panic!("payload serializes");
+        };
 
         assert_eq!(json["thinking"]["type"], "disabled");
         assert_eq!(json["temperature"], 0.0);
