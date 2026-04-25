@@ -52,6 +52,7 @@ const DEAD_LETTER_FILE: &str = "dead-letters.jsonl";
 const PROJECT_BOARDS_DIR: &str = "boards";
 const PROJECT_EXPORTS_DIR: &str = "exports";
 const PROJECT_BOARD_FILE_SUFFIX: &str = ".nazh-board.json";
+const SQL_WRITER_DEFAULT_DATABASE_PATH: &str = "./nazh-local.sqlite3";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -956,7 +957,13 @@ async fn deploy_workflow(
         return Err("AST 超过最大允许大小（10 MB）".to_owned());
     }
     let mut graph = WorkflowGraph::from_json(&ast).map_err(stringify_error)?;
-    normalize_sql_writer_paths(&app, &mut graph).map_err(stringify_error)?;
+    let (workspace_dir, _) = resolve_project_workspace_dir(
+        &app,
+        observability_context
+            .as_ref()
+            .map(|context| context.workspace_path.as_str()),
+    )?;
+    normalize_sql_writer_paths(&mut graph, &workspace_dir).map_err(stringify_error)?;
     let workflow_id = derive_workflow_id(
         workflow_id.as_deref(),
         graph.name.as_deref(),
@@ -980,13 +987,6 @@ async fn deploy_workflow(
             .map(|context| context.environment_name.clone()),
         deployed_at: deployed_at.clone(),
     };
-    let (workspace_dir, _) = resolve_project_workspace_dir(
-        &app,
-        observability_context
-            .as_ref()
-            .map(|context| context.workspace_path.as_str()),
-    )?;
-
     if let Some(definitions) = connection_definitions {
         if state.workflows.lock().await.is_empty() {
             state
@@ -3443,20 +3443,16 @@ fn bytes_to_hex(bytes: &[u8]) -> String {
 }
 
 fn normalize_sql_writer_paths(
-    app: &AppHandle,
     graph: &mut WorkflowGraph,
+    workspace_dir: &Path,
 ) -> Result<(), EngineError> {
-    let data_root = app
-        .path()
-        .app_local_data_dir()
-        .map_err(|error| EngineError::invalid_graph(format!("无法解析桌面数据目录: {error}")))?;
-
     for node_definition in graph.nodes.values_mut() {
         if node_definition.node_type() != "sqlWriter" && node_definition.node_type() != "sql/writer"
         {
             continue;
         }
 
+        let node_id = node_definition.id().to_owned();
         let Some(config_map) = node_definition.config_mut().as_object_mut() else {
             continue;
         };
@@ -3466,15 +3462,11 @@ fn normalize_sql_writer_paths(
             .and_then(Value::as_str)
             .map(str::trim)
             .filter(|value| !value.is_empty())
-            .unwrap_or("./nazh-local.sqlite3");
+            .unwrap_or(SQL_WRITER_DEFAULT_DATABASE_PATH)
+            .to_owned();
 
-        if Path::new(raw_database_path).is_absolute() {
-            continue;
-        }
-
-        let resolved_path = data_root
-            .join("sqlite")
-            .join(sanitize_relative_path(raw_database_path));
+        let resolved_path =
+            normalize_sql_writer_database_path(&raw_database_path, workspace_dir, &node_id)?;
         config_map.insert(
             "database_path".to_owned(),
             Value::String(resolved_path.to_string_lossy().to_string()),
@@ -3484,14 +3476,46 @@ fn normalize_sql_writer_paths(
     Ok(())
 }
 
+fn normalize_sql_writer_database_path(
+    raw_path: &str,
+    workspace_dir: &Path,
+    node_id: &str,
+) -> Result<PathBuf, EngineError> {
+    let path = Path::new(raw_path);
+    if path.is_absolute() {
+        if path
+            .components()
+            .any(|component| component == Component::ParentDir)
+        {
+            return Err(EngineError::node_config(
+                node_id.to_owned(),
+                "database_path 不允许包含路径穿越（..）",
+            ));
+        }
+
+        if !path.starts_with(workspace_dir) {
+            return Err(EngineError::node_config(
+                node_id.to_owned(),
+                "database_path 需要位于当前工作目录内",
+            ));
+        }
+
+        return Ok(path.to_path_buf());
+    }
+
+    Ok(workspace_dir.join(sanitize_relative_path(raw_path)))
+}
+
 fn sanitize_relative_path(raw_path: &str) -> PathBuf {
     let mut sanitized = PathBuf::new();
 
     for component in Path::new(raw_path).components() {
         match component {
             Component::Normal(segment) => sanitized.push(segment),
-            Component::CurDir => {}
-            Component::ParentDir | Component::RootDir | Component::Prefix(_) => {}
+            Component::CurDir
+            | Component::ParentDir
+            | Component::RootDir
+            | Component::Prefix(_) => {}
         }
     }
 
@@ -3500,24 +3524,6 @@ fn sanitize_relative_path(raw_path: &str) -> PathBuf {
     }
 
     sanitized
-}
-
-#[cfg(test)]
-mod tests {
-    use super::sanitize_relative_path;
-    use std::path::PathBuf;
-
-    #[test]
-    fn sanitize_relative_path_removes_escape_segments() {
-        let sanitized = sanitize_relative_path("../data/./edge-runtime.sqlite3");
-        assert_eq!(sanitized, PathBuf::from("data/edge-runtime.sqlite3"));
-    }
-
-    #[test]
-    fn sanitize_relative_path_falls_back_when_empty() {
-        let sanitized = sanitize_relative_path("./");
-        assert_eq!(sanitized, PathBuf::from("nazh-local.sqlite3"));
-    }
 }
 
 /// 初始化全局 tracing subscriber，输出到 stderr。
@@ -3604,5 +3610,70 @@ pub fn run() {
 
     if let Err(error) = builder.run(tauri::generate_context!()) {
         tracing::error!("Nazh 桌面壳层运行失败: {error}");
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::{normalize_sql_writer_database_path, sanitize_relative_path};
+    use nazh_engine::EngineError;
+    use std::path::PathBuf;
+
+    #[test]
+    fn sanitize_relative_path_removes_escape_segments() {
+        let sanitized = sanitize_relative_path("../data/./edge-runtime.sqlite3");
+        assert_eq!(sanitized, PathBuf::from("data/edge-runtime.sqlite3"));
+    }
+
+    #[test]
+    fn sanitize_relative_path_falls_back_when_empty() {
+        let sanitized = sanitize_relative_path("./");
+        assert_eq!(sanitized, PathBuf::from("nazh-local.sqlite3"));
+    }
+
+    #[test]
+    fn sql_writer_relative_path_resolves_inside_workspace() {
+        let workspace = PathBuf::from("/tmp/nazh-workspace");
+        let normalized =
+            normalize_sql_writer_database_path("./data/edge-runtime.sqlite3", &workspace, "sql_1")
+                .unwrap();
+
+        assert_eq!(normalized, workspace.join("data/edge-runtime.sqlite3"));
+    }
+
+    #[test]
+    fn sql_writer_escape_segments_stay_inside_workspace() {
+        let workspace = PathBuf::from("/tmp/nazh-workspace");
+        let normalized =
+            normalize_sql_writer_database_path("../audit.sqlite3", &workspace, "sql_1").unwrap();
+
+        assert_eq!(normalized, workspace.join("audit.sqlite3"));
+    }
+
+    #[test]
+    fn sql_writer_absolute_path_inside_workspace_is_allowed() {
+        let workspace = PathBuf::from("/tmp/nazh-workspace");
+        let normalized = normalize_sql_writer_database_path(
+            "/tmp/nazh-workspace/data/audit.sqlite3",
+            &workspace,
+            "sql_1",
+        )
+        .unwrap();
+
+        assert_eq!(normalized, workspace.join("data/audit.sqlite3"));
+    }
+
+    #[test]
+    fn sql_writer_absolute_path_outside_workspace_is_rejected() {
+        let workspace = PathBuf::from("/tmp/nazh-workspace");
+        let error = normalize_sql_writer_database_path("/tmp/audit.sqlite3", &workspace, "sql_1")
+            .unwrap_err();
+
+        assert!(matches!(
+            error,
+            EngineError::NodeConfig { node_id, message }
+                if node_id == "sql_1" && message.contains("工作目录")
+        ));
     }
 }
