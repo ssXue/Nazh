@@ -1,11 +1,24 @@
 import type { FlowNodeEntity } from '@flowgram.ai/free-layout-editor';
 
 import type { AiCompletionRequest, AiGenerationParams, AiMessage } from '../types';
+import { formatPinType, getCachedPinSchema } from './pin-schema-cache';
 import { copilotComplete, copilotCompleteStream } from './tauri';
 
+export interface NodePinSummary {
+  /** 端口 id（如 "in" / "out" / "true" / "body"）。 */
+  id: string;
+  /** 形如 `"json"` / `"array<bool>"` / `"custom(modbus-register)"`。 */
+  typeLabel: string;
+  required: boolean;
+}
+
 export interface NodeContextInfo {
+  nodeId: string;
   nodeType: string;
   label: string;
+  /** ADR-0010 Phase 4：pin schema 摘要，用于让 LLM 理解上下游数据形态。 */
+  inputPins?: NodePinSummary[];
+  outputPins?: NodePinSummary[];
 }
 
 export interface NodeContext {
@@ -22,14 +35,32 @@ const DEFAULT_SCRIPT_GENERATION_PARAMS: AiGenerationParams = {
 
 const DEFAULT_SCRIPT_GENERATION_TIMEOUT_MS = 60_000;
 
+import type { PinDefinition } from '../types';
+
+function summarizePins(pins: PinDefinition[] | undefined): NodePinSummary[] | undefined {
+  if (!pins) return undefined;
+  return pins.map((pin) => ({
+    id: pin.id,
+    typeLabel: formatPinType(pin.pin_type),
+    required: pin.required,
+  }));
+}
+
 function extractNodeInfo(node: FlowNodeEntity): NodeContextInfo {
   const extInfo = (node.getExtInfo() ?? {}) as {
     label?: string;
     nodeType?: string;
   };
+  // ADR-0010 Phase 4：从 pin schema 缓存读 input/output pin 摘要。
+  // 缓存未命中（节点刚加 / IPC 还没回）→ 字段保持 undefined，prompt 不渲染该节
+  // 点的 pin 信息。Graceful degradation：缺数据不阻断生成流程。
+  const schema = getCachedPinSchema(node.id);
   return {
+    nodeId: node.id,
     nodeType: extInfo.nodeType ?? String(node.flowNodeType),
     label: extInfo.label ?? node.id,
+    inputPins: summarizePins(schema?.inputPins),
+    outputPins: summarizePins(schema?.outputPins),
   };
 }
 
@@ -60,10 +91,31 @@ const SYSTEM_PROMPT = `你是工业边缘计算工作流的脚本编写助手。
 - 示例：let result = ai_complete("分析数据并以 JSON 格式返回 {temperature, status}"); payload["temp"] = result["temperature"];
 - 不要使用 Math.random()、random()、ctx、print()、console.log() 或其他未在上面列出的 API
 - 优先使用 payload["field"] 这种字段访问方式，保持脚本简洁
+- 节点信息中的"输入端口"声明了 payload 的预期形态（如 in: json (required) 表示 payload 是 JSON 对象）；"输出端口"声明了脚本结果应当符合的形态——尽量按声明类型生成代码
+- ADR-0010 规则：'json' 端口期望 payload 是 JSON 对象 / 数组；'any' 端口任意值都可；'bool'/'integer'/'float'/'string' 期望对应原生类型；'array<T>' 期望同质数组；'custom(name)' 是协议特定类型，按节点语义决定字段
 
 示例：
 payload["normalized"] = true;
 payload`;
+
+/** 把单个 pin 数组格式化成 "in: json (required), aux: any" 这种紧凑字符串。 */
+function formatPinSummary(pins: NodePinSummary[] | undefined): string {
+  if (!pins || pins.length === 0) return '';
+  return pins
+    .map((pin) => `${pin.id}: ${pin.typeLabel}${pin.required ? ' (required)' : ''}`)
+    .join(', ');
+}
+
+/** 把节点信息序列化成 prompt 一行——ADR-0010 Phase 4 携带 pin schema。 */
+function formatNodeInfoLine(info: NodeContextInfo): string {
+  const inputs = formatPinSummary(info.inputPins);
+  const outputs = formatPinSummary(info.outputPins);
+  const pinSection: string[] = [];
+  if (inputs) pinSection.push(`输入 [${inputs}]`);
+  if (outputs) pinSection.push(`输出 [${outputs}]`);
+  const pinText = pinSection.length > 0 ? ` ${pinSection.join(' ')}` : '';
+  return `  - ${info.label}（类型: ${info.nodeType}）${pinText}`;
+}
 
 export function buildScriptGenerationPrompt(
   requirement: string,
@@ -71,25 +123,22 @@ export function buildScriptGenerationPrompt(
 ): AiMessage[] {
   const upstreamText =
     context.upstream.length > 0
-      ? context.upstream
-          .map(
-            (n) =>
-              `  - ${n.label}（类型: ${n.nodeType}）`,
-          )
-          .join('\n')
+      ? context.upstream.map(formatNodeInfoLine).join('\n')
       : '  无';
   const downstreamText =
     context.downstream.length > 0
-      ? context.downstream
-          .map(
-            (n) =>
-              `  - ${n.label}（类型: ${n.nodeType}）`,
-          )
-          .join('\n')
+      ? context.downstream.map(formatNodeInfoLine).join('\n')
       : '  无';
 
+  const currentPins: string[] = [];
+  const currentInputs = formatPinSummary(context.current.inputPins);
+  const currentOutputs = formatPinSummary(context.current.outputPins);
+  if (currentInputs) currentPins.push(`输入端口：${currentInputs}`);
+  if (currentOutputs) currentPins.push(`输出端口：${currentOutputs}`);
+  const currentPinSection = currentPins.length > 0 ? `\n${currentPins.join('\n')}` : '';
+
   const userMessage = `节点类型：${context.current.nodeType}
-节点名称：${context.current.label}
+节点名称：${context.current.label}${currentPinSection}
 
 上下游信息：
 - 上游节点：

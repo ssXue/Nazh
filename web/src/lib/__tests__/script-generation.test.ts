@@ -14,9 +14,9 @@ vi.mock('../../lib/tauri', () => ({
 describe('buildScriptGenerationPrompt', () => {
   it('生成包含 system 和 user 两条消息', () => {
     const context: NodeContext = {
-      current: { nodeType: 'code', label: '数据转换' },
-      upstream: [{ nodeType: 'native', label: '传感器输入' }],
-      downstream: [{ nodeType: 'httpClient', label: '上报数据' }],
+      current: { nodeId: 'cur', nodeType: 'code', label: '数据转换' },
+      upstream: [{ nodeId: 'up', nodeType: 'native', label: '传感器输入' }],
+      downstream: [{ nodeId: 'down', nodeType: 'httpClient', label: '上报数据' }],
     };
     const messages = buildScriptGenerationPrompt('将摄氏温度转为华氏温度', context);
     expect(messages).toHaveLength(2);
@@ -40,13 +40,63 @@ describe('buildScriptGenerationPrompt', () => {
 
   it('无上下游时输出"无"', () => {
     const context: NodeContext = {
-      current: { nodeType: 'code', label: '独立节点' },
+      current: { nodeId: 'solo', nodeType: 'code', label: '独立节点' },
       upstream: [],
       downstream: [],
     };
     const messages = buildScriptGenerationPrompt('空脚本', context);
     expect(messages[1].content).toContain('上游节点：\n  无');
     expect(messages[1].content).toContain('下游节点：\n  无');
+  });
+
+  it('pin schema 摘要出现在 prompt（ADR-0010 Phase 4）', () => {
+    const context: NodeContext = {
+      current: {
+        nodeId: 'cur',
+        nodeType: 'code',
+        label: '数据清洗',
+        inputPins: [{ id: 'in', typeLabel: 'json', required: true }],
+        outputPins: [{ id: 'out', typeLabel: 'any', required: false }],
+      },
+      upstream: [
+        {
+          nodeId: 'modbus',
+          nodeType: 'modbusRead',
+          label: '寄存器',
+          outputPins: [{ id: 'out', typeLabel: 'json', required: false }],
+        },
+      ],
+      downstream: [
+        {
+          nodeId: 'sql',
+          nodeType: 'sqlWriter',
+          label: '入库',
+          inputPins: [{ id: 'in', typeLabel: 'json', required: true }],
+        },
+      ],
+    };
+    const messages = buildScriptGenerationPrompt('转换数据', context);
+    const userText = messages[1].content;
+    // 当前节点 pin
+    expect(userText).toContain('输入端口：in: json (required)');
+    expect(userText).toContain('输出端口：out: any');
+    // 上游 / 下游 pin 内联展示
+    expect(userText).toContain('类型: modbusRead）');
+    expect(userText).toContain('out: json');
+    expect(userText).toContain('类型: sqlWriter）');
+    expect(userText).toContain('in: json (required)');
+  });
+
+  it('缺失 pin schema 时不输出端口信息（graceful degradation）', () => {
+    const context: NodeContext = {
+      current: { nodeId: 'cur', nodeType: 'code', label: '裸节点' },
+      upstream: [],
+      downstream: [],
+    };
+    const messages = buildScriptGenerationPrompt('需求', context);
+    const userText = messages[1].content;
+    expect(userText).not.toContain('输入端口：');
+    expect(userText).not.toContain('输出端口：');
   });
 });
 
@@ -89,19 +139,28 @@ describe('getNodeContext', () => {
 
     expect(getNodeContext(current)).toEqual({
       current: {
+        nodeId: 'current',
         nodeType: 'code',
         label: '数据清洗',
+        inputPins: undefined,
+        outputPins: undefined,
       },
       upstream: [
         {
+          nodeId: 'upstream',
           nodeType: 'native',
           label: '采集输入',
+          inputPins: undefined,
+          outputPins: undefined,
         },
       ],
       downstream: [
         {
+          nodeId: 'downstream',
           nodeType: 'httpClient',
           label: '告警发送',
+          inputPins: undefined,
+          outputPins: undefined,
         },
       ],
     });
@@ -110,7 +169,7 @@ describe('getNodeContext', () => {
 
 describe('generateScript', () => {
   const mockContext: NodeContext = {
-    current: { nodeType: 'code', label: '测试' },
+    current: { nodeId: 'test', nodeType: 'code', label: '测试' },
     upstream: [],
     downstream: [],
   };
