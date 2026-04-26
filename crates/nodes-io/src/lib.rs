@@ -71,11 +71,14 @@ impl Plugin for IoPlugin {
         registry.register_with_capabilities(
             "serialTrigger",
             NodeCapabilities::TRIGGER | NodeCapabilities::DEVICE_IO,
-            |def, _res| {
+            |def, res| {
                 let config: SerialTriggerNodeConfig = def.parse_config()?;
+                let cm = downcast_connection_manager(&res)?;
                 Ok(Arc::new(SerialTriggerNode::new(
                     def.id().to_owned(),
                     config,
+                    def.connection_id().map(str::to_owned),
+                    cm,
                 )))
             },
         );

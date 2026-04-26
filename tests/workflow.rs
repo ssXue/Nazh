@@ -1012,6 +1012,9 @@ async fn serial_trigger_node_normalizes_ascii_and_hex_frames() {
     let mut inject = serde_json::Map::new();
     inject.insert("source".to_owned(), json!("serial"));
 
+    // ADR-0009 Task 3 后 SerialTriggerNode::new 增加 connection_id 与
+    // connection_manager 参数。本测试只走 transform 路径，不涉及 on_deploy
+    // 或连接资源，传 None + 空 ConnectionManager 即可。
     let node = SerialTriggerNode::new(
         "scan_input",
         SerialTriggerNodeConfig {
@@ -1029,6 +1032,8 @@ async fn serial_trigger_node_normalizes_ascii_and_hex_frames() {
             trim: true,
             inject,
         },
+        None,
+        shared_connection_manager(),
     );
 
     let trace_id = Uuid::new_v4();

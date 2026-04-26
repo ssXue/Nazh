@@ -15,7 +15,7 @@ use ai::{
     AiProviderDraft, AiService, AiTestResult, OpenAiCompatibleService,
 };
 use nazh_engine::{
-    ConnectionDefinition, ConnectionRecord, EngineError, ExecutionEvent, SerialTriggerNodeConfig,
+    ConnectionDefinition, ConnectionRecord, EngineError, ExecutionEvent,
     WorkflowContext, WorkflowGraph, WorkflowIngress,
     deploy_workflow_with_ai as deploy_workflow_graph, shared_connection_manager, standard_registry,
 };
@@ -35,13 +35,13 @@ use tokio::sync::{Mutex, RwLock, mpsc};
 
 use std::{
     collections::HashMap,
-    io::{Read, Write},
+    io::Write,
     path::{Component, Path, PathBuf},
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
     },
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 /// IPC 命令输入的最大允许字节数（10 MB）。
@@ -398,6 +398,11 @@ impl WorkflowDispatchRouter {
         .await
     }
 
+    // ADR-0009 Task 3 后无同步触发器（serial 已迁回 nodes-io 并改用
+    // tokio::task::spawn_blocking + runtime.block_on(handle.emit) 桥接）。
+    // 这两个 blocking 方法当前无消费者；Task 5 删除整个 dispatch_router 的
+    // trigger lane 时一并移除。
+    #[allow(dead_code)]
     fn blocking_submit_trigger_to(
         &self,
         node_id: &str,
@@ -560,6 +565,11 @@ struct DesktopWorkflow {
 
 enum TriggerJoinHandle {
     Async(tauri::async_runtime::JoinHandle<()>),
+    // ADR-0009 Task 3 后无 std::thread 触发任务（serial 已迁回 nodes-io，
+    // 用 tokio::task::spawn_blocking）。Thread variant 留待 Task 5 删除整个
+    // DesktopTriggerTask 抽象时一并清理；当前阶段保留以避免破坏 abort_triggers
+    // 的 match 完备性。
+    #[allow(dead_code)]
     Thread(std::thread::JoinHandle<()>),
 }
 
@@ -732,15 +742,8 @@ impl DesktopState {
     }
 }
 
-// ADR-0009 Task 2: TimerRootSpec 已移除——timer 节点自持 on_deploy 生命周期，
-// 壳层不再需要中间 spec 结构。SerialRootSpec / MqttRootSpec 留待 Task 3-5 清理。
-
-#[derive(Debug, Clone)]
-struct SerialRootSpec {
-    node_id: String,
-    connection_id: String,
-    config: SerialTriggerNodeConfig,
-}
+// ADR-0009 Task 2-3: TimerRootSpec / SerialRootSpec 已移除——节点自持
+// on_deploy 生命周期，壳层不再需要中间 spec 结构。MqttRootSpec 留待 Task 4-5 清理。
 
 #[derive(Debug, Clone)]
 struct MqttRootSpec {
@@ -1021,10 +1024,7 @@ async fn deploy_workflow(
     } else {
         None
     };
-    // ADR-0009 Task 2: timer 节点已自持 on_deploy 生命周期；壳层不再 collect/spawn。
-    let serial_roots = collect_serial_root_specs(&graph, state.connection_manager.clone())
-        .await
-        .map_err(|e| stringify_error(&e))?;
+    // ADR-0009 Task 2-3: timer / serial 节点已自持 on_deploy 生命周期；壳层不再 collect/spawn。
     let mqtt_roots = collect_mqtt_root_specs(&graph, state.connection_manager.clone())
         .await
         .map_err(|e| stringify_error(&e))?;
@@ -1081,14 +1081,6 @@ async fn deploy_workflow(
     }
 
     let mut trigger_tasks: Vec<DesktopTriggerTask> = Vec::new();
-    trigger_tasks.extend(spawn_serial_root_tasks(
-        &app,
-        &dispatch_router,
-        &state.connection_manager,
-        observability_store.as_ref(),
-        &workflow_id,
-        serial_roots,
-    ));
     trigger_tasks.extend(spawn_mqtt_root_tasks(
         &app,
         &dispatch_router,
@@ -2372,127 +2364,9 @@ fn count_incoming_edges(graph: &WorkflowGraph) -> std::collections::HashMap<Stri
     incoming_counts
 }
 
-// ADR-0009 Task 2: collect_timer_root_specs 已移除——timer 节点自持 on_deploy。
-
-fn is_serial_trigger_type(node_type: &str) -> bool {
-    matches!(node_type, "serialTrigger" | "serial/trigger" | "serial")
-}
-
-fn is_serial_connection_type(connection_type: &str) -> bool {
-    matches!(
-        connection_type.trim().to_ascii_lowercase().as_str(),
-        "serial" | "serialport" | "serial_port" | "uart" | "rs232" | "rs485"
-    )
-}
-
-async fn collect_serial_root_specs(
-    graph: &WorkflowGraph,
-    connection_manager: nazh_engine::SharedConnectionManager,
-) -> Result<Vec<SerialRootSpec>, EngineError> {
-    let incoming_counts = count_incoming_edges(graph);
-    let mut serial_roots = Vec::new();
-
-    for (node_id, node_definition) in &graph.nodes {
-        if incoming_counts.get(node_id).copied().unwrap_or_default() != 0 {
-            continue;
-        }
-
-        if !is_serial_trigger_type(node_definition.node_type()) {
-            continue;
-        }
-
-        let connection_id = node_definition
-            .connection_id()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .ok_or_else(|| {
-                EngineError::node_config(node_id.clone(), "串口触发节点需要绑定串口连接资源")
-            })?;
-        let connection = connection_manager.get(connection_id).await.ok_or_else(|| {
-            EngineError::node_config(
-                node_id.clone(),
-                format!("串口连接资源 `{connection_id}` 未注册"),
-            )
-        })?;
-
-        if !is_serial_connection_type(&connection.kind) {
-            let reason = format!("连接资源 `{connection_id}` 不是串口类型");
-            let _ = connection_manager
-                .mark_invalid_configuration(connection_id, &reason)
-                .await;
-            return Err(EngineError::node_config(node_id.clone(), reason));
-        }
-
-        let mut config: SerialTriggerNodeConfig = serde_json::from_value(connection.metadata)
-            .map_err(|error| {
-                EngineError::node_config(node_definition.id().to_owned(), error.to_string())
-            })?;
-        if let Some(inject) = node_definition
-            .config()
-            .get("inject")
-            .and_then(Value::as_object)
-        {
-            config.inject.clone_from(inject);
-        }
-        config.port_path = config.port_path.trim().to_owned();
-
-        if config.port_path.is_empty() {
-            let reason = format!("串口连接资源 `{connection_id}` 需要配置 port_path");
-            let _ = connection_manager
-                .mark_invalid_configuration(connection_id, &reason)
-                .await;
-            return Err(EngineError::node_config(node_id.clone(), reason));
-        }
-
-        serial_roots.push(SerialRootSpec {
-            node_id: node_id.clone(),
-            connection_id: connection_id.to_owned(),
-            config,
-        });
-    }
-
-    Ok(serial_roots)
-}
-
-// ADR-0009 Task 2: spawn_timer_root_tasks 已移除——timer 节点自持 on_deploy。
-
-fn spawn_serial_root_tasks(
-    app: &AppHandle,
-    dispatch_router: &WorkflowDispatchRouter,
-    connection_manager: &nazh_engine::SharedConnectionManager,
-    observability: Option<&SharedObservabilityStore>,
-    workflow_id: &str,
-    serial_roots: Vec<SerialRootSpec>,
-) -> Vec<DesktopTriggerTask> {
-    serial_roots
-        .into_iter()
-        .map(|serial_root| {
-            let app = app.clone();
-            let dispatch_router = dispatch_router.clone();
-            let connection_manager = connection_manager.clone();
-            let observability = observability.cloned();
-            let workflow_id = workflow_id.to_owned();
-            let cancel = Arc::new(AtomicBool::new(false));
-            let task_cancel = Arc::clone(&cancel);
-            let join = std::thread::spawn(move || {
-                run_serial_root_reader(
-                    &app,
-                    &dispatch_router,
-                    &connection_manager,
-                    observability.as_ref(),
-                    &workflow_id,
-                    &serial_root,
-                    &task_cancel,
-                );
-            });
-
-            DesktopTriggerTask {
-                cancel,
-                join: TriggerJoinHandle::Thread(join),
-            }
-        })
-        .collect()
-}
+// ADR-0009 Task 2-3: collect_timer_root_specs / collect_serial_root_specs /
+// spawn_timer_root_tasks / spawn_serial_root_tasks / is_serial_trigger_type /
+// is_serial_connection_type 已移除——节点自持 on_deploy 生命周期。
 
 /// 收集工作流图中的 MQTT 订阅根节点。
 async fn collect_mqtt_root_specs(
@@ -2839,284 +2713,6 @@ async fn run_mqtt_root_subscriber(
     }
 }
 
-#[allow(clippy::too_many_lines)]
-fn run_serial_root_reader(
-    app: &AppHandle,
-    dispatch_router: &WorkflowDispatchRouter,
-    connection_manager: &nazh_engine::SharedConnectionManager,
-    observability: Option<&SharedObservabilityStore>,
-    workflow_id: &str,
-    serial_root: &SerialRootSpec,
-    cancel: &Arc<AtomicBool>,
-) {
-    let config = serial_root.config.clone();
-    let read_timeout = Duration::from_millis(config.read_timeout_ms.clamp(10, 2_000));
-    let idle_gap = Duration::from_millis(config.idle_gap_ms.clamp(1, 10_000));
-    let max_frame_bytes = config.max_frame_bytes.clamp(1, 8_192);
-    let delimiter = decode_serial_delimiter(&config.delimiter);
-    let ctx = SerialDispatchContext {
-        app,
-        dispatch_router,
-        workflow_id,
-        serial_root,
-        observability,
-    };
-
-    while !cancel.load(Ordering::Relaxed) {
-        let mut guard = match tauri::async_runtime::block_on(
-            connection_manager.acquire(&serial_root.connection_id),
-        ) {
-            Ok(guard) => guard,
-            Err(error) => {
-                let retry_after_ms = retry_delay_from_error(&error).unwrap_or(800);
-                emit_serial_trigger_failure(
-                    ctx.app,
-                    ctx.workflow_id,
-                    ctx.observability,
-                    &ctx.serial_root.node_id,
-                    error.to_string(),
-                );
-                sleep_with_cancel(cancel, Duration::from_millis(retry_after_ms));
-                continue;
-            }
-        };
-        let heartbeat_interval = Duration::from_millis(
-            governance_u64(guard.metadata(), "heartbeat_interval_ms")
-                .unwrap_or(3_000)
-                .clamp(250, 30_000),
-        );
-
-        let connect_started_at = Instant::now();
-        let port_result = serialport::new(config.port_path.clone(), config.baud_rate.max(1))
-            .timeout(read_timeout)
-            .data_bits(serial_data_bits(config.data_bits))
-            .parity(serial_parity(&config.parity))
-            .stop_bits(serial_stop_bits(config.stop_bits))
-            .flow_control(serial_flow_control(&config.flow_control))
-            .open();
-        let mut port = match port_result {
-            Ok(port) => {
-                let connect_latency_ms =
-                    u64::try_from(connect_started_at.elapsed().as_millis()).unwrap_or(u64::MAX);
-                let _ = tauri::async_runtime::block_on(connection_manager.record_connect_success(
-                    &serial_root.connection_id,
-                    format!("串口 {} 已建立监听，等待外设上报数据", config.port_path),
-                    Some(connect_latency_ms),
-                ));
-                port
-            }
-            Err(error) => {
-                let reason = format!("串口打开失败: {error}");
-                guard.mark_failure(&reason);
-                let retry_after_ms = tauri::async_runtime::block_on(
-                    connection_manager.record_connect_failure(&serial_root.connection_id, &reason),
-                )
-                .unwrap_or(800);
-                drop(guard);
-                emit_serial_trigger_failure(
-                    ctx.app,
-                    ctx.workflow_id,
-                    ctx.observability,
-                    &ctx.serial_root.node_id,
-                    reason,
-                );
-                sleep_with_cancel(cancel, Duration::from_millis(retry_after_ms));
-                continue;
-            }
-        };
-        let mut last_heartbeat_sent_at = Instant::now();
-
-        let mut buffer = Vec::with_capacity(max_frame_bytes.min(512));
-        let mut scratch = [0_u8; 64];
-        let mut last_byte_at: Option<Instant> = None;
-        let mut disconnected_reason: Option<String> = None;
-
-        while !cancel.load(Ordering::Relaxed) {
-            match port.read(&mut scratch) {
-                Ok(0) => {
-                    flush_idle_serial_frame(&ctx, &mut buffer, last_byte_at, idle_gap);
-
-                    if last_heartbeat_sent_at.elapsed() >= heartbeat_interval {
-                        let _ =
-                            tauri::async_runtime::block_on(connection_manager.record_heartbeat(
-                                &serial_root.connection_id,
-                                format!("串口 {} 心跳正常，监听仍在进行中", config.port_path),
-                            ));
-                        last_heartbeat_sent_at = Instant::now();
-                    }
-                }
-                Ok(bytes_read) => {
-                    buffer.extend_from_slice(&scratch[..bytes_read]);
-                    last_byte_at = Some(Instant::now());
-
-                    let _ = tauri::async_runtime::block_on(connection_manager.record_heartbeat(
-                        &serial_root.connection_id,
-                        format!("串口 {} 收到 {} 字节输入", config.port_path, bytes_read),
-                    ));
-                    last_heartbeat_sent_at = Instant::now();
-
-                    while let Some(frame) = drain_serial_delimited_frame(&mut buffer, &delimiter) {
-                        submit_serial_frame(&ctx, &frame);
-                    }
-
-                    if buffer.len() >= max_frame_bytes {
-                        let frame = buffer.drain(..max_frame_bytes).collect::<Vec<_>>();
-                        submit_serial_frame(&ctx, &frame);
-                    }
-                }
-                Err(error) if error.kind() == std::io::ErrorKind::TimedOut => {
-                    if buffer.is_empty() {
-                        if last_heartbeat_sent_at.elapsed() >= heartbeat_interval {
-                            let _ = tauri::async_runtime::block_on(
-                                connection_manager.record_heartbeat(
-                                    &serial_root.connection_id,
-                                    format!("串口 {} 空闲等待中，链路仍存活", config.port_path),
-                                ),
-                            );
-                            last_heartbeat_sent_at = Instant::now();
-                        }
-                        continue;
-                    }
-
-                    let Some(last_byte_at_instant) = last_byte_at else {
-                        continue;
-                    };
-
-                    if last_byte_at_instant.elapsed() < idle_gap {
-                        continue;
-                    }
-
-                    flush_idle_serial_frame(&ctx, &mut buffer, last_byte_at, idle_gap);
-                }
-                Err(error) => {
-                    disconnected_reason = Some(format!("串口读取失败: {error}"));
-                    break;
-                }
-            }
-        }
-
-        if !cancel.load(Ordering::Relaxed) && !buffer.is_empty() {
-            submit_serial_frame(&ctx, &buffer);
-        }
-
-        if cancel.load(Ordering::Relaxed) {
-            guard.mark_success();
-            let reason = format!("串口 {} 监听已停止", config.port_path);
-            drop(guard);
-            let _ = tauri::async_runtime::block_on(
-                connection_manager.mark_disconnected(&serial_root.connection_id, &reason),
-            );
-            break;
-        }
-
-        let reason =
-            disconnected_reason.unwrap_or_else(|| format!("串口 {} 连接已断开", config.port_path));
-        guard.mark_failure(&reason);
-        let retry_after_ms = tauri::async_runtime::block_on(
-            connection_manager.record_connect_failure(&serial_root.connection_id, &reason),
-        )
-        .unwrap_or(800);
-        drop(guard);
-        emit_serial_trigger_failure(
-            ctx.app,
-            ctx.workflow_id,
-            ctx.observability,
-            &ctx.serial_root.node_id,
-            reason,
-        );
-        sleep_with_cancel(cancel, Duration::from_millis(retry_after_ms));
-    }
-}
-
-struct SerialDispatchContext<'a> {
-    app: &'a AppHandle,
-    dispatch_router: &'a WorkflowDispatchRouter,
-    workflow_id: &'a str,
-    serial_root: &'a SerialRootSpec,
-    observability: Option<&'a SharedObservabilityStore>,
-}
-
-fn flush_idle_serial_frame(
-    ctx: &SerialDispatchContext<'_>,
-    buffer: &mut Vec<u8>,
-    last_byte_at: Option<Instant>,
-    idle_gap: Duration,
-) {
-    if buffer.is_empty() {
-        return;
-    }
-
-    if last_byte_at.is_some_and(|instant| instant.elapsed() >= idle_gap) {
-        let frame = std::mem::take(buffer);
-        submit_serial_frame(ctx, &frame);
-    }
-}
-
-fn drain_serial_delimited_frame(buffer: &mut Vec<u8>, delimiter: &[u8]) -> Option<Vec<u8>> {
-    if delimiter.is_empty() || buffer.len() < delimiter.len() {
-        return None;
-    }
-
-    let delimiter_index = buffer
-        .windows(delimiter.len())
-        .position(|window| window == delimiter)?;
-    let frame = buffer.drain(..delimiter_index).collect::<Vec<_>>();
-    let _ = buffer.drain(..delimiter.len()).count();
-    Some(frame)
-}
-
-fn submit_serial_frame(ctx: &SerialDispatchContext<'_>, frame: &[u8]) {
-    if frame.is_empty() {
-        return;
-    }
-
-    let payload = json!({
-        "_serial_frame": {
-            "ascii": String::from_utf8_lossy(frame).to_string(),
-            "hex": bytes_to_hex(frame),
-            "byte_len": frame.len(),
-            "port_path": ctx.serial_root.config.port_path.as_str(),
-            "connection_id": ctx.serial_root.connection_id.as_str(),
-            "baud_rate": ctx.serial_root.config.baud_rate,
-            "data_bits": ctx.serial_root.config.data_bits,
-            "parity": ctx.serial_root.config.parity.as_str(),
-            "stop_bits": ctx.serial_root.config.stop_bits,
-            "flow_control": ctx.serial_root.config.flow_control.as_str(),
-            "encoding": ctx.serial_root.config.encoding.as_str(),
-        }
-    });
-
-    if let Err(error) = ctx.dispatch_router.blocking_submit_trigger_to(
-        &ctx.serial_root.node_id,
-        WorkflowContext::new(payload),
-        format!("serial:{}", ctx.serial_root.node_id),
-    ) {
-        emit_serial_trigger_failure(
-            ctx.app,
-            ctx.workflow_id,
-            ctx.observability,
-            &ctx.serial_root.node_id,
-            error,
-        );
-    }
-}
-
-fn emit_serial_trigger_failure(
-    app: &AppHandle,
-    workflow_id: &str,
-    observability: Option<&SharedObservabilityStore>,
-    node_id: &str,
-    message: String,
-) {
-    emit_trigger_failure(
-        app,
-        workflow_id,
-        observability,
-        node_id,
-        "串口触发失败",
-        message,
-    );
-}
 
 fn emit_mqtt_trigger_failure(
     app: &AppHandle,
@@ -3175,26 +2771,6 @@ fn retry_delay_from_error(error: &EngineError) -> Option<u64> {
     }
 }
 
-fn governance_u64(metadata: &Value, key: &str) -> Option<u64> {
-    metadata
-        .as_object()
-        .and_then(|value| value.get("governance"))
-        .and_then(Value::as_object)
-        .and_then(|governance| governance.get(key))
-        .and_then(Value::as_u64)
-}
-
-fn sleep_with_cancel(cancel: &AtomicBool, duration: Duration) {
-    let start = Instant::now();
-    while start.elapsed() < duration {
-        if cancel.load(Ordering::Relaxed) {
-            break;
-        }
-        std::thread::sleep(
-            Duration::from_millis(100).min(duration.saturating_sub(start.elapsed())),
-        );
-    }
-}
 
 fn serial_data_bits(value: u8) -> serialport::DataBits {
     match value {
@@ -3229,80 +2805,6 @@ fn serial_flow_control(value: &str) -> serialport::FlowControl {
     }
 }
 
-fn decode_serial_delimiter(value: &str) -> Vec<u8> {
-    if value.is_empty() {
-        return Vec::new();
-    }
-
-    let trimmed = value.trim();
-    if let Some(hex) = trimmed
-        .strip_prefix("hex:")
-        .or_else(|| trimmed.strip_prefix("0x"))
-    {
-        return parse_hex_bytes(hex);
-    }
-
-    let mut bytes = Vec::new();
-    let mut chars = value.chars();
-
-    while let Some(ch) = chars.next() {
-        if ch != '\\' {
-            let mut encoded = [0_u8; 4];
-            bytes.extend_from_slice(ch.encode_utf8(&mut encoded).as_bytes());
-            continue;
-        }
-
-        match chars.next() {
-            Some('n') => bytes.push(b'\n'),
-            Some('r') => bytes.push(b'\r'),
-            Some('t') => bytes.push(b'\t'),
-            Some('\\') | None => bytes.push(b'\\'),
-            Some(other) => {
-                let mut encoded = [0_u8; 4];
-                bytes.extend_from_slice(other.encode_utf8(&mut encoded).as_bytes());
-            }
-        }
-    }
-
-    bytes
-}
-
-fn parse_hex_bytes(value: &str) -> Vec<u8> {
-    let nibbles = value.bytes().filter_map(hex_nibble).collect::<Vec<_>>();
-    let mut bytes = Vec::with_capacity(nibbles.len() / 2);
-
-    for pair in nibbles.chunks(2) {
-        if pair.len() == 2 {
-            bytes.push((pair[0] << 4) | pair[1]);
-        }
-    }
-
-    bytes
-}
-
-fn hex_nibble(value: u8) -> Option<u8> {
-    match value {
-        b'0'..=b'9' => Some(value - b'0'),
-        b'a'..=b'f' => Some(value - b'a' + 10),
-        b'A'..=b'F' => Some(value - b'A' + 10),
-        _ => None,
-    }
-}
-
-fn bytes_to_hex(bytes: &[u8]) -> String {
-    const HEX: &[u8; 16] = b"0123456789ABCDEF";
-    let mut output = String::with_capacity(bytes.len().saturating_mul(3).saturating_sub(1));
-
-    for (index, byte) in bytes.iter().enumerate() {
-        if index > 0 {
-            output.push(' ');
-        }
-        output.push(HEX[(byte >> 4) as usize] as char);
-        output.push(HEX[(byte & 0x0f) as usize] as char);
-    }
-
-    output
-}
 
 fn normalize_sql_writer_paths(
     graph: &mut WorkflowGraph,

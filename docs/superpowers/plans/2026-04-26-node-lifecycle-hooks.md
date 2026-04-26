@@ -318,27 +318,27 @@ cd src-tauri && ../web/node_modules/.bin/tauri dev --no-watch
 - Modify: `crates/nodes-io/src/lib.rs`
 - Modify: `src-tauri/src/lib.rs`
 
-- [ ] **Step 1: 调研当前 serial 节点位置**
+- [x] **Step 1: 调研当前 serial 节点位置**
 
 ```bash
 rg -n 'serial' crates/nodes-io/src/lib.rs | head
 rg -n 'NodeTrait.*for.*Serial' crates/
 ```
 
-- [ ] **Step 2: 把 run_serial_root_reader 的逻辑搬入 on_deploy**
+- [x] **Step 2: 把 run_serial_root_reader 的逻辑搬入 on_deploy**
 
 注意点：
 - 串口阻塞读用 `std::thread::spawn`（非 `tokio::spawn`），需要包一层 `tokio::sync::oneshot` 或用 `tokio::task::spawn_blocking`。`LifecycleGuard::from_task` 可能需要新增重载 `from_blocking_task` 接受 `std::thread::JoinHandle`。
 - 帧拼接、delimiter、idle gap、heartbeat 语义**完全保留**——把 `flush_idle_serial_frame` / `drain_serial_delimited_frame` / `submit_serial_frame` 迁过来，作为节点 impl 的私有 helper。
 
-- [ ] **Step 3: 删除壳层 serial 代持**
+- [x] **Step 3: 删除壳层 serial 代持**
 
 从 `src-tauri/src/lib.rs` 删除：
 - `collect_serial_root_specs`、`spawn_serial_root_tasks`、`run_serial_root_reader`
 - `flush_idle_serial_frame`、`drain_serial_delimited_frame`、`submit_serial_frame`
 - `emit_serial_trigger_failure`（功能由 `NodeHandle::emit` + 错误事件路径替代）
 
-- [ ] **Step 4: 测试 + 手动 E2E**
+- [x] **Step 4: 测试 + 手动 E2E**
 
 需要真实串口或 com0com / socat 虚拟端口。无硬件可用时退而求其次：单元测试覆盖 frame 拼接逻辑（迁移过来的 helper），E2E 留给硬件验收阶段。
 
