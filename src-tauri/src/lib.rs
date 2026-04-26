@@ -16,8 +16,9 @@ use ai::{
 };
 use nazh_engine::{
     AiCompletionRequest, AiCompletionResponse, AiService, ConnectionDefinition, ConnectionRecord,
-    EngineError, ExecutionEvent, WorkflowContext, WorkflowGraph, WorkflowIngress,
-    deploy_workflow_with_ai as deploy_workflow_graph, shared_connection_manager, standard_registry,
+    EngineError, ExecutionEvent, RuntimeResources, SharedResources, WorkflowContext, WorkflowGraph,
+    WorkflowIngress, WorkflowNodeDefinition, deploy_workflow_with_ai as deploy_workflow_graph,
+    shared_connection_manager, standard_registry,
 };
 use observability::{
     ObservabilityContextInput, ObservabilityQueryResult, ObservabilityStore,
@@ -27,8 +28,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_bindings::{
-    DeployResponse, DispatchResponse, ListNodeTypesResponse, UndeployResponse,
-    list_node_types_response,
+    DeployResponse, DescribeNodePinsRequest, DescribeNodePinsResponse, DispatchResponse,
+    ListNodeTypesResponse, UndeployResponse, list_node_types_response,
 };
 use tokio::fs;
 use tokio::sync::{Mutex, RwLock, mpsc};
@@ -1263,6 +1264,44 @@ async fn list_node_types() -> Result<ListNodeTypesResponse, String> {
     Ok(list_node_types_response(&registry))
 }
 
+/// 给定节点类型 + config，返回该节点实例的 input/output pin schema。
+///
+/// 用于 ADR-0010 Phase 2 前端连接期校验：FlowGram `canAddLine` 钩子
+/// 通过缓存的 pin schema 即时判断"上游产出 → 下游期望"是否兼容。
+///
+/// 实例化是无副作用的（只读 config + 资源句柄克隆，不进入 `on_deploy`）。
+/// 返回错误时前端会写 fallback `Any/Any` 缓存——部署期校验作为 backstop。
+#[tauri::command]
+async fn describe_node_pins(
+    request: DescribeNodePinsRequest,
+) -> Result<DescribeNodePinsResponse, String> {
+    let registry = standard_registry();
+    // 把请求拼成 WorkflowNodeDefinition 的 JSON 形态（字段是私有的，外部 crate
+    // 无构造器可用——deserialize 是公开的入口）。dummy id 防止与真实节点冲突。
+    let definition_json = json!({
+        "id": "_describe_pins_probe",
+        "type": request.node_type,
+        "config": request.config,
+    });
+    let definition: WorkflowNodeDefinition = serde_json::from_value(definition_json)
+        .map_err(|error| format!("无法解析节点定义：{error}"))?;
+
+    // 仅注入 connection_manager——describe_pins 不读连接，只让需要 conn 句柄的
+    // 节点构造器（modbus / mqtt / http）能克隆出引用。无 AI service / observability，
+    // 这些与 pin schema 无关。
+    let resources: SharedResources =
+        Arc::new(RuntimeResources::new().with_resource(shared_connection_manager()));
+
+    let node = registry
+        .create(&definition, resources)
+        .map_err(|error| format!("无法实例化节点：{error}"))?;
+
+    Ok(DescribeNodePinsResponse {
+        input_pins: node.input_pins(),
+        output_pins: node.output_pins(),
+    })
+}
+
 #[tauri::command]
 async fn list_runtime_workflows(
     state: State<'_, DesktopState>,
@@ -2405,6 +2444,7 @@ pub fn run() {
             undeploy_workflow,
             list_connections,
             list_node_types,
+            describe_node_pins,
             list_runtime_workflows,
             set_active_runtime_workflow,
             list_dead_letters,

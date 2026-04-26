@@ -17,6 +17,7 @@ nazh-engine.workspace = true
 connections.workspace = true
 ai.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 ts-rs = { workspace = true, optional = true }
 
 [features]

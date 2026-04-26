@@ -4185,6 +4185,7 @@ dependencies = [
  "nazh-core",
  "nazh-engine",
  "serde",
+ "serde_json",
  "ts-rs",
 ]
 
