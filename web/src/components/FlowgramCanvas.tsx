@@ -70,6 +70,11 @@ import {
   toNazhWorkflowGraph,
 } from '../lib/flowgram';
 import { FlowDownloadFormat, FlowDownloadService } from '@flowgram.ai/export-plugin';
+import {
+  configToRecord,
+  invalidateNodePinSchema,
+  refreshNodePinSchema,
+} from '../lib/pin-schema-cache';
 import { hasTauriRuntime, saveFlowgramExportFile } from '../lib/tauri';
 import type {
   AiGenerationParams,
@@ -1658,6 +1663,34 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
 
         if (event.type === WorkflowContentChangeType.META_CHANGE) {
           return;
+        }
+
+        // ADR-0010 Phase 2：节点生命周期事件触发 pin schema 缓存维护。
+        // refresh / invalidate 都是 fire-and-forget——失败时缓存自动写
+        // fallback Any/Any，部署期校验作为 backstop 兜底。
+        if (
+          event.type === WorkflowContentChangeType.ADD_NODE ||
+          event.type === WorkflowContentChangeType.NODE_DATA_CHANGE
+        ) {
+          const entity = event.entity as { id?: string; getExtInfo?: () => unknown } | undefined;
+          if (entity?.id && entity.getExtInfo) {
+            const ext = (entity.getExtInfo() ?? {}) as {
+              nodeType?: string;
+              config?: unknown;
+            };
+            if (ext.nodeType) {
+              void refreshNodePinSchema(
+                entity.id,
+                ext.nodeType,
+                configToRecord(ext.config as never),
+              );
+            }
+          }
+        } else if (event.type === WorkflowContentChangeType.DELETE_NODE) {
+          const entity = event.entity as { id?: string } | undefined;
+          if (entity?.id) {
+            invalidateNodePinSchema(entity.id);
+          }
         }
 
         if (
