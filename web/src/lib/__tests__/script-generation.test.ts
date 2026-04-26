@@ -49,7 +49,7 @@ describe('buildScriptGenerationPrompt', () => {
     expect(messages[1].content).toContain('下游节点：\n  无');
   });
 
-  it('pin schema 摘要出现在 prompt（ADR-0010 Phase 4）', () => {
+  it('pin schema 摘要出现在 prompt 让 LLM 拿到类型锚点', () => {
     const context: NodeContext = {
       current: {
         nodeId: 'cur',

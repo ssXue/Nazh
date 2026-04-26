@@ -69,7 +69,7 @@ interface UseFlowgramEditorPropsParams {
   isFlowingLine: NonNullable<FreeLayoutProps['isFlowingLine']>;
   isErrorLine: NonNullable<FreeLayoutProps['isErrorLine']>;
   setLineClassName: NonNullable<FreeLayoutProps['setLineClassName']>;
-  /** ADR-0010 Phase 2：连接期 pin 类型校验钩子。 */
+  /** 连接期 pin 类型校验钩子；用户拖边瞬间判断两端 PinType 是否兼容。 */
   canAddLine?: FreeLayoutProps['canAddLine'];
   onContentChange: NonNullable<FreeLayoutProps['onContentChange']>;
   onAllLayersRendered: NonNullable<FreeLayoutProps['onAllLayersRendered']>;

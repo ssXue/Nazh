@@ -1,9 +1,9 @@
-// ADR-0010 Phase 2：TS isCompatibleWith 合约测试。
+// TS isCompatibleWith 合约测试。
 //
-// 消费 Phase 3 落地的 tests/fixtures/pin_compat_matrix.jsonc 作为单一真值源——
-// 同一份 fixture 同时被 Rust（crates/core/tests/pin_compat_contract.rs）与
-// 本测试消费。任意一方与 fixture 漂移即触发 CI 红，杜绝"两份兼容判断悄悄
-// 走偏"的隐藏 bug。
+// 消费 tests/fixtures/pin_compat_matrix.jsonc 作为单一真值源——同一份
+// fixture 也被 Rust（crates/core/tests/pin_compat_contract.rs）消费。
+// 任意一方与 fixture 漂移即触发 CI 红，杜绝"两份兼容判断悄悄走偏"的
+// 隐藏 bug。
 //
 // 修改 PinType 兼容矩阵时同步：
 // 1. 改 fixture
@@ -64,7 +64,7 @@ describe('isCompatibleWith vs Rust 合约 fixture', () => {
     },
   );
 
-  it('每个 PinType 变体至少出现一次（与 Rust 覆盖纪律一致）', () => {
+  it('每个 PinType 变体至少出现一次（与 Rust 端覆盖纪律一致）', () => {
     const seen = new Set<string>();
     const collect = (pin: PinType): void => {
       seen.add(pin.kind);

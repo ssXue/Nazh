@@ -1,12 +1,13 @@
-//! ADR-0010 Phase 3：PinType 兼容矩阵合约测试。
+//! `PinType` 兼容矩阵合约测试。
 //!
-//! 本测试与 `tests/fixtures/pin_compat_matrix.jsonc` 配对：fixture 是合约源头，
-//! Rust 实现 `PinType::is_compatible_with` 必须与 fixture 的每条断言一致。
+//! 本测试与 `tests/fixtures/pin_compat_matrix.jsonc` 配对：fixture 是合约
+//! 源头，Rust 实现 [`PinType::is_compatible_with`] 必须与 fixture 的每条
+//! 断言一致。
 //!
-//! 同一份 fixture 在 Phase 2 落地后将被前端 TS 实现共享消费——任意一方与
-//! fixture 漂移即触发 CI 红，杜绝"两份兼容判断悄悄走偏"的隐藏 bug。
+//! 同一份 fixture 也被前端 TS 实现 (`web/src/lib/pin-compat.ts`) 共享消费——
+//! 任意一方与 fixture 漂移即触发 CI 红，杜绝"两份兼容判断悄悄走偏"的隐藏 bug。
 //!
-//! 修改本测试时若需要扩展覆盖：直接改 fixture，无需改本文件——表驱动设计。
+//! 扩展覆盖时：直接改 fixture，无需改本文件——表驱动设计。
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
@@ -93,7 +94,7 @@ fn fixture_覆盖纪律_每个变体至少出现() {
     for kind in required {
         assert!(
             seen_kinds.contains(kind),
-            "fixture 未覆盖 PinType::{kind} —— 至少加 1 条自反兼容配对（参见文件头覆盖纪律说明）"
+            "fixture 未覆盖 PinType::{kind} —— 至少加 1 条自反兼容配对（fixture 文件头有覆盖纪律说明）"
         );
     }
 }

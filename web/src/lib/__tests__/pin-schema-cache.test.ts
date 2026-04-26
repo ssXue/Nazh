@@ -1,4 +1,4 @@
-// ADR-0010 Phase 2：pin schema 缓存的单元测试。
+// pin schema 缓存的单元测试。
 //
 // 覆盖 cache hit / IPC 失败 fallback / invalidate 三类路径。
 // IPC 调用通过 vi.mock 隔离，不依赖真实 Tauri 环境。

@@ -1706,15 +1706,16 @@ async fn deploy_拒绝引用未声明_pin_id_的边() {
     }
 }
 
-// ========== ADR-0010 Phase 3 反向兼容性集成测试 ==========
+// ========== 协议节点 pin 收紧后的反向兼容性集成测试 ==========
 //
-// Phase 3 把 4 个协议节点的 pin 类型从 Any 收紧到 Json。本节验证：
+// 4 个协议节点（modbusRead / sqlWriter / httpClient / mqttClient）的 pin
+// 类型已从 Any 收紧到 Json。本节验证：
 // (a) 收紧后真实链路（timer → modbusRead → sqlWriter）仍能正常 deploy
 // (b) 不兼容上游（Bool 输出）连到收紧的 sqlWriter（Json 输入）会被拒
 //
-// (b) 是 Phase 3 的关键证据——证明 pin 系统的拒收路径不仅"机制存在"，
-// 而且在真实节点上能被触发。当前所有标准节点输出都是 Any 或 Json，
-// 无法直接构造 Bool 输出，所以借用 TypedTestNode 作为 stub 源。
+// (b) 是关键证据——证明 pin 系统的拒收路径不仅"机制存在"，而且在真实
+// 节点上能被触发。当前所有标准节点输出都是 Any 或 Json，无法直接构造
+// Bool 输出，所以借用 TypedTestNode 作为 stub 源。
 
 #[tokio::test]
 async fn pin_phase3_modbus_到_sql_链路_部署通过() {
@@ -1742,7 +1743,7 @@ async fn pin_phase3_modbus_到_sql_链路_部署通过() {
     let deployment = match deploy_workflow(graph, shared_connection_manager(), &registry).await {
         Ok(deployment) => deployment,
         Err(error) => panic!(
-            "Phase 3 收紧后的 modbus → sql 链路应能 deploy：{error}\n\
+            "modbus → sql 链路应能 deploy：{error}\n\
              如果报 IncompatiblePinTypes，意味着 pin 类型设计有问题——\n\
              modbusRead.out (Json) 与 sqlWriter.in (Json) 应当兼容。"
         ),
@@ -1797,7 +1798,7 @@ async fn pin_phase3_bool_源_到_sql_writer_部署被拒() {
             );
             assert!(
                 to_type.contains("Json"),
-                "to_type 应含 Json（sqlWriter Phase 3 收紧后），实际: {to_type}"
+                "to_type 应含 Json（sqlWriter input 已收紧到 Json），实际: {to_type}"
             );
         }
         Err(error) => panic!(

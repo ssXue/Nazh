@@ -407,8 +407,8 @@ mod tests {
 
     #[test]
     fn input_pin_保留默认_any() {
-        // ADR-0010 Phase 3 决策：modbusRead 不收紧 input，因为它常作为
-        // 根节点或被 timer（Any 输出）触发。
+        // modbusRead 常作为根节点或被 timer（Any 输出）触发，input 形状
+        // 不重要，所以保持 trait 默认（单 Any 输入）。
         let node = make_node();
         let pins = node.input_pins();
         assert_eq!(pins.len(), 1);

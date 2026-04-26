@@ -1,4 +1,4 @@
-// ADR-0010 Phase 2：连接期校验纯函数单测。
+// 连接期校验纯函数单测。
 //
 // 用 vi.mock 隔离 pin-schema-cache（实际生产路径上的 cache 由 IPC 写入，
 // 此处直接 mock findPin 让测试聚焦在判断逻辑）。

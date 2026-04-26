@@ -1,4 +1,4 @@
-// ADR-0010 Phase 2：连接期校验的核心纯函数。
+// 连接期校验的核心纯函数。
 //
 // FlowGram canAddLine 钩子的判断逻辑提到这里，方便单测——
 // FlowgramCanvas 那一侧只是薄胶水（读 entity / 设 hasError）。

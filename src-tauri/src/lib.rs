@@ -1270,8 +1270,8 @@ async fn list_node_types() -> Result<ListNodeTypesResponse, String> {
 
 /// 给定节点类型 + config，返回该节点实例的 input/output pin schema。
 ///
-/// 用于 ADR-0010 Phase 2 前端连接期校验：FlowGram `canAddLine` 钩子
-/// 通过缓存的 pin schema 即时判断"上游产出 → 下游期望"是否兼容。
+/// 用于前端连接期校验：FlowGram `canAddLine` 钩子通过缓存的 pin schema
+/// 即时判断"上游产出 → 下游期望"是否兼容，错连立刻拒绝并给视觉反馈。
 ///
 /// 实例化是无副作用的（只读 config + 资源句柄克隆，不进入 `on_deploy`）。
 /// 返回错误时前端会写 fallback `Any/Any` 缓存——部署期校验作为 backstop。

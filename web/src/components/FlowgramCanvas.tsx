@@ -1334,9 +1334,9 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
     [resolveLineRuntimeStatus],
   );
 
-  // ADR-0010 Phase 2：连接期 pin 类型校验。
-  // 用户拖边瞬间被调用——pin schema 缓存命中且类型不兼容时返回 false 拒收，
-  // 否则放行（缓存未命中也放行，部署期 pin_validator 作为 backstop 兜底）。
+  // 连接期 pin 类型校验：用户拖边瞬间被调用——pin schema 缓存命中且
+  // 类型不兼容时返回 false 拒收，否则放行（缓存未命中也放行，部署期
+  // pin_validator 作为 backstop 兜底）。
   const canAddLine = useCallback(
     (
       _ctx: FreeLayoutPluginContext,
@@ -1706,9 +1706,9 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
           return;
         }
 
-        // ADR-0010 Phase 2：节点生命周期事件触发 pin schema 缓存维护。
-        // refresh / invalidate 都是 fire-and-forget——失败时缓存自动写
-        // fallback Any/Any，部署期校验作为 backstop 兜底。
+        // 节点生命周期事件触发 pin schema 缓存维护。refresh / invalidate
+        // 都是 fire-and-forget——失败时缓存自动写 fallback Any/Any，部署期
+        // 校验作为 backstop 兜底。
         if (
           event.type === WorkflowContentChangeType.ADD_NODE ||
           event.type === WorkflowContentChangeType.NODE_DATA_CHANGE

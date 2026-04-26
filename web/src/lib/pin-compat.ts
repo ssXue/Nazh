@@ -1,15 +1,15 @@
-// ADR-0010 Phase 2：TS 端 PinType 兼容性判断。
+// TS 端 PinType 兼容性判断。
 //
-// 必须与 Rust 的 PinType::is_compatible_with（crates/core/src/pin.rs:96-116）
-// 严格一致。任意一方漂移由 tests/fixtures/pin_compat_matrix.jsonc 合约测试
-// 在 CI 抓——`web/src/lib/__tests__/pin-compat.test.ts` 跑全表断言。
+// 必须与 Rust 的 PinType::is_compatible_with（在 crates/core/src/pin.rs）
+// 严格一致。任意一方漂移由 tests/fixtures/pin_compat_matrix.jsonc 合约
+// 测试在 CI 抓——前端在 `__tests__/pin-compat.test.ts` 跑全表断言。
 
 import type { PinType } from '../types';
 
 /**
  * 判断"上游产出 `from` → 下游期望 `to`"是否兼容。
  *
- * 兼容矩阵（与 ADR-0010 部署期校验规则代码化形态一致）：
+ * 兼容矩阵（与部署期校验规则代码化形态一致）：
  * - 任一端是 `any` → 通过
  * - 标量类型精确相等 → 通过
  * - `array` → 嵌套递归 + 内层各自兼容

@@ -1,4 +1,4 @@
-// ADR-0010 Phase 2：节点 pin schema 前端缓存。
+// 节点 pin schema 前端缓存。
 //
 // 节点添加到画布时主动调 IPC describe_node_pins 填缓存；
 // 节点 config 保存时刷新；节点删除时清缓存。
@@ -106,8 +106,8 @@ export function invalidateNodePinSchema(nodeId: string): void {
 /**
  * 给端口着色用的 pin 类型 kind 字符串（缓存未命中或端口未声明时回退 `"any"`）。
  *
- * Phase 2 类型着色仅用 PinType 顶层 kind（'any' / 'json' / 'bool' / ...）
- * 决定颜色——`array` / `custom` 的 inner / name 不参与色彩区分。
+ * 类型着色仅用 PinType 顶层 kind（'any' / 'json' / 'bool' / ...）决定
+ * 颜色——`array` / `custom` 的 inner / name 不参与色彩区分。
  */
 export function resolvePinTypeKind(
   nodeId: string,
@@ -140,7 +140,8 @@ export function formatPinType(pinType: PinType): string {
  * 给端口生成 hover tooltip 文本（HTML title 属性）。
  *
  * 缓存未命中或端口未声明时返回 undefined（让浏览器不显示 tooltip）。
- * Phase 4 polish——展示端口的 pin 类型 + required 标记 + description。
+ * 展示端口的 pin 类型 + required 标记 + description——给用户的可视化
+ * 反馈，hover 端口时浏览器原生 tooltip 显示。
  */
 export function getPortTooltip(
   nodeId: string,

@@ -405,11 +405,11 @@ export async function listNodeTypes(): Promise<ListNodeTypesResponse> {
 /**
  * 给定节点类型 + config，返回该节点实例的 input/output pin schema。
  *
- * 用于 ADR-0010 Phase 2 前端连接期校验：FlowGram `canAddLine` 钩子
- * 通过缓存的 pin schema 即时判断"上游产出 → 下游期望"是否兼容。
+ * 用于前端连接期校验——FlowGram `canAddLine` 钩子通过缓存的 pin schema
+ * 即时判断"上游产出 → 下游期望"是否兼容，错连立刻拒绝并给视觉反馈。
  *
- * 实例化无副作用（节点构造器只读 config + 资源句柄克隆）。
- * 失败时调用方应 fallback 到 `Any/Any`，部署期 backstop 兜底。
+ * 实例化无副作用（节点构造器只读 config + 资源句柄克隆）。失败时调用
+ * 方应 fallback 到 `Any/Any`，部署期校验作为 backstop 兜底。
  */
 export async function describeNodePins(
   nodeType: string,

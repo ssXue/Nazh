@@ -16,7 +16,7 @@ export interface NodeContextInfo {
   nodeId: string;
   nodeType: string;
   label: string;
-  /** ADR-0010 Phase 4：pin schema 摘要，用于让 LLM 理解上下游数据形态。 */
+  /** Pin schema 摘要，让 LLM 知道上下游数据的形态约束。 */
   inputPins?: NodePinSummary[];
   outputPins?: NodePinSummary[];
 }
@@ -51,9 +51,9 @@ function extractNodeInfo(node: FlowNodeEntity): NodeContextInfo {
     label?: string;
     nodeType?: string;
   };
-  // ADR-0010 Phase 4：从 pin schema 缓存读 input/output pin 摘要。
-  // 缓存未命中（节点刚加 / IPC 还没回）→ 字段保持 undefined，prompt 不渲染该节
-  // 点的 pin 信息。Graceful degradation：缺数据不阻断生成流程。
+  // 从 pin schema 缓存读 input/output pin 摘要。缓存未命中（节点刚加 /
+  // IPC 还没回）→ 字段保持 undefined，prompt 不渲染该节点的 pin 信息。
+  // Graceful degradation：缺数据不阻断生成流程。
   const schema = getCachedPinSchema(node.id);
   return {
     nodeId: node.id,
@@ -92,7 +92,7 @@ const SYSTEM_PROMPT = `你是工业边缘计算工作流的脚本编写助手。
 - 不要使用 Math.random()、random()、ctx、print()、console.log() 或其他未在上面列出的 API
 - 优先使用 payload["field"] 这种字段访问方式，保持脚本简洁
 - 节点信息中的"输入端口"声明了 payload 的预期形态（如 in: json (required) 表示 payload 是 JSON 对象）；"输出端口"声明了脚本结果应当符合的形态——尽量按声明类型生成代码
-- ADR-0010 规则：'json' 端口期望 payload 是 JSON 对象 / 数组；'any' 端口任意值都可；'bool'/'integer'/'float'/'string' 期望对应原生类型；'array<T>' 期望同质数组；'custom(name)' 是协议特定类型，按节点语义决定字段
+- Pin 类型语义：'json' 端口期望 payload 是 JSON 对象 / 数组；'any' 端口任意值都可；'bool'/'integer'/'float'/'string' 期望对应原生类型；'array<T>' 期望同质数组；'custom(name)' 是协议特定类型，按节点语义决定字段
 
 示例：
 payload["normalized"] = true;
@@ -106,7 +106,7 @@ function formatPinSummary(pins: NodePinSummary[] | undefined): string {
     .join(', ');
 }
 
-/** 把节点信息序列化成 prompt 一行——ADR-0010 Phase 4 携带 pin schema。 */
+/** 把节点信息序列化成 prompt 一行（含 pin schema 摘要）。 */
 function formatNodeInfoLine(info: NodeContextInfo): string {
   const inputs = formatPinSummary(info.inputPins);
   const outputs = formatPinSummary(info.outputPins);

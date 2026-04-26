@@ -296,8 +296,10 @@ impl NodeTrait for MqttClientNode {
     /// - `Subscribe` 模式 → `Any`：subscribe 由 [`Self::on_deploy`] 触发，
     ///   `transform` 路径仅在手动 dispatch 时被调用，input 形状不重要
     ///
-    /// 这是 ADR-0010 把 `input_pins` 设计为 `&self` 实例方法（非 `'static` 表）
-    /// 的典型场景——pin 类型由 config 决定，必须读 `&self.config` 才能给出。
+    /// pin 类型由 config 决定（mode 切换会镜像翻转输入输出形态），所以
+    /// `input_pins` / `output_pins` 必须读 `&self.config` 才能给出准确声明——
+    /// 这是 [`NodeTrait`] 把这两个方法设计为 `&self` 实例方法（而非 `'static`
+    /// 表）的典型场景。
     fn input_pins(&self) -> Vec<PinDefinition> {
         let (pin_type, description) = match self.config.mode {
             MqttMode::Publish => (
@@ -729,7 +731,7 @@ mod tests {
 
     #[test]
     fn pin_声明随_mode_变化而切换() {
-        // 守住 ADR-0010 把 input_pins/output_pins 设计为 &self 实例方法的
+        // 守住"input_pins/output_pins 是 &self 实例方法（非 'static 表）"的
         // 核心理由：同 NodeTrait 实现，pin 形态完全由 self.config 决定。
         let publish = make_node("publish");
         let subscribe = make_node("subscribe");
