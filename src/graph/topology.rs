@@ -87,17 +87,20 @@ impl WorkflowGraph {
             }
         }
 
-        let root_nodes = incoming
+        let mut root_nodes = incoming
             .iter()
             .filter(|(_, count)| **count == 0)
             .map(|(node_id, _)| node_id.clone())
             .collect::<Vec<_>>();
+        // root_nodes 来自 HashMap，顺序非确定性；排序后让上层（部署顺序、
+        // E2E 测试断言）稳定，避免随构建偶发漂移。
+        root_nodes.sort();
 
         let mut queue = VecDeque::from(root_nodes.clone());
-        let mut processed = 0_usize;
+        let mut deployment_order = Vec::with_capacity(self.nodes.len());
 
         while let Some(node_id) = queue.pop_front() {
-            processed += 1;
+            deployment_order.push(node_id.clone());
             if let Some(neighbors) = downstream.get(&node_id) {
                 for neighbor in neighbors {
                     if let Some(count) = incoming.get_mut(&neighbor.to) {
@@ -110,7 +113,7 @@ impl WorkflowGraph {
             }
         }
 
-        if processed != self.nodes.len() {
+        if deployment_order.len() != self.nodes.len() {
             return Err(EngineError::invalid_graph(
                 "工作流图必须是无环的有向图（DAG）",
             ));
@@ -119,6 +122,7 @@ impl WorkflowGraph {
         Ok(WorkflowTopology {
             root_nodes,
             downstream,
+            deployment_order,
         })
     }
 }

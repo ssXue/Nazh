@@ -1060,7 +1060,10 @@ async fn deploy_workflow(
             return Err(stringify_error(&error));
         }
     };
-    let (ingress, streams) = deployment.into_parts();
+    // ADR-0009 Task 1: WorkflowDeployment 已携带 lifecycle_guards。本阶段三类
+    // 触发器节点的 on_deploy 仍是默认 noop，guards 立即丢弃无副作用；Task 2-4
+    // 节点迁移完成后，壳层需要持有 guards 直至撤销（详见 plan Task 5 Step 3）。
+    let (ingress, streams, _lifecycle_guards) = deployment.into_parts();
     let root_nodes = ingress.root_nodes().to_vec();
     let (mut event_rx, mut result_rx, result_store_ref) = streams.into_receivers();
     let dead_letters = DeadLetterSink::new(workspace_dir, metadata.clone()).await?;

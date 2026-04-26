@@ -10,7 +10,8 @@
 use std::{collections::HashMap, sync::Arc};
 
 use crate::{
-    ContextRef, DataStore, EngineError, ExecutionEvent, WorkflowContext, WorkflowNodeDefinition,
+    CancellationToken, ContextRef, DataStore, EngineError, ExecutionEvent, LifecycleGuard,
+    WorkflowContext, WorkflowNodeDefinition,
 };
 use serde::{Deserialize, Deserializer, Serialize};
 use tokio::sync::mpsc;
@@ -89,15 +90,29 @@ pub struct WorkflowStreams {
 }
 
 /// 完整部署的工作流：入口用于提交数据，流用于观测结果。
+///
+/// 持有节点的 [`LifecycleGuard`] 集合（按部署顺序），撤销时由 [`shutdown`]
+/// 按逆序优雅清理；若调用方未显式 shutdown，guards 在结构 drop 时通过 RAII
+/// 兜底取消（仅 cancel token，不等待任务退出，详见 [`LifecycleGuard`]）。
+///
+/// `shutdown_token` 是工作流根 token；guards 中各节点持有其派生子 token——
+/// 调用根 token 的 cancel 会沿派生链广播到所有节点。
+///
+/// [`shutdown`]: WorkflowDeployment::shutdown
 pub struct WorkflowDeployment {
     pub(crate) ingress: WorkflowIngress,
     pub(crate) streams: WorkflowStreams,
+    pub(crate) lifecycle_guards: Vec<(String, LifecycleGuard)>,
+    pub(crate) shutdown_token: CancellationToken,
 }
 
 /// 拓扑分析结果（仅模块内部使用）。
 pub(crate) struct WorkflowTopology {
     pub(crate) root_nodes: Vec<String>,
     pub(crate) downstream: HashMap<String, Vec<WorkflowEdge>>,
+    /// 完整拓扑序（Kahn 算法输出顺序），用于按依赖顺序调用 `on_deploy`，
+    /// 撤销时按逆序 shutdown。
+    pub(crate) deployment_order: Vec<String>,
 }
 
 /// 下游目标通道（仅模块内部使用）。
@@ -253,8 +268,32 @@ impl WorkflowDeployment {
         &self.ingress
     }
 
-    pub fn into_parts(self) -> (WorkflowIngress, WorkflowStreams) {
-        (self.ingress, self.streams)
+    /// 拆分为入口、流与生命周期 guards。
+    ///
+    /// **注意**：丢弃返回的 guards 会立即 cancel 所有节点的 lifecycle token——
+    /// 长连接节点（MQTT 订阅 / Timer / Serial 监听）会随之停止。需要保留触发
+    /// 器活动的调用方应持有 guards 直至撤销。本阶段（Task 1）所有节点的
+    /// `on_deploy` 仍是默认 `noop` 实现，丢弃 guards 暂无可观察影响——但等到
+    /// Task 2-4 各类节点迁回引擎后丢弃将造成功能性丢失。
+    pub fn into_parts(
+        self,
+    ) -> (
+        WorkflowIngress,
+        WorkflowStreams,
+        Vec<(String, LifecycleGuard)>,
+    ) {
+        (self.ingress, self.streams, self.lifecycle_guards)
+    }
+
+    /// 显式撤销整张图：cancel 根 token 后按**逆部署序** shutdown 每个 guard。
+    ///
+    /// 调用此方法是确定性等待清理完成的唯一方式；未调用时 `Drop` 仅触发
+    /// cancel 不等待，可能与下次 deploy 的资源借出竞态。
+    pub async fn shutdown(self) {
+        self.shutdown_token.cancel();
+        for (_, guard) in self.lifecycle_guards.into_iter().rev() {
+            guard.shutdown().await;
+        }
     }
 
     /// 返回内部 [`DataStore`] 的引用。

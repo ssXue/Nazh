@@ -22,10 +22,11 @@ pub mod graph;
 mod registry;
 
 pub use nazh_core::{
-    ArenaDataStore, CompletedExecutionEvent, ContextRef, DataId, DataStore, EngineError,
-    ExecutionEvent, NodeDispatch, NodeExecution, NodeOutput, NodeRegistry, NodeTrait, Plugin,
-    PluginHost, PluginManifest, RuntimeResources, SharedResources, WorkflowContext,
-    WorkflowNodeDefinition, into_payload_map,
+    ArenaDataStore, CancellationToken, CompletedExecutionEvent, ContextRef, DataId, DataStore,
+    EngineError, ExecutionEvent, LifecycleGuard, NodeCapabilities, NodeDispatch, NodeExecution,
+    NodeHandle, NodeLifecycleContext, NodeOutput, NodeRegistry, NodeTrait, Plugin, PluginHost,
+    PluginManifest, RuntimeResources, SharedResources, WorkflowContext, WorkflowNodeDefinition,
+    into_payload_map,
 };
 
 pub use connections::{

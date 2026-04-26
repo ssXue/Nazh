@@ -172,7 +172,7 @@ cargo clippy -p nazh-core --all-targets -- -D warnings
 - Modify: `src/graph/deploy.rs`（按拓扑序 on_deploy + 失败回滚）
 - Modify: `src/graph/runner.rs`（NodeHandle::emit 与 run_node apply_output 共享路径）
 
-- [ ] **Step 1: WorkflowDeployment 携带 guards**
+- [x] **Step 1: WorkflowDeployment 携带 guards**
 
 ```rust
 pub struct WorkflowDeployment {
@@ -191,7 +191,7 @@ impl WorkflowDeployment {
 }
 ```
 
-- [ ] **Step 2: deploy_workflow_with_ai 加 on_deploy 阶段**
+- [x] **Step 2: deploy_workflow_with_ai 加 on_deploy 阶段**
 
 在 `src/graph/deploy.rs:83`（`for (node_id, node_definition) in &graph.nodes` 节点循环）**之前**新增按 `topology.execution_order`（如果存在；否则用 `topology.root_nodes` + BFS）的 `on_deploy` 调用阶段。
 
@@ -222,7 +222,7 @@ for node_id in topology.deployment_order() {
 
 注意：`topology.deployment_order()` 可能需要新增方法（拓扑序 `Vec<String>`），现有 `Topology` 结构需要检查 — 如果只暴露 `root_nodes` + `downstream` 邻接表，需要在 `topology.rs` 加一个 `topological_order()` 公共方法（Kahn 算法已有，复用）。
 
-- [ ] **Step 3: 失败回滚的隔离测试**
+- [x] **Step 3: 失败回滚的隔离测试**
 
 新增 `tests/lifecycle.rs`：
 - `on_deploy_失败时按逆序释放已部署节点的 guard`
@@ -230,11 +230,11 @@ for node_id in topology.deployment_order() {
 - `on_deploy_超时被强制取消`
 - `shutdown_按逆拓扑序执行`
 
-- [ ] **Step 4: NodeHandle::emit 与 run_node apply_output 共享路径**
+- [x] **Step 4: NodeHandle::emit 与 run_node apply_output 共享路径**
 
 `run_node` 内部已有把 `NodeOutput` 写 store + 广播 ContextRef + 发 Completed 事件的逻辑（`apply_output` 或类似名）。把这段抽成 `pub(crate) fn dispatch_node_output(...)`，让 `NodeHandle::emit` 复用。**禁止双份元数据合并逻辑**（ADR-0009 风险章节强调）。
 
-- [ ] **Step 5: 验证**
+- [x] **Step 5: 验证**
 
 ```bash
 cargo test --workspace
