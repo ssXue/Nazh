@@ -272,7 +272,9 @@ pub trait NodeTrait: Send + Sync {
     ///
     /// **契约**：返回的 [`PinDefinition::id`] 集合**必须包含** `transform` 路径
     /// 上 [`NodeDispatch::Route`] 可能产出的所有 port id，否则路由会丢消息且
-    /// 部署期校验也无法保护错连（运行时悄无声息）。
+    /// 部署期校验也无法保护错连（运行时悄无声息）。改 `output_pins` 与改
+    /// `transform` 的 `Route([...])` 必须同步——这是 [`Route`](NodeDispatch::Route)
+    /// 节点共用的不变量，不在每个实现里重复说明。
     ///
     /// **默认实现**返回单 `Any` 输出（id = `"out"`，required = `false`）。
     /// 分支节点（`if` / `switch` / `loop` / `tryCatch`）必须 override；多输出

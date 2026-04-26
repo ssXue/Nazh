@@ -24,6 +24,8 @@
 //! 联合，前端用 `switch (pin.kind)` 分派。比 ts-rs 默认 `{ Array: ... }` map
 //! 形式好用，且对递归 `Box<PinType>` 友好。
 
+use std::fmt;
+
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "ts-export")]
 use ts_rs::TS;
@@ -37,13 +39,13 @@ pub enum PinDirection {
     Output,
 }
 
-impl PinDirection {
-    /// 中文标签，用于错误信息。
-    pub fn label(self) -> &'static str {
-        match self {
+impl fmt::Display for PinDirection {
+    /// 中文标签，供 `EngineError` 的 `#[error(...)]` 模板与日志使用。
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
             Self::Input => "输入",
             Self::Output => "输出",
-        }
+        })
     }
 }
 
@@ -144,6 +146,13 @@ impl PinDefinition {
     ///
     /// `NodeTrait::input_pins` 的默认实现返回 `vec![default_input()]`——存量节点
     /// 不重写就能继续用单输入语义。
+    ///
+    /// **关于 `required: true` 与根节点**：根节点（拓扑入度为 0）不通过
+    /// [`WorkflowEdge`](crate::WorkflowEdge) 接收数据，而是由
+    /// [`WorkflowIngress::submit`](crate::context::WorkflowContext) 直接喂入。
+    /// 部署期校验器对 `id == "in"` 的默认输入引脚豁免"必有上游入边"检查，
+    /// 让根节点可以是单 `Any` 输入而不被误判为缺边。具名 required input
+    /// （`id != "in"`）则一律要求上游入边——这种节点不该是根节点。
     pub fn default_input() -> Self {
         Self {
             id: "in".to_owned(),

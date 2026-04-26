@@ -43,7 +43,6 @@ impl NodeTrait for TryCatchNode {
     scripting::delegate_node_base!("tryCatch");
 
     fn output_pins(&self) -> Vec<PinDefinition> {
-        // 与 transform 路由 try/catch 一致。
         vec![
             PinDefinition {
                 id: "try".to_owned(),

@@ -40,8 +40,6 @@ impl NodeTrait for IfNode {
     scripting::delegate_node_base!("if");
 
     fn output_pins(&self) -> Vec<PinDefinition> {
-        // 与 transform 中 NodeDispatch::Route(["true"|"false"]) 保持一致；
-        // 改这里时也要改 transform，反之亦然。
         vec![
             PinDefinition {
                 id: "true".to_owned(),

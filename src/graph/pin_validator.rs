@@ -35,7 +35,7 @@ fn build_pin_index(node_id: &str, node: &Arc<dyn NodeTrait>) -> Result<NodePinIn
             return Err(EngineError::DuplicatePinId {
                 node: node_id.to_owned(),
                 pin: pin.id.clone(),
-                direction: PinDirection::Input.label().to_owned(),
+                direction: PinDirection::Input,
             });
         }
         inputs.insert(pin.id.clone(), pin);
@@ -47,7 +47,7 @@ fn build_pin_index(node_id: &str, node: &Arc<dyn NodeTrait>) -> Result<NodePinIn
             return Err(EngineError::DuplicatePinId {
                 node: node_id.to_owned(),
                 pin: pin.id.clone(),
-                direction: PinDirection::Output.label().to_owned(),
+                direction: PinDirection::Output,
             });
         }
         outputs.insert(pin.id.clone(), pin);
@@ -92,7 +92,7 @@ pub(crate) fn validate_pin_compatibility(
                 .ok_or_else(|| EngineError::UnknownPin {
                     node: edge.from.clone(),
                     pin: from_pin_id.to_owned(),
-                    direction: PinDirection::Output.label().to_owned(),
+                    direction: PinDirection::Output,
                 })?;
         let to_pin = to_index
             .inputs
@@ -100,7 +100,7 @@ pub(crate) fn validate_pin_compatibility(
             .ok_or_else(|| EngineError::UnknownPin {
                 node: edge.to.clone(),
                 pin: to_pin_id.to_owned(),
-                direction: PinDirection::Input.label().to_owned(),
+                direction: PinDirection::Input,
             })?;
 
         if !from_pin.pin_type.is_compatible_with(&to_pin.pin_type) {
@@ -114,9 +114,6 @@ pub(crate) fn validate_pin_compatibility(
     }
 
     // 3. 校验 required 输入引脚有上游入边
-    //
-    // 把每条边的目标 (node, pin_id) 收集进 set，然后扫每个节点 required input
-    // 是否在 set 中。比 O(节点数 × 边数) 朴素双重循环快。
     let mut covered_inputs: std::collections::HashSet<(&str, &str)> =
         std::collections::HashSet::with_capacity(edges.len());
     for edge in edges {
@@ -129,24 +126,20 @@ pub(crate) fn validate_pin_compatibility(
 
     for (node_id, index) in &indexes {
         for (pin_id, pin) in &index.inputs {
-            if pin.required && !covered_inputs.contains(&(*node_id, pin_id.as_str())) {
-                // 根节点（拓扑序入度为 0）的 required 输入不应触发——它们由 ingress
-                // 直接喂数据，不经过 WorkflowEdge。但 ingress 路径目前不区分具名 pin，
-                // 默认走 "in"；所以仅当 required pin id != "in" 时才需要入边。
-                //
-                // 实际语义：根节点的具名 required input 需要边喂养——这种节点不该是
-                // 根节点。这里保守起见对所有节点统一校验，如未来证明根节点该豁免再放宽。
-                //
-                // Phase 1 的内置节点中，没有非默认 pin 是 required 的，所以这条规则
-                // 实际上只在用户引入自定义 required 多输入节点时才会触发。
-                if pin_id == DEFAULT_INPUT_PIN_ID {
-                    // 单 Any 默认 input 的根节点是合法存在；ingress 喂数据不经过 edge。
-                    continue;
-                }
-                return Err(EngineError::invalid_graph(format!(
-                    "节点 `{node_id}` 的必需输入引脚 `{pin_id}` 没有任何上游入边"
-                )));
+            if !pin.required {
+                continue;
             }
+            // 默认 "in" 引脚的根节点由 ingress 直接喂数据，不经过 WorkflowEdge——
+            // 详见 PinDefinition::default_input rustdoc。
+            if pin_id == DEFAULT_INPUT_PIN_ID {
+                continue;
+            }
+            if covered_inputs.contains(&(*node_id, pin_id.as_str())) {
+                continue;
+            }
+            return Err(EngineError::invalid_graph(format!(
+                "节点 `{node_id}` 的必需输入引脚 `{pin_id}` 没有任何上游入边"
+            )));
         }
     }
 

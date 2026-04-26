@@ -14,7 +14,7 @@ use nazh_engine::{
     CodeNode, CodeNodeConfig, ConnectionDefinition, ConnectionManager, DebugConsoleNode,
     DebugConsoleNodeConfig, EngineError, HttpClientNode, HttpClientNodeConfig, ModbusReadNode,
     ModbusReadNodeConfig, MqttClientNode, MqttClientNodeConfig, MqttMode, NodeCapabilities,
-    NodeDispatch, NodeExecution, NodeRegistry, NodeTrait, PinDefinition, PinDirection, PinType,
+    NodeDispatch, NodeExecution, NodeRegistry, NodeTrait, PinDefinition, PinType,
     SerialTriggerNode, SerialTriggerNodeConfig, SqlWriterNode, SqlWriterNodeConfig, TimerNode,
     TimerNodeConfig, WorkflowContext, WorkflowGraph, deploy_workflow, deploy_workflow_with_ai,
     shared_connection_manager, standard_registry,
@@ -1599,22 +1599,14 @@ impl NodeTrait for TypedTestNode {
     }
     fn input_pins(&self) -> Vec<PinDefinition> {
         vec![PinDefinition {
-            id: "in".to_owned(),
-            label: "in".to_owned(),
             pin_type: self.input_pin.clone(),
-            direction: PinDirection::Input,
-            required: true,
-            description: None,
+            ..PinDefinition::default_input()
         }]
     }
     fn output_pins(&self) -> Vec<PinDefinition> {
         vec![PinDefinition {
-            id: "out".to_owned(),
-            label: "out".to_owned(),
             pin_type: self.output_pin.clone(),
-            direction: PinDirection::Output,
-            required: false,
-            description: None,
+            ..PinDefinition::default_output()
         }]
     }
     async fn transform(

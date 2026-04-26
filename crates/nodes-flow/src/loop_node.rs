@@ -134,8 +134,6 @@ impl NodeTrait for LoopNode {
     scripting::delegate_node_base!("loop");
 
     fn output_pins(&self) -> Vec<PinDefinition> {
-        // 与 transform 路由 body / done 一致。每次 transform 既会触发若干次
-        // body 也会触发一次 done——这是 MULTI_OUTPUT 节点的典型形态。
         vec![
             PinDefinition {
                 id: "body".to_owned(),

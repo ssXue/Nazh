@@ -6,6 +6,7 @@ use thiserror::Error;
 use uuid::Uuid;
 
 use crate::data::DataId;
+use crate::pin::PinDirection;
 
 /// 覆盖引擎所有失败模式的结构化错误类型。
 ///
@@ -112,14 +113,14 @@ pub enum EngineError {
     UnknownPin {
         node: String,
         pin: String,
-        direction: String,
+        direction: PinDirection,
     },
 
     #[error("节点 `{node}` 声明了重复的 {direction} 引脚 `{pin}`")]
     DuplicatePinId {
         node: String,
         pin: String,
-        direction: String,
+        direction: PinDirection,
     },
 }
 
