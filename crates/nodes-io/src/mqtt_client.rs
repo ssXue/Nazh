@@ -24,7 +24,8 @@ use uuid::Uuid;
 use connections::{SharedConnectionManager, connection_metadata};
 use nazh_core::{
     CancellationToken, EngineError, LifecycleGuard, NodeExecution, NodeHandle,
-    NodeLifecycleContext, NodeTrait, into_payload_map, sleep_or_cancel,
+    NodeLifecycleContext, NodeTrait, PinDefinition, PinDirection, PinType, into_payload_map,
+    sleep_or_cancel,
 };
 
 /// MQTT 客户端工作模式。
@@ -288,6 +289,58 @@ impl MqttClientNode {
 #[async_trait]
 impl NodeTrait for MqttClientNode {
     nazh_core::impl_node_meta!("mqttClient");
+
+    /// 输入引脚按 [`MqttMode`] 分支：
+    ///
+    /// - `Publish` 模式 → `Json`：必须收到结构化 payload 才能发布到 broker
+    /// - `Subscribe` 模式 → `Any`：subscribe 由 [`Self::on_deploy`] 触发，
+    ///   `transform` 路径仅在手动 dispatch 时被调用，input 形状不重要
+    ///
+    /// 这是 ADR-0010 把 `input_pins` 设计为 `&self` 实例方法（非 `'static` 表）
+    /// 的典型场景——pin 类型由 config 决定，必须读 `&self.config` 才能给出。
+    fn input_pins(&self) -> Vec<PinDefinition> {
+        let (pin_type, description) = match self.config.mode {
+            MqttMode::Publish => (
+                PinType::Json,
+                "要发布到 broker 的 payload（JSON 对象）".to_owned(),
+            ),
+            MqttMode::Subscribe => (
+                PinType::Any,
+                "trigger / 手动 dispatch 信号；订阅模式实际触发走 on_deploy".to_owned(),
+            ),
+        };
+        vec![PinDefinition {
+            id: "in".to_owned(),
+            label: "in".to_owned(),
+            pin_type,
+            direction: PinDirection::Input,
+            required: true,
+            description: Some(description),
+        }]
+    }
+
+    /// 输出引脚按 [`MqttMode`] 分支：
+    ///
+    /// - `Publish` 模式 → `Any`：output 仅 echo 上游 payload，下游基本不消费
+    /// - `Subscribe` 模式 → `Json`：[`Self::on_deploy`] 中的订阅循环把消息
+    ///   规范化后通过 [`NodeHandle::emit`] 推进 DAG，output 形状是结构化 JSON
+    fn output_pins(&self) -> Vec<PinDefinition> {
+        let (pin_type, description) = match self.config.mode {
+            MqttMode::Publish => (PinType::Any, "echo 上游 payload；下游基本不消费".to_owned()),
+            MqttMode::Subscribe => (
+                PinType::Json,
+                "订阅消息规范化后的 JSON 对象（含 topic / payload 字段）".to_owned(),
+            ),
+        };
+        vec![PinDefinition {
+            id: "out".to_owned(),
+            label: "out".to_owned(),
+            pin_type,
+            direction: PinDirection::Output,
+            required: false,
+            description: Some(description),
+        }]
+    }
 
     async fn transform(
         &self,
@@ -621,5 +674,73 @@ async fn run_message_loop(
                 return Some(format!("MQTT 事件循环错误: {error}"));
             }
         }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use connections::shared_connection_manager;
+
+    fn make_node(mode: &str) -> MqttClientNode {
+        let config: MqttClientNodeConfig = serde_json::from_value(json!({ "mode": mode })).unwrap();
+        MqttClientNode::new("mqtt-1", config, shared_connection_manager())
+    }
+
+    #[test]
+    fn publish_模式_input_json_output_any() {
+        let node = make_node("publish");
+
+        let inputs = node.input_pins();
+        assert_eq!(inputs.len(), 1);
+        assert_eq!(inputs[0].pin_type, PinType::Json);
+        assert!(inputs[0].required, "publish 模式必需 payload");
+
+        let outputs = node.output_pins();
+        assert_eq!(outputs.len(), 1);
+        assert_eq!(
+            outputs[0].pin_type,
+            PinType::Any,
+            "publish 仅 echo 上游，输出无具体 schema"
+        );
+    }
+
+    #[test]
+    fn subscribe_模式_input_any_output_json() {
+        let node = make_node("subscribe");
+
+        let inputs = node.input_pins();
+        assert_eq!(inputs.len(), 1);
+        assert_eq!(
+            inputs[0].pin_type,
+            PinType::Any,
+            "subscribe 模式实际由 on_deploy 触发，input 仅用于手动 dispatch"
+        );
+
+        let outputs = node.output_pins();
+        assert_eq!(outputs.len(), 1);
+        assert_eq!(
+            outputs[0].pin_type,
+            PinType::Json,
+            "subscribe 输出是规范化后的 JSON 消息"
+        );
+    }
+
+    #[test]
+    fn pin_声明随_mode_变化而切换() {
+        // 守住 ADR-0010 把 input_pins/output_pins 设计为 &self 实例方法的
+        // 核心理由：同 NodeTrait 实现，pin 形态完全由 self.config 决定。
+        let publish = make_node("publish");
+        let subscribe = make_node("subscribe");
+
+        assert_ne!(
+            publish.input_pins()[0].pin_type,
+            subscribe.input_pins()[0].pin_type
+        );
+        assert_ne!(
+            publish.output_pins()[0].pin_type,
+            subscribe.output_pins()[0].pin_type
+        );
     }
 }
