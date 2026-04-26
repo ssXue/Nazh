@@ -376,6 +376,10 @@ impl WorkflowDispatchRouter {
         .await
     }
 
+    // ADR-0009 Task 4 后所有触发器节点（timer / serial / mqttClient subscribe）
+    // 都已迁回引擎层，trigger lane 无消费者。Task 5 删除整个 trigger lane 时
+    // 一并移除。
+    #[allow(dead_code)]
     async fn submit_trigger_to(
         &self,
         node_id: &str,
@@ -563,13 +567,12 @@ struct DesktopWorkflow {
     runtime_tasks: Vec<tauri::async_runtime::JoinHandle<()>>,
 }
 
+// ADR-0009 Task 4 后 trigger_tasks 永远为空（所有触发器迁回引擎），
+// TriggerJoinHandle 两个 variant 都已无构造者。整个 enum + DesktopTriggerTask
+// 留待 Task 5 删除时一并移除——当前保留是为了避免改 DesktopWorkflow 字段类型。
+#[allow(dead_code)]
 enum TriggerJoinHandle {
     Async(tauri::async_runtime::JoinHandle<()>),
-    // ADR-0009 Task 3 后无 std::thread 触发任务（serial 已迁回 nodes-io，
-    // 用 tokio::task::spawn_blocking）。Thread variant 留待 Task 5 删除整个
-    // DesktopTriggerTask 抽象时一并清理；当前阶段保留以避免破坏 abort_triggers
-    // 的 match 完备性。
-    #[allow(dead_code)]
     Thread(std::thread::JoinHandle<()>),
 }
 
@@ -745,15 +748,6 @@ impl DesktopState {
 // ADR-0009 Task 2-3: TimerRootSpec / SerialRootSpec 已移除——节点自持
 // on_deploy 生命周期，壳层不再需要中间 spec 结构。MqttRootSpec 留待 Task 4-5 清理。
 
-#[derive(Debug, Clone)]
-struct MqttRootSpec {
-    node_id: String,
-    connection_id: String,
-    host: String,
-    port: u16,
-    topic: String,
-    qos: u8,
-}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -1024,10 +1018,8 @@ async fn deploy_workflow(
     } else {
         None
     };
-    // ADR-0009 Task 2-3: timer / serial 节点已自持 on_deploy 生命周期；壳层不再 collect/spawn。
-    let mqtt_roots = collect_mqtt_root_specs(&graph, state.connection_manager.clone())
-        .await
-        .map_err(|e| stringify_error(&e))?;
+    // ADR-0009 Task 2-4: timer / serial / mqtt 节点已自持 on_deploy 生命周期；
+    // 壳层不再 collect/spawn 任何根触发任务。
     let node_count = graph.nodes.len();
     let edge_count = graph.edges.len();
     let registry = standard_registry();
@@ -1080,15 +1072,10 @@ async fn deploy_workflow(
         existing.abort_triggers().await;
     }
 
-    let mut trigger_tasks: Vec<DesktopTriggerTask> = Vec::new();
-    trigger_tasks.extend(spawn_mqtt_root_tasks(
-        &app,
-        &dispatch_router,
-        &state.connection_manager,
-        observability_store.as_ref(),
-        &workflow_id,
-        mqtt_roots,
-    ));
+    // ADR-0009 Task 2-4: trigger_tasks 永远为空——所有触发器节点（timer / serial /
+    // mqttClient subscribe）已迁回引擎层，由 WorkflowDeployment.lifecycle_guards 管理。
+    // 字段保留是为了 Task 5 一并删除 DesktopTriggerTask 抽象（同时清理 trigger lane）。
+    let trigger_tasks: Vec<DesktopTriggerTask> = Vec::new();
 
     let event_app = app.clone();
     let event_store = observability_store.clone();
@@ -2346,429 +2333,6 @@ fn expand_user_path(app: &AppHandle, raw_path: &str) -> Result<PathBuf, String> 
     }
 
     Ok(PathBuf::from(raw_path))
-}
-
-fn count_incoming_edges(graph: &WorkflowGraph) -> std::collections::HashMap<String, usize> {
-    let mut incoming_counts = graph
-        .nodes
-        .keys()
-        .map(|node_id| (node_id.clone(), 0_usize))
-        .collect::<std::collections::HashMap<_, _>>();
-
-    for edge in &graph.edges {
-        if let Some(count) = incoming_counts.get_mut(&edge.to) {
-            *count += 1;
-        }
-    }
-
-    incoming_counts
-}
-
-// ADR-0009 Task 2-3: collect_timer_root_specs / collect_serial_root_specs /
-// spawn_timer_root_tasks / spawn_serial_root_tasks / is_serial_trigger_type /
-// is_serial_connection_type 已移除——节点自持 on_deploy 生命周期。
-
-/// 收集工作流图中的 MQTT 订阅根节点。
-async fn collect_mqtt_root_specs(
-    graph: &WorkflowGraph,
-    connection_manager: nazh_engine::SharedConnectionManager,
-) -> Result<Vec<MqttRootSpec>, EngineError> {
-    let incoming_counts = count_incoming_edges(graph);
-    let mut mqtt_roots = Vec::new();
-
-    for node_id in graph.nodes.keys() {
-        if incoming_counts.get(node_id).copied().unwrap_or(0) > 0 {
-            continue;
-        }
-
-        let Some(node_definition) = graph.nodes.get(node_id) else {
-            continue;
-        };
-
-        if node_definition.node_type() != "mqttClient" {
-            continue;
-        }
-
-        let config: nazh_engine::MqttClientNodeConfig =
-            node_definition.parse_config().map_err(|error| {
-                EngineError::node_config(node_definition.id().to_owned(), error.to_string())
-            })?;
-
-        if !config.mode.trim().eq_ignore_ascii_case("subscribe") {
-            continue;
-        }
-
-        let Some(connection_id) = config
-            .connection_id
-            .as_deref()
-            .or_else(|| node_definition.connection_id())
-        else {
-            continue;
-        };
-
-        let mut guard = match connection_manager.acquire(connection_id).await {
-            Ok(guard) => guard,
-            Err(error) => {
-                let reason = format!("MQTT 连接资源 `{connection_id}` 借出失败: {error}");
-                let _ = connection_manager
-                    .mark_invalid_configuration(connection_id, &reason)
-                    .await;
-                return Err(EngineError::node_config(node_id.clone(), reason));
-            }
-        };
-
-        let host = guard
-            .metadata()
-            .get("host")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_owned();
-        let port = guard
-            .metadata()
-            .get("port")
-            .and_then(Value::as_u64)
-            .and_then(|p| u16::try_from(p).ok())
-            .unwrap_or(1883);
-        let topic = if config.topic.is_empty() {
-            guard
-                .metadata()
-                .get("topic")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .to_owned()
-        } else {
-            config.topic.clone()
-        };
-
-        if topic.is_empty() {
-            let reason = format!("MQTT 订阅节点 `{node_id}` 的主题不能为空");
-            guard.mark_failure(&reason);
-            return Err(EngineError::node_config(node_id.clone(), reason));
-        }
-
-        if host.is_empty() {
-            let reason = format!("MQTT 连接资源 `{connection_id}` 缺少 host 配置");
-            guard.mark_failure(&reason);
-            return Err(EngineError::node_config(node_id.clone(), reason));
-        }
-        guard.mark_success();
-
-        mqtt_roots.push(MqttRootSpec {
-            node_id: node_id.clone(),
-            connection_id: connection_id.to_owned(),
-            host,
-            port,
-            topic,
-            qos: config.qos,
-        });
-    }
-
-    Ok(mqtt_roots)
-}
-
-/// 为每个 MQTT 订阅根节点生成后台订阅任务。
-fn spawn_mqtt_root_tasks(
-    app: &AppHandle,
-    dispatch_router: &WorkflowDispatchRouter,
-    connection_manager: &nazh_engine::SharedConnectionManager,
-    observability: Option<&SharedObservabilityStore>,
-    workflow_id: &str,
-    mqtt_roots: Vec<MqttRootSpec>,
-) -> Vec<DesktopTriggerTask> {
-    mqtt_roots
-        .into_iter()
-        .map(|mqtt_root| {
-            let app = app.clone();
-            let dispatch_router = dispatch_router.clone();
-            let connection_manager = connection_manager.clone();
-            let observability = observability.cloned();
-            let workflow_id = workflow_id.to_owned();
-            let cancel = Arc::new(AtomicBool::new(false));
-            let task_cancel = Arc::clone(&cancel);
-            let join = tauri::async_runtime::spawn(async move {
-                run_mqtt_root_subscriber(
-                    &app,
-                    &dispatch_router,
-                    &connection_manager,
-                    observability.as_ref(),
-                    &workflow_id,
-                    &mqtt_root,
-                    &task_cancel,
-                )
-                .await;
-            });
-
-            DesktopTriggerTask {
-                cancel,
-                join: TriggerJoinHandle::Async(join),
-            }
-        })
-        .collect()
-}
-
-#[allow(clippy::too_many_lines)]
-async fn run_mqtt_root_subscriber(
-    app: &AppHandle,
-    dispatch_router: &WorkflowDispatchRouter,
-    connection_manager: &nazh_engine::SharedConnectionManager,
-    observability: Option<&SharedObservabilityStore>,
-    workflow_id: &str,
-    mqtt_root: &MqttRootSpec,
-    cancel: &Arc<AtomicBool>,
-) {
-    let client_id = format!(
-        "nazh-sub-{}",
-        &mqtt_root.node_id[..mqtt_root.node_id.len().min(16)]
-    );
-    let mut mqttoptions =
-        rumqttc::MqttOptions::new(client_id, mqtt_root.host.clone(), mqtt_root.port);
-    mqttoptions.set_keep_alive(std::time::Duration::from_secs(30));
-
-    let qos = match mqtt_root.qos {
-        1 => rumqttc::QoS::AtLeastOnce,
-        2 => rumqttc::QoS::ExactlyOnce,
-        _ => rumqttc::QoS::AtMostOnce,
-    };
-
-    while !cancel.load(Ordering::Relaxed) {
-        let mut guard = match connection_manager.acquire(&mqtt_root.connection_id).await {
-            Ok(guard) => guard,
-            Err(error) => {
-                let retry_after_ms = retry_delay_from_error(&error).unwrap_or(800);
-                emit_mqtt_trigger_failure(
-                    app,
-                    workflow_id,
-                    observability,
-                    &mqtt_root.node_id,
-                    error.to_string(),
-                );
-                tokio::time::sleep(std::time::Duration::from_millis(retry_after_ms)).await;
-                continue;
-            }
-        };
-
-        let (client, mut eventloop) = rumqttc::AsyncClient::new(mqttoptions.clone(), 10);
-
-        let connected = loop {
-            if cancel.load(Ordering::Relaxed) {
-                break false;
-            }
-            match tokio::time::timeout(std::time::Duration::from_secs(5), eventloop.poll()).await {
-                Ok(Ok(rumqttc::Event::Incoming(rumqttc::Packet::ConnAck(ack)))) => {
-                    if ack.code == rumqttc::ConnectReturnCode::Success {
-                        break true;
-                    }
-                    tracing::warn!(
-                        node_id = %mqtt_root.node_id,
-                        workflow_id = %workflow_id,
-                        "MQTT broker 拒绝连接: {:?}", ack.code
-                    );
-                    break false;
-                }
-                Ok(Ok(rumqttc::Event::Incoming(rumqttc::Packet::Disconnect))) => break false,
-                Ok(Err(error)) => {
-                    tracing::warn!(
-                        node_id = %mqtt_root.node_id,
-                        workflow_id = %workflow_id,
-                        "MQTT 连接错误: {error}"
-                    );
-                    break false;
-                }
-                Err(_) => {
-                    tracing::warn!(
-                        node_id = %mqtt_root.node_id,
-                        workflow_id = %workflow_id,
-                        "MQTT 连接超时"
-                    );
-                    break false;
-                }
-                _ => {}
-            }
-        };
-
-        if !connected {
-            let reason = format!("MQTT {}:{} 连接失败", mqtt_root.host, mqtt_root.port);
-            guard.mark_failure(&reason);
-            let retry_after_ms = connection_manager
-                .record_connect_failure(&mqtt_root.connection_id, &reason)
-                .await
-                .unwrap_or(800);
-            drop(guard);
-            emit_mqtt_trigger_failure(app, workflow_id, observability, &mqtt_root.node_id, reason);
-            tokio::time::sleep(std::time::Duration::from_millis(retry_after_ms)).await;
-            continue;
-        }
-
-        let _ = connection_manager
-            .record_connect_success(
-                &mqtt_root.connection_id,
-                format!(
-                    "MQTT {}:{} 已连接，订阅主题 {}",
-                    mqtt_root.host, mqtt_root.port, mqtt_root.topic
-                ),
-                None,
-            )
-            .await;
-
-        if let Err(error) = client.subscribe(&mqtt_root.topic, qos).await {
-            tracing::warn!(
-                node_id = %mqtt_root.node_id,
-                workflow_id = %workflow_id,
-                "MQTT 订阅失败: {error}"
-            );
-            let reason = format!("MQTT 订阅主题 `{}` 失败: {error}", mqtt_root.topic);
-            guard.mark_failure(&reason);
-            let retry_after_ms = connection_manager
-                .record_connect_failure(&mqtt_root.connection_id, &reason)
-                .await
-                .unwrap_or(800);
-            drop(guard);
-            emit_mqtt_trigger_failure(app, workflow_id, observability, &mqtt_root.node_id, reason);
-            tokio::time::sleep(std::time::Duration::from_millis(retry_after_ms)).await;
-            continue;
-        }
-
-        loop {
-            if cancel.load(Ordering::Relaxed) {
-                break;
-            }
-            match tokio::time::timeout(std::time::Duration::from_secs(60), eventloop.poll()).await {
-                Ok(Ok(rumqttc::Event::Incoming(rumqttc::Packet::Publish(message)))) => {
-                    let received_at = chrono::Utc::now().to_rfc3339();
-                    let payload_text = String::from_utf8_lossy(&message.payload).to_string();
-
-                    let ctx_payload = serde_json::json!({
-                        "_mqtt_message": {
-                            "topic": message.topic,
-                            "payload": payload_text,
-                            "qos": message.qos as u8,
-                            "retain": message.retain,
-                            "received_at": received_at,
-                        }
-                    });
-
-                    let ctx = nazh_engine::WorkflowContext::new(ctx_payload);
-
-                    if let Err(error) = dispatch_router
-                        .submit_trigger_to(&mqtt_root.node_id, ctx, "mqtt_subscribe")
-                        .await
-                    {
-                        emit_mqtt_trigger_failure(
-                            app,
-                            workflow_id,
-                            observability,
-                            &mqtt_root.node_id,
-                            error.clone(),
-                        );
-                    }
-
-                    let _ = connection_manager
-                        .record_heartbeat(
-                            &mqtt_root.connection_id,
-                            format!(
-                                "MQTT {}:{} 收到主题 {} 消息",
-                                mqtt_root.host, mqtt_root.port, mqtt_root.topic
-                            ),
-                        )
-                        .await;
-
-                    tracing::info!(
-                        node_id = %mqtt_root.node_id,
-                        workflow_id = %workflow_id,
-                        topic = %mqtt_root.topic,
-                        "MQTT 消息已投递到 DAG"
-                    );
-                }
-                Ok(Ok(_)) | Err(_) => {}
-                Ok(Err(error)) => {
-                    tracing::warn!(
-                        node_id = %mqtt_root.node_id,
-                        workflow_id = %workflow_id,
-                        "MQTT 事件循环错误: {error}"
-                    );
-                    break;
-                }
-            }
-        }
-
-        if cancel.load(Ordering::Relaxed) {
-            guard.mark_success();
-            let reason = format!("MQTT {}:{} 订阅已停止", mqtt_root.host, mqtt_root.port);
-            drop(guard);
-            let _ = connection_manager
-                .mark_disconnected(&mqtt_root.connection_id, &reason)
-                .await;
-            return;
-        }
-
-        let reason = format!("MQTT {}:{} 连接已断开", mqtt_root.host, mqtt_root.port);
-        guard.mark_failure(&reason);
-        let retry_after_ms = connection_manager
-            .record_connect_failure(&mqtt_root.connection_id, &reason)
-            .await
-            .unwrap_or(800);
-        drop(guard);
-        emit_mqtt_trigger_failure(app, workflow_id, observability, &mqtt_root.node_id, reason);
-        tokio::time::sleep(std::time::Duration::from_millis(retry_after_ms)).await;
-    }
-}
-
-
-fn emit_mqtt_trigger_failure(
-    app: &AppHandle,
-    workflow_id: &str,
-    observability: Option<&SharedObservabilityStore>,
-    node_id: &str,
-    message: String,
-) {
-    emit_trigger_failure(
-        app,
-        workflow_id,
-        observability,
-        node_id,
-        "MQTT 触发失败",
-        message,
-    );
-}
-
-fn emit_trigger_failure(
-    app: &AppHandle,
-    workflow_id: &str,
-    observability: Option<&SharedObservabilityStore>,
-    node_id: &str,
-    label: &str,
-    message: String,
-) {
-    let context = WorkflowContext::new(Value::Object(serde_json::Map::default()));
-    if let Some(store) = observability {
-        let _ = tauri::async_runtime::block_on(store.record_external_failure(
-            node_id,
-            label.to_owned(),
-            Some(message.clone()),
-            Some(context.trace_id.to_string()),
-            None,
-        ));
-    }
-    let event = ExecutionEvent::Failed {
-        stage: node_id.to_owned(),
-        trace_id: context.trace_id,
-        error: message,
-    };
-    let _ = app.emit(
-        "workflow://node-status",
-        ScopedExecutionEvent {
-            workflow_id: workflow_id.to_owned(),
-            event,
-        },
-    );
-}
-
-fn retry_delay_from_error(error: &EngineError) -> Option<u64> {
-    match error {
-        EngineError::ConnectionRateLimited { retry_after_ms, .. }
-        | EngineError::ConnectionCircuitOpen { retry_after_ms, .. } => Some(*retry_after_ms),
-        _ => None,
-    }
 }
 
 

@@ -415,6 +415,9 @@ impl ObservabilityStore {
         append_jsonl(self.root_dir.join(AUDIT_FILE), &entry).await
     }
 
+    // ADR-0009 Task 4 后没有调用方——壳层 emit_*_trigger_failure helpers 已删除
+    // （触发器节点失败现走 NodeHandle::emit 默认事件流）。Task 5 评估是否删除。
+    #[allow(dead_code)]
     pub async fn record_external_failure(
         &self,
         source: &str,

@@ -351,7 +351,7 @@ rg -n 'NodeTrait.*for.*Serial' crates/
 - Modify: `crates/nodes-io/src/lib.rs`
 - Modify: `src-tauri/src/lib.rs`
 
-- [ ] **Step 1: 在现有 MqttClientNode 上实现 on_deploy**
+- [x] **Step 1: 在现有 MqttClientNode 上实现 on_deploy**
 
 判断是否 `subscribe` 模式：
 
@@ -365,7 +365,7 @@ async fn on_deploy(&self, ctx: NodeLifecycleContext) -> Result<LifecycleGuard, E
 }
 ```
 
-- [ ] **Step 2: 复刻 `collect_mqtt_root_specs` 中的连接元数据校验**
+- [x] **Step 2: 复刻 `collect_mqtt_root_specs` 中的连接元数据校验**
 
 `src-tauri/src/lib.rs:2569-2664` `collect_mqtt_root_specs` 不只是"读 graph"——它在借连接后还做了一组校验：
 - 从 `ConnectionGuard::metadata()` 读 `host` / `port` / `topic` 默认值
@@ -375,17 +375,17 @@ async fn on_deploy(&self, ctx: NodeLifecycleContext) -> Result<LifecycleGuard, E
 
 这套**必须在 `on_deploy` 内复刻**——通过 `ctx.resources.get::<SharedConnectionManager>()` 拿连接管理器，按相同顺序借出 / 校验 / 返回 / mark。任何遗漏都会让 broker 元数据回退缺失或连接健康度统计漂移。
 
-- [ ] **Step 3: 处理 broker 重连 / QoS / 心跳**
+- [x] **Step 3: 处理 broker 重连 / QoS / 心跳**
 
 把 `run_mqtt_root_subscriber` 中的重连退避、心跳上报、QoS 处理逻辑全部搬过来。重连过程中如果 token cancel，立刻退出。
 
-- [ ] **Step 4: 删除壳层 MQTT 代持**
+- [x] **Step 4: 删除壳层 MQTT 代持**
 
 从 `src-tauri/src/lib.rs` 删除：
 - `collect_mqtt_root_specs`、`spawn_mqtt_root_tasks`、`run_mqtt_root_subscriber`
 - `emit_mqtt_trigger_failure`
 
-- [ ] **Step 5: 测试 + 手动 E2E**
+- [x] **Step 5: 测试 + 手动 E2E**
 
 ```bash
 # 起一个本地 MQTT broker（mosquitto / emqx）
