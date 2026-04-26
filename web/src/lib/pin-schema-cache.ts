@@ -117,6 +117,51 @@ export function resolvePinTypeKind(
   return findPin(nodeId, portId, direction)?.pin_type.kind ?? 'any';
 }
 
+/**
+ * 把 PinType 序列化成给用户看的简短字符串。
+ *
+ * 例：`{ kind: 'array', inner: { kind: 'json' } }` → `"array<json>"`
+ *     `{ kind: 'custom', name: 'modbus-register' }` → `"custom(modbus-register)"`
+ *
+ * 用途：tooltip / log / AI prompt——比 `{ kind: 'json' }` 那种 JSON 形态更易读。
+ */
+export function formatPinType(pinType: PinType): string {
+  switch (pinType.kind) {
+    case 'array':
+      return `array<${formatPinType(pinType.inner)}>`;
+    case 'custom':
+      return `custom(${pinType.name})`;
+    default:
+      return pinType.kind;
+  }
+}
+
+/**
+ * 给端口生成 hover tooltip 文本（HTML title 属性）。
+ *
+ * 缓存未命中或端口未声明时返回 undefined（让浏览器不显示 tooltip）。
+ * Phase 4 polish——展示端口的 pin 类型 + required 标记 + description。
+ */
+export function getPortTooltip(
+  nodeId: string,
+  portId: string | number,
+  direction: 'input' | 'output',
+): string | undefined {
+  const pin = findPin(nodeId, portId, direction);
+  if (!pin) return undefined;
+  const lines: string[] = [
+    `${pin.label || pin.id}（${direction === 'input' ? '输入' : '输出'}）`,
+    `类型：${formatPinType(pin.pin_type)}`,
+  ];
+  if (pin.required && direction === 'input') {
+    lines.push('必需：上游必须连接');
+  }
+  if (pin.description) {
+    lines.push(`说明：${pin.description}`);
+  }
+  return lines.join('\n');
+}
+
 /** 测试钩子；生产路径不应直接调。 */
 export function _resetCacheForTests(): void {
   cache.clear();

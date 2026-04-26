@@ -73,6 +73,7 @@ import {
 import { FlowDownloadFormat, FlowDownloadService } from '@flowgram.ai/export-plugin';
 import {
   configToRecord,
+  getPortTooltip,
   invalidateNodePinSchema,
   refreshNodePinSchema,
   resolvePinTypeKind,
@@ -711,6 +712,7 @@ function FlowgramNodeCard(props: FlowgramNodeMaterialProps) {
                   data-port-type="output"
                   data-port-location="right"
                   data-port-pin-type={resolvePinTypeKind(props.node.id, branch.key, 'output')}
+                  title={getPortTooltip(props.node.id, branch.key, 'output')}
                 />
               </div>
             ))}

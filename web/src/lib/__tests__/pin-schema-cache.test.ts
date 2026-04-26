@@ -14,7 +14,9 @@ import {
   _resetCacheForTests,
   configToRecord,
   findPin,
+  formatPinType,
   getCachedPinSchema,
+  getPortTooltip,
   invalidateNodePinSchema,
   refreshNodePinSchema,
 } from '../pin-schema-cache';
@@ -108,6 +110,79 @@ describe('pin-schema-cache', () => {
     await refreshNodePinSchema('node-1', 'foo', {});
     expect(findPin('node-1', 'ghost', 'input')).toBeUndefined();
     expect(findPin('未存在', 'in', 'input')).toBeUndefined();
+  });
+});
+
+describe('formatPinType', () => {
+  it('标量 kind 直接返回', () => {
+    expect(formatPinType({ kind: 'json' })).toBe('json');
+    expect(formatPinType({ kind: 'any' })).toBe('any');
+    expect(formatPinType({ kind: 'bool' })).toBe('bool');
+  });
+
+  it('array 嵌套递归展开', () => {
+    expect(formatPinType({ kind: 'array', inner: { kind: 'json' } })).toBe('array<json>');
+    expect(
+      formatPinType({ kind: 'array', inner: { kind: 'array', inner: { kind: 'bool' } } }),
+    ).toBe('array<array<bool>>');
+  });
+
+  it('custom 带 name', () => {
+    expect(formatPinType({ kind: 'custom', name: 'modbus-register' })).toBe(
+      'custom(modbus-register)',
+    );
+  });
+});
+
+describe('getPortTooltip', () => {
+  beforeEach(() => {
+    _resetCacheForTests();
+    vi.mocked(describeNodePins).mockReset();
+  });
+
+  it('缓存未命中返回 undefined（不挡 hover）', () => {
+    expect(getPortTooltip('未知节点', 'in', 'input')).toBeUndefined();
+  });
+
+  it('完整 schema 含方向 / 类型 / required / description', async () => {
+    vi.mocked(describeNodePins).mockResolvedValueOnce({
+      inputPins: [
+        {
+          id: 'in',
+          label: 'in',
+          pin_type: { kind: 'json' },
+          direction: 'input',
+          required: true,
+          description: 'JSON 行数据',
+        },
+      ],
+      outputPins: [],
+    });
+    await refreshNodePinSchema('sql-1', 'sqlWriter', {});
+    const tooltip = getPortTooltip('sql-1', 'in', 'input');
+    expect(tooltip).toContain('输入');
+    expect(tooltip).toContain('json');
+    expect(tooltip).toContain('必需');
+    expect(tooltip).toContain('JSON 行数据');
+  });
+
+  it('output 不渲染必需标记', async () => {
+    vi.mocked(describeNodePins).mockResolvedValueOnce({
+      inputPins: [],
+      outputPins: [
+        {
+          id: 'out',
+          label: 'out',
+          pin_type: { kind: 'any' },
+          direction: 'output',
+          required: false,
+        },
+      ],
+    });
+    await refreshNodePinSchema('node-1', 'foo', {});
+    const tooltip = getPortTooltip('node-1', 'out', 'output');
+    expect(tooltip).toContain('输出');
+    expect(tooltip).not.toContain('必需');
   });
 });
 
