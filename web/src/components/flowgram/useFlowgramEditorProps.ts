@@ -69,6 +69,8 @@ interface UseFlowgramEditorPropsParams {
   isFlowingLine: NonNullable<FreeLayoutProps['isFlowingLine']>;
   isErrorLine: NonNullable<FreeLayoutProps['isErrorLine']>;
   setLineClassName: NonNullable<FreeLayoutProps['setLineClassName']>;
+  /** ADR-0010 Phase 2：连接期 pin 类型校验钩子。 */
+  canAddLine?: FreeLayoutProps['canAddLine'];
   onContentChange: NonNullable<FreeLayoutProps['onContentChange']>;
   onAllLayersRendered: NonNullable<FreeLayoutProps['onAllLayersRendered']>;
   onDragLineEnd?: (ctx: FreeLayoutPluginContext, params: onDragLineEndParams) => Promise<void>;
@@ -83,6 +85,7 @@ export function useFlowgramEditorProps({
   isFlowingLine,
   isErrorLine,
   setLineClassName,
+  canAddLine,
   onContentChange,
   onAllLayersRendered,
   onDragLineEnd,
@@ -156,6 +159,7 @@ export function useFlowgramEditorProps({
       isFlowingLine,
       isErrorLine,
       setLineClassName,
+      canAddLine,
       onContentChange,
       onAllLayersRendered,
       onDragLineEnd,
@@ -196,6 +200,7 @@ export function useFlowgramEditorProps({
     [
       initialData,
       accentColor,
+      canAddLine,
       isErrorLine,
       isFlowingLine,
       materials,

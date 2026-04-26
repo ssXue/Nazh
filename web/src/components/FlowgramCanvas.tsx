@@ -5,6 +5,7 @@ import {
   FlowNodeEntity,
   WorkflowContentChangeType,
   WorkflowLineEntity,
+  type WorkflowLinesManager,
   type WorkflowJSON as FlowgramWorkflowJSON,
   type WorkflowContentChangeEvent,
   WorkflowNodeRenderer,
@@ -75,6 +76,7 @@ import {
   invalidateNodePinSchema,
   refreshNodePinSchema,
 } from '../lib/pin-schema-cache';
+import { checkConnection, formatRejection } from '../lib/pin-validator';
 import { hasTauriRuntime, saveFlowgramExportFile } from '../lib/tauri';
 import type {
   AiGenerationParams,
@@ -1328,6 +1330,41 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
     [resolveLineRuntimeStatus],
   );
 
+  // ADR-0010 Phase 2：连接期 pin 类型校验。
+  // 用户拖边瞬间被调用——pin schema 缓存命中且类型不兼容时返回 false 拒收，
+  // 否则放行（缓存未命中也放行，部署期 pin_validator 作为 backstop 兜底）。
+  const canAddLine = useCallback(
+    (
+      _ctx: FreeLayoutPluginContext,
+      fromPort: { node: { id: string }; portID: string | number },
+      toPort: { node: { id: string }; portID: string | number; hasError?: boolean },
+      _lines: WorkflowLinesManager,
+      silent?: boolean,
+    ): boolean => {
+      const result = checkConnection(
+        fromPort.node.id,
+        String(fromPort.portID),
+        toPort.node.id,
+        String(toPort.portID),
+      );
+
+      if (!result.allow && result.rejection && !silent) {
+        // 视觉反馈：标记目标端口为错误态，FlowGram 自身渲染红色
+        if ('hasError' in toPort) {
+          (toPort as { hasError?: boolean }).hasError = true;
+          window.setTimeout(() => {
+            (toPort as { hasError?: boolean }).hasError = false;
+          }, 1500);
+        }
+        // 诊断日志（生产环境也保留——拒收是用户行为意图，记录有助于调试）
+        console.warn(`[pin-validator] ${formatRejection(result.rejection)}`);
+      }
+
+      return result.allow;
+    },
+    [],
+  );
+
   const renderNodeCard = useCallback(
     (props: FlowgramNodeMaterialProps) => (
       <FlowgramNodeCard
@@ -1804,6 +1841,7 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
     isFlowingLine,
     isErrorLine,
     setLineClassName,
+    canAddLine,
     onContentChange: handleContentChange,
     onAllLayersRendered: handleAllLayersRendered,
     onDragLineEnd: handleDragLineEnd,
