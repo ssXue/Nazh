@@ -50,6 +50,7 @@
 .flowgram-host {
   --flowgram-palette-width: clamp(164px, 15vw, 188px);
   --flowgram-floating-top-offset: 74px;
+  --g-editor-background: var(--flowgram-canvas-bg);
   display: flex;
   position: relative;
   min-height: 0;
@@ -58,9 +59,9 @@
   border-radius: 0;
   border: 0;
   background:
-    linear-gradient(var(--grid-line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px),
-    transparent;
+    linear-gradient(var(--flowgram-canvas-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--flowgram-canvas-grid) 1px, transparent 1px),
+    var(--flowgram-canvas-bg);
   background-size: 24px 24px;
   box-shadow: none;
   z-index: var(--z-content);

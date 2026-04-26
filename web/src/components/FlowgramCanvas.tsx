@@ -48,6 +48,7 @@ import {
   TrackpadModeIcon,
 } from './app/AppIcons';
 import { FlowgramNodeAddPanel } from './flowgram/FlowgramNodeAddPanel';
+import type { ThemeMode } from './app/types';
 import { FLOWGRAM_NODE_SETTINGS_PANEL_KEY } from './flowgram/FlowgramNodeSettingsPanel';
 import {
   FlowgramNodeGlyph,
@@ -94,6 +95,7 @@ export interface FlowgramCanvasRuntime {
 
 export interface FlowgramCanvasAppearance {
   accentHex: string;
+  themeMode: ThemeMode;
   nodeCodeColor: string;
 }
 
@@ -1108,7 +1110,7 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
 }, ref) {
   const { connections, aiProviders, activeAiProviderId, copilotParams } = resources;
   const { runtimeState, workflowStatus, canDispatchPayload = false } = runtime;
-  const { accentHex, nodeCodeColor } = appearance;
+  const { accentHex, themeMode, nodeCodeColor } = appearance;
   const { workspacePath, workflowName } = exportTarget ?? {};
   const {
     onRunRequested,
@@ -1763,6 +1765,7 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
         edges: [],
       },
     accentColor: accentHex,
+    themeMode,
     connectionDefaults,
     materials,
     isFlowingLine,

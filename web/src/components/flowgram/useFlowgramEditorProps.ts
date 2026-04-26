@@ -28,6 +28,33 @@ import { flowgramRuntimePanelFactory } from './FlowgramRuntimePanel';
 
 const FLOWGRAM_MINIMAP_CANVAS_WIDTH = 110;
 const FLOWGRAM_MINIMAP_CANVAS_HEIGHT = 76;
+const FLOWGRAM_BACKGROUND_OPTIONS = {
+  gridSize: 24,
+  dotSize: 1,
+  dotColor: 'var(--flowgram-canvas-grid)',
+  dotFillColor: 'var(--flowgram-canvas-grid)',
+  dotOpacity: 1,
+  backgroundColor: 'var(--flowgram-canvas-bg)',
+};
+
+type FlowgramThemeMode = 'light' | 'dark';
+
+function buildMinimapCanvasStyle(themeMode: FlowgramThemeMode) {
+  const isDark = themeMode === 'dark';
+
+  return {
+    canvasWidth: FLOWGRAM_MINIMAP_CANVAS_WIDTH,
+    canvasHeight: FLOWGRAM_MINIMAP_CANVAS_HEIGHT,
+    canvasPadding: 18,
+    canvasBackground: isDark ? 'rgba(21, 23, 28, 1)' : 'rgba(245, 246, 248, 1)',
+    canvasBorderRadius: 8,
+    viewportBackground: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(255, 255, 255, 0.78)',
+    viewportBorderColor: isDark ? 'rgba(255, 255, 255, 0.2)' : 'rgba(60, 60, 67, 0.14)',
+    nodeColor: isDark ? 'rgba(255, 255, 255, 0.18)' : 'rgba(60, 60, 67, 0.16)',
+    nodeBorderColor: isDark ? 'rgba(255, 255, 255, 0.16)' : 'rgba(60, 60, 67, 0.12)',
+    overlayColor: isDark ? 'rgba(0, 0, 0, 0.32)' : 'rgba(255, 255, 255, 0.48)',
+  };
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -36,6 +63,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 interface UseFlowgramEditorPropsParams {
   initialData: NonNullable<FreeLayoutProps['initialData']>;
   accentColor: string;
+  themeMode: FlowgramThemeMode;
   connectionDefaults: FlowgramConnectionDefaults;
   materials: NonNullable<FreeLayoutProps['materials']>;
   isFlowingLine: NonNullable<FreeLayoutProps['isFlowingLine']>;
@@ -49,6 +77,7 @@ interface UseFlowgramEditorPropsParams {
 export function useFlowgramEditorProps({
   initialData,
   accentColor,
+  themeMode,
   connectionDefaults,
   materials,
   isFlowingLine,
@@ -66,10 +95,11 @@ export function useFlowgramEditorProps({
     () => createFlowgramQuickNodePanel(connectionDefaults),
     [connectionDefaults],
   );
+  const minimapCanvasStyle = useMemo(() => buildMinimapCanvasStyle(themeMode), [themeMode]);
 
   return useMemo(
     () => ({
-      background: true,
+      background: FLOWGRAM_BACKGROUND_OPTIONS,
       readonly: false,
       initialData,
       nodeRegistries,
@@ -133,10 +163,7 @@ export function useFlowgramEditorProps({
         createMinimapPlugin({
           disableLayer: true,
           canvasStyle: {
-            canvasWidth: FLOWGRAM_MINIMAP_CANVAS_WIDTH,
-            canvasHeight: FLOWGRAM_MINIMAP_CANVAS_HEIGHT,
-            canvasPadding: 18,
-            canvasBorderRadius: 8,
+            ...minimapCanvasStyle,
           },
         }),
         createFreeSnapPlugin({
@@ -172,6 +199,7 @@ export function useFlowgramEditorProps({
       isErrorLine,
       isFlowingLine,
       materials,
+      minimapCanvasStyle,
       nodeRegistries,
       nodePanelRenderer,
       onAllLayersRendered,

@@ -246,6 +246,7 @@ export function StudioContentRouter({
             }}
             flowgramAppearance={{
               accentHex: settings.accentHex,
+              themeMode: settings.themeMode,
               nodeCodeColor: settings.accentThemeVariables['--node-code'],
             }}
             flowgramExportTarget={{

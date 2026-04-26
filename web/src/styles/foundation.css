@@ -43,6 +43,8 @@
   --line-dashed: rgba(60, 60, 67, 0.18);
   --overlay-surface: rgba(255, 255, 255, 0.85);
   --grid-line: rgba(60, 60, 67, 0.06);
+  --flowgram-canvas-bg: #f5f6f8;
+  --flowgram-canvas-grid: rgba(60, 60, 67, 0.12);
   --divider-soft: rgba(0, 0, 0, 0.05);
   --toolbar-bg: rgba(255, 255, 255, 0.45);
   --toolbar-border: rgba(0, 0, 0, 0.06);
@@ -137,6 +139,8 @@ html[data-theme='dark'] {
   --line-dashed: rgba(255, 255, 255, 0.12);
   --overlay-surface: rgba(28, 28, 30, 0.85);
   --grid-line: rgba(255, 255, 255, 0.06);
+  --flowgram-canvas-bg: #15171c;
+  --flowgram-canvas-grid: rgba(255, 255, 255, 0.1);
   --divider-soft: rgba(255, 255, 255, 0.08);
   --toolbar-bg: rgba(44, 44, 46, 0.5);
   --toolbar-border: rgba(255, 255, 255, 0.15);
@@ -610,4 +614,3 @@ h3 {
   min-height: 0;
   overflow: hidden;
 }
-
