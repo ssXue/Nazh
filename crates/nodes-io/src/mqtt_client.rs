@@ -24,8 +24,7 @@ use uuid::Uuid;
 use connections::{SharedConnectionManager, connection_metadata};
 use nazh_core::{
     CancellationToken, EngineError, LifecycleGuard, NodeExecution, NodeHandle,
-    NodeLifecycleContext, NodeTrait, PinDefinition, PinDirection, PinType, into_payload_map,
-    sleep_or_cancel,
+    NodeLifecycleContext, NodeTrait, PinDefinition, PinType, into_payload_map, sleep_or_cancel,
 };
 
 /// MQTT 客户端工作模式。
@@ -302,23 +301,13 @@ impl NodeTrait for MqttClientNode {
     /// 表）的典型场景。
     fn input_pins(&self) -> Vec<PinDefinition> {
         let (pin_type, description) = match self.config.mode {
-            MqttMode::Publish => (
-                PinType::Json,
-                "要发布到 broker 的 payload（JSON 对象）".to_owned(),
-            ),
+            MqttMode::Publish => (PinType::Json, "要发布到 broker 的 payload（JSON 对象）"),
             MqttMode::Subscribe => (
                 PinType::Any,
-                "trigger / 手动 dispatch 信号；订阅模式实际触发走 on_deploy".to_owned(),
+                "trigger / 手动 dispatch 信号；订阅模式实际触发走 on_deploy",
             ),
         };
-        vec![PinDefinition {
-            id: "in".to_owned(),
-            label: "in".to_owned(),
-            pin_type,
-            direction: PinDirection::Input,
-            required: true,
-            description: Some(description),
-        }]
+        vec![PinDefinition::required_input(pin_type, description)]
     }
 
     /// 输出引脚按 [`MqttMode`] 分支：
@@ -328,20 +317,13 @@ impl NodeTrait for MqttClientNode {
     ///   规范化后通过 [`NodeHandle::emit`] 推进 DAG，output 形状是结构化 JSON
     fn output_pins(&self) -> Vec<PinDefinition> {
         let (pin_type, description) = match self.config.mode {
-            MqttMode::Publish => (PinType::Any, "echo 上游 payload；下游基本不消费".to_owned()),
+            MqttMode::Publish => (PinType::Any, "echo 上游 payload；下游基本不消费"),
             MqttMode::Subscribe => (
                 PinType::Json,
-                "订阅消息规范化后的 JSON 对象（含 topic / payload 字段）".to_owned(),
+                "订阅消息规范化后的 JSON 对象（含 topic / payload 字段）",
             ),
         };
-        vec![PinDefinition {
-            id: "out".to_owned(),
-            label: "out".to_owned(),
-            pin_type,
-            direction: PinDirection::Output,
-            required: false,
-            description: Some(description),
-        }]
+        vec![PinDefinition::output(pin_type, description)]
     }
 
     async fn transform(

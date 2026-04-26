@@ -125,6 +125,24 @@ impl<'de> Deserialize<'de> for WorkflowNodeDefinition {
 }
 
 impl WorkflowNodeDefinition {
+    /// 构造一个用于"探测"目的的节点定义——非真实部署用，仅供需要"实例化
+    /// 节点然后查询其元数据"的调用方使用。
+    ///
+    /// 典型场景：IPC `describe_node_pins` 想拿到节点的 input/output pin
+    /// schema，需要先实例化节点才能调 `&self` 方法；但实例化要求一个
+    /// `WorkflowNodeDefinition`。`probe` 给出最小合法定义，使用调用方
+    /// 提供的 `id_prefix` 作 id（避免和真实节点冲突），无连接、默认缓冲。
+    pub fn probe(node_type: impl Into<String>, config: Value) -> Self {
+        Self {
+            id: "_probe".to_owned(),
+            node_type: node_type.into(),
+            connection_id: None,
+            config,
+            timeout_ms: None,
+            buffer: default_node_buffer(),
+        }
+    }
+
     pub fn id(&self) -> &str {
         &self.id
     }

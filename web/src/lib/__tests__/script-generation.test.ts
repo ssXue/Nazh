@@ -77,9 +77,8 @@ describe('buildScriptGenerationPrompt', () => {
     };
     const messages = buildScriptGenerationPrompt('转换数据', context);
     const userText = messages[1].content;
-    // 当前节点 pin
-    expect(userText).toContain('输入端口：in: json (required)');
-    expect(userText).toContain('输出端口：out: any');
+    // 当前节点 pin（与上下游同样 inline 形态：端口：输入 [...] 输出 [...]）
+    expect(userText).toContain('端口：输入 [in: json (required)] 输出 [out: any]');
     // 上游 / 下游 pin 内联展示
     expect(userText).toContain('类型: modbusRead）');
     expect(userText).toContain('out: json');
@@ -95,8 +94,7 @@ describe('buildScriptGenerationPrompt', () => {
     };
     const messages = buildScriptGenerationPrompt('需求', context);
     const userText = messages[1].content;
-    expect(userText).not.toContain('输入端口：');
-    expect(userText).not.toContain('输出端口：');
+    expect(userText).not.toContain('端口：');
   });
 });
 

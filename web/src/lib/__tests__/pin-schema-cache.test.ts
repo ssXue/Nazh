@@ -60,7 +60,20 @@ describe('pin-schema-cache', () => {
     expect(findPin('node-1', 'in', 'input')).toBeUndefined();
   });
 
-  it('refresh 同一节点会覆盖缓存（mqttClient 改 mode 场景）', async () => {
+  it('相同 (nodeType, config) 第二次刷新跳过 IPC（change-detection 守卫）', async () => {
+    vi.mocked(describeNodePins).mockResolvedValue({
+      inputPins: [
+        { id: 'in', label: 'in', pin_type: { kind: 'json' }, direction: 'input', required: true },
+      ],
+      outputPins: [],
+    });
+    await refreshNodePinSchema('node-1', 'sqlWriter', { table: 'logs' });
+    await refreshNodePinSchema('node-1', 'sqlWriter', { table: 'logs' });
+    await refreshNodePinSchema('node-1', 'sqlWriter', { table: 'logs' });
+    expect(vi.mocked(describeNodePins)).toHaveBeenCalledTimes(1);
+  });
+
+  it('相同 nodeId 但 config 变化会重新 IPC（mqttClient 改 mode 场景）', async () => {
     // 先注入 publish 模式的 schema
     vi.mocked(describeNodePins).mockResolvedValueOnce({
       inputPins: [
@@ -98,6 +111,17 @@ describe('pin-schema-cache', () => {
     await refreshNodePinSchema('mqtt-1', 'mqttClient', { mode: 'subscribe' });
     expect(findPin('mqtt-1', 'in', 'input')?.pin_type).toEqual({ kind: 'any' });
     expect(findPin('mqtt-1', 'out', 'output')?.pin_type).toEqual({ kind: 'json' });
+  });
+
+  it('clearPinSchemaCache 清空整张缓存（跨 workflow 切换）', async () => {
+    vi.mocked(describeNodePins).mockResolvedValueOnce({ inputPins: [], outputPins: [] });
+    vi.mocked(describeNodePins).mockResolvedValueOnce({ inputPins: [], outputPins: [] });
+    await refreshNodePinSchema('a', 'foo', {});
+    await refreshNodePinSchema('b', 'foo', {});
+    const { clearPinSchemaCache } = await import('../pin-schema-cache');
+    clearPinSchemaCache();
+    expect(getCachedPinSchema('a')).toBeUndefined();
+    expect(getCachedPinSchema('b')).toBeUndefined();
   });
 
   it('查不存在的端口返回 undefined（不抛错）', async () => {

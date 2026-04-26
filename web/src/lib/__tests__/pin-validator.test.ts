@@ -5,9 +5,13 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('../pin-schema-cache', () => ({
-  findPin: vi.fn(),
-}));
+vi.mock('../pin-schema-cache', async () => {
+  const actual = await vi.importActual<typeof import('../pin-schema-cache')>('../pin-schema-cache');
+  return {
+    ...actual,
+    findPin: vi.fn(),
+  };
+});
 
 import { findPin } from '../pin-schema-cache';
 import { checkConnection, formatRejection } from '../pin-validator';
@@ -117,14 +121,17 @@ describe('formatRejection', () => {
     expect(message).toContain('json');
   });
 
-  it('unknown-pin 含方向中文', () => {
-    expect(
-      formatRejection({
-        kind: 'unknown-pin',
-        nodeId: 'x',
-        portId: 'ghost',
-        direction: 'input',
-      }),
-    ).toContain('输入');
+  it('保留 array / custom 内层信息（不被 .kind 截断）', () => {
+    const message = formatRejection({
+      kind: 'incompatible-types',
+      fromNodeId: 'src',
+      fromPortId: 'out',
+      toNodeId: 'sink',
+      toPortId: 'in',
+      fromType: { kind: 'array', inner: { kind: 'json' } },
+      toType: { kind: 'custom', name: 'modbus-register' },
+    });
+    expect(message).toContain('array<json>');
+    expect(message).toContain('custom(modbus-register)');
   });
 });

@@ -10,9 +10,7 @@ use serde_json::{Map, Value, json};
 use uuid::Uuid;
 
 use connections::{SharedConnectionManager, connection_metadata};
-use nazh_core::{
-    EngineError, NodeExecution, NodeTrait, PinDefinition, PinDirection, PinType, into_payload_map,
-};
+use nazh_core::{EngineError, NodeExecution, NodeTrait, PinDefinition, PinType, into_payload_map};
 use tokio_modbus::client::Reader;
 
 fn default_modbus_unit_id() -> u16 {
@@ -285,14 +283,10 @@ impl NodeTrait for ModbusReadNode {
     /// 常作为根节点或被 `timer`（输出 `Any`）触发，input 形状不重要。output
     /// 收紧到 `Json` 让下游能感知"这是结构化数据"，被部署期校验用作类型契约。
     fn output_pins(&self) -> Vec<PinDefinition> {
-        vec![PinDefinition {
-            id: "out".to_owned(),
-            label: "out".to_owned(),
-            pin_type: PinType::Json,
-            direction: PinDirection::Output,
-            required: false,
-            description: Some("寄存器读取结果合并入 input payload 的 JSON 对象".to_owned()),
-        }]
+        vec![PinDefinition::output(
+            PinType::Json,
+            "寄存器读取结果合并入 input payload 的 JSON 对象",
+        )]
     }
 
     async fn transform(
@@ -401,7 +395,6 @@ mod tests {
         assert_eq!(pins.len(), 1, "modbusRead 只声明单个输出端口");
         assert_eq!(pins[0].id, "out");
         assert_eq!(pins[0].pin_type, PinType::Json);
-        assert_eq!(pins[0].direction, PinDirection::Output);
         assert!(!pins[0].required, "输出端口默认 required=false");
     }
 

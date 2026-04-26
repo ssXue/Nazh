@@ -10,9 +10,7 @@ use serde_json::{Value, json};
 
 use uuid::Uuid;
 
-use nazh_core::{
-    EngineError, NodeExecution, NodeTrait, PinDefinition, PinDirection, PinType, into_payload_map,
-};
+use nazh_core::{EngineError, NodeExecution, NodeTrait, PinDefinition, PinType, into_payload_map};
 
 fn default_sqlite_path() -> String {
     "./nazh-local.sqlite3".to_owned()
@@ -75,14 +73,10 @@ impl NodeTrait for SqlWriterNode {
     ///
     /// 输出端口保留 trait 默认（`Any`）——写入确认元信息基本无下游消费。
     fn input_pins(&self) -> Vec<PinDefinition> {
-        vec![PinDefinition {
-            id: "in".to_owned(),
-            label: "in".to_owned(),
-            pin_type: PinType::Json,
-            direction: PinDirection::Input,
-            required: true,
-            description: Some("要写入数据库的行数据；JSON 对象的字段映射到目标表的列".to_owned()),
-        }]
+        vec![PinDefinition::required_input(
+            PinType::Json,
+            "要写入数据库的行数据；JSON 对象的字段映射到目标表的列",
+        )]
     }
 
     async fn transform(
@@ -203,7 +197,6 @@ mod tests {
         assert_eq!(pins.len(), 1, "sqlWriter 只声明单个输入端口");
         assert_eq!(pins[0].id, "in");
         assert_eq!(pins[0].pin_type, PinType::Json);
-        assert_eq!(pins[0].direction, PinDirection::Input);
         assert!(pins[0].required, "sqlWriter 输入必需——sink 节点不能空跑");
     }
 

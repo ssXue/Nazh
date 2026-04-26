@@ -1,6 +1,11 @@
 import type { FlowNodeEntity } from '@flowgram.ai/free-layout-editor';
 
-import type { AiCompletionRequest, AiGenerationParams, AiMessage } from '../types';
+import type {
+  AiCompletionRequest,
+  AiGenerationParams,
+  AiMessage,
+  PinDefinition,
+} from '../types';
 import { formatPinType, getCachedPinSchema } from './pin-schema-cache';
 import { copilotComplete, copilotCompleteStream } from './tauri';
 
@@ -34,8 +39,6 @@ const DEFAULT_SCRIPT_GENERATION_PARAMS: AiGenerationParams = {
 };
 
 const DEFAULT_SCRIPT_GENERATION_TIMEOUT_MS = 60_000;
-
-import type { PinDefinition } from '../types';
 
 function summarizePins(pins: PinDefinition[] | undefined): NodePinSummary[] | undefined {
   if (!pins) return undefined;
@@ -130,12 +133,15 @@ export function buildScriptGenerationPrompt(
       ? context.downstream.map(formatNodeInfoLine).join('\n')
       : '  无';
 
-  const currentPins: string[] = [];
+  // 当前节点 pin 用与上下游同样的 inline 形态——LLM 只需要学一种格式，
+  // 也方便 diff 时阅读。
   const currentInputs = formatPinSummary(context.current.inputPins);
   const currentOutputs = formatPinSummary(context.current.outputPins);
-  if (currentInputs) currentPins.push(`输入端口：${currentInputs}`);
-  if (currentOutputs) currentPins.push(`输出端口：${currentOutputs}`);
-  const currentPinSection = currentPins.length > 0 ? `\n${currentPins.join('\n')}` : '';
+  const currentPinParts: string[] = [];
+  if (currentInputs) currentPinParts.push(`输入 [${currentInputs}]`);
+  if (currentOutputs) currentPinParts.push(`输出 [${currentOutputs}]`);
+  const currentPinSection =
+    currentPinParts.length > 0 ? `\n端口：${currentPinParts.join(' ')}` : '';
 
   const userMessage = `节点类型：${context.current.nodeType}
 节点名称：${context.current.label}${currentPinSection}

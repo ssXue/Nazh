@@ -78,7 +78,11 @@ import {
   refreshNodePinSchema,
   resolvePinTypeKind,
 } from '../lib/pin-schema-cache';
-import { checkConnection, formatRejection } from '../lib/pin-validator';
+import {
+  type ConnectionRejection,
+  checkConnection,
+  formatRejection,
+} from '../lib/pin-validator';
 import { hasTauriRuntime, saveFlowgramExportFile } from '../lib/tauri';
 import type {
   AiGenerationParams,
@@ -520,6 +524,22 @@ function isBusinessFlowNode(node: FlowNodeEntity | null): node is FlowNodeEntity
     nodeType === 'sqlWriter' ||
     nodeType === 'debugConsole'
   );
+}
+
+/** 拒收一条连接时给用户的视觉 + 诊断反馈。
+ *
+ * `toPort.hasError = true` 让 FlowGram 默认 `isErrorPort` 渲染红色，
+ * 1.5s 后自动复位。`canAddLine` 返回 false 后边其实不会真创建线，
+ * 这里的红色仅作"刚才被拒"的瞬时反馈。 */
+function applyConnectionRejectionFeedback(
+  toPort: { hasError?: boolean },
+  rejection: ConnectionRejection,
+): void {
+  toPort.hasError = true;
+  window.setTimeout(() => {
+    toPort.hasError = false;
+  }, 1500);
+  console.warn(`[pin-validator] ${formatRejection(rejection)}`);
 }
 
 function describeFlowgramError(error: unknown): string {
@@ -1347,21 +1367,13 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
     ): boolean => {
       const result = checkConnection(
         fromPort.node.id,
-        String(fromPort.portID),
+        fromPort.portID,
         toPort.node.id,
-        String(toPort.portID),
+        toPort.portID,
       );
 
       if (!result.allow && result.rejection && !silent) {
-        // 视觉反馈：标记目标端口为错误态，FlowGram 自身渲染红色
-        if ('hasError' in toPort) {
-          (toPort as { hasError?: boolean }).hasError = true;
-          window.setTimeout(() => {
-            (toPort as { hasError?: boolean }).hasError = false;
-          }, 1500);
-        }
-        // 诊断日志（生产环境也保留——拒收是用户行为意图，记录有助于调试）
-        console.warn(`[pin-validator] ${formatRejection(result.rejection)}`);
+        applyConnectionRejectionFeedback(toPort, result.rejection);
       }
 
       return result.allow;

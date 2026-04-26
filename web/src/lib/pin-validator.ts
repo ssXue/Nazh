@@ -9,30 +9,21 @@
 // 2. 若任一端缓存未命中（schema 还没拉到 / 节点没注册）→ 放行
 //    （部署期 pin_validator 作为 backstop 兜底）
 // 3. 两端都命中时调 isCompatibleWith → 返回 boolean
-//
-// 失败原因（reason）走结构化 enum——便于上层分类记录 / 多语化提示。
 
 import type { PinType } from '../types';
 
-import { findPin } from './pin-schema-cache';
+import { findPin, formatPinType } from './pin-schema-cache';
 import { isCompatibleWith } from './pin-compat';
 
-export type ConnectionRejection =
-  | {
-      kind: 'incompatible-types';
-      fromNodeId: string;
-      fromPortId: string;
-      toNodeId: string;
-      toPortId: string;
-      fromType: PinType;
-      toType: PinType;
-    }
-  | {
-      kind: 'unknown-pin';
-      nodeId: string;
-      portId: string;
-      direction: 'input' | 'output';
-    };
+export interface ConnectionRejection {
+  kind: 'incompatible-types';
+  fromNodeId: string;
+  fromPortId: string;
+  toNodeId: string;
+  toPortId: string;
+  fromType: PinType;
+  toType: PinType;
+}
 
 export interface ConnectionCheckResult {
   /** 允许连接（true = 通过校验或缓存未命中放行）。 */
@@ -51,18 +42,14 @@ const ALLOW: ConnectionCheckResult = { allow: true, rejection: null };
  */
 export function checkConnection(
   fromNodeId: string,
-  fromPortId: string,
+  fromPortId: string | number,
   toNodeId: string,
-  toPortId: string,
+  toPortId: string | number,
 ): ConnectionCheckResult {
   const fromPin = findPin(fromNodeId, fromPortId, 'output');
   const toPin = findPin(toNodeId, toPortId, 'input');
 
-  // 缓存未命中——放行（fallback Any/Any 已在 cache 层处理；这里多一道保险）
-  if (!fromPin) {
-    return ALLOW;
-  }
-  if (!toPin) {
+  if (!fromPin || !toPin) {
     return ALLOW;
   }
 
@@ -75,21 +62,22 @@ export function checkConnection(
     rejection: {
       kind: 'incompatible-types',
       fromNodeId,
-      fromPortId,
+      fromPortId: String(fromPortId),
       toNodeId,
-      toPortId,
+      toPortId: String(toPortId),
       fromType: fromPin.pin_type,
       toType: toPin.pin_type,
     },
   };
 }
 
-/** 把拒收原因格式化成给 console.warn / toast 用的中文短消息。 */
+/**
+ * 把拒收原因格式化成给 console.warn / toast 用的中文短消息。
+ *
+ * 用 `formatPinType` 渲染类型，保留 `array<json>` / `custom(name)` 的
+ * 完整信息——直接打印 `pinType.kind` 会丢内层类型 / 自定义名。
+ */
 export function formatRejection(rejection: ConnectionRejection): string {
-  switch (rejection.kind) {
-    case 'incompatible-types':
-      return `连接不兼容：${rejection.fromNodeId}.${rejection.fromPortId} (${rejection.fromType.kind}) → ${rejection.toNodeId}.${rejection.toPortId} (${rejection.toType.kind})`;
-    case 'unknown-pin':
-      return `未知端口：${rejection.nodeId}.${rejection.portId}（${rejection.direction === 'input' ? '输入' : '输出'}）`;
-  }
+  const { fromNodeId, fromPortId, toNodeId, toPortId, fromType, toType } = rejection;
+  return `连接不兼容：${fromNodeId}.${fromPortId} (${formatPinType(fromType)}) → ${toNodeId}.${toPortId} (${formatPinType(toType)})`;
 }

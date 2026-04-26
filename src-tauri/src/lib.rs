@@ -43,11 +43,19 @@ use std::{
     io::Write,
     path::{Component, Path, PathBuf},
     sync::{
-        Arc,
+        Arc, OnceLock,
         atomic::{AtomicU64, AtomicUsize, Ordering},
     },
     time::Duration,
 };
+
+/// 共享的节点注册表——`standard_registry()` 内部要重新加载所有插件并把
+/// 工厂闭包插入新的 `HashMap`，对每次 IPC 命令重建是浪费。registry 一旦
+/// 构造完成是只读的（`create` 只借 `&self`），用 `OnceLock` 缓存即可。
+fn shared_node_registry() -> &'static nazh_engine::NodeRegistry {
+    static CELL: OnceLock<nazh_engine::NodeRegistry> = OnceLock::new();
+    CELL.get_or_init(standard_registry)
+}
 
 /// IPC 命令输入的最大允许字节数（10 MB）。
 const MAX_IPC_INPUT_BYTES: usize = 10 * 1024 * 1024;
@@ -927,13 +935,13 @@ async fn deploy_workflow(
     };
     let node_count = graph.nodes.len();
     let edge_count = graph.edges.len();
-    let registry = standard_registry();
+    let registry = shared_node_registry();
     let ai_service: Arc<dyn AiService> = state.ai_service.clone();
     let deployment = match deploy_workflow_graph(
         graph,
         state.connection_manager.clone(),
         Some(ai_service),
-        &registry,
+        registry,
     )
     .await
     {
@@ -1264,8 +1272,7 @@ async fn list_connections(state: State<'_, DesktopState>) -> Result<Vec<Connecti
 
 #[tauri::command]
 async fn list_node_types() -> Result<ListNodeTypesResponse, String> {
-    let registry = standard_registry();
-    Ok(list_node_types_response(&registry))
+    Ok(list_node_types_response(shared_node_registry()))
 }
 
 /// 给定节点类型 + config，返回该节点实例的 input/output pin schema。
@@ -1279,16 +1286,7 @@ async fn list_node_types() -> Result<ListNodeTypesResponse, String> {
 async fn describe_node_pins(
     request: DescribeNodePinsRequest,
 ) -> Result<DescribeNodePinsResponse, String> {
-    let registry = standard_registry();
-    // 把请求拼成 WorkflowNodeDefinition 的 JSON 形态（字段是私有的，外部 crate
-    // 无构造器可用——deserialize 是公开的入口）。dummy id 防止与真实节点冲突。
-    let definition_json = json!({
-        "id": "_describe_pins_probe",
-        "type": request.node_type,
-        "config": request.config,
-    });
-    let definition: WorkflowNodeDefinition = serde_json::from_value(definition_json)
-        .map_err(|error| format!("无法解析节点定义：{error}"))?;
+    let definition = WorkflowNodeDefinition::probe(request.node_type, request.config);
 
     // 仅注入 connection_manager——describe_pins 不读连接，只让需要 conn 句柄的
     // 节点构造器（modbus / mqtt / http）能克隆出引用。无 AI service / observability，
@@ -1296,7 +1294,7 @@ async fn describe_node_pins(
     let resources: SharedResources =
         Arc::new(RuntimeResources::new().with_resource(shared_connection_manager()));
 
-    let node = registry
+    let node = shared_node_registry()
         .create(&definition, resources)
         .map_err(|error| format!("无法实例化节点：{error}"))?;
 

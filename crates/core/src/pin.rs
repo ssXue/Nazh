@@ -179,6 +179,34 @@ impl PinDefinition {
             description: None,
         }
     }
+
+    /// 单端口节点的"必需输入"工厂——`id="in"` / `label="in"` / `required=true`。
+    ///
+    /// 协议节点（如 `sqlWriter` / `httpClient`）大多数声明 `Json` 类型且要求
+    /// 上游必有入边（除非作为根节点；详见 [`Self::default_input`]）。比逐字段
+    /// 拼 `PinDefinition { ... }` 字面量短得多。
+    pub fn required_input(pin_type: PinType, description: impl Into<String>) -> Self {
+        Self {
+            id: "in".to_owned(),
+            label: "in".to_owned(),
+            pin_type,
+            direction: PinDirection::Input,
+            required: true,
+            description: Some(description.into()),
+        }
+    }
+
+    /// 单端口节点的输出工厂——`id="out"` / `label="out"` / `required=false`。
+    pub fn output(pin_type: PinType, description: impl Into<String>) -> Self {
+        Self {
+            id: "out".to_owned(),
+            label: "out".to_owned(),
+            pin_type,
+            direction: PinDirection::Output,
+            required: false,
+            description: Some(description.into()),
+        }
+    }
 }
 
 #[cfg(test)]

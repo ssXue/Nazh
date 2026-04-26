@@ -13,9 +13,7 @@ use uuid::Uuid;
 
 use crate::template::{self, TemplateVars};
 use connections::{SharedConnectionManager, connection_metadata};
-use nazh_core::{
-    EngineError, NodeExecution, NodeTrait, PinDefinition, PinDirection, PinType, into_payload_map,
-};
+use nazh_core::{EngineError, NodeExecution, NodeTrait, PinDefinition, PinType, into_payload_map};
 
 fn default_http_method() -> String {
     "POST".to_owned()
@@ -361,26 +359,18 @@ impl NodeTrait for HttpClientNode {
     /// 序列化为 body，`template` 模式用对象字段渲染占位符，
     /// `dingtalk_markdown` 模式从对象抽取字段构造钉钉消息。
     fn input_pins(&self) -> Vec<PinDefinition> {
-        vec![PinDefinition {
-            id: "in".to_owned(),
-            label: "in".to_owned(),
-            pin_type: PinType::Json,
-            direction: PinDirection::Input,
-            required: true,
-            description: Some("HTTP 请求 body / 模板渲染 payload（JSON 对象）".to_owned()),
-        }]
+        vec![PinDefinition::required_input(
+            PinType::Json,
+            "HTTP 请求 body / 模板渲染 payload（JSON 对象）",
+        )]
     }
 
     /// 输出引脚：单一 `Json` 端口，承载 HTTP 响应（status / headers / body）。
     fn output_pins(&self) -> Vec<PinDefinition> {
-        vec![PinDefinition {
-            id: "out".to_owned(),
-            label: "out".to_owned(),
-            pin_type: PinType::Json,
-            direction: PinDirection::Output,
-            required: false,
-            description: Some("HTTP 响应（status / headers / body）".to_owned()),
-        }]
+        vec![PinDefinition::output(
+            PinType::Json,
+            "HTTP 响应（status / headers / body）",
+        )]
     }
 
     async fn transform(
@@ -518,7 +508,6 @@ mod tests {
         assert_eq!(pins.len(), 1);
         assert_eq!(pins[0].id, "in");
         assert_eq!(pins[0].pin_type, PinType::Json);
-        assert_eq!(pins[0].direction, PinDirection::Input);
         assert!(pins[0].required);
     }
 
@@ -529,7 +518,6 @@ mod tests {
         assert_eq!(pins.len(), 1);
         assert_eq!(pins[0].id, "out");
         assert_eq!(pins[0].pin_type, PinType::Json);
-        assert_eq!(pins[0].direction, PinDirection::Output);
         assert!(!pins[0].required, "HTTP 响应不强制下游消费");
     }
 }
