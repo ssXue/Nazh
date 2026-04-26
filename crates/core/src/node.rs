@@ -22,7 +22,7 @@ use bitflags::bitflags;
 use serde_json::{Map, Value};
 use uuid::Uuid;
 
-use crate::{EngineError, LifecycleGuard, NodeLifecycleContext};
+use crate::{EngineError, LifecycleGuard, NodeLifecycleContext, PinDefinition};
 
 bitflags! {
     /// 节点类型的能力标签位图（ADR-0011）。
@@ -245,6 +245,50 @@ pub trait NodeTrait: Send + Sync {
     fn id(&self) -> &str;
     /// 返回节点类型标识（如 `"native"`、`"code"`、`"timer"` 等）。
     fn kind(&self) -> &'static str;
+
+    /// 静态声明节点的输入引脚（ADR-0010）。
+    ///
+    /// **契约**：返回的 [`PinDefinition::id`] 在该节点上稳定（部署后不可改）；
+    /// 同方向不可重复 id；标记 `required: true` 的输入引脚必须有上游入边
+    /// 指向，否则部署期校验失败。返回的引脚类型决定边类型兼容矩阵
+    /// （详见 [`PinType::is_compatible_with`](crate::PinType::is_compatible_with)）。
+    ///
+    /// **默认实现**返回单 `Any` 输入（id = `"in"`，required = `true`），
+    /// 兼容存量"一进一出"节点，零改动通过部署期校验。多输入或具名输入
+    /// 节点需 override。
+    ///
+    /// **是 `&self` 实例方法而非 `'static` 表**：与 `NodeCapabilities` 类型级
+    /// 标签互补——pin 允许实例级精化（典型场景见 `output_pins`）。
+    ///
+    /// **消费者**：
+    /// - `src/graph/deploy.rs` 阶段 0.5 校验器
+    /// - 未来 IPC `describe_node_pins` 命令（Phase 2）
+    /// - Phase 2 前端画布渲染多端口
+    fn input_pins(&self) -> Vec<PinDefinition> {
+        vec![PinDefinition::default_input()]
+    }
+
+    /// 静态声明节点的输出引脚（ADR-0010）。
+    ///
+    /// **契约**：返回的 [`PinDefinition::id`] 集合**必须包含** `transform` 路径
+    /// 上 [`NodeDispatch::Route`] 可能产出的所有 port id，否则路由会丢消息且
+    /// 部署期校验也无法保护错连（运行时悄无声息）。
+    ///
+    /// **默认实现**返回单 `Any` 输出（id = `"out"`，required = `false`）。
+    /// 分支节点（`if` / `switch` / `loop` / `tryCatch`）必须 override；多输出
+    /// 节点（[`MULTI_OUTPUT`](NodeCapabilities::MULTI_OUTPUT)）通常也需要。
+    ///
+    /// **`required` 语义**：输出端口的 `required` 表示"每次执行必触发"；
+    /// 通常分支节点的所有出口都标 `required: false`（同一次 transform 只会
+    /// 经过其中一条），多输出节点（如 `loop` 的 `body` 与 `done` 同时触发）
+    /// 才考虑标 `required: true`。Phase 1 不强制校验输出 required，仅作文档。
+    ///
+    /// **实例级精化**：`switch` 节点根据 `branches` config 动态生成 pin 列表，
+    /// 这正是把 `output_pins` 设计为 `&self` 方法的原因。
+    fn output_pins(&self) -> Vec<PinDefinition> {
+        vec![PinDefinition::default_output()]
+    }
+
     /// 执行节点逻辑：接收业务数据，返回变换后的 payload 与执行元数据。
     ///
     /// `payload` 由 Runner 从 `DataStore` 读出（`read_mut`，已是 owned 副本），
