@@ -15,7 +15,8 @@
     clippy::doc_markdown,
     clippy::needless_pass_by_value,
     clippy::items_after_statements,
-    clippy::used_underscore_binding
+    clippy::used_underscore_binding,
+    clippy::needless_continue
 )]
 
 use std::sync::{
@@ -513,6 +514,91 @@ async fn shutdown_有超时保护() {
     // shutdown 应在 ~50ms 内返回（卡住任务的超时）；不能挂死
     let result = timeout(Duration::from_secs(2), _deployment.shutdown()).await;
     assert!(result.is_ok(), "shutdown 必须受超时保护，不能无限挂死");
+}
+
+/// ADR-0009 Task 2 端到端：真正的 TimerNode 部署后能按 interval 触发下游。
+///
+/// 复刻原壳层 `spawn_timer_root_tasks` 的可观察行为——
+/// 1. immediate=true 时部署后立即触发一次
+/// 2. 之后按 interval_ms 周期触发
+///
+/// shutdown 后停止触发由 `shutdown_后所有节点的_lifecycle_任务都退出` 间接覆盖。
+#[tokio::test]
+async fn timer_节点_on_deploy_按_interval_触发下游() {
+    use nazh_engine::{NodeRegistry, PluginHost, TimerNode, TimerNodeConfig};
+    use nodes_io::IoPlugin;
+    use serde_json::Map;
+
+    // 用 IoPlugin（包含 timer）+ 自定义最小 sink 节点。不用 standard_registry
+    // 是因为里面的 debugConsole 等需要复杂 config，简化测试。
+    let mut host = PluginHost::new();
+    host.load(&IoPlugin);
+    let mut registry: NodeRegistry = host.into_registry();
+    registry.register_with_capabilities("test_sink", NodeCapabilities::empty(), |def, _res| {
+        struct SinkNode { id: String }
+        #[async_trait]
+        impl NodeTrait for SinkNode {
+            fn id(&self) -> &str { &self.id }
+            fn kind(&self) -> &'static str { "test_sink" }
+            async fn transform(&self, _t: Uuid, p: Value) -> Result<NodeExecution, EngineError> {
+                Ok(NodeExecution::broadcast(p))
+            }
+        }
+        Ok(Arc::new(SinkNode { id: def.id().to_owned() }))
+    });
+
+    let ast = json!({
+        "nodes": {
+            "ticker": {
+                "id": "ticker",
+                "type": "timer",
+                "config": {
+                    "interval_ms": 50,
+                    "immediate": true,
+                    "inject": {"source": "test_timer"}
+                }
+            },
+            "sink": {"id": "sink", "type": "test_sink"}
+        },
+        "edges": [{"from": "ticker", "to": "sink"}]
+    });
+
+    let graph = WorkflowGraph::from_json(&ast.to_string()).unwrap();
+    let mut deployment = deploy_workflow(graph, shared_connection_manager(), &registry)
+        .await
+        .unwrap();
+
+    // 收集 ~250ms 内的 ticker 节点 Started 事件。immediate=true + interval=50ms
+    // 预期至少 3-4 次 emit（实际数量受 Tokio 调度抖动影响）。
+    let collect_deadline = tokio::time::Instant::now() + Duration::from_millis(250);
+    let mut started_count = 0;
+    while tokio::time::Instant::now() < collect_deadline {
+        match tokio::time::timeout(Duration::from_millis(100), deployment.next_event()).await {
+            Ok(Some(ExecutionEvent::Started { stage, .. })) if stage == "ticker" => {
+                started_count += 1;
+            }
+            Ok(Some(_)) => continue,
+            Ok(None) | Err(_) => break,
+        }
+    }
+    assert!(
+        started_count >= 2,
+        "250ms 内 timer 应至少触发 2 次（immediate + 周期），实际 {started_count} 次"
+    );
+
+    // shutdown 消费 deployment；"shutdown 后停止触发"由
+    // `shutdown_后所有节点的_lifecycle_任务都退出` 测试覆盖。
+    deployment.shutdown().await;
+
+    // 静态检查：避免 unused import
+    let _ = TimerNode::new(
+        "_warm",
+        TimerNodeConfig {
+            interval_ms: 1,
+            immediate: false,
+            inject: Map::new(),
+        },
+    );
 }
 
 // 抑制 lints：测试里有未直接使用的 helper（`linear_graph_with_behaviors`）

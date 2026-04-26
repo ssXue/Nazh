@@ -16,7 +16,7 @@ use ai::{
 };
 use nazh_engine::{
     ConnectionDefinition, ConnectionRecord, EngineError, ExecutionEvent, SerialTriggerNodeConfig,
-    TimerNodeConfig, WorkflowContext, WorkflowGraph, WorkflowIngress,
+    WorkflowContext, WorkflowGraph, WorkflowIngress,
     deploy_workflow_with_ai as deploy_workflow_graph, shared_connection_manager, standard_registry,
 };
 use observability::{
@@ -732,12 +732,8 @@ impl DesktopState {
     }
 }
 
-#[derive(Debug, Clone)]
-struct TimerRootSpec {
-    node_id: String,
-    interval_ms: u64,
-    immediate: bool,
-}
+// ADR-0009 Task 2: TimerRootSpec 已移除——timer 节点自持 on_deploy 生命周期，
+// 壳层不再需要中间 spec 结构。SerialRootSpec / MqttRootSpec 留待 Task 3-5 清理。
 
 #[derive(Debug, Clone)]
 struct SerialRootSpec {
@@ -1025,7 +1021,7 @@ async fn deploy_workflow(
     } else {
         None
     };
-    let timer_roots = collect_timer_root_specs(&graph).map_err(|e| stringify_error(&e))?;
+    // ADR-0009 Task 2: timer 节点已自持 on_deploy 生命周期；壳层不再 collect/spawn。
     let serial_roots = collect_serial_root_specs(&graph, state.connection_manager.clone())
         .await
         .map_err(|e| stringify_error(&e))?;
@@ -1084,7 +1080,7 @@ async fn deploy_workflow(
         existing.abort_triggers().await;
     }
 
-    let mut trigger_tasks = spawn_timer_root_tasks(&dispatch_router, timer_roots);
+    let mut trigger_tasks: Vec<DesktopTriggerTask> = Vec::new();
     trigger_tasks.extend(spawn_serial_root_tasks(
         &app,
         &dispatch_router,
@@ -2376,33 +2372,7 @@ fn count_incoming_edges(graph: &WorkflowGraph) -> std::collections::HashMap<Stri
     incoming_counts
 }
 
-fn collect_timer_root_specs(graph: &WorkflowGraph) -> Result<Vec<TimerRootSpec>, EngineError> {
-    let incoming_counts = count_incoming_edges(graph);
-    let mut timer_roots = Vec::new();
-
-    for (node_id, node_definition) in &graph.nodes {
-        if incoming_counts.get(node_id).copied().unwrap_or_default() != 0 {
-            continue;
-        }
-
-        if node_definition.node_type() != "timer" {
-            continue;
-        }
-
-        let config: TimerNodeConfig = serde_json::from_value(node_definition.config().clone())
-            .map_err(|error| {
-                EngineError::node_config(node_definition.id().to_owned(), error.to_string())
-            })?;
-
-        timer_roots.push(TimerRootSpec {
-            node_id: node_id.clone(),
-            interval_ms: config.interval_ms.max(1),
-            immediate: config.immediate,
-        });
-    }
-
-    Ok(timer_roots)
-}
+// ADR-0009 Task 2: collect_timer_root_specs 已移除——timer 节点自持 on_deploy。
 
 fn is_serial_trigger_type(node_type: &str) -> bool {
     matches!(node_type, "serialTrigger" | "serial/trigger" | "serial")
@@ -2484,51 +2454,7 @@ async fn collect_serial_root_specs(
     Ok(serial_roots)
 }
 
-fn spawn_timer_root_tasks(
-    dispatch_router: &WorkflowDispatchRouter,
-    timer_roots: Vec<TimerRootSpec>,
-) -> Vec<DesktopTriggerTask> {
-    timer_roots
-        .into_iter()
-        .map(|timer_root| {
-            let dispatch_router = dispatch_router.clone();
-            let cancel = Arc::new(AtomicBool::new(false));
-            let task_cancel = Arc::clone(&cancel);
-            let join = tauri::async_runtime::spawn(async move {
-                if timer_root.immediate && !task_cancel.load(Ordering::Relaxed) {
-                    let _ = dispatch_router
-                        .submit_trigger_to(
-                            &timer_root.node_id,
-                            WorkflowContext::new(Value::Object(serde_json::Map::default())),
-                            format!("timer:{}", timer_root.node_id),
-                        )
-                        .await;
-                }
-
-                let delay = Duration::from_millis(timer_root.interval_ms);
-
-                loop {
-                    tokio::time::sleep(delay).await;
-                    if task_cancel.load(Ordering::Relaxed) {
-                        break;
-                    }
-                    let _ = dispatch_router
-                        .submit_trigger_to(
-                            &timer_root.node_id,
-                            WorkflowContext::new(Value::Object(serde_json::Map::default())),
-                            format!("timer:{}", timer_root.node_id),
-                        )
-                        .await;
-                }
-            });
-
-            DesktopTriggerTask {
-                cancel,
-                join: TriggerJoinHandle::Async(join),
-            }
-        })
-        .collect()
-}
+// ADR-0009 Task 2: spawn_timer_root_tasks 已移除——timer 节点自持 on_deploy。
 
 fn spawn_serial_root_tasks(
     app: &AppHandle,

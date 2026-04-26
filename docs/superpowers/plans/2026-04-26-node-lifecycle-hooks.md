@@ -250,7 +250,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 - Modify: `crates/nodes-io/src/lib.rs`（注册 timer 节点）
 - Modify: `src-tauri/src/lib.rs`（删除 `spawn_timer_root_tasks` 调用 + 函数）
 
-- [ ] **Step 1: 定位现有 timer 节点实现**
+- [x] **Step 1: 定位现有 timer 节点实现**
 
 ```bash
 rg -n 'fn kind.*"timer"|"timer"\s*=>|TimerNode' crates/
@@ -258,7 +258,7 @@ rg -n 'fn kind.*"timer"|"timer"\s*=>|TimerNode' crates/
 
 确认 timer 节点的 transform 体（如已存在）目前是空 / `unreachable!` —— 因为它实际触发由壳层代持。新版会把触发逻辑搬进 `on_deploy`。
 
-- [ ] **Step 2: 在 timer 节点实现 on_deploy**
+- [x] **Step 2: 在 timer 节点实现 on_deploy**
 
 ```rust
 #[async_trait]
@@ -290,7 +290,7 @@ impl NodeTrait for TimerNode {
 }
 ```
 
-- [ ] **Step 3: 删除壳层 timer 代持**
+- [x] **Step 3: 删除壳层 timer 代持**
 
 从 `src-tauri/src/lib.rs` 删除：
 - `collect_timer_root_specs`（line 2376）
@@ -298,7 +298,7 @@ impl NodeTrait for TimerNode {
 - `deploy_workflow` 中调用这两者的代码段
 - 如果 `TimerRootSpec` / `DesktopTriggerTask` 仅服务 timer / serial / mqtt 三者，先标记，待 Task 5 集中清理
 
-- [ ] **Step 4: 测试 + 手动 E2E**
+- [x] **Step 4: 测试 + 手动 E2E**
 
 ```bash
 cargo test --workspace
