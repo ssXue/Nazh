@@ -13,7 +13,9 @@ use uuid::Uuid;
 
 use crate::template::{self, TemplateVars};
 use connections::{SharedConnectionManager, connection_metadata};
-use nazh_core::{EngineError, NodeExecution, NodeTrait, into_payload_map};
+use nazh_core::{
+    EngineError, NodeExecution, NodeTrait, PinDefinition, PinDirection, PinType, into_payload_map,
+};
 
 fn default_http_method() -> String {
     "POST".to_owned()
@@ -352,6 +354,35 @@ fn build_http_request(
 impl NodeTrait for HttpClientNode {
     nazh_core::impl_node_meta!("httpClient");
 
+    /// 输入引脚：必需的 `Json` 端口。
+    ///
+    /// 三种 [`body_mode`](HttpClientNodeConfig::body_mode)（`json` / `template`
+    /// / `dingtalk_markdown`）都期待上游产出 JSON 对象——`json` 模式直接
+    /// 序列化为 body，`template` 模式用对象字段渲染占位符，
+    /// `dingtalk_markdown` 模式从对象抽取字段构造钉钉消息。
+    fn input_pins(&self) -> Vec<PinDefinition> {
+        vec![PinDefinition {
+            id: "in".to_owned(),
+            label: "in".to_owned(),
+            pin_type: PinType::Json,
+            direction: PinDirection::Input,
+            required: true,
+            description: Some("HTTP 请求 body / 模板渲染 payload（JSON 对象）".to_owned()),
+        }]
+    }
+
+    /// 输出引脚：单一 `Json` 端口，承载 HTTP 响应（status / headers / body）。
+    fn output_pins(&self) -> Vec<PinDefinition> {
+        vec![PinDefinition {
+            id: "out".to_owned(),
+            label: "out".to_owned(),
+            pin_type: PinType::Json,
+            direction: PinDirection::Output,
+            required: false,
+            description: Some("HTTP 响应（status / headers / body）".to_owned()),
+        }]
+    }
+
     async fn transform(
         &self,
         trace_id: Uuid,
@@ -462,5 +493,43 @@ impl NodeTrait for HttpClientNode {
         }
 
         Ok(NodeExecution::broadcast(Value::Object(payload_map)).with_metadata(metadata))
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use connections::shared_connection_manager;
+
+    fn make_node() -> HttpClientNode {
+        HttpClientNode::new(
+            "http-1",
+            HttpClientNodeConfig::default(),
+            shared_connection_manager(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn input_pin_是_json_必需() {
+        let node = make_node();
+        let pins = node.input_pins();
+        assert_eq!(pins.len(), 1);
+        assert_eq!(pins[0].id, "in");
+        assert_eq!(pins[0].pin_type, PinType::Json);
+        assert_eq!(pins[0].direction, PinDirection::Input);
+        assert!(pins[0].required);
+    }
+
+    #[test]
+    fn output_pin_是_json() {
+        let node = make_node();
+        let pins = node.output_pins();
+        assert_eq!(pins.len(), 1);
+        assert_eq!(pins[0].id, "out");
+        assert_eq!(pins[0].pin_type, PinType::Json);
+        assert_eq!(pins[0].direction, PinDirection::Output);
+        assert!(!pins[0].required, "HTTP 响应不强制下游消费");
     }
 }
