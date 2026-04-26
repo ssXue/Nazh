@@ -106,6 +106,15 @@ pub struct WorkflowDeployment {
     pub(crate) shutdown_token: CancellationToken,
 }
 
+/// [`WorkflowDeployment::into_parts`] 的返回类型——按字段名访问而非位置解构，
+/// 让未来增减字段不破坏调用方源码兼容性。
+pub struct WorkflowDeploymentParts {
+    pub ingress: WorkflowIngress,
+    pub streams: WorkflowStreams,
+    pub lifecycle_guards: Vec<(String, LifecycleGuard)>,
+    pub shutdown_token: CancellationToken,
+}
+
 /// 拓扑分析结果（仅模块内部使用）。
 pub(crate) struct WorkflowTopology {
     pub(crate) root_nodes: Vec<String>,
@@ -274,20 +283,13 @@ impl WorkflowDeployment {
     /// 长连接节点（MQTT 订阅 / Timer / Serial 监听）会随之停止。调用方需要
     /// 持有 guards 直至撤销，并在撤销时 cancel `shutdown_token` 让所有节点
     /// 同时收到取消信号（再串行 await guard.shutdown 等待 cleanup 完成）。
-    pub fn into_parts(
-        self,
-    ) -> (
-        WorkflowIngress,
-        WorkflowStreams,
-        Vec<(String, LifecycleGuard)>,
-        CancellationToken,
-    ) {
-        (
-            self.ingress,
-            self.streams,
-            self.lifecycle_guards,
-            self.shutdown_token,
-        )
+    pub fn into_parts(self) -> WorkflowDeploymentParts {
+        WorkflowDeploymentParts {
+            ingress: self.ingress,
+            streams: self.streams,
+            lifecycle_guards: self.lifecycle_guards,
+            shutdown_token: self.shutdown_token,
+        }
     }
 
     /// 显式撤销整张图：cancel 根 token 后按**逆部署序** shutdown 每个 guard。

@@ -45,13 +45,13 @@ pub use nodes_flow::{
 pub use nodes_io::{
     BarkPushNode, BarkPushNodeConfig, DebugConsoleNode, DebugConsoleNodeConfig, HttpClientNode,
     HttpClientNodeConfig, IoPlugin, ModbusReadNode, ModbusReadNodeConfig, MqttClientNode,
-    MqttClientNodeConfig, NativeNode, NativeNodeConfig, SerialTriggerNode, SerialTriggerNodeConfig,
-    SqlWriterNode, SqlWriterNodeConfig, TimerNode, TimerNodeConfig,
+    MqttClientNodeConfig, MqttMode, NativeNode, NativeNodeConfig, SerialTriggerNode,
+    SerialTriggerNodeConfig, SqlWriterNode, SqlWriterNodeConfig, TimerNode, TimerNodeConfig,
 };
 
 pub use graph::{
-    WorkflowDeployment, WorkflowGraph, WorkflowIngress, WorkflowStreams, deploy_workflow,
-    deploy_workflow_with_ai,
+    WorkflowDeployment, WorkflowDeploymentParts, WorkflowGraph, WorkflowIngress, WorkflowStreams,
+    deploy_workflow, deploy_workflow_with_ai,
 };
 
 /// 加载全部标准库插件，返回就绪的节点注册表。

@@ -24,7 +24,7 @@ pub use bark_push::{BarkPushNode, BarkPushNodeConfig};
 pub use debug_console::{DebugConsoleNode, DebugConsoleNodeConfig};
 pub use http_client::{HttpClientNode, HttpClientNodeConfig};
 pub use modbus_read::{ModbusReadNode, ModbusReadNodeConfig};
-pub use mqtt_client::{MqttClientNode, MqttClientNodeConfig};
+pub use mqtt_client::{MqttClientNode, MqttClientNodeConfig, MqttMode};
 pub use native::{NativeNode, NativeNodeConfig};
 pub use serial_trigger::{SerialTriggerNode, SerialTriggerNodeConfig};
 pub use sql_writer::{SqlWriterNode, SqlWriterNodeConfig};

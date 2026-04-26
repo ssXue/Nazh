@@ -13,7 +13,7 @@ use async_trait::async_trait;
 use nazh_engine::{
     CodeNode, CodeNodeConfig, ConnectionDefinition, ConnectionManager, DebugConsoleNode,
     DebugConsoleNodeConfig, EngineError, HttpClientNode, HttpClientNodeConfig, ModbusReadNode,
-    ModbusReadNodeConfig, MqttClientNode, MqttClientNodeConfig, NodeDispatch, NodeTrait,
+    ModbusReadNodeConfig, MqttClientNode, MqttClientNodeConfig, MqttMode, NodeDispatch, NodeTrait,
     SerialTriggerNode, SerialTriggerNodeConfig, SqlWriterNode, SqlWriterNodeConfig, TimerNode,
     TimerNodeConfig, WorkflowContext, WorkflowGraph, deploy_workflow, deploy_workflow_with_ai,
     shared_connection_manager, standard_registry,
@@ -1509,7 +1509,7 @@ async fn mqtt_subscribe_node_normalizes_incoming_message() {
         "mqtt-sub",
         MqttClientNodeConfig {
             connection_id: None,
-            mode: "subscribe".to_owned(),
+            mode: MqttMode::Subscribe,
             topic: "sensors/temp".to_owned(),
             qos: 0,
             payload_template: String::new(),
@@ -1550,7 +1550,7 @@ async fn mqtt_publish_node_requires_connection() {
         "mqtt-pub",
         MqttClientNodeConfig {
             connection_id: None,
-            mode: "publish".to_owned(),
+            mode: MqttMode::Publish,
             topic: "test/topic".to_owned(),
             qos: 0,
             payload_template: String::new(),

@@ -944,7 +944,12 @@ async fn deploy_workflow(
             return Err(stringify_error(&error));
         }
     };
-    let (ingress, streams, lifecycle_guards, shutdown_token) = deployment.into_parts();
+    let nazh_engine::WorkflowDeploymentParts {
+        ingress,
+        streams,
+        lifecycle_guards,
+        shutdown_token,
+    } = deployment.into_parts();
     let root_nodes = ingress.root_nodes().to_vec();
     let (mut event_rx, mut result_rx, result_store_ref) = streams.into_receivers();
     let dead_letters = DeadLetterSink::new(workspace_dir, metadata.clone()).await?;

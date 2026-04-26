@@ -24,11 +24,19 @@ use uuid::Uuid;
 use connections::{SharedConnectionManager, connection_metadata};
 use nazh_core::{
     CancellationToken, EngineError, LifecycleGuard, NodeExecution, NodeHandle,
-    NodeLifecycleContext, NodeTrait, into_payload_map,
+    NodeLifecycleContext, NodeTrait, into_payload_map, sleep_or_cancel,
 };
 
-fn default_mqtt_mode() -> String {
-    "publish".to_owned()
+/// MQTT 客户端工作模式。
+///
+/// 用 enum 而非字符串避免 typo 静默退化（如 `"subscrib"` 会被字符串比较
+/// 默认走 publish 路径——enum 在反序列化时直接拒绝）。
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MqttMode {
+    #[default]
+    Publish,
+    Subscribe,
 }
 
 fn default_mqtt_qos() -> u8 {
@@ -41,6 +49,14 @@ fn normalize_mqtt_qos(value: u8) -> rumqttc::QoS {
         2 => rumqttc::QoS::ExactlyOnce,
         _ => rumqttc::QoS::AtMostOnce,
     }
+}
+
+/// 按**字符**截断节点 ID 用作 `MQTT` `client_id` 后缀。
+///
+/// 直接用 `&id[..N]` 字节切片在中文 / Emoji 等多字节字符落在 N 边界时会 panic
+/// （CLAUDE.md 显式允许中文 ID，如 `"温度采集"`）。
+fn truncate_client_id(id: &str, max_chars: usize) -> String {
+    id.chars().take(max_chars).collect()
 }
 
 fn extract_broker_addr(metadata: &Value) -> Result<(String, u16), EngineError> {
@@ -69,9 +85,9 @@ fn extract_broker_addr(metadata: &Value) -> Result<(String, u16), EngineError> {
 pub struct MqttClientNodeConfig {
     #[serde(default)]
     pub connection_id: Option<String>,
-    /// 工作模式: "publish" 或 "subscribe"。
-    #[serde(default = "default_mqtt_mode")]
-    pub mode: String,
+    /// 工作模式：`publish` 或 `subscribe`（不区分大小写反序列化）。
+    #[serde(default)]
+    pub mode: MqttMode,
     /// 订阅或发布的主题。
     #[serde(default)]
     pub topic: String,
@@ -139,7 +155,7 @@ impl MqttClientNode {
             )
         })?;
 
-        let client_id = format!("nazh-{}", &self.id[..self.id.len().min(20)]);
+        let client_id = format!("nazh-{}", truncate_client_id(&self.id, 20));
         let mut mqttoptions = rumqttc::MqttOptions::new(client_id, host, port);
         mqttoptions.set_keep_alive(std::time::Duration::from_secs(5));
 
@@ -278,7 +294,7 @@ impl NodeTrait for MqttClientNode {
         trace_id: Uuid,
         payload: Value,
     ) -> Result<NodeExecution, EngineError> {
-        let is_subscribe = self.config.mode.trim().eq_ignore_ascii_case("subscribe");
+        let is_subscribe = matches!(self.config.mode, MqttMode::Subscribe);
 
         if is_subscribe {
             let result = Self::normalize_subscribed_payload(payload);
@@ -334,7 +350,7 @@ impl NodeTrait for MqttClientNode {
         ctx: NodeLifecycleContext,
     ) -> Result<LifecycleGuard, EngineError> {
         // 仅 subscribe 模式建连——publish 模式 transform 时按需借用
-        if !self.config.mode.trim().eq_ignore_ascii_case("subscribe") {
+        if !matches!(self.config.mode, MqttMode::Subscribe) {
             return Ok(LifecycleGuard::noop());
         }
 
@@ -440,7 +456,7 @@ async fn mqtt_subscribe_loop(
     token: CancellationToken,
     metadata_template: Map<String, Value>,
 ) {
-    let client_id = format!("nazh-sub-{}", &node_id[..node_id.len().min(16)]);
+    let client_id = format!("nazh-sub-{}", truncate_client_id(&node_id, 16));
     let mut mqttoptions = rumqttc::MqttOptions::new(client_id, host.clone(), port);
     mqttoptions.set_keep_alive(std::time::Duration::from_secs(30));
 
@@ -449,7 +465,7 @@ async fn mqtt_subscribe_loop(
             Ok(guard) => guard,
             Err(error) => {
                 tracing::warn!(node_id = %node_id, ?error, "MQTT 连接借出失败，800ms 后重试");
-                sleep_responsive(&token, std::time::Duration::from_millis(800)).await;
+                sleep_or_cancel(&token, std::time::Duration::from_millis(800)).await;
                 continue;
             }
         };
@@ -468,7 +484,7 @@ async fn mqtt_subscribe_loop(
                 .unwrap_or(800);
             drop(guard);
             tracing::warn!(node_id = %node_id, %reason, retry_after_ms);
-            sleep_responsive(&token, std::time::Duration::from_millis(retry_after_ms)).await;
+            sleep_or_cancel(&token, std::time::Duration::from_millis(retry_after_ms)).await;
             continue;
         }
 
@@ -489,7 +505,7 @@ async fn mqtt_subscribe_loop(
                 .unwrap_or(800);
             drop(guard);
             tracing::warn!(node_id = %node_id, %reason, retry_after_ms);
-            sleep_responsive(&token, std::time::Duration::from_millis(retry_after_ms)).await;
+            sleep_or_cancel(&token, std::time::Duration::from_millis(retry_after_ms)).await;
             continue;
         }
 
@@ -527,7 +543,7 @@ async fn mqtt_subscribe_loop(
             .unwrap_or(800);
         drop(guard);
         tracing::warn!(node_id = %node_id, %reason, retry_after_ms);
-        sleep_responsive(&token, std::time::Duration::from_millis(retry_after_ms)).await;
+        sleep_or_cancel(&token, std::time::Duration::from_millis(retry_after_ms)).await;
     }
 }
 
@@ -571,6 +587,10 @@ async fn run_message_loop(
     token: &CancellationToken,
     metadata_template: &Map<String, Value>,
 ) -> Option<String> {
+    // heartbeat 节流：高吞吐 topic 上每条消息都写心跳会让 ConnectionManager
+    // 承担过度的写锁压力。改为按固定间隔节流，与 serial 读循环保持一致语义。
+    let heartbeat_interval = std::time::Duration::from_secs(3);
+    let mut last_heartbeat_at = std::time::Instant::now();
     loop {
         if token.is_cancelled() {
             return None;
@@ -591,12 +611,15 @@ async fn run_message_loop(
                 if let Err(error) = handle.emit(payload, metadata_template.clone()).await {
                     tracing::warn!(node_id = %node_id, ?error, "MQTT emit 失败");
                 }
-                let _ = connection_manager
-                    .record_heartbeat(
-                        connection_id,
-                        format!("MQTT {host}:{port} 收到主题 {topic} 消息"),
-                    )
-                    .await;
+                if last_heartbeat_at.elapsed() >= heartbeat_interval {
+                    let _ = connection_manager
+                        .record_heartbeat(
+                            connection_id,
+                            format!("MQTT {host}:{port} 收到主题 {topic} 消息"),
+                        )
+                        .await;
+                    last_heartbeat_at = std::time::Instant::now();
+                }
                 tracing::info!(node_id = %node_id, %topic, "MQTT 消息已投递到 DAG");
             }
             Ok(Ok(_)) | Err(_) => {}
@@ -607,21 +630,4 @@ async fn run_message_loop(
     }
 }
 
-/// 短间隔轮询的 sleep，让 cancel 在 100ms 内响应。
-async fn sleep_responsive(token: &CancellationToken, total: std::time::Duration) {
-    let step = std::time::Duration::from_millis(100);
-    let mut remaining = total;
-    while remaining > std::time::Duration::ZERO {
-        if token.is_cancelled() {
-            return;
-        }
-        let chunk = remaining.min(step);
-        tokio::select! {
-            biased;
-            () = token.cancelled() => return,
-            () = tokio::time::sleep(chunk) => {}
-        }
-        remaining = remaining.saturating_sub(chunk);
-    }
-}
 

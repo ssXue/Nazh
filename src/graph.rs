@@ -19,5 +19,6 @@ pub(crate) mod types;
 
 pub use deploy::{deploy_workflow, deploy_workflow_with_ai};
 pub use types::{
-    WorkflowDeployment, WorkflowEdge, WorkflowGraph, WorkflowIngress, WorkflowStreams,
+    WorkflowDeployment, WorkflowDeploymentParts, WorkflowEdge, WorkflowGraph, WorkflowIngress,
+    WorkflowStreams,
 };

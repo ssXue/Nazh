@@ -241,6 +241,35 @@ impl Drop for LifecycleGuard {
     }
 }
 
+/// 异步 sleep 但响应 cancel——`tokio::select!` 同时监听 token 与 sleep。
+///
+/// 用于 `on_deploy` 后台任务里的退避等待。立即取消比 `tokio::time::sleep`
+/// 更可控——cancel 触发时无需等待 timer tick 结束。
+pub async fn sleep_or_cancel(token: &CancellationToken, total: Duration) {
+    tokio::select! {
+        biased;
+        () = token.cancelled() => {}
+        () = tokio::time::sleep(total) => {}
+    }
+}
+
+/// 同步 sleep 但响应 cancel——分块轮询 `is_cancelled()`，最长 100ms 延迟。
+///
+/// 用于 `tokio::task::spawn_blocking` 闭包内的同步循环（如 serial 串口读）；
+/// 异步上下文请用 [`sleep_or_cancel`]。
+pub fn blocking_sleep_or_cancel(token: &CancellationToken, total: Duration) {
+    let step = Duration::from_millis(100);
+    let mut remaining = total;
+    while remaining > Duration::ZERO {
+        if token.is_cancelled() {
+            return;
+        }
+        let chunk = remaining.min(step);
+        std::thread::sleep(chunk);
+        remaining = remaining.saturating_sub(chunk);
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {

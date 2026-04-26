@@ -411,7 +411,7 @@ mod serial_helpers {
 
     use chrono::Utc;
     use connections::SharedConnectionManager;
-    use nazh_core::{CancellationToken, NodeHandle};
+    use nazh_core::{CancellationToken, NodeHandle, blocking_sleep_or_cancel};
     use serde_json::Map;
 
     use super::{SerialTriggerNodeConfig, build_serial_payload};
@@ -543,20 +543,6 @@ mod serial_helpers {
             .and_then(serde_json::Value::as_u64)
     }
 
-    /// 同步 sleep 但响应 cancel——通过短间隔轮询 `is_cancelled`。
-    fn sleep_with_cancel(token: &CancellationToken, total: Duration) {
-        let step = Duration::from_millis(50);
-        let mut remaining = total;
-        while remaining > Duration::ZERO {
-            if token.is_cancelled() {
-                return;
-            }
-            let chunk = remaining.min(step);
-            std::thread::sleep(chunk);
-            remaining = remaining.saturating_sub(chunk);
-        }
-    }
-
     /// 提交一帧：构造 payload + metadata，`runtime.block_on` 调用 `handle.emit`。
     fn submit_frame(
         node_id: &str,
@@ -635,7 +621,7 @@ mod serial_helpers {
                 Ok(guard) => guard,
                 Err(error) => {
                     tracing::warn!(node_id = %node_id, ?error, "串口连接借出失败，800ms 后重试");
-                    sleep_with_cancel(token, Duration::from_millis(800));
+                    blocking_sleep_or_cancel(token, Duration::from_millis(800));
                     continue;
                 }
             };
@@ -673,7 +659,7 @@ mod serial_helpers {
                         .unwrap_or(800);
                     drop(guard);
                     tracing::warn!(node_id = %node_id, %reason, retry_after_ms, "串口打开失败");
-                    sleep_with_cancel(token, Duration::from_millis(retry_after_ms));
+                    blocking_sleep_or_cancel(token, Duration::from_millis(retry_after_ms));
                     continue;
                 }
             };
@@ -708,11 +694,15 @@ mod serial_helpers {
                     Ok(bytes_read) => {
                         buffer.extend_from_slice(&scratch[..bytes_read]);
                         last_byte_at = Some(Instant::now());
-                        let _ = runtime.block_on(connection_manager.record_heartbeat(
-                            connection_id,
-                            format!("串口 {} 收到 {} 字节输入", config.port_path, bytes_read),
-                        ));
-                        last_heartbeat_sent_at = Instant::now();
+                        // 每字节调 record_heartbeat 会让 ConnectionManager 在
+                        // 高吞吐设备上承担过度的写锁压力；按 heartbeat_interval 节流。
+                        if last_heartbeat_sent_at.elapsed() >= heartbeat_interval {
+                            let _ = runtime.block_on(connection_manager.record_heartbeat(
+                                connection_id,
+                                format!("串口 {} 收到 {} 字节输入", config.port_path, bytes_read),
+                            ));
+                            last_heartbeat_sent_at = Instant::now();
+                        }
                         while let Some(frame) = drain_delimited_frame(&mut buffer, &delimiter) {
                             submit_frame(node_id, config, connection_id, &frame, handle, runtime);
                         }
@@ -780,7 +770,7 @@ mod serial_helpers {
                 .unwrap_or(800);
             drop(guard);
             tracing::warn!(node_id = %node_id, %reason, retry_after_ms, "串口连接断开");
-            sleep_with_cancel(token, Duration::from_millis(retry_after_ms));
+            blocking_sleep_or_cancel(token, Duration::from_millis(retry_after_ms));
         }
     }
 }
