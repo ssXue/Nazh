@@ -103,6 +103,20 @@ export function invalidateNodePinSchema(nodeId: string): void {
   cache.delete(nodeId);
 }
 
+/**
+ * 给端口着色用的 pin 类型 kind 字符串（缓存未命中或端口未声明时回退 `"any"`）。
+ *
+ * Phase 2 类型着色仅用 PinType 顶层 kind（'any' / 'json' / 'bool' / ...）
+ * 决定颜色——`array` / `custom` 的 inner / name 不参与色彩区分。
+ */
+export function resolvePinTypeKind(
+  nodeId: string,
+  portId: string | number,
+  direction: 'input' | 'output',
+): string {
+  return findPin(nodeId, portId, direction)?.pin_type.kind ?? 'any';
+}
+
 /** 测试钩子；生产路径不应直接调。 */
 export function _resetCacheForTests(): void {
   cache.clear();

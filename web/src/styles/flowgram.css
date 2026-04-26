@@ -1203,6 +1203,41 @@ html[data-theme='dark'] .flowgram-floating-panel--node {
   box-shadow: 0 0 0 1px var(--line-soft);
 }
 
+/* ADR-0010 Phase 2：端口按 PinType 着色。
+ * data-port-pin-type 由 FlowgramCanvas 写入端口 DOM，从 pin schema 缓存读 kind。
+ * 当前协议节点 in/out 端口走 FlowGram 默认渲染（无 data-port-pin-type），
+ * 不参与本着色——仅 switch/if/tryCatch/loop 的分支端口受影响。
+ * 协议节点端口 DOM 改造留待独立 PR（Phase 2 Task 5 备注）。*/
+.flowgram-card__branch-port[data-port-pin-type='any'] {
+  background: var(--surface-elevated);
+}
+.flowgram-card__branch-port[data-port-pin-type='json'] {
+  background: #3b82f6;
+}
+.flowgram-card__branch-port[data-port-pin-type='string'] {
+  background: #a855f7;
+}
+.flowgram-card__branch-port[data-port-pin-type='bool'] {
+  background: #eab308;
+}
+.flowgram-card__branch-port[data-port-pin-type='integer'] {
+  background: #22c55e;
+}
+.flowgram-card__branch-port[data-port-pin-type='float'] {
+  background: #16a34a;
+}
+.flowgram-card__branch-port[data-port-pin-type='binary'] {
+  background: #f97316;
+}
+.flowgram-card__branch-port[data-port-pin-type='array'] {
+  background: var(--surface-elevated);
+  border-color: #06b6d4;
+}
+.flowgram-card__branch-port[data-port-pin-type='custom'] {
+  background: var(--surface-elevated);
+  border-color: #ef4444;
+}
+
 .flowgram-card__meta {
   display: flex;
   flex-direction: column;

@@ -75,6 +75,7 @@ import {
   configToRecord,
   invalidateNodePinSchema,
   refreshNodePinSchema,
+  resolvePinTypeKind,
 } from '../lib/pin-schema-cache';
 import { checkConnection, formatRejection } from '../lib/pin-validator';
 import { hasTauriRuntime, saveFlowgramExportFile } from '../lib/tauri';
@@ -709,6 +710,7 @@ function FlowgramNodeCard(props: FlowgramNodeMaterialProps) {
                   data-port-id={branch.key}
                   data-port-type="output"
                   data-port-location="right"
+                  data-port-pin-type={resolvePinTypeKind(props.node.id, branch.key, 'output')}
                 />
               </div>
             ))}
