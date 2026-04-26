@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 
-use ai::{AiCompletionRequest, AiGenerationParams, AiMessage, AiMessageRole, AiService};
+use nazh_core::ai::{AiCompletionRequest, AiGenerationParams, AiMessage, AiMessageRole, AiService};
 use rhai::{
     AST, Dynamic, Engine, EvalAltResult, Position, Scope,
     packages::Package,

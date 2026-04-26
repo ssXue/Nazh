@@ -3,6 +3,6 @@ import type { AiReasoningEffort } from "./AiReasoningEffort";
 import type { AiThinkingConfig } from "./AiThinkingConfig";
 
 /**
- * Copilot 默认生成参数。
+ * Copilot / 节点共享的生成参数。
  */
 export type AiGenerationParams = { temperature?: number, maxTokens?: number, topP?: number, thinking?: AiThinkingConfig, reasoningEffort?: AiReasoningEffort, };

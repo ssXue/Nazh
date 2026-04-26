@@ -8,10 +8,10 @@ use serde_json::Value;
 use std::sync::Arc;
 use uuid::Uuid;
 
-use ai::{AiGenerationParams, AiReasoningEffort, AiService, AiThinkingConfig};
 use serde::{Deserialize, Serialize};
 
 use nazh_core::EngineError;
+use nazh_core::ai::{AiGenerationParams, AiReasoningEffort, AiService, AiThinkingConfig};
 use nazh_core::{NodeExecution, NodeTrait};
 use scripting::{ScriptAiRuntime, ScriptNodeBase, default_max_operations};
 

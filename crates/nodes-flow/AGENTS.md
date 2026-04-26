@@ -69,16 +69,15 @@ Plugin 注册入口：`FlowPlugin::register(&mut NodeRegistry)`，在 `lib.rs:28
 
 1. **所有节点都嵌入 `ScriptNodeBase`**。`NodeTrait` 元数据（`id` / `kind`）用 `scripting::delegate_node_base!` 宏委托。**能力标签不走 trait**，而是在 `FlowPlugin::register` 时通过 `register_with_capabilities` 声明——详见 `crates/core/AGENTS.md` 的"为什么 `NodeTrait` 没有 `capabilities()` 方法"。
 2. **脚本执行遵循 `scripting` crate 的约定**（`max_operations`、payload 变量名、Scope 单次使用）。
-3. **不借用连接、不做 I/O**。`code` 节点可以通过 `ai_complete()` 发 AI 请求，但这是经过 `ai` crate 的；本 crate 不直接用 `reqwest` / `rusqlite` / 其他协议。
+3. **不借用连接、不做 I/O**。`code` 节点可以通过 `ai_complete()` 发 AI 请求，但走的是 Ring 0 的 `nazh_core::ai::AiService` trait（具体实现由壳层注入）；本 crate 不直接用 `reqwest` / `rusqlite` / 其他协议，**也不依赖 `ai` crate**（ADR-0019）。
 4. **分支端口名固定**：`if` 用 `"true"` / `"false"`，`tryCatch` 用 `"try"` / `"catch"`，`loop` 用 `"body"` / `"done"`，`switch` 用配置里声明的分支名。改端口名是前端画布的 breaking change。
 
 ## 依赖约束
 
-- 允许：`nazh-core`、`scripting`、`ai`（给 `code` 节点用）
-- 禁止：`connections`、`nodes-io`、任何协议 crate
+- 允许：`nazh-core`（含 `nazh_core::ai::AiService`）、`scripting`、`async-trait`、`rhai`、`serde` / `serde_json`
+- 禁止：`ai`（自 ADR-0019 起）、`connections`、`nodes-io`、任何协议 crate
 
-本 crate 是 Ring 1 但避免了协议依赖——全部 I/O 都被挡在 `nodes-io`。这让它在嵌入式场景下可以
-单独编译（未来可能的 ADR-0018 feature 门控）。
+本 crate 是 Ring 1 但避免了所有协议依赖——全部 I/O 都被挡在 `nodes-io`。ADR-0019 实施后，连 `ai` 也不再依赖：`code` 节点的 `Arc<dyn AiService>` 来自 Ring 0 trait + 壳层注入。
 
 ## 修改本 crate 时
 
@@ -102,3 +101,4 @@ cargo test -p nazh-engine --test workflow   # 集成测试，覆盖分支+循环
 - **ADR-0008** 元数据通道（节点输出遵循此约定）
 - **ADR-0011** 节点能力标签（能力分配见上表）
 - **ADR-0010** Pin 声明系统（Phase 1：4 个分支节点已声明具体 output pin；输入端仍是默认 `Any`，详见引脚声明表）
+- **ADR-0019** AI 能力依赖反转 — 本 crate 已脱离 `ai` 依赖（2026-04-26）

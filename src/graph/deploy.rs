@@ -24,7 +24,7 @@
 
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
-use ai::AiService;
+use nazh_core::ai::AiService;
 use tokio::sync::mpsc;
 
 use super::pin_validator;

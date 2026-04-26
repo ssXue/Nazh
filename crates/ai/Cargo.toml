@@ -1,6 +1,6 @@
 [package]
 name = "ai"
-description = "Nazh AI 能力层：AiService trait、OpenAI 兼容 API 客户端与配置模型（Ring 1）"
+description = "Nazh AI 能力层（Ring 1）：OpenAI 兼容 API 客户端实现 + 壳层配置模型。AiService trait 在 nazh-core。"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -12,20 +12,18 @@ repository.workspace = true
 workspace = true
 
 [dependencies]
+nazh-core.workspace = true
 async-trait.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 reqwest = { workspace = true, features = ["stream"] }
 futures-util.workspace = true
-thiserror.workspace = true
 tokio.workspace = true
-tracing.workspace = true
 ts-rs = { workspace = true, optional = true }
-uuid.workspace = true
 
 [features]
 default = []
-ts-export = ["dep:ts-rs"]
+ts-export = ["dep:ts-rs", "nazh-core/ts-export"]
 
 [dev-dependencies]
 tokio.workspace = true

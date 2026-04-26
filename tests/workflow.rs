@@ -5,19 +5,16 @@ use std::{
     time::Duration,
 };
 
-use ai::{
-    AiCompletionRequest, AiCompletionResponse, AiError, AiMessageRole, AiProviderDraft, AiService,
-    AiTestResult, StreamChunk,
-};
 use async_trait::async_trait;
 use nazh_engine::{
-    CodeNode, CodeNodeConfig, ConnectionDefinition, ConnectionManager, DebugConsoleNode,
+    AiCompletionRequest, AiCompletionResponse, AiError, AiMessageRole, AiService, CodeNode,
+    CodeNodeConfig, ConnectionDefinition, ConnectionManager, DebugConsoleNode,
     DebugConsoleNodeConfig, EngineError, HttpClientNode, HttpClientNodeConfig, ModbusReadNode,
     ModbusReadNodeConfig, MqttClientNode, MqttClientNodeConfig, MqttMode, NodeCapabilities,
     NodeDispatch, NodeExecution, NodeRegistry, NodeTrait, PinDefinition, PinType,
-    SerialTriggerNode, SerialTriggerNodeConfig, SqlWriterNode, SqlWriterNodeConfig, TimerNode,
-    TimerNodeConfig, WorkflowContext, WorkflowGraph, deploy_workflow, deploy_workflow_with_ai,
-    shared_connection_manager, standard_registry,
+    SerialTriggerNode, SerialTriggerNodeConfig, SqlWriterNode, SqlWriterNodeConfig, StreamChunk,
+    TimerNode, TimerNodeConfig, WorkflowContext, WorkflowGraph, deploy_workflow,
+    deploy_workflow_with_ai, shared_connection_manager, standard_registry,
 };
 use serde_json::json;
 use tokio::time::timeout;
@@ -57,10 +54,6 @@ impl AiService for StubAiService {
         })
     }
 
-    async fn test_connection(&self, _draft: AiProviderDraft) -> Result<AiTestResult, AiError> {
-        panic!("workflow tests should not call test_connection");
-    }
-
     async fn stream_complete(
         &self,
         _request: AiCompletionRequest,
@@ -92,10 +85,6 @@ impl AiService for JsonStubAiService {
             usage: None,
             model: "stub-model".to_owned(),
         })
-    }
-
-    async fn test_connection(&self, _draft: AiProviderDraft) -> Result<AiTestResult, AiError> {
-        panic!("workflow tests should not call test_connection");
     }
 
     async fn stream_complete(

@@ -86,17 +86,35 @@ Plugin 注册入口：`IoPlugin::register(&mut NodeRegistry)`，在 `lib.rs:50` 
 
 ## 依赖约束
 
-- 允许：`nazh-core`、`connections`、`reqwest`、`rumqttc`、`rusqlite`、`tokio-modbus`、`chrono`、`serde_json`、`url`
+- 允许：`nazh-core`、`connections`、`chrono`、`serde_json`、`url`、`tokio`、`uuid`、`tracing`
+- 可选（按 feature 门控，ADR-0018）：`reqwest`、`rumqttc`、`rusqlite`、`tokio-modbus`、`serialport`
 - 协议依赖是本 crate 的**职责所在**，但不能传染：
   - **`nodes-flow` 不能依赖 `nodes-io`**
   - **`nazh-core` / `connections` / `scripting` 都不能依赖本 crate**
-  - 未来（ADR-0018 落地后）协议依赖会按 feature 门控
+
+## Feature 门控（ADR-0018，已实施 2026-04-26）
+
+| Feature | 启用的节点 | 拉入的协议依赖 |
+|---------|------------|----------------|
+| `io-sql` | `sqlWriter` | `rusqlite`（bundled） |
+| `io-http` | `httpClient` | `reqwest` |
+| `io-mqtt` | `mqttClient` | `rumqttc` |
+| `io-modbus` | `modbusRead` | `tokio-modbus` |
+| `io-serial` | `serialTrigger` | `serialport` |
+| `io-notify` | `barkPush` | `reqwest`（与 `io-http` 共享） |
+| **元 feature `io-all`** | 全部以上 | 全部以上 |
+
+永远启用（无 feature 门控）：`timer` / `native` / `debugConsole` + `template` 工具——零额外依赖，任何部署都用得到。
+
+构建建议：
+- **桌面默认**：facade `nazh-engine` 的 `default = ["io-all"]` 自动包全部
+- **嵌入式**：`cargo build -p nazh-engine --no-default-features --features "io-mqtt,io-modbus"` 即可裁剪
 
 ## 修改本 crate 时
 
 | 改动 | 必须同步 |
 |------|----------|
-| 新增 I/O 节点 | 本文件能力表 + `IoPlugin::register` + `src/registry.rs` 契约测试 + `NODE_CATEGORY_MAP`（前端）+ `nodes-io` 触发器（若是 TRIGGER 类）可能需要壳层支持 |
+| 新增 I/O 节点 | 本文件能力表 + `IoPlugin::register`（含 `#[cfg(feature = "io-*")]` 门控）+ `Cargo.toml` 加 io-* feature + 元 feature `io-all` 列入新名 + facade `Cargo.toml` / `src/lib.rs` 转传 + `src/registry.rs` 契约测试 + `NODE_CATEGORY_MAP`（前端）+ 触发器节点可能需要壳层支持 |
 | 改节点能力标签 | 本文件能力表 + 契约测试 |
 | 改元数据键名 | 前端事件显示 + ADR-0008 文档 |
 | 新增模板占位符 | 所有使用模板的节点 config 文档 + `template::tests` |
@@ -113,4 +131,4 @@ cargo test -p nazh-engine --test workflow   # 集成测试
 - **ADR-0008** 节点输出元数据通道
 - **ADR-0011** 节点能力标签
 - **ADR-0009** 生命周期钩子（已实施）—— `TimerNode` / `SerialTriggerNode` / `MqttClientNode` (subscribe 模式) 在 `on_deploy` 中自持触发器后台任务，撤销时通过 `LifecycleGuard::shutdown` 回收。emit 走 `NodeHandle::emit`，不经过壳层 `dispatch_router` 的 trigger lane，因此 backpressure / DLQ / retry / metrics 等防御能力不生效——引擎级背压补回见 ADR-0014 / ADR-0016
-- **（待）ADR-0018** 按协议 feature 门控——将让 `nodes-io` 可按需裁剪
+- **ADR-0018** 按协议 feature 门控 — **已实施**（2026-04-26）。详见上"Feature 门控"小节

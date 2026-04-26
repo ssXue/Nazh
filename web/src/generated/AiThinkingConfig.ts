@@ -2,6 +2,6 @@
 import type { AiThinkingMode } from "./AiThinkingMode";
 
 /**
- * DeepSeek/OpenAI 兼容的思考模式配置。
+ * `DeepSeek/OpenAI` 兼容的思考模式配置。
  */
 export type AiThinkingConfig = { type: AiThinkingMode, };

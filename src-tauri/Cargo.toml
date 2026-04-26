@@ -19,6 +19,8 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+# 桌面壳层走 facade 默认（`default = ["io-all"]`）；嵌入式构建可以在自定义二进制
+# 目标里 `--no-default-features` 单独裁剪。
 nazh-engine = { path = ".." }
 tauri-bindings.workspace = true
 chrono.workspace = true

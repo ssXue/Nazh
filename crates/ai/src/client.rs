@@ -1,38 +1,20 @@
-//! `OpenAI` 兼容 HTTP 客户端实现。
+//! `OpenAI` 兼容 HTTP 客户端：`AiService`（Ring 0）的 reqwest + SSE 实现。
 
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use nazh_core::ai::{
+    AiCompletionRequest, AiCompletionResponse, AiError, AiGenerationParams, AiMessage,
+    AiMessageRole, AiReasoningEffort, AiService, AiThinkingConfig, AiThinkingMode, AiTokenUsage,
+    StreamChunk,
+};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
-use crate::config::{
-    AiConfigFile, AiGenerationParams, AiProviderDraft, AiProviderSecretRecord, AiReasoningEffort,
-    AiThinkingConfig, AiThinkingMode,
-};
-use crate::error::AiError;
-use crate::service::AiService;
-use crate::types::{
-    AiCompletionRequest, AiCompletionResponse, AiMessage, AiMessageRole, AiTestResult, AiTokenUsage,
-};
-
-/// 流式传输的每个 chunk。
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct StreamChunk {
-    /// 本次 chunk 的文本片段。
-    pub delta: String,
-    /// 本次 chunk 的思考过程片段（DeepSeek 等模型的 `reasoning_content`）。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub thinking: Option<String>,
-    /// 提供商返回的结束原因，例如 stop / length。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub finish_reason: Option<String>,
-    /// 是否为最后一个 chunk。
-    pub done: bool,
-}
+use crate::config::{AiConfigFile, AiProviderDraft, AiProviderSecretRecord};
+use crate::types::AiTestResult;
 
 const DEFAULT_TIMEOUT_MS: u64 = 30_000;
 const TEST_MAX_TOKENS: u32 = 1;
@@ -665,8 +647,12 @@ impl AiService for OpenAiCompatibleService {
 
         Ok(rx)
     }
+}
 
-    async fn test_connection(&self, draft: AiProviderDraft) -> Result<AiTestResult, AiError> {
+impl OpenAiCompatibleService {
+    /// 测试提供商连通性。inherent 而非 trait 方法——`AiProviderDraft`
+    /// 是壳层配置类型，不属于 Ring 0 的运行时关注点。
+    pub async fn test_connection(&self, draft: AiProviderDraft) -> Result<AiTestResult, AiError> {
         let provider = self.resolve_draft(&draft).await?;
         if provider.api_key.trim().is_empty() {
             return Err(AiError::InvalidConfig(

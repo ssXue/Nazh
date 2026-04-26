@@ -8,6 +8,7 @@
 //! Tauri IPC 命令的请求/响应类型已迁出至 `tauri-bindings` crate，
 //! `ts-rs` 由 `ts-export` feature 按需启用。详见 ADR-0017。
 
+pub mod ai;
 pub mod context;
 pub mod data;
 pub mod error;
@@ -18,6 +19,11 @@ pub mod node;
 pub mod pin;
 pub mod plugin;
 
+pub use ai::{
+    AiCompletionRequest, AiCompletionResponse, AiError, AiGenerationParams, AiMessage,
+    AiMessageRole, AiReasoningEffort, AiService, AiThinkingConfig, AiThinkingMode, AiTokenUsage,
+    StreamChunk,
+};
 pub use context::{ContextRef, WorkflowContext};
 pub use data::{ArenaDataStore, DataId, DataStore};
 pub use error::EngineError;
@@ -43,8 +49,10 @@ pub use uuid::Uuid;
 #[cfg(feature = "ts-export")]
 pub mod export_bindings {
     use super::{
-        CompletedExecutionEvent, ExecutionEvent, PinDefinition, PinDirection, PinType,
-        WorkflowContext, WorkflowNodeDefinition,
+        AiCompletionRequest, AiCompletionResponse, AiGenerationParams, AiMessage, AiMessageRole,
+        AiReasoningEffort, AiThinkingConfig, AiThinkingMode, AiTokenUsage, CompletedExecutionEvent,
+        ExecutionEvent, PinDefinition, PinDirection, PinType, WorkflowContext,
+        WorkflowNodeDefinition,
     };
     use ts_rs::{ExportError, TS};
 
@@ -57,6 +65,15 @@ pub mod export_bindings {
         PinDirection::export()?;
         PinType::export()?;
         PinDefinition::export()?;
+        AiCompletionRequest::export()?;
+        AiCompletionResponse::export()?;
+        AiMessage::export()?;
+        AiMessageRole::export()?;
+        AiTokenUsage::export()?;
+        AiGenerationParams::export()?;
+        AiThinkingConfig::export()?;
+        AiThinkingMode::export()?;
+        AiReasoningEffort::export()?;
         Ok(())
     }
 }

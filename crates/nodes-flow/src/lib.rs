@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use ai::AiService;
+use nazh_core::ai::AiService;
 use nazh_core::{NodeCapabilities, NodeRegistry, Plugin, PluginManifest};
 
 mod code_node;

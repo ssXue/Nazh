@@ -30,7 +30,7 @@ pipeline = { path = "crates/pipeline" }
 connections = { path = "crates/connections" }
 scripting = { path = "crates/scripting" }
 nodes-flow = { path = "crates/nodes-flow" }
-nodes-io = { path = "crates/nodes-io" }
+nodes-io = { path = "crates/nodes-io", default-features = false }
 tauri-bindings = { path = "crates/tauri-bindings" }
 async-trait = "0.1"
 bitflags = { version = "2", features = ["serde"] }
@@ -85,6 +85,8 @@ pipeline.workspace = true
 connections.workspace = true
 scripting.workspace = true
 nodes-flow.workspace = true
+# nodes-io 的协议 features 由 facade 重新导出（ADR-0018）。workspace dep 已经
+# `default-features = false`；桌面默认通过 facade 的 io-all 元 feature 打开。
 nodes-io.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -93,7 +95,10 @@ tracing.workspace = true
 ts-rs = { workspace = true, optional = true }
 
 [features]
-default = []
+# 桌面默认启用全部 IO 协议节点；嵌入式 / 边缘构建可：
+#   `cargo build -p nazh-engine --no-default-features --features "io-mqtt,io-modbus"`
+default = ["io-all"]
+
 # ts-rs 类型导出。生产构建不启用，由 tauri-bindings 在 CI 中触发。
 ts-export = [
     "dep:ts-rs",
@@ -101,6 +106,18 @@ ts-export = [
     "connections/ts-export",
     "ai/ts-export",
 ]
+
+# ADR-0018：把 nodes-io 的 IO feature 提升到 facade 层，便于上游（src-tauri /
+# 第三方应用）按需裁剪。**注意**：facade 自身也用 `#[cfg(feature = "io-*")]`
+# 控制 protocol 节点的 re-export，因此 io-all 必须展开到每个 io-* 上，而不能
+# 只委托给 nodes-io/io-all——后者只激活 nodes-io 内部的 cfg，对 facade 无效。
+io-all = ["io-sql", "io-http", "io-mqtt", "io-modbus", "io-serial", "io-notify"]
+io-sql = ["nodes-io/io-sql"]
+io-http = ["nodes-io/io-http"]
+io-mqtt = ["nodes-io/io-mqtt"]
+io-modbus = ["nodes-io/io-modbus"]
+io-serial = ["nodes-io/io-serial"]
+io-notify = ["nodes-io/io-notify"]
 
 [dev-dependencies]
 async-trait.workspace = true

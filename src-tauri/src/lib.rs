@@ -11,13 +11,13 @@
 mod observability;
 
 use ai::{
-    AiCompletionRequest, AiCompletionResponse, AiConfigFile, AiConfigUpdate, AiConfigView,
-    AiProviderDraft, AiService, AiTestResult, OpenAiCompatibleService,
+    AiConfigFile, AiConfigUpdate, AiConfigView, AiProviderDraft, AiTestResult,
+    OpenAiCompatibleService,
 };
 use nazh_engine::{
-    ConnectionDefinition, ConnectionRecord, EngineError, ExecutionEvent, WorkflowContext,
-    WorkflowGraph, WorkflowIngress, deploy_workflow_with_ai as deploy_workflow_graph,
-    shared_connection_manager, standard_registry,
+    AiCompletionRequest, AiCompletionResponse, AiService, ConnectionDefinition, ConnectionRecord,
+    EngineError, ExecutionEvent, WorkflowContext, WorkflowGraph, WorkflowIngress,
+    deploy_workflow_with_ai as deploy_workflow_graph, shared_connection_manager, standard_registry,
 };
 use observability::{
     ObservabilityContextInput, ObservabilityQueryResult, ObservabilityStore,
@@ -533,12 +533,17 @@ impl DesktopWorkflow {
 }
 
 /// Tauri 托管的应用状态，持有连接池和当前活跃的工作流。
+///
+/// `ai_service` 持有具体类型（`Arc<OpenAiCompatibleService>`）而非 `dyn AiService`，
+/// 因为壳层除了 trait 方法外还要调用 inherent 的 `test_connection`（草稿配置
+/// 测试不属于 Ring 0 运行时关注点）。注入到引擎部署时会自动 unsize 到
+/// `Arc<dyn AiService>`。
 struct DesktopState {
     connection_manager: nazh_engine::SharedConnectionManager,
     workflows: Mutex<HashMap<String, DesktopWorkflow>>,
     active_workflow_id: Mutex<Option<String>>,
     ai_config: Arc<RwLock<AiConfigFile>>,
-    ai_service: Arc<dyn AiService>,
+    ai_service: Arc<OpenAiCompatibleService>,
 }
 
 impl Default for DesktopState {
@@ -918,10 +923,11 @@ async fn deploy_workflow(
     let node_count = graph.nodes.len();
     let edge_count = graph.edges.len();
     let registry = standard_registry();
+    let ai_service: Arc<dyn AiService> = state.ai_service.clone();
     let deployment = match deploy_workflow_graph(
         graph,
         state.connection_manager.clone(),
-        Some(Arc::clone(&state.ai_service)),
+        Some(ai_service),
         &registry,
     )
     .await

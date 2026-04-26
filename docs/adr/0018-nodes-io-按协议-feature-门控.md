@@ -1,9 +1,17 @@
 # ADR-0018: `nodes-io` 按协议拆分 cargo features
 
-- **状态**: 提议中
+- **状态**: 已实施（2026-04-26）
 - **日期**: 2026-04-24
 - **决策者**: Niu Zhihong
 - **关联**: 回溯评估 Phase 4（`7e7d5af`）的 `nodes-io` 单体打包策略；与 RFC-0002 的 "constrained edge device" 目标一致
+
+> **实施备注（2026-04-26）**：
+> - feature 名按拟议落地（`io-sql` / `io-http` / `io-mqtt` / `io-modbus` / `io-serial` / `io-notify`），加上元 feature `io-all`。
+> - **永远启用**的节点（`debugConsole` / `native` / `timer` + `template` 工具）落地时未单独包 `io-minimal` feature——三件套就是无条件编译，元 feature 多余。ADR 中"`io-minimal = ["io-debug","io-native","io-timer"]`"取消，改为空 feature 占位（保留命名以便未来扩展）。
+> - facade（`nazh-engine`）把每个 `io-*` 重新导出，**展开为 facade 自己的特性**，而不是只委托给 `nodes-io/io-all`——facade 也有 `#[cfg(feature = "io-*")]` 的 re-export 需要门控。
+> - 工作流默认编译产物零回归（`cargo test --workspace` / `cargo build` 全开）。
+> - 边缘构建示例：`cargo build -p nazh-engine --no-default-features --features "io-mqtt,io-modbus"` 已验证 `nodes-io` 内部不会拉入 `reqwest` / `rusqlite` / `serialport`。
+> - **已知局限**：`ai` crate（提供 `OpenAiCompatibleService`）仍**无条件**依赖 `reqwest`，并被 `nazh-engine` facade 无条件依赖。因此即使关闭 `io-http` / `io-notify`，最终二进制里仍含 `reqwest` + `rustls`。要彻底去掉 HTTP 栈，需后续把 `ai` crate 也做成 facade 层 optional dep（例如新增 facade feature `ai-openai`，默认开启，边缘可关闭），由独立 follow-up plan 推进。
 
 ## 背景
 

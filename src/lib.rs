@@ -22,11 +22,13 @@ pub mod graph;
 mod registry;
 
 pub use nazh_core::{
+    AiCompletionRequest, AiCompletionResponse, AiError, AiGenerationParams, AiMessage,
+    AiMessageRole, AiReasoningEffort, AiService, AiThinkingConfig, AiThinkingMode, AiTokenUsage,
     ArenaDataStore, CancellationToken, CompletedExecutionEvent, ContextRef, DataId, DataStore,
     EngineError, ExecutionEvent, LifecycleGuard, NodeCapabilities, NodeDispatch, NodeExecution,
     NodeHandle, NodeLifecycleContext, NodeOutput, NodeRegistry, NodeTrait, PinDefinition,
     PinDirection, PinType, Plugin, PluginHost, PluginManifest, RuntimeResources, SharedResources,
-    WorkflowContext, WorkflowNodeDefinition, into_payload_map,
+    StreamChunk, WorkflowContext, WorkflowNodeDefinition, into_payload_map,
 };
 
 pub use connections::{
@@ -43,11 +45,22 @@ pub use nodes_flow::{
 };
 
 pub use nodes_io::{
-    BarkPushNode, BarkPushNodeConfig, DebugConsoleNode, DebugConsoleNodeConfig, HttpClientNode,
-    HttpClientNodeConfig, IoPlugin, ModbusReadNode, ModbusReadNodeConfig, MqttClientNode,
-    MqttClientNodeConfig, MqttMode, NativeNode, NativeNodeConfig, SerialTriggerNode,
-    SerialTriggerNodeConfig, SqlWriterNode, SqlWriterNodeConfig, TimerNode, TimerNodeConfig,
+    DebugConsoleNode, DebugConsoleNodeConfig, IoPlugin, NativeNode, NativeNodeConfig, TimerNode,
+    TimerNodeConfig,
 };
+
+#[cfg(feature = "io-notify")]
+pub use nodes_io::{BarkPushNode, BarkPushNodeConfig};
+#[cfg(feature = "io-http")]
+pub use nodes_io::{HttpClientNode, HttpClientNodeConfig};
+#[cfg(feature = "io-modbus")]
+pub use nodes_io::{ModbusReadNode, ModbusReadNodeConfig};
+#[cfg(feature = "io-mqtt")]
+pub use nodes_io::{MqttClientNode, MqttClientNodeConfig, MqttMode};
+#[cfg(feature = "io-serial")]
+pub use nodes_io::{SerialTriggerNode, SerialTriggerNodeConfig};
+#[cfg(feature = "io-sql")]
+pub use nodes_io::{SqlWriterNode, SqlWriterNodeConfig};
 
 pub use graph::{
     WorkflowDeployment, WorkflowDeploymentParts, WorkflowGraph, WorkflowIngress, WorkflowStreams,
