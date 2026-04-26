@@ -38,6 +38,7 @@ crates/core/src/
 关键类型：
 - `NodeTrait` — `src/node.rs`（`transform` + `on_deploy` 默认实现）
 - `LifecycleGuard` / `NodeHandle` / `NodeLifecycleContext` — `src/lifecycle.rs`
+- `sleep_or_cancel` (async) / `blocking_sleep_or_cancel` (sync) — `src/lifecycle.rs`，`on_deploy` 后台任务用的退避 sleep
 - `NodeCapabilities` bitflags — `src/node.rs`
 - `NodeRegistry::{register_with_capabilities, capabilities_of}` — `src/plugin.rs`
 - `DataStore` trait — `src/data.rs`

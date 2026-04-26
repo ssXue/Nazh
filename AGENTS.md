@@ -143,7 +143,7 @@ These principles guide day-to-day decisions. When in doubt, reach for the princi
 1. **ADR-driven architecture evolution.** Non-trivial architecture changes go through an ADR (`docs/adr/NNNN-title.md`). Existing code changes that embody a decision should be recorded retrospectively (e.g. ADR-0008 documents the metadata separation that landed before the ADR existed). "Evaluation ADRs" (like ADR-0020) record *decisions not to act*, with trigger conditions.
 2. **Control plane vs data plane separation.** Payload (business data) flows through `DataStore` + `ContextRef`. Metadata (observability, provenance) flows through `ExecutionEvent`. Configuration (setpoints, thresholds, shared state) will flow through `WorkflowVariables` (ADR-0012, pending). These planes do not cross-contaminate.
 3. **Ring purity.** Ring 0 stays free of protocol-specific dependencies. Ring 1 crates depend on Ring 0 and may compose horizontally, but should avoid creating cross-Ring-1 fan-out cycles. Prefer **trait abstraction + dependency injection** over direct imports when coupling Ring 1 crates (ADR-0019 proposes this for AI).
-4. **RAII for resources.** Connections, lifecycle guards, and future resource holders use Drop-based cleanup, never explicit `close()` / `release()` call pairs. Example: `ConnectionGuard` today; `LifecycleGuard` pending in ADR-0009.
+4. **RAII for resources.** Connections, lifecycle guards, and future resource holders use Drop-based cleanup, never explicit `close()` / `release()` call pairs. Examples: `ConnectionGuard`（连接借出）、`LifecycleGuard`（节点后台任务，ADR-0009）。
 5. **Plugin-first node registration.** Adding a node means implementing `NodeTrait` in a Ring 1 crate and registering via `Plugin::register(&mut NodeRegistry)`. Do not hardcode node types in the engine or facade. `standard_registry()` in `src/lib.rs` loads the baseline set (`FlowPlugin`, `IoPlugin`) — other plugins can be added to compose custom deployments.
 6. **Fast fail, loud logs.** Deploy-time validation (DAG, types, configs) is cheap and should happen before any node runs. Runtime failures emit `ExecutionEvent::Failed` with `trace_id`, `stage`, and structured error via `tracing::error!`. Silent drops are bugs.
 7. **AI is a first-class capability, not a bolt-on.** `ai` crate provides `AiService` trait + OpenAI-compatible client. Scripts call `ai_complete()`. The `code` node has built-in AI generation. Future AI providers (Anthropic native, local Llama, Qwen) should implement `AiService`, not replace the call site.
@@ -353,7 +353,7 @@ Located in `docs/superpowers/plans/` and `docs/superpowers/specs/`. These are **
 - ADR-0010 / ADR-0012 ~ ADR-0016 / ADR-0018 ~ ADR-0020 — **proposed**, awaiting review. See `docs/adr/README.md` for the index.
 
 **Immediate known tech debt:**
-- ~~MQTT subscriber / Timer / Serial root lifecycle is owned by the Tauri shell.~~ **已偿还（2026-04-26，ADR-0009 已实施）**。三类触发器节点现自持 `on_deploy` + `LifecycleGuard`；壳层 `src-tauri/src/lib.rs` 由 3609 行降至 2584 行。**语义变化**：触发器节点走 `NodeHandle::emit` 而非 `dispatch_router` 的 trigger lane，失去 backpressure / DLQ / retry / metrics 防御能力，等 ADR-0014 / ADR-0016 引擎级背压能力补回。
+- ~~MQTT subscriber / Timer / Serial root lifecycle is owned by the Tauri shell.~~ **已偿还（2026-04-26，ADR-0009 已实施）**。三类触发器节点现自持 `on_deploy` + `LifecycleGuard`；壳层 `src-tauri/src/lib.rs` 由 3609 行降至 2498 行（约 -31%）。**语义变化**：触发器节点走 `NodeHandle::emit` 而非 `dispatch_router` 的 trigger lane，失去 backpressure / DLQ / retry / metrics 防御能力，等 ADR-0014 / ADR-0016 引擎级背压能力补回。
 - ~~IPC response types in `crates/core/` contradict Ring 0 purity. ADR-0017 plans to extract `crates/tauri-bindings/`.~~ **已偿还（2026-04-24，ADR-0017 已实施）**
 - ~~`cargo clippy --workspace --all-targets -- -D warnings` 在 `src-tauri` 与 observability 上失败~~ **已偿还（2026-04-26，见 `docs/superpowers/plans/2026-04-25-cargo-clippy-workspace-fixes.md`）**。`crates/nodes-io/src/http_client.rs` / `bark_push.rs` 的 `too_many_lines` 现以 `#[allow]` 抑制（同上）。
 
@@ -361,7 +361,7 @@ Located in `docs/superpowers/plans/` and `docs/superpowers/specs/`. These are **
 
 > 0. ✅ **ADR-0017** IPC + ts-rs 迁出 Ring 0 — 已实施（独立支线，crate 卫生）
 > 1. ✅ **ADR-0011** 节点能力标签 — 已实施（首发第一阶段：`NodeTrait::capabilities()`、`NodeRegistry::register_with_capabilities`、IPC `NodeTypeEntry.capabilities` 透传、前端 badges；Runner 侧 `spawn_blocking` / 缓存等调度决策按 ADR 后续阶段推进）
-> 2. ✅ **ADR-0009** 生命周期钩子（`on_deploy` + `LifecycleGuard`）— **已实施**（2026-04-26，Ring 0 lifecycle 模块 + Runner 两阶段部署 + Timer/Serial/MQTT 三类节点迁回；壳层 `src-tauri/src/lib.rs` -1025 行）
+> 2. ✅ **ADR-0009** 生命周期钩子（`on_deploy` + `LifecycleGuard`）— **已实施**（2026-04-26，Ring 0 lifecycle 模块 + Runner 两阶段部署 + Timer/Serial/MQTT 三类节点迁回；壳层 `src-tauri/src/lib.rs` 由 3609 → 2498 行）
 > 3. **ADR-0010** Pin 声明系统 — 是 0012/0013/0014/0015 的共同基础，**不要先做后续四条**
 > 4. **ADR-0018 / ADR-0019**（独立支线）— `nodes-io` 协议 feature 门控 / AI 依赖反转，可任意时候穿插
 > 5. **ADR-0012** 工作流变量（依赖 0009 + 0010）
