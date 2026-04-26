@@ -73,6 +73,27 @@ Plugin 注册入口：`IoPlugin::register(&mut NodeRegistry)`，在 `lib.rs:50` 
 所有节点通过 `NodeExecution::with_metadata()` 返回执行元数据，键名非下划线：
 `"timer"`、`"http"`、`"modbus"`、`"serial"`、`"sql_writer"`、`"debug_console"`、`"connection"`、`"bark"`、`"mqtt"`。payload 只保留 `_loop` / `_error` 等路由上下文。
 
+### Pin 声明（ADR-0010 Phase 3）
+
+四个协议节点在 Phase 3 落地具体 pin 类型；其余节点保留 trait 默认（单 `Any` 进、单 `Any` 出）：
+
+| 节点 | mode | input | output | 备注 |
+|------|------|-------|--------|------|
+| `modbusRead` | — | `Any` | `Json` | 常作根节点或被 `timer` 触发，input 形状不重要 |
+| `sqlWriter` | — | `Json` (required) | `Any` | 纯 sink；payload 必须有列结构 |
+| `httpClient` | — | `Json` (required) | `Json` | body / template / 钉钉三种 mode 都期待 JSON 对象输入 |
+| `mqttClient` | publish | `Json` (required) | `Any` | 实例方法按 `self.config.mode` 切换 pin 类型 |
+| `mqttClient` | subscribe | `Any` | `Json` | subscribe 由 `on_deploy` 触发；transform 仅手动 dispatch |
+| `timer` / `serialTrigger` / `native` / `barkPush` / `debugConsole` / `template` | — | `Any` | `Any` | 触发器 / 透传 / 格式化类节点保留默认 |
+
+**修改 pin 声明时必须同步：**
+- 节点 `input_pins(&self)` / `output_pins(&self)` 实现
+- 节点 inline `#[cfg(test)] mod tests` 中的 pin 形状断言
+- 本表格
+- 兼容矩阵 fixture（`tests/fixtures/pin_compat_matrix.jsonc`）：若引入新 `PinType` 变体，至少补 3 条配对（自反 / `Any` 双向 / 与至少一类不兼容）。`crates/core/tests/pin_compat_contract.rs` 的覆盖纪律测试会拒绝新变体没条目的 PR
+
+**关于 `Custom` 类型推迟到未来 Phase**：Phase 3 故意不引入 `Custom("modbus-register")` / `Custom("sql-row")` 等命名类型。理由是若引入则常见链路（`modbusRead → sqlWriter`）会被部署期校验拒，等于"消费者孤岛"。Custom 推迟到未来配套生产者节点（如 row-formatter）一并引入。
+
 ### 阻塞 API 的处理
 
 - `rusqlite` 是**同步** API。`sqlWriter` 在节点内部 `tokio::task::spawn_blocking` 包装，对外是 async-friendly。
@@ -116,6 +137,7 @@ Plugin 注册入口：`IoPlugin::register(&mut NodeRegistry)`，在 `lib.rs:50` 
 |------|----------|
 | 新增 I/O 节点 | 本文件能力表 + `IoPlugin::register`（含 `#[cfg(feature = "io-*")]` 门控）+ `Cargo.toml` 加 io-* feature + 元 feature `io-all` 列入新名 + facade `Cargo.toml` / `src/lib.rs` 转传 + `src/registry.rs` 契约测试 + `NODE_CATEGORY_MAP`（前端）+ 触发器节点可能需要壳层支持 |
 | 改节点能力标签 | 本文件能力表 + 契约测试 |
+| 改节点 pin 类型 | 节点 `input_pins`/`output_pins` 实现 + 节点 inline pin 形状测试 + 本文件 Pin 声明表 + 兼容矩阵 fixture（若涉及新 `PinType` 变体）+ 反向兼容性集成测试断言（若改的是协议节点） |
 | 改元数据键名 | 前端事件显示 + ADR-0008 文档 |
 | 新增模板占位符 | 所有使用模板的节点 config 文档 + `template::tests` |
 
@@ -132,3 +154,4 @@ cargo test -p nazh-engine --test workflow   # 集成测试
 - **ADR-0011** 节点能力标签
 - **ADR-0009** 生命周期钩子（已实施）—— `TimerNode` / `SerialTriggerNode` / `MqttClientNode` (subscribe 模式) 在 `on_deploy` 中自持触发器后台任务，撤销时通过 `LifecycleGuard::shutdown` 回收。emit 走 `NodeHandle::emit`，不经过壳层 `dispatch_router` 的 trigger lane，因此 backpressure / DLQ / retry / metrics 等防御能力不生效——引擎级背压补回见 ADR-0014 / ADR-0016
 - **ADR-0018** 按协议 feature 门控 — **已实施**（2026-04-26）。详见上"Feature 门控"小节
+- **ADR-0010 Phase 3** Pin 声明系统 — **已实施**（2026-04-26）。详见上"Pin 声明（ADR-0010 Phase 3）"小节。前端可视化（Phase 2）独立 plan 启动后跟进
