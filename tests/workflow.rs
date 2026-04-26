@@ -1705,3 +1705,105 @@ async fn deploy_拒绝引用未声明_pin_id_的边() {
         Err(error) => panic!("应报 UnknownPin，实际: {error}"),
     }
 }
+
+// ========== ADR-0010 Phase 3 反向兼容性集成测试 ==========
+//
+// Phase 3 把 4 个协议节点的 pin 类型从 Any 收紧到 Json。本节验证：
+// (a) 收紧后真实链路（timer → modbusRead → sqlWriter）仍能正常 deploy
+// (b) 不兼容上游（Bool 输出）连到收紧的 sqlWriter（Json 输入）会被拒
+//
+// (b) 是 Phase 3 的关键证据——证明 pin 系统的拒收路径不仅"机制存在"，
+// 而且在真实节点上能被触发。当前所有标准节点输出都是 Any 或 Json，
+// 无法直接构造 Bool 输出，所以借用 TypedTestNode 作为 stub 源。
+
+#[tokio::test]
+async fn pin_phase3_modbus_到_sql_链路_部署通过() {
+    // 类型链：timer(Any out) → modbusRead(Any in / Json out) → sqlWriter(Json in / Any out)
+    // 兼容性：Any → Any（timer → modbus）+ Json → Json（modbus → sql）
+    let graph = match WorkflowGraph::from_json(
+        &json!({
+            "nodes": {
+                "tick":   { "type": "timer",      "config": { "interval_ms": 60000 } },
+                "modbus": { "type": "modbusRead", "config": {} },
+                "sql":    { "type": "sqlWriter",  "config": { "table": "phase3_pin_test" } },
+            },
+            "edges": [
+                { "from": "tick",   "to": "modbus" },
+                { "from": "modbus", "to": "sql" },
+            ],
+        })
+        .to_string(),
+    ) {
+        Ok(graph) => graph,
+        Err(error) => panic!("graph JSON should parse: {error}"),
+    };
+
+    let registry = standard_registry();
+    let deployment = match deploy_workflow(graph, shared_connection_manager(), &registry).await {
+        Ok(deployment) => deployment,
+        Err(error) => panic!(
+            "Phase 3 收紧后的 modbus → sql 链路应能 deploy：{error}\n\
+             如果报 IncompatiblePinTypes，意味着 pin 类型设计有问题——\n\
+             modbusRead.out (Json) 与 sqlWriter.in (Json) 应当兼容。"
+        ),
+    };
+    drop(deployment); // 显式 drop 触发 LifecycleGuard 清理（timer 后台任务）
+}
+
+#[tokio::test]
+async fn pin_phase3_bool_源_到_sql_writer_部署被拒() {
+    // 用 TypedTestNode（输出 Bool）连到真实 SqlWriterNode（input Json）。
+    // 期望：deploy 期 pin_validator 在阶段 0.5 拒收，错误包含 Bool 与 Json 字样。
+
+    let mut registry = standard_registry();
+
+    // 注册一个 boolSource 节点类型：输出 Bool
+    registry.register_with_capabilities("boolSource", NodeCapabilities::empty(), |def, _res| {
+        Ok(Arc::new(TypedTestNode {
+            id: def.id().to_owned(),
+            input_pin: PinType::Any,
+            output_pin: PinType::Bool,
+        }) as Arc<dyn NodeTrait>)
+    });
+
+    let graph = match WorkflowGraph::from_json(
+        &json!({
+            "nodes": {
+                "src": { "type": "boolSource", "config": {} },
+                "sql": { "type": "sqlWriter",  "config": { "table": "phase3_pin_test" } },
+            },
+            "edges": [{ "from": "src", "to": "sql" }],
+        })
+        .to_string(),
+    ) {
+        Ok(graph) => graph,
+        Err(error) => panic!("graph JSON should parse: {error}"),
+    };
+
+    let result = deploy_workflow(graph, shared_connection_manager(), &registry).await;
+    match result {
+        Ok(_) => panic!("Bool → Json 不兼容应被 pin 校验器拒绝"),
+        Err(EngineError::IncompatiblePinTypes {
+            from,
+            to,
+            from_type,
+            to_type,
+        }) => {
+            assert_eq!(from, "src.out", "from 字段应为 src.out");
+            assert_eq!(to, "sql.in", "to 字段应为 sql.in");
+            assert!(
+                from_type.contains("Bool"),
+                "from_type 应含 Bool，实际: {from_type}"
+            );
+            assert!(
+                to_type.contains("Json"),
+                "to_type 应含 Json（sqlWriter Phase 3 收紧后），实际: {to_type}"
+            );
+        }
+        Err(error) => panic!(
+            "应报 IncompatiblePinTypes，实际: {error}\n\
+             如果报别的错误（如 UnknownPin），意味着 sqlWriter 的 input pin 声明被回退了——\n\
+             检查 crates/nodes-io/src/sql_writer.rs 的 input_pins 实现。"
+        ),
+    }
+}
