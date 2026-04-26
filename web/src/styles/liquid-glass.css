@@ -130,6 +130,13 @@ button:hover {
   border-right: 0;
   box-shadow: none;
   overflow: visible;
+  transition: transform 260ms ease, opacity 260ms ease;
+}
+
+.studio-nav-sidebar.is-collapsed {
+  transform: translateX(calc(-100% - 24px));
+  opacity: 0;
+  pointer-events: none;
 }
 
 .studio-navrail {

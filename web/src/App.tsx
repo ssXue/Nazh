@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useAiConfigState } from './hooks/use-ai-config-state';
 import { useAiWorkflowComposerState } from './hooks/use-ai-workflow-composer-state';
@@ -12,6 +12,7 @@ import { useWorkflowEngine } from './hooks/use-workflow-engine';
 import { useConnectionLibrary } from './hooks/use-connection-library';
 
 import { AiWorkflowComposer } from './components/app/AiWorkflowComposer';
+import { SidebarToggleIcon } from './components/app/AppIcons';
 import type { BoardWorkspaceHandle } from './components/app/BoardWorkspace';
 import type { BoardItem } from './components/app/BoardsPanel';
 import { RestoreDeploymentDialog } from './components/app/RestoreDeploymentDialog';
@@ -163,6 +164,8 @@ function App() {
     projects: projectLibrary.projects,
     startupPage: settings.startupPage,
   });
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const toggleSidebarCollapsed = useCallback(() => setSidebarCollapsed((prev) => !prev), []);
   const currentProject = activeProject ?? projectLibrary.projects[0] ?? null;
   const connectionUsageById = useMemo(
     () => buildConnectionUsageMap(projectLibrary.projects),
@@ -506,7 +509,16 @@ function App() {
   return (
     <main className="app-shell app-shell--studio">
       <section className="studio-frame">
-        <aside className="studio-nav-sidebar">
+        <button
+          type="button"
+          className="studio-nav-toggle"
+          aria-label={sidebarCollapsed ? '打开导航' : '收起导航'}
+          title={sidebarCollapsed ? '打开导航栏' : '收起导航栏'}
+          onClick={toggleSidebarCollapsed}
+        >
+          <SidebarToggleIcon />
+        </button>
+        <aside className={`studio-nav-sidebar${sidebarCollapsed ? ' is-collapsed' : ''}`}>
           <SidebarNav
             activeSection={sidebarSection}
             sections={sidebarSections}
@@ -518,6 +530,8 @@ function App() {
             workflowStatusPillClass={workflowStatusPillClass}
             themeMode={settings.themeMode}
             onToggleTheme={settings.toggleTheme}
+            isCollapsed={sidebarCollapsed}
+            onToggleCollapsed={toggleSidebarCollapsed}
           />
         </aside>
 

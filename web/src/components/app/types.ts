@@ -44,6 +44,8 @@ export interface SidebarNavProps {
   workflowStatusPillClass: string;
   themeMode: ThemeMode;
   onToggleTheme: () => void;
+  isCollapsed: boolean;
+  onToggleCollapsed: () => void;
 }
 
 export interface PayloadPanelProps {

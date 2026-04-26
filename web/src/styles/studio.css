@@ -37,7 +37,9 @@ html.is-tauri-runtime .studio-frame {
   isolation: isolate;
   transition:
     background-color 220ms ease,
-    box-shadow 220ms ease;
+    box-shadow 220ms ease,
+    transform 260ms ease,
+    opacity 260ms ease;
 }
 
 .studio-navrail {
@@ -66,6 +68,81 @@ html.is-tauri-runtime .studio-nav-safe-region {
   height: calc(var(--window-safe-top) + 10px);
   flex: 0 0 calc(var(--window-safe-top) + 10px);
   margin: 0 0 6px;
+}
+
+.studio-nav-toggle {
+  position: absolute;
+  top: 14px;
+  left: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  height: auto;
+  padding: 4px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--toolbar-text, #6e6e73);
+  cursor: pointer;
+  z-index: calc(var(--z-nav) + 2);
+  transition: color 160ms ease, opacity 160ms ease;
+  box-shadow: none;
+}
+
+html.is-tauri-runtime .studio-nav-toggle {
+  top: 20px;
+  left: 80px;
+}
+
+.studio-nav-toggle svg {
+  width: 20px;
+  height: 20px;
+}
+
+.studio-nav-toggle:hover {
+  color: var(--text);
+  background: var(--nav-hover-surface, rgba(0, 0, 0, 0.08));
+  border-radius: 6px;
+  box-shadow: none;
+  transform: none;
+  transition: none;
+}
+
+.studio-nav-toggle:active {
+  opacity: 0.7;
+}
+
+html.is-tauri-runtime .studio-nav-toggle {
+  top: 10px;
+  left: 90px;
+}
+
+.studio-nav-toggle svg {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  stroke: currentColor;
+  opacity: 1;
+}
+
+.studio-nav-toggle:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--toolbar-bg, rgba(0,0,0,0.08)) 140%, transparent);
+}
+
+.studio-nav-toggle:active {
+  opacity: 0.7;
+}
+
+.studio-nav-toggle:active {
+  opacity: 0.7;
+}
+
+.studio-nav-sidebar.is-collapsed {
+  transform: translateX(calc(-100% - 16px));
+  opacity: 0;
+  pointer-events: none;
 }
 
 .studio-navrail__header {

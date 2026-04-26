@@ -49,6 +49,8 @@ export function SidebarNav({
   workflowStatusPillClass,
   themeMode,
   onToggleTheme,
+  isCollapsed: _isCollapsed,
+  onToggleCollapsed: _onToggleCollapsed,
 }: SidebarNavProps) {
   const isDarkMode = themeMode === 'dark';
   const groupsRef = useScrollEdgeEffect<HTMLDivElement>();

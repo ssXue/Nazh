@@ -708,8 +708,15 @@
 .flowgram-floating-panel--node {
   margin-left: auto;
   margin-right: 0;
+  margin-top: var(--flowgram-floating-top-offset, 74px);
   width: min(332px, calc(100vw - 48px));
   max-width: 332px;
+  height: calc(100% - var(--flowgram-floating-top-offset, 74px));
+  background: rgb(255, 255, 255);
+}
+
+html[data-theme='dark'] .flowgram-floating-panel--node {
+  background: rgb(28, 32, 40);
 }
 
 .gedit-flow-panel-layer {

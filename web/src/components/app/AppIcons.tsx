@@ -769,6 +769,18 @@ export function ResetIcon(props: IconProps) {
   );
 }
 
+export function SidebarToggleIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <rect x="3.5" y="5" width="17" height="14" rx="2.4" />
+      <path d="M9.5 5v14" />
+      <path d="M6 9h1" />
+      <path d="M6 12h1" />
+      <path d="M6 15h1" />
+    </BaseIcon>
+  );
+}
+
 export function XCloseIcon(props: IconProps) {
   return (
     <BaseIcon {...props}>
