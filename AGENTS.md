@@ -345,22 +345,23 @@ Located in `docs/superpowers/plans/` and `docs/superpowers/specs/`. These are **
 
 **Phases 1-5 complete** (crate extraction, DataStore, ConnectionGuard, Ring 1 split, Plugin system). See `docs/rfcs/0002-分层内核与插件架构.md`.
 
-**Current batch of ADRs** (2026-04-17 to 2026-04-24):
+**Current batch of ADRs** (2026-04-17 to 2026-04-26):
 - ADR-0008 (metadata separation) — **accepted / landed**
 - ADR-0017 (IPC + ts-rs 迁出 Ring 0) — **已实施**（2026-04-24，见 `crates/tauri-bindings/`）
 - ADR-0011 (节点能力标签 `NodeCapabilities`) — **已实施**（2026-04-24，位图落在 `crates/core/src/node.rs`，前端常量表 `web/src/lib/node-capabilities.ts`）
-- ADR-0009 / ADR-0010 / ADR-0012 ~ ADR-0016 / ADR-0018 ~ ADR-0020 — **proposed**, awaiting review. See `docs/adr/README.md` for the index.
+- ADR-0009 (节点生命周期钩子) — **已接受 / 实施中**（2026-04-26 启动，实施计划见 `docs/superpowers/plans/2026-04-26-node-lifecycle-hooks.md`）
+- ADR-0010 / ADR-0012 ~ ADR-0016 / ADR-0018 ~ ADR-0020 — **proposed**, awaiting review. See `docs/adr/README.md` for the index.
 
 **Immediate known tech debt:**
-- MQTT subscriber / Timer / Serial root lifecycle is owned by the Tauri shell (`src-tauri/src/lib.rs:2499-2740+`). ADR-0009 plans to migrate this into engine-level `on_deploy` hooks.
+- MQTT subscriber / Timer / Serial root lifecycle is owned by the Tauri shell (`src-tauri/src/lib.rs:2484-3110` 共 ~626 行)。ADR-0009 已接受、实施进行中——见 `docs/superpowers/plans/2026-04-26-node-lifecycle-hooks.md`。
 - ~~IPC response types in `crates/core/` contradict Ring 0 purity. ADR-0017 plans to extract `crates/tauri-bindings/`.~~ **已偿还（2026-04-24，ADR-0017 已实施）**
-- Known clippy warnings in `crates/nodes-io/src/http_client.rs` and `bark_push.rs` (`too_many_lines`, `collapsible_if`) — pre-existing, to be addressed in a dedicated cleanup PR.
+- ~~`cargo clippy --workspace --all-targets -- -D warnings` 在 `src-tauri` 与 observability 上失败~~ **已偿还（2026-04-26，见 `docs/superpowers/plans/2026-04-25-cargo-clippy-workspace-fixes.md`）**。`crates/nodes-io/src/http_client.rs` / `bark_push.rs` 的 `too_many_lines` 现以 `#[allow]` 抑制（同上）。
 
 **ADR Execution Order**（2026-04-24 共识，依赖与独立性已分析过）：
 
 > 0. ✅ **ADR-0017** IPC + ts-rs 迁出 Ring 0 — 已实施（独立支线，crate 卫生）
 > 1. ✅ **ADR-0011** 节点能力标签 — 已实施（首发第一阶段：`NodeTrait::capabilities()`、`NodeRegistry::register_with_capabilities`、IPC `NodeTypeEntry.capabilities` 透传、前端 badges；Runner 侧 `spawn_blocking` / 缓存等调度决策按 ADR 后续阶段推进）
-> 2. **ADR-0009** 生命周期钩子（`on_deploy` + `LifecycleGuard`）— 偿还 MQTT/Timer/Serial 壳层债务，为真实协议驱动铺路
+> 2. 🟡 **ADR-0009** 生命周期钩子（`on_deploy` + `LifecycleGuard`）— **已接受 / 实施中**（2026-04-26 启动；偿还 MQTT/Timer/Serial 壳层债务，为真实协议驱动铺路；计划见 `docs/superpowers/plans/2026-04-26-node-lifecycle-hooks.md`）
 > 3. **ADR-0010** Pin 声明系统 — 是 0012/0013/0014/0015 的共同基础，**不要先做后续四条**
 > 4. **ADR-0018 / ADR-0019**（独立支线）— `nodes-io` 协议 feature 门控 / AI 依赖反转，可任意时候穿插
 > 5. **ADR-0012** 工作流变量（依赖 0009 + 0010）
