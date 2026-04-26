@@ -10,7 +10,9 @@ use serde_json::{Map, Value, json};
 use uuid::Uuid;
 
 use connections::{SharedConnectionManager, connection_metadata};
-use nazh_core::{EngineError, NodeExecution, NodeTrait, into_payload_map};
+use nazh_core::{
+    EngineError, NodeExecution, NodeTrait, PinDefinition, PinDirection, PinType, into_payload_map,
+};
 use tokio_modbus::client::Reader;
 
 fn default_modbus_unit_id() -> u16 {
@@ -277,6 +279,22 @@ impl ModbusReadNode {
 impl NodeTrait for ModbusReadNode {
     nazh_core::impl_node_meta!("modbusRead");
 
+    /// 输出引脚：单一 `Json` 端口，承载寄存器读取后并入上游 payload 的对象。
+    ///
+    /// 注：[`Self::input_pins`] 保留 trait 默认（单 `Any` 输入）——modbusRead
+    /// 常作为根节点或被 `timer`（输出 `Any`）触发，input 形状不重要。output
+    /// 收紧到 `Json` 让下游能感知"这是结构化数据"，被部署期校验用作类型契约。
+    fn output_pins(&self) -> Vec<PinDefinition> {
+        vec![PinDefinition {
+            id: "out".to_owned(),
+            label: "out".to_owned(),
+            pin_type: PinType::Json,
+            direction: PinDirection::Output,
+            required: false,
+            description: Some("寄存器读取结果合并入 input payload 的 JSON 对象".to_owned()),
+        }]
+    }
+
     async fn transform(
         &self,
         trace_id: Uuid,
@@ -360,5 +378,40 @@ impl NodeTrait for ModbusReadNode {
         )]);
 
         Ok(NodeExecution::broadcast(result).with_metadata(metadata))
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use connections::shared_connection_manager;
+    use serde_json::json;
+
+    fn make_node() -> ModbusReadNode {
+        // 走 #[serde(default)] 路径构造默认 config，避免依赖 Default impl。
+        let config: ModbusReadNodeConfig = serde_json::from_value(json!({})).unwrap();
+        ModbusReadNode::new("modbus-1", config, shared_connection_manager())
+    }
+
+    #[test]
+    fn output_pin_是_json_单端口() {
+        let node = make_node();
+        let pins = node.output_pins();
+        assert_eq!(pins.len(), 1, "modbusRead 只声明单个输出端口");
+        assert_eq!(pins[0].id, "out");
+        assert_eq!(pins[0].pin_type, PinType::Json);
+        assert_eq!(pins[0].direction, PinDirection::Output);
+        assert!(!pins[0].required, "输出端口默认 required=false");
+    }
+
+    #[test]
+    fn input_pin_保留默认_any() {
+        // ADR-0010 Phase 3 决策：modbusRead 不收紧 input，因为它常作为
+        // 根节点或被 timer（Any 输出）触发。
+        let node = make_node();
+        let pins = node.input_pins();
+        assert_eq!(pins.len(), 1);
+        assert_eq!(pins[0].pin_type, PinType::Any);
     }
 }
