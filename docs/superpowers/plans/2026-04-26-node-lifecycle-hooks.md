@@ -1,7 +1,7 @@
 # ADR-0009 节点生命周期钩子实施计划
 
-> **Status:** 启动中（2026-04-26 立项，对应 ADR-0009 状态升级到"已接受"）
-> 实施完成后请同步：ADR-0009 → "已实施"、`docs/adr/README.md` 索引、`AGENTS.md` Project Status 章节、`AGENTS.md` ADR Execution Order 表。
+> **Status:** ✅ 已合入 main（2026-04-26，merged in c699431；后续微调 1e219d6 / e6d37c3）
+> 同步落地点：ADR-0009 → "已实施"、`docs/adr/README.md` 索引、`AGENTS.md` Project Status / ADR Execution Order 表均已更新。
 
 **Goal:** 在 `NodeTrait` 上引入 `on_deploy` 钩子与 `LifecycleGuard` RAII 清理，把 Timer / Serial / MQTT 三类长连接根触发任务从 Tauri 壳层（`src-tauri/src/lib.rs:2484-3110` 约 626 行）迁回 Ring 1 节点实现，使壳层回归"IPC 桥接 + UI 集成"职责。
 
