@@ -1,0 +1,126 @@
+// ADR-0010 PinType 兼容矩阵的权威合约。
+//
+// Rust 实现 (PinType::is_compatible_with @ crates/core/src/pin.rs:96-116)
+// 与未来 Phase 2 前端 TS 实现 (web/src/lib/pin-compat.ts，待落地)
+// 都必须与本文件一致。任意一方漂移 → 合约测试 CI 红。
+//
+// 修改本文件时同步检查上述两份实现，且**必须**跑：
+//   cargo test -p nazh-core --test pin_compat_contract
+//
+// 序列化形态：PinType 用 #[serde(tag = "kind", rename_all = "lowercase")]
+// 形成可辨识联合：
+//   { "kind": "any" }
+//   { "kind": "bool" }
+//   { "kind": "array", "inner": <PinType> }     // 递归嵌套
+//   { "kind": "custom", "name": "modbus-register" }
+//
+// 覆盖纪律：每个新增 PinType 变体最少补 3 条配对——
+//   (1) 自反兼容
+//   (2) 与 Any 双向兼容
+//   (3) 与至少一个其他类型不兼容
+
+{
+  "pairs": [
+    // ===== 标量自反兼容 =====
+    { "from": { "kind": "any" },     "to": { "kind": "any" },     "compatible": true },
+    { "from": { "kind": "bool" },    "to": { "kind": "bool" },    "compatible": true },
+    { "from": { "kind": "integer" }, "to": { "kind": "integer" }, "compatible": true },
+    { "from": { "kind": "float" },   "to": { "kind": "float" },   "compatible": true },
+    { "from": { "kind": "string" },  "to": { "kind": "string" },  "compatible": true },
+    { "from": { "kind": "json" },    "to": { "kind": "json" },    "compatible": true },
+    { "from": { "kind": "binary" },  "to": { "kind": "binary" },  "compatible": true },
+
+    // ===== Any 双向吃一切 =====
+    { "from": { "kind": "any" },    "to": { "kind": "bool" },   "compatible": true },
+    { "from": { "kind": "bool" },   "to": { "kind": "any" },    "compatible": true },
+    { "from": { "kind": "any" },    "to": { "kind": "json" },   "compatible": true },
+    { "from": { "kind": "json" },   "to": { "kind": "any" },    "compatible": true },
+    { "from": { "kind": "any" },    "to": { "kind": "string" }, "compatible": true },
+    { "from": { "kind": "string" }, "to": { "kind": "any" },    "compatible": true },
+    {
+      "from": { "kind": "any" },
+      "to":   { "kind": "array", "inner": { "kind": "bool" } },
+      "compatible": true
+    },
+    {
+      "from": { "kind": "array", "inner": { "kind": "json" } },
+      "to":   { "kind": "any" },
+      "compatible": true
+    },
+    {
+      "from": { "kind": "any" },
+      "to":   { "kind": "custom", "name": "modbus-register" },
+      "compatible": true
+    },
+    {
+      "from": { "kind": "custom", "name": "sql-row" },
+      "to":   { "kind": "any" },
+      "compatible": true
+    },
+
+    // ===== 标量跨类型不兼容（无自动数值提升或结构桥接）=====
+    // 这是 ADR-0010 的明确决策——integer/float 不互通，
+    // 因为我们不想隐式精度损失；string/json 不互通，
+    // 因为 "JSON 字符串" 与 "字符串字面量" 在数据层面是不同形状。
+    { "from": { "kind": "bool" },    "to": { "kind": "integer" }, "compatible": false },
+    { "from": { "kind": "integer" }, "to": { "kind": "float" },   "compatible": false },
+    { "from": { "kind": "float" },   "to": { "kind": "integer" }, "compatible": false },
+    { "from": { "kind": "string" },  "to": { "kind": "json" },    "compatible": false },
+    { "from": { "kind": "json" },    "to": { "kind": "string" },  "compatible": false },
+    { "from": { "kind": "bool" },    "to": { "kind": "json" },    "compatible": false },
+    { "from": { "kind": "binary" },  "to": { "kind": "string" },  "compatible": false },
+
+    // ===== Array 嵌套兼容性 =====
+    {
+      "from": { "kind": "array", "inner": { "kind": "bool" } },
+      "to":   { "kind": "array", "inner": { "kind": "bool" } },
+      "compatible": true
+    },
+    {
+      "from": { "kind": "array", "inner": { "kind": "bool" } },
+      "to":   { "kind": "array", "inner": { "kind": "integer" } },
+      "compatible": false
+    },
+    // 内层 Any 走 Any 双向规则（递归兼容）
+    {
+      "from": { "kind": "array", "inner": { "kind": "any" } },
+      "to":   { "kind": "array", "inner": { "kind": "json" } },
+      "compatible": true
+    },
+    {
+      "from": { "kind": "array", "inner": { "kind": "json" } },
+      "to":   { "kind": "array", "inner": { "kind": "any" } },
+      "compatible": true
+    },
+    // 数组与标量不互通（即使元素类型相同）
+    {
+      "from": { "kind": "array", "inner": { "kind": "bool" } },
+      "to":   { "kind": "bool" },
+      "compatible": false
+    },
+
+    // ===== Custom 命名类型严格匹配 =====
+    {
+      "from": { "kind": "custom", "name": "modbus-register" },
+      "to":   { "kind": "custom", "name": "modbus-register" },
+      "compatible": true
+    },
+    {
+      "from": { "kind": "custom", "name": "modbus-register" },
+      "to":   { "kind": "custom", "name": "sql-row" },
+      "compatible": false
+    },
+    // Custom 不与 Json 自动桥接——避免协议级类型被误连到通用结构。
+    // 这是 ADR-0010 的关键决策（pin.rs:57-59 的 rustdoc 解释）。
+    {
+      "from": { "kind": "custom", "name": "modbus-register" },
+      "to":   { "kind": "json" },
+      "compatible": false
+    },
+    {
+      "from": { "kind": "json" },
+      "to":   { "kind": "custom", "name": "modbus-register" },
+      "compatible": false
+    }
+  ]
+}

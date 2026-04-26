@@ -33,3 +33,6 @@ ts-export = ["dep:ts-rs"]
 
 [dev-dependencies]
 tokio.workspace = true
+# 用于解析 tests/fixtures/pin_compat_matrix.jsonc 中的注释。
+# 仅 dev-dep，不进入运行时二进制；ADR-0010 Phase 3 引入。
+json_comments = "0.2"
