@@ -54,7 +54,7 @@
 - Create: `crates/core/src/lifecycle.rs`（新模块）
 - Modify: `crates/core/AGENTS.md`（同步契约说明）
 
-- [ ] **Step 1: 加 tokio-util 依赖**
+- [x] **Step 1: 加 tokio-util 依赖**
 
 ```toml
 # crates/core/Cargo.toml
@@ -64,7 +64,7 @@ tokio-util = { version = "0.7", default-features = false, features = ["sync"] }
 
 注意 Ring 0 严格依赖纪律：只开 `sync` feature 拿 `CancellationToken`，不开 `io` / `net` / `compat` 之类拖入 reqwest/hyper 的特性。
 
-- [ ] **Step 2: 创建 lifecycle 模块**
+- [x] **Step 2: 创建 lifecycle 模块**
 
 新文件 `crates/core/src/lifecycle.rs`：
 
@@ -126,7 +126,7 @@ impl Drop for LifecycleGuard {
 }
 ```
 
-- [ ] **Step 3: NodeTrait 加 `on_deploy` 默认实现**
+- [x] **Step 3: NodeTrait 加 `on_deploy` 默认实现**
 
 `crates/core/src/node.rs`：
 
@@ -148,7 +148,7 @@ pub trait NodeTrait: Send + Sync {
 }
 ```
 
-- [ ] **Step 4: 单测覆盖 LifecycleGuard 的 RAII 行为**
+- [x] **Step 4: 单测覆盖 LifecycleGuard 的 RAII 行为**
 
 新测试位于 `crates/core/src/lifecycle.rs` 的 `#[cfg(test)] mod tests`：
 - `noop_guard_drop_不 panic`
@@ -156,7 +156,7 @@ pub trait NodeTrait: Send + Sync {
 - `shutdown_等待 join 完成`
 - `shutdown_超时则强制返回`
 
-- [ ] **Step 5: 验证**
+- [x] **Step 5: 验证**
 
 ```bash
 cargo test -p nazh-core

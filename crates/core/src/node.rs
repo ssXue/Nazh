@@ -22,7 +22,7 @@ use bitflags::bitflags;
 use serde_json::{Map, Value};
 use uuid::Uuid;
 
-use crate::EngineError;
+use crate::{EngineError, LifecycleGuard, NodeLifecycleContext};
 
 bitflags! {
     /// 节点类型的能力标签位图（ADR-0011）。
@@ -252,6 +252,27 @@ pub trait NodeTrait: Send + Sync {
     /// [`NodeExecution::with_metadata`] 返回，与业务数据分离。
     async fn transform(&self, trace_id: Uuid, payload: Value)
     -> Result<NodeExecution, EngineError>;
+
+    /// 节点部署时调用，早于任何 [`transform`](Self::transform)（ADR-0009）。
+    ///
+    /// 触发器 / 长连接节点（MQTT 订阅、Timer、Serial 监听等）在此建立连接、
+    /// 订阅主题、拉起后台任务，通过 [`NodeLifecycleContext::handle`] 把外部
+    /// 消息推进 DAG。返回的 [`LifecycleGuard`] 由 Runner 持有，撤销时按逆
+    /// 拓扑序 `shutdown` 或依赖 `Drop` 兜底清理。
+    ///
+    /// **默认实现**返回 [`LifecycleGuard::noop`]——纯变换节点（`code` / `if`
+    /// / `httpClient` 单次请求等）无需重写。
+    ///
+    /// # Errors
+    ///
+    /// 部署失败（建连超时、订阅被拒等）返回 [`EngineError`]；Runner 会按
+    /// 逆拓扑序 drop 已注册的 guard，整图进入 `DeployFailed` 状态。
+    async fn on_deploy(
+        &self,
+        _ctx: NodeLifecycleContext,
+    ) -> Result<LifecycleGuard, EngineError> {
+        Ok(LifecycleGuard::noop())
+    }
 }
 
 /// 将 JSON payload 转换为 Map，非对象值会被包装为 `{"value": ...}`。

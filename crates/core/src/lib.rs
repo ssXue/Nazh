@@ -13,6 +13,7 @@ pub mod data;
 pub mod error;
 pub mod event;
 pub mod guard;
+pub mod lifecycle;
 pub mod node;
 pub mod plugin;
 
@@ -21,6 +22,7 @@ pub use data::{ArenaDataStore, DataId, DataStore};
 pub use error::EngineError;
 pub use event::CompletedExecutionEvent;
 pub use event::ExecutionEvent;
+pub use lifecycle::{LifecycleGuard, NodeHandle, NodeLifecycleContext};
 pub use node::{
     NodeCapabilities, NodeDispatch, NodeExecution, NodeOutput, NodeTrait, into_payload_map,
 };
@@ -28,6 +30,7 @@ pub use plugin::{
     NodeRegistry, Plugin, PluginHost, PluginManifest, RuntimeResources, SharedResources,
     WorkflowNodeDefinition,
 };
+pub use tokio_util::sync::CancellationToken;
 pub use uuid::Uuid;
 
 /// ts-rs 类型导出入口。仅在 `ts-export` feature 启用时编译。
