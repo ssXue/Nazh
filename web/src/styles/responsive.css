@@ -113,8 +113,8 @@
 }
 
 @media (max-width: 1480px) {
-  .runtime-dock__grid {
-    grid-template-columns: minmax(236px, 0.88fr) minmax(0, 1fr) minmax(0, 1fr);
+  .studio-board-workspace {
+    grid-template-columns: minmax(0, 1fr) clamp(296px, 26vw, 360px);
   }
 
   .dashboard-panel__cards {
@@ -144,12 +144,8 @@
     justify-content: flex-start;
   }
 
-  .runtime-dock__grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .runtime-dock__panel:first-child {
-    grid-column: 1 / -1;
+  .studio-board-workspace {
+    grid-template-columns: minmax(0, 1fr) clamp(288px, 28vw, 336px);
   }
 
   .dashboard-panel__cards {
@@ -172,7 +168,6 @@
   }
 
   .studio-frame,
-  .runtime-dock__grid,
   .boards-panel__grid {
     grid-template-columns: 1fr;
   }
@@ -200,10 +195,38 @@
     flex-direction: column;
   }
 
-  .studio-board-workspace > .canvas-shell {
+  .studio-board-workspace,
+  .studio-board-workspace.is-runtime-collapsed {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    height: auto;
+    min-height: auto;
+    overflow: visible;
+  }
+
+  .studio-board-workspace__stage {
+    min-height: auto;
+    height: auto;
+    overflow: visible;
+  }
+
+  .studio-board-workspace__stage > .canvas-shell {
     height: auto;
     max-height: none;
     min-height: 520px;
+  }
+
+  .runtime-dock,
+  .runtime-dock.is-collapsed {
+    height: min(420px, calc(100vh - 120px));
+    min-height: 260px;
+  }
+
+  .runtime-dock.is-collapsed .runtime-dock__tabs {
+    width: auto;
+    flex: 1;
+    opacity: 1;
+    pointer-events: auto;
   }
 
   .studio-navrail {
@@ -253,4 +276,3 @@
   }
 
 }
-

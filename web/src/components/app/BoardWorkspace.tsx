@@ -82,32 +82,34 @@ export const BoardWorkspace = forwardRef<BoardWorkspaceHandle, BoardWorkspacePro
       <div
         className={`studio-board-workspace ${isRuntimeDockCollapsed ? 'is-runtime-collapsed' : ''}`}
       >
-        <ProjectWorkspaceHeader
-          project={project}
-          nodeCount={nodeCount}
-          onBack={onBack}
-          onCreateSnapshot={onCreateSnapshot}
-          onDeleteSnapshot={onDeleteSnapshot}
-          onRollbackSnapshot={onRollbackSnapshot}
-          onEnvironmentChange={onEnvironmentChange}
-          onEnvironmentSave={onEnvironmentSave}
-          onDuplicateEnvironment={onDuplicateEnvironment}
-          onDeleteEnvironment={onDeleteEnvironment}
-          onOpenAiComposer={onOpenAiComposer}
-          aiActionTitle={aiActionTitle}
-          aiActionDisabled={aiActionDisabled}
-          aiActionLoading={aiActionLoading}
-        />
+        <div className="studio-board-workspace__stage">
+          <ProjectWorkspaceHeader
+            project={project}
+            nodeCount={nodeCount}
+            onBack={onBack}
+            onCreateSnapshot={onCreateSnapshot}
+            onDeleteSnapshot={onDeleteSnapshot}
+            onRollbackSnapshot={onRollbackSnapshot}
+            onEnvironmentChange={onEnvironmentChange}
+            onEnvironmentSave={onEnvironmentSave}
+            onDuplicateEnvironment={onDuplicateEnvironment}
+            onDeleteEnvironment={onDeleteEnvironment}
+            onOpenAiComposer={onOpenAiComposer}
+            aiActionTitle={aiActionTitle}
+            aiActionDisabled={aiActionDisabled}
+            aiActionLoading={aiActionLoading}
+          />
 
-        <FlowgramCanvas
-          ref={ref}
-          graph={graph}
-          resources={flowgramResources}
-          runtime={flowgramRuntime}
-          appearance={flowgramAppearance}
-          exportTarget={flowgramExportTarget}
-          actions={flowgramActions}
-        />
+          <FlowgramCanvas
+            ref={ref}
+            graph={graph}
+            resources={flowgramResources}
+            runtime={flowgramRuntime}
+            appearance={flowgramAppearance}
+            exportTarget={flowgramExportTarget}
+            actions={flowgramActions}
+          />
+        </div>
 
         <RuntimeDock
           eventFeed={runtimeDock.eventFeed}

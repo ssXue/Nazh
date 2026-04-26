@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { JsonView, collapseAllNested, darkStyles, defaultStyles } from 'react-json-view-lite';
 import 'react-json-view-lite/dist/index.css';
 
-import { CopyIcon, DockToggleIcon } from './AppIcons';
+import { ConnectionsIcon, CopyIcon, DockToggleIcon, LogsIcon, PayloadIcon } from './AppIcons';
 import {
   buildEventFeedPlainText,
   buildRuntimeConsoleEntries,
@@ -22,6 +22,25 @@ function normalizeResultPayload(payload: unknown): Record<string, unknown> | unk
   return { value: payload };
 }
 
+type RuntimeDockPanel = 'events' | 'results' | 'connections';
+
+const runtimeDockTabs: Array<{ id: RuntimeDockPanel; label: string; title: string }> = [
+  { id: 'events', label: '事件', title: '执行事件流' },
+  { id: 'results', label: '结果', title: '结果载荷' },
+  { id: 'connections', label: '连接', title: '连接资源' },
+];
+
+function RuntimeDockTabIcon({ panel }: { panel: RuntimeDockPanel }) {
+  if (panel === 'results') {
+    return <PayloadIcon width={14} height={14} />;
+  }
+
+  if (panel === 'connections') {
+    return <ConnectionsIcon width={14} height={14} />;
+  }
+
+  return <LogsIcon width={14} height={14} />;
+}
 
 export function RuntimeDock({
   eventFeed,
@@ -34,6 +53,7 @@ export function RuntimeDock({
 }: RuntimeDockProps) {
   const logViewportRef = useRef<HTMLDivElement | null>(null);
   const [hasCopiedEventFeed, setHasCopiedEventFeed] = useState(false);
+  const [activePanel, setActivePanel] = useState<RuntimeDockPanel>('events');
   const runtimeConsoleEntries = useMemo(
     () => buildRuntimeConsoleEntries(eventFeed, appErrors),
     [appErrors, eventFeed],
@@ -44,12 +64,12 @@ export function RuntimeDock({
   );
 
   useEffect(() => {
-    if (isCollapsed || !logViewportRef.current) {
+    if (isCollapsed || activePanel !== 'events' || !logViewportRef.current) {
       return;
     }
 
     logViewportRef.current.scrollTop = logViewportRef.current.scrollHeight;
-  }, [isCollapsed, runtimeConsoleEntries]);
+  }, [activePanel, isCollapsed, runtimeConsoleEntries]);
 
   useEffect(() => {
     if (!hasCopiedEventFeed) {
@@ -89,12 +109,50 @@ export function RuntimeDock({
     }
   };
 
+  const handlePanelSelect = (panel: RuntimeDockPanel) => {
+    setActivePanel(panel);
+
+    if (isCollapsed) {
+      onToggleCollapsed();
+    }
+  };
+
   return (
     <section
       className={`runtime-dock ${isCollapsed ? 'is-collapsed' : ''}`}
       aria-live="polite"
     >
       <div className="runtime-dock__header">
+        <div className="runtime-dock__tabs" role="tablist" aria-label="运行观测窗体">
+          {runtimeDockTabs.map((tab) => {
+            const count =
+              tab.id === 'events'
+                ? runtimeConsoleEntries.length
+                : tab.id === 'results'
+                  ? results.length
+                  : connectionPreview.length;
+            const isActive = activePanel === tab.id;
+
+            return (
+              <button
+                key={tab.id}
+                id={`runtime-dock-tab-${tab.id}`}
+                type="button"
+                role="tab"
+                className={`runtime-dock__tab ${isActive ? 'is-active' : ''}`}
+                aria-selected={isActive}
+                aria-controls={`runtime-dock-panel-${tab.id}`}
+                title={tab.title}
+                onClick={() => handlePanelSelect(tab.id)}
+              >
+                <RuntimeDockTabIcon panel={tab.id} />
+                <span>{tab.label}</span>
+                <em>{count}</em>
+              </button>
+            );
+          })}
+        </div>
+
         <button
           type="button"
           className="runtime-dock__toggle"
@@ -112,23 +170,14 @@ export function RuntimeDock({
         id="runtime-dock-grid"
         className="runtime-dock__grid"
       >
-        {connectionPreview.length > 0 && (
-          <div className="runtime-dock__connections">
-            {connectionPreview.map((connection) => (
-              <span
-                key={connection.id}
-                className={`runtime-dock__conn-chip ${connection.in_use ? 'is-busy' : 'is-idle'}`}
-              >
-                <i className="runtime-dock__conn-dot" />
-                {connection.id}
-                <small>{connection.kind}</small>
-              </span>
-            ))}
-          </div>
-        )}
-
         <div className="runtime-dock__main">
-          <section className="runtime-dock__panel runtime-dock__panel--feed">
+          <section
+            id="runtime-dock-panel-events"
+            className={`runtime-dock__panel runtime-dock__panel--feed ${activePanel === 'events' ? 'is-active' : ''}`}
+            role="tabpanel"
+            aria-labelledby="runtime-dock-tab-events"
+            hidden={activePanel !== 'events' || isCollapsed}
+          >
             <div className="runtime-dock__panel-header">
               <div>
                 <h3>执行事件流</h3>
@@ -170,7 +219,13 @@ export function RuntimeDock({
             </div>
           </section>
 
-          <section className="runtime-dock__panel runtime-dock__panel--feed">
+          <section
+            id="runtime-dock-panel-results"
+            className={`runtime-dock__panel runtime-dock__panel--feed ${activePanel === 'results' ? 'is-active' : ''}`}
+            role="tabpanel"
+            aria-labelledby="runtime-dock-tab-results"
+            hidden={activePanel !== 'results' || isCollapsed}
+          >
             <div className="runtime-dock__panel-header">
               <div>
                 <h3>结果载荷</h3>
@@ -212,6 +267,41 @@ export function RuntimeDock({
                         </article>
                       );
                     })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </section>
+
+          <section
+            id="runtime-dock-panel-connections"
+            className={`runtime-dock__panel runtime-dock__panel--connections ${activePanel === 'connections' ? 'is-active' : ''}`}
+            role="tabpanel"
+            aria-labelledby="runtime-dock-tab-connections"
+            hidden={activePanel !== 'connections' || isCollapsed}
+          >
+            <div className="runtime-dock__panel-header">
+              <div>
+                <h3>连接资源</h3>
+              </div>
+            </div>
+
+            <div className="runtime-dock__panel-body">
+              <div className="runtime-dock__connection-panel">
+                {connectionPreview.length === 0 ? (
+                  <p className="runtime-dock__empty">暂无连接占用</p>
+                ) : (
+                  <div className="runtime-dock__connections">
+                    {connectionPreview.map((connection) => (
+                      <span
+                        key={connection.id}
+                        className={`runtime-dock__conn-chip ${connection.in_use ? 'is-busy' : 'is-idle'}`}
+                      >
+                        <i className="runtime-dock__conn-dot" />
+                        {connection.id}
+                        <small>{connection.kind}</small>
+                      </span>
+                    ))}
                   </div>
                 )}
               </div>
