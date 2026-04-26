@@ -244,10 +244,29 @@
   }
 
   .flowgram-host {
+    --flowgram-palette-width: 0px;
+    --flowgram-floating-top-offset: 10px;
+  }
+
+  .flowgram-workspace {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .flowgram-stage {
+    position: relative;
+    inset: auto;
+  }
+
+  .flowgram-host {
     min-height: 520px;
   }
 
   .flowgram-add-panel {
+    position: relative;
+    top: auto;
+    left: auto;
+    bottom: auto;
     width: 100%;
     flex-basis: auto;
     height: auto;
@@ -264,6 +283,12 @@
 
   .flowgram-add-card {
     width: 100%;
+  }
+
+  .flowgram-overlay {
+    right: 10px;
+    bottom: 10px;
+    max-width: min(360px, calc(100% - 20px));
   }
 
   .dashboard-panel__cards {

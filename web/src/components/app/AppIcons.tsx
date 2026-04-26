@@ -124,6 +124,18 @@ export function DockToggleIcon(props: IconProps) {
   );
 }
 
+export function RightSidebarIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <rect x="3.5" y="5" width="17" height="14" rx="2.4" />
+      <path d="M14.5 5v14" />
+      <path d="M17.5 9.2h0.01" />
+      <path d="M17.5 12h0.01" />
+      <path d="M17.5 14.8h0.01" />
+    </BaseIcon>
+  );
+}
+
 export function ChevronDownIcon(props: IconProps) {
   return (
     <BaseIcon {...props}>

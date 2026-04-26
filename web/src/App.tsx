@@ -483,7 +483,6 @@ function App() {
     currentBoardDeployInfo,
     activeBoard?.name ?? null,
   );
-
   function renderRestoreDialog() {
     if (pendingRestoreSessions.length === 0 || !pendingRestoreLeadSession) {
       return null;

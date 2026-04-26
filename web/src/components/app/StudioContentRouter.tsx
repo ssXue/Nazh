@@ -27,6 +27,7 @@ import { LogsPanel } from './LogsPanel';
 import { PayloadPanel } from './PayloadPanel';
 import { PluginPanel } from './PluginPanel';
 import { RuntimeManagerPanel } from './RuntimeManagerPanel';
+import { ScrollSurface } from './ScrollSurface';
 import { SettingsPanel } from './SettingsPanel';
 import type { SidebarSection } from './types';
 
@@ -103,7 +104,7 @@ function ProjectGate({
 }) {
   return (
     <section className="studio-content studio-content--panel">
-      <div className="panel studio-content__panel studio-content__panel--scroll studio-gate">
+      <ScrollSurface className="panel studio-content__panel studio-content__panel--scroll studio-gate">
         <div className="studio-gate__copy">
           <h2>{title}</h2>
           <p>先从所有看板进入工程。</p>
@@ -111,7 +112,7 @@ function ProjectGate({
         <button type="button" onClick={onNavigateToBoards}>
           前往所有看板
         </button>
-      </div>
+      </ScrollSurface>
     </section>
   );
 }
@@ -180,7 +181,7 @@ export function StudioContentRouter({
     case 'dashboard':
       return (
         <section className="studio-content studio-content--panel">
-          <div className="panel studio-content__panel studio-content__panel--scroll">
+          <ScrollSurface className="panel studio-content__panel studio-content__panel--scroll">
             <DashboardPanel
               userId={CURRENT_USER_NAME}
               activeBoardName={activeBoard?.name ?? null}
@@ -198,14 +199,14 @@ export function StudioContentRouter({
               deployInfo={currentBoardDeployInfo}
               onNavigateToBoards={onBackToBoards}
             />
-          </div>
+          </ScrollSurface>
         </section>
       );
     case 'boards':
       if (!activeBoard || !activeProject) {
         return (
           <section className="studio-content studio-content--panel">
-            <div className="panel studio-content__panel studio-content__panel--scroll">
+            <ScrollSurface className="panel studio-content__panel studio-content__panel--scroll">
               <BoardsPanel
                 boards={boardItems}
                 onOpenBoard={onOpenBoard}
@@ -217,7 +218,7 @@ export function StudioContentRouter({
                 aiActionDisabled={aiActionDisabled}
                 aiActionLoading={aiActionLoadingCreate}
               />
-            </div>
+            </ScrollSurface>
           </section>
         );
       }
@@ -285,7 +286,7 @@ export function StudioContentRouter({
     case 'runtime':
       return (
         <section className="studio-content studio-content--panel">
-          <div className="panel studio-content__panel studio-content__panel--scroll">
+          <ScrollSurface className="panel studio-content__panel studio-content__panel--scroll">
             <RuntimeManagerPanel
               workspacePath={settings.projectWorkspacePath}
               themeMode={settings.themeMode}
@@ -312,13 +313,13 @@ export function StudioContentRouter({
               onStatusMessage={engine.setStatusMessage}
               onRuntimeCountChange={onRuntimeCountChange}
             />
-          </div>
+          </ScrollSurface>
         </section>
       );
     case 'connections':
       return (
         <section className="studio-content studio-content--panel">
-          <div className="panel studio-content__panel studio-content__panel--scroll panel--connection-card">
+          <ScrollSurface className="panel studio-content__panel studio-content__panel--scroll panel--connection-card">
             <ConnectionStudio
               connections={connectionLibrary.connections}
               setConnections={connectionLibrary.setConnections}
@@ -328,15 +329,15 @@ export function StudioContentRouter({
               storageError={connectionLibrary.storage.error}
               onStatusMessage={(msg) => engine.setStatusMessage(msg)}
             />
-          </div>
+          </ScrollSurface>
         </section>
       );
     case 'plugins':
       return (
         <section className="studio-content studio-content--panel">
-          <div className="panel studio-content__panel studio-content__panel--scroll">
+          <ScrollSurface className="panel studio-content__panel studio-content__panel--scroll">
             <PluginPanel isTauriRuntime={isTauriRuntime} />
-          </div>
+          </ScrollSurface>
         </section>
       );
     case 'payload':
@@ -358,7 +359,7 @@ export function StudioContentRouter({
     case 'logs':
       return (
         <section className="studio-content studio-content--panel">
-          <div className="panel studio-content__panel studio-content__panel--scroll">
+          <ScrollSurface className="panel studio-content__panel studio-content__panel--scroll">
             <LogsPanel
               eventFeed={engine.eventFeed}
               appErrors={engine.appErrors}
@@ -369,13 +370,13 @@ export function StudioContentRouter({
               workspacePath={settings.projectWorkspacePath}
               activeTraceId={engine.runtimeState.traceId}
             />
-          </div>
+          </ScrollSurface>
         </section>
       );
     case 'settings':
       return (
         <section className="studio-content studio-content--panel">
-          <div className="panel studio-content__panel studio-content__panel--scroll">
+          <ScrollSurface className="panel studio-content__panel studio-content__panel--scroll">
             <SettingsPanel
               isTauriRuntime={isTauriRuntime}
               runtimeModeLabel={runtimeModeLabel}
@@ -400,13 +401,13 @@ export function StudioContentRouter({
               projectWorkspaceError={projectLibrary.storage.error}
               onProjectWorkspacePathChange={settings.setProjectWorkspacePath}
             />
-          </div>
+          </ScrollSurface>
         </section>
       );
     case 'ai':
       return (
         <section className="studio-content studio-content--panel">
-          <div className="panel studio-content__panel studio-content__panel--scroll">
+          <ScrollSurface className="panel studio-content__panel studio-content__panel--scroll">
             <AiConfigPanel
               isTauriRuntime={isTauriRuntime}
               aiConfig={aiConfig}
@@ -417,15 +418,15 @@ export function StudioContentRouter({
               aiTestResult={aiTestResult}
               aiTesting={aiTesting}
             />
-          </div>
+          </ScrollSurface>
         </section>
       );
     case 'about':
       return (
         <section className="studio-content studio-content--panel">
-          <div className="panel studio-content__panel studio-content__panel--scroll">
+          <ScrollSurface className="panel studio-content__panel studio-content__panel--scroll">
             <AboutPanel />
-          </div>
+          </ScrollSurface>
         </section>
       );
   }

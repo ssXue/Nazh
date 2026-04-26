@@ -63,9 +63,9 @@ html.is-tauri-runtime .studio-frame {
 
 html.is-tauri-runtime .studio-nav-safe-region {
   display: block;
-  height: var(--window-safe-top);
-  flex: 0 0 var(--window-safe-top);
-  margin: -10px -10px 0;
+  height: calc(var(--window-safe-top) + 10px);
+  flex: 0 0 calc(var(--window-safe-top) + 10px);
+  margin: 0 0 6px;
 }
 
 .studio-navrail__header {
@@ -728,6 +728,17 @@ html.is-tauri-runtime .studio-nav-safe-region {
   border-radius: 10px 0 0 10px;
 }
 
+.studio-board-workspace__action--icon {
+  min-width: 32px;
+  padding: 0 9px;
+  border-radius: 10px;
+}
+
+.studio-board-workspace__action--dock-toggle {
+  margin-left: 14px;
+  flex: 0 0 auto;
+}
+
 .studio-board-workspace__action--menu-segment {
   min-width: 32px;
   padding: 0 9px;
@@ -1008,7 +1019,8 @@ html.is-tauri-runtime .studio-nav-safe-region {
 
 .studio-board-workspace__stage > .canvas-shell {
   min-height: 0;
-  height: auto;
+  width: 100%;
+  height: 100%;
   max-height: none;
   overflow: hidden;
   align-self: stretch;
@@ -1020,7 +1032,7 @@ html.is-tauri-runtime .studio-nav-safe-region {
 }
 
 .studio-board-workspace.is-runtime-collapsed {
-  grid-template-columns: minmax(0, 1fr) 48px;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .window-safe-header > * {

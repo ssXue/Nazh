@@ -107,7 +107,7 @@ export function useWorkflowEngine(
   const [appErrors, setAppErrors] = useState<AppErrorRecord[]>([]);
   const [connections, setConnections] = useState<ConnectionRecord[]>([]);
   const [runtimeState, setRuntimeState] = useState<WorkflowRuntimeState>(EMPTY_RUNTIME_STATE);
-  const [isRuntimeDockCollapsed, setIsRuntimeDockCollapsed] = useState(false);
+  const [isRuntimeDockCollapsed, setIsRuntimeDockCollapsed] = useState(true);
   const activeWorkflowIdRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -181,9 +181,9 @@ export function useWorkflowEngine(
     }
   }
 
-  // 切换工程时重置 RuntimeDock 折叠状态。
+  // 切换工程时默认隐藏运行观测，避免遮挡工作面。
   useEffect(() => {
-    setIsRuntimeDockCollapsed(false);
+    setIsRuntimeDockCollapsed(true);
   }, [activeBoard?.id]);
 
   // 连接列表自动刷新（进入工程 / 部署变更 / 打开连接面板时触发）。

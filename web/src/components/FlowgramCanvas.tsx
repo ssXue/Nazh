@@ -274,12 +274,13 @@ const FLOWGRAM_BUTTON_STYLE: CSSProperties = {
 const FLOWGRAM_TOOLS_STYLE: CSSProperties = {
   position: 'absolute',
   zIndex: 20,
-  left: 16,
+  left: 'calc(var(--board-left-avoid, 0px) + var(--flowgram-palette-width, 176px) + 20px)',
   bottom: 16,
   display: 'flex',
   alignItems: 'center',
   gap: 8,
-  maxWidth: 'calc(100% - 164px)',
+  maxWidth:
+    'calc(100% - var(--board-left-avoid, 0px) - var(--runtime-dock-width, 0px) - var(--flowgram-palette-width, 176px) - 56px)',
   pointerEvents: 'none',
 };
 

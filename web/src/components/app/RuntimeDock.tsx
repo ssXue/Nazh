@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { JsonView, collapseAllNested, darkStyles, defaultStyles } from 'react-json-view-lite';
 import 'react-json-view-lite/dist/index.css';
 
-import { ConnectionsIcon, CopyIcon, DockToggleIcon, LogsIcon, PayloadIcon } from './AppIcons';
+import { ConnectionsIcon, CopyIcon, LogsIcon, PayloadIcon } from './AppIcons';
 import {
   buildEventFeedPlainText,
   buildRuntimeConsoleEntries,
@@ -153,17 +153,6 @@ export function RuntimeDock({
           })}
         </div>
 
-        <button
-          type="button"
-          className="runtime-dock__toggle"
-          aria-expanded={!isCollapsed}
-          aria-controls="runtime-dock-grid"
-          aria-label={isCollapsed ? '展开运行观测' : '收起运行观测'}
-          title={isCollapsed ? '展开运行观测' : '收起运行观测'}
-          onClick={onToggleCollapsed}
-        >
-          <DockToggleIcon width={14} height={14} />
-        </button>
       </div>
 
       <div

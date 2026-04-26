@@ -6,6 +6,7 @@ import {
   DeleteActionIcon,
   EnvironmentIcon,
   PlusIcon,
+  RightSidebarIcon,
   SaveIcon,
   SparklesIcon,
   SnapshotIcon,
@@ -32,6 +33,8 @@ interface ProjectWorkspaceHeaderProps {
   onDuplicateEnvironment: (environmentId: string) => void;
   onDeleteEnvironment: (environmentId: string) => void;
   onOpenAiComposer: () => void;
+  isRuntimeDockCollapsed: boolean;
+  onToggleRuntimeDockCollapsed: () => void;
   aiActionTitle: string;
   aiActionDisabled?: boolean;
   aiActionLoading?: boolean;
@@ -68,6 +71,8 @@ export function ProjectWorkspaceHeader({
   onDuplicateEnvironment,
   onDeleteEnvironment,
   onOpenAiComposer,
+  isRuntimeDockCollapsed,
+  onToggleRuntimeDockCollapsed,
   aiActionTitle,
   aiActionDisabled = false,
   aiActionLoading = false,
@@ -129,8 +134,8 @@ export function ProjectWorkspaceHeader({
       className="studio-board-workspace__header window-safe-header"
       data-window-drag-region
     >
-      <div className="studio-board-workspace__header-main">
-        <div className="studio-board-workspace__header-heading">
+      <div className="studio-board-workspace__header-main" data-no-window-drag>
+        <div className="studio-board-workspace__title-pill">
           <button
             type="button"
             className="studio-board-workspace__back"
@@ -140,12 +145,18 @@ export function ProjectWorkspaceHeader({
           >
             <BackIcon />
           </button>
-          <h2>{project.name}</h2>
+          <div className="studio-board-workspace__header-heading">
+            <h2>{project.name}</h2>
+            <div className="studio-board-workspace__header-meta">
+              <span className="studio-board-workspace__meta-pill">
+                {`${formatRelativeTimestamp(project.updatedAt)} · ${nodeCount} 节点 · ${project.snapshots.length} 个版本`}
+              </span>
+            </div>
+          </div>
+          {migrationSummary ? (
+            <span className="studio-board-workspace__migration">{migrationSummary}</span>
+          ) : null}
         </div>
-        <span>{`${formatRelativeTimestamp(project.updatedAt)} · ${nodeCount} 节点 · ${project.snapshots.length} 个版本`}</span>
-        {migrationSummary ? (
-          <span className="studio-board-workspace__migration">{migrationSummary}</span>
-        ) : null}
       </div>
 
       <div className="studio-board-workspace__controls" data-no-window-drag>
@@ -340,6 +351,18 @@ export function ProjectWorkspaceHeader({
             </div>
           </details>
         </div>
+
+        <button
+          type="button"
+          className="studio-board-workspace__action studio-board-workspace__action--icon studio-board-workspace__action--dock-toggle"
+          aria-expanded={!isRuntimeDockCollapsed}
+          aria-controls="runtime-dock-grid"
+          aria-label={isRuntimeDockCollapsed ? '展开右侧窗体' : '收起右侧窗体'}
+          title={isRuntimeDockCollapsed ? '展开右侧窗体' : '收起右侧窗体'}
+          onClick={onToggleRuntimeDockCollapsed}
+        >
+          <RightSidebarIcon />
+        </button>
 
 
       </div>

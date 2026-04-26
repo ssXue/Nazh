@@ -33,6 +33,10 @@ use tauri_bindings::{
 };
 use tokio::fs;
 use tokio::sync::{Mutex, RwLock, mpsc};
+#[cfg(target_os = "windows")]
+use window_vibrancy::apply_blur;
+#[cfg(target_os = "macos")]
+use window_vibrancy::{NSVisualEffectMaterial, apply_vibrancy};
 
 use std::{
     collections::HashMap,
@@ -2408,6 +2412,24 @@ fn init_tracing() {
         .init();
 }
 
+#[cfg(target_os = "macos")]
+fn apply_window_glass(window: &tauri::WebviewWindow) {
+    if let Err(error) = apply_vibrancy(window, NSVisualEffectMaterial::HudWindow, None, Some(16.0))
+    {
+        tracing::warn!("应用 macOS 窗口玻璃效果失败: {error}");
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn apply_window_glass(window: &tauri::WebviewWindow) {
+    if let Err(error) = apply_blur(window, Some((18, 18, 18, 125))) {
+        tracing::warn!("应用 Windows 窗口模糊效果失败: {error}");
+    }
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+fn apply_window_glass(_window: &tauri::WebviewWindow) {}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     init_tracing();
@@ -2415,6 +2437,12 @@ pub fn run() {
     let builder = tauri::Builder::default()
         .manage(DesktopState::default())
         .setup(|app| {
+            if let Some(window) = app.get_webview_window("main") {
+                apply_window_glass(&window);
+            } else {
+                tracing::warn!("未找到主窗口，跳过玻璃效果初始化");
+            }
+
             let app_handle = app.handle().clone();
             let state: State<'_, DesktopState> = app.state();
             let manager = state.connection_manager.clone();
