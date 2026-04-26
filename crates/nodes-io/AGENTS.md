@@ -112,5 +112,5 @@ cargo test -p nazh-engine --test workflow   # 集成测试
 - **ADR-0005** 连接管理器（所有 I/O 节点的连接语义来源）
 - **ADR-0008** 节点输出元数据通道
 - **ADR-0011** 节点能力标签
-- **（待）ADR-0009** 生命周期钩子——将把 MQTT/Timer/Serial 的触发器启动从壳层迁回引擎
+- **ADR-0009** 生命周期钩子（已实施）—— `TimerNode` / `SerialTriggerNode` / `MqttClientNode` (subscribe 模式) 在 `on_deploy` 中自持触发器后台任务，撤销时通过 `LifecycleGuard::shutdown` 回收。emit 走 `NodeHandle::emit`，不经过壳层 `dispatch_router` 的 trigger lane，因此 backpressure / DLQ / retry / metrics 等防御能力不生效——引擎级背压补回见 ADR-0014 / ADR-0016
 - **（待）ADR-0018** 按协议 feature 门控——将让 `nodes-io` 可按需裁剪

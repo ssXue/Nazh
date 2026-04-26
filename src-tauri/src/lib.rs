@@ -376,9 +376,9 @@ impl WorkflowDispatchRouter {
         .await
     }
 
-    // ADR-0009 Task 4 后所有触发器节点（timer / serial / mqttClient subscribe）
-    // 都已迁回引擎层，trigger lane 无消费者。Task 5 删除整个 trigger lane 时
-    // 一并移除。
+    // 当前无消费者——所有触发器节点（timer / serial / mqttClient subscribe）
+    // 通过 NodeHandle::emit 直接进 DAG。trigger lane 基础设施保留，未来引擎级
+    // 背压能力（参见 ADR-0014 / ADR-0016 草案）落地时复用此入口。
     #[allow(dead_code)]
     async fn submit_trigger_to(
         &self,
@@ -400,32 +400,6 @@ impl WorkflowDispatchRouter {
             envelope,
         )
         .await
-    }
-
-    // ADR-0009 Task 3 后无同步触发器（serial 已迁回 nodes-io 并改用
-    // tokio::task::spawn_blocking + runtime.block_on(handle.emit) 桥接）。
-    // 这两个 blocking 方法当前无消费者；Task 5 删除整个 dispatch_router 的
-    // trigger lane 时一并移除。
-    #[allow(dead_code)]
-    fn blocking_submit_trigger_to(
-        &self,
-        node_id: &str,
-        ctx: WorkflowContext,
-        source: impl Into<String>,
-    ) -> Result<(), String> {
-        let envelope = DispatchEnvelope {
-            ctx,
-            lane: DispatchLane::Trigger,
-            source: source.into(),
-            target_node_id: Some(node_id.to_owned()),
-            attempts: 0,
-        };
-        self.enqueue_blocking(
-            &self.trigger_tx,
-            &self.trigger_metrics,
-            &self.policy.trigger_backpressure_strategy,
-            envelope,
-        )
     }
 
     fn manual_snapshot(&self) -> DispatchLaneSnapshot {
@@ -495,69 +469,13 @@ impl WorkflowDispatchRouter {
         }
     }
 
-    fn enqueue_blocking(
-        &self,
-        tx: &mpsc::Sender<DispatchEnvelope>,
-        metrics: &Arc<DispatchLaneMetrics>,
-        strategy: &RuntimeBackpressureStrategy,
-        envelope: DispatchEnvelope,
-    ) -> Result<(), String> {
-        match strategy {
-            RuntimeBackpressureStrategy::Block => {
-                metrics.depth.fetch_add(1, Ordering::Relaxed);
-                match tx.blocking_send(envelope) {
-                    Ok(()) => {
-                        metrics.accepted.fetch_add(1, Ordering::Relaxed);
-                        Ok(())
-                    }
-                    Err(error) => {
-                        metrics.depth.fetch_sub(1, Ordering::Relaxed);
-                        Err(format!(
-                            "工作流 `{}` 的 {} 调度通道已关闭",
-                            self.workflow_id,
-                            error.0.lane.label()
-                        ))
-                    }
-                }
-            }
-            RuntimeBackpressureStrategy::RejectNewest => match tx.try_send(envelope) {
-                Ok(()) => {
-                    metrics.depth.fetch_add(1, Ordering::Relaxed);
-                    metrics.accepted.fetch_add(1, Ordering::Relaxed);
-                    Ok(())
-                }
-                Err(mpsc::error::TrySendError::Full(envelope)) => {
-                    metrics.dead_lettered.fetch_add(1, Ordering::Relaxed);
-                    let _ = tauri::async_runtime::block_on(self.dead_letters.record(
-                        &envelope,
-                        format!(
-                            "工作流 `{}` 的 {} 调度队列已满，触发背压拒绝",
-                            self.workflow_id,
-                            envelope.lane.label()
-                        ),
-                        self.observability.as_ref(),
-                    ));
-                    Err(format!(
-                        "工作流 `{}` 的 {} 调度队列已满，请稍后重试",
-                        self.workflow_id,
-                        envelope.lane.label()
-                    ))
-                }
-                Err(mpsc::error::TrySendError::Closed(envelope)) => Err(format!(
-                    "工作流 `{}` 的 {} 调度通道已关闭",
-                    self.workflow_id,
-                    envelope.lane.label()
-                )),
-            },
-        }
-    }
 }
 
 /// 已部署工作流的运行时包装，含入口句柄、引擎 lifecycle guards 与撤销 token。
 ///
-/// ADR-0009 Task 5 重构：壳层不再持有 `Vec<DesktopTriggerTask>`——所有触发器
-/// 节点的后台任务由 `LifecycleGuard`（引擎层）管理。撤销时 cancel
-/// `shutdown_token` 广播给所有节点，再串行 `guard.shutdown().await`。
+/// 触发器节点的后台任务由引擎层 `LifecycleGuard` 管理；壳层只负责撤销编排——
+/// cancel `shutdown_token` 广播取消信号，再按逆部署序串行
+/// `guard.shutdown().await` 等待 cleanup 完成。
 struct DesktopWorkflow {
     workflow_id: String,
     metadata: RuntimeWorkflowMetadata,
@@ -579,18 +497,17 @@ impl DesktopWorkflow {
     /// 撤销整个运行时：中止事件转发任务 + 广播 cancel + 串行 shutdown 所有 guards。
     ///
     /// 返回 shutdown 的 lifecycle guards 数量——通过 `UndeployResponse`
-    /// 的 `aborted_timer_count` 字段透传给前端。该字段名是 ADR-0009 之前的
-    /// 历史名称，迁移后语义为"已撤销的触发器节点数"，保留字段名避免 IPC
-    /// 契约破坏（决策见 plan Task 5 Step 4 方案 A）。
+    /// 的 `aborted_timer_count` 字段透传。字段名沿用历史命名（语义为"已撤销
+    /// 的触发器节点数"），改名会破坏 IPC 契约且需同步前端。
     async fn shutdown_runtime(&mut self) -> usize {
         for task in &self.runtime_tasks {
             task.abort();
         }
         let guards = std::mem::take(&mut self.lifecycle_guards);
         let count = guards.len();
-        // 1. 广播 cancel：所有节点的后台任务立即收到取消信号
+        // 广播 cancel 让所有节点同时进入清理；再按逆部署序串行 await，
+        // 给每个节点完整的 cleanup 窗口而不阻塞其他节点的取消信号。
         self.shutdown_token.cancel();
-        // 2. 按逆部署序串行 await join——给每个节点完整的 cleanup 窗口
         for (_, guard) in guards.into_iter().rev() {
             guard.shutdown().await;
         }
@@ -729,10 +646,6 @@ impl DesktopState {
             .map(|workflow| workflow.workflow_id.clone())
     }
 }
-
-// ADR-0009 Task 2-3: TimerRootSpec / SerialRootSpec 已移除——节点自持
-// on_deploy 生命周期，壳层不再需要中间 spec 结构。MqttRootSpec 留待 Task 4-5 清理。
-
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -1003,8 +916,6 @@ async fn deploy_workflow(
     } else {
         None
     };
-    // ADR-0009 Task 2-4: timer / serial / mqtt 节点已自持 on_deploy 生命周期；
-    // 壳层不再 collect/spawn 任何根触发任务。
     let node_count = graph.nodes.len();
     let edge_count = graph.edges.len();
     let registry = standard_registry();
@@ -1033,8 +944,6 @@ async fn deploy_workflow(
             return Err(stringify_error(&error));
         }
     };
-    // ADR-0009 Task 5: 壳层持有 lifecycle_guards 与 shutdown_token——撤销时
-    // 通过 DesktopWorkflow::shutdown_runtime 串行清理。
     let (ingress, streams, lifecycle_guards, shutdown_token) = deployment.into_parts();
     let root_nodes = ingress.root_nodes().to_vec();
     let (mut event_rx, mut result_rx, result_store_ref) = streams.into_receivers();

@@ -70,4 +70,4 @@ cargo test -p connections
 
 - **ADR-0005** 连接管理器细粒度锁
 - **RFC-0002** Phase 3 — `ConnectionGuard` RAII 从 Ring 0 split 到本 crate
-- **（待）ADR-0009** 生命周期钩子——将影响连接的启动/停止时机
+- **ADR-0009** 生命周期钩子（已实施）—— Ring 1 节点在 `on_deploy` 中借连接：先 `acquire` 校验类型/metadata、`mark_failure/success`，再 spawn 后台任务时通过 `runtime.block_on(connection_manager.acquire(...))`（同步循环）或直接 `.await`（async 循环）持续重连。撤销时 `LifecycleGuard::shutdown` 等待后台任务退出，`mark_disconnected` 由节点自身负责

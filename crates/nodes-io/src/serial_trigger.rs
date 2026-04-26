@@ -1,23 +1,23 @@
 //! 串口触发节点：监听扫码枪 / RFID / 工业仪表的主动上报数据帧。
 //!
-//! ## 触发模式（ADR-0009 后）
+//! ## 触发模式
 //!
-//! 节点 [`on_deploy`] 中：
+//! [`on_deploy`] 顺序：
 //! 1. acquire 连接、校验类型为串口、解析 metadata 为 [`SerialTriggerNodeConfig`]
 //! 2. 在 `tokio::task::spawn_blocking` 中跑同步串口读循环
 //! 3. 每收到完整帧就通过 `runtime.block_on(handle.emit(payload, metadata))` 推进 DAG
 //!
-//! `transform` 路径仍保留——若调用方手动 dispatch 到 serial 节点（带 `_serial_frame`
-//! payload），会得到等价输出。两条路径共用 [`build_serial_payload`] 与
+//! `transform` 路径仍可被手动 dispatch 调用（带 `_serial_frame` payload）
+//! 并得到等价输出——两条路径共用 [`build_serial_payload`] 与
 //! [`SerialTriggerNode::serial_metadata`] 确保 payload 字段（`serial_data` /
-//! `serial_ascii` / `serial_hex`）与 metadata.serial 结构一致。
+//! `serial_ascii` / `serial_hex`）与 `metadata.serial` 结构一致。
 //!
-//! ## 与壳层 `dispatch_router` 的语义差异
+//! ## 背压策略说明
 //!
-//! 同 [`crate::TimerNode`]：迁移前壳层 `submit_serial_frame` 走 `dispatch_router`
-//! 的 trigger lane（含 backpressure / 死信队列 / 重试 / metrics）。迁移后直接
-//! 走 `NodeHandle::emit`，失去这套防御能力。串口数据率受物理层限制，DLQ /
-//! retry 几乎无触发场景。后续 ADR-0014 / ADR-0016 引擎级背压能力再补回。
+//! 同 [`crate::TimerNode`]：emit 走 `NodeHandle` 而非 `WorkflowDispatchRouter`
+//! 的 trigger lane，后者的 backpressure / DLQ / retry / metrics 在本节点不生效。
+//! 串口数据率受物理层限制，DLQ / retry 几乎无触发场景。引擎级背压能力规划见
+//! ADR-0014 / ADR-0016。
 //!
 //! [`on_deploy`]: NodeTrait::on_deploy
 
@@ -361,7 +361,7 @@ impl NodeTrait for SerialTriggerNode {
                 serde_json::from_value(guard.metadata().clone()).map_err(|error| {
                     EngineError::node_config(self.id.clone(), error.to_string())
                 })?;
-            // node config 的 inject 覆盖 connection metadata（与原壳层语义一致）
+            // 节点 config 的 inject 优先级高于 connection metadata
             full_config.inject.clone_from(&self.config.inject);
             full_config.port_path = full_config.port_path.trim().to_owned();
             if full_config.port_path.is_empty() {
@@ -613,13 +613,8 @@ mod serial_helpers {
 
     /// 同步串口读循环（在 `tokio::task::spawn_blocking` 线程上跑）。
     ///
-    /// 与原壳层 `run_serial_root_reader` 行为等价，主要差异：
-    /// - 数据出口从 `dispatch_router.blocking_submit_trigger_to` 改为
-    ///   `runtime.block_on(handle.emit(...))`
-    /// - 取消信号从 `Arc<AtomicBool>` 改为 `CancellationToken`（同步 `is_cancelled()` 检查）
-    /// - 移除了 `emit_trigger_failure` 的壳层 UI 通知（撤销路径会发
-    ///   `ExecutionEvent::Failed` → 走 `NodeHandle::emit` 默认事件流，
-    ///   前端仍可观察到失败）
+    /// 数据出口走 `runtime.block_on(handle.emit(...))` 桥接 async DAG；
+    /// 取消信号走 `CancellationToken::is_cancelled()` 同步轮询。
     #[allow(clippy::too_many_lines, clippy::too_many_arguments)]
     pub(super) fn run_serial_loop(
         node_id: &str,

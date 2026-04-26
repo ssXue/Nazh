@@ -5,7 +5,7 @@
 //!
 //! ## 部署阶段
 //!
-//! 部署分两个阶段（ADR-0009）：
+//! 部署分两个阶段：
 //! 1. **`on_deploy` 阶段**：按拓扑序为每个节点构造 [`NodeLifecycleContext`] 并调用
 //!    [`NodeTrait::on_deploy`]，收集返回的 [`LifecycleGuard`]。任一节点失败则按
 //!    逆序释放已收集的 guards（RAII Drop 自动 cancel 内部任务），整图回滚。
@@ -15,6 +15,8 @@
 //! 触发器节点在 `on_deploy` 中 spawn 的后台任务可能早于 spawn 阶段就调用
 //! [`NodeHandle::emit`](nazh_core::NodeHandle::emit)——通过 channel buffer
 //! 自然缓冲，待 spawn 阶段完成后下游 `run_node` 自然消费。
+//!
+//! 设计决策见 ADR-0009。
 
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
@@ -53,9 +55,8 @@ pub async fn deploy_workflow(
 ///
 /// DAG 校验失败、节点实例化失败、节点 `on_deploy` 失败或不在 Tokio 运行时
 /// 中调用时返回错误。
-// 函数为两阶段部署的线性主流程（on_deploy 阶段 + spawn 阶段 + ingress 收集）。
-// 按 plan「clippy 收支表」预期，ADR-0009 完成后此函数仍超过 100 行 lint 阈值；
-// 拆 helper 反而切碎主流程时序，损可读性。Task 1 实施时确认该 #[allow] 保留。
+// 函数为两阶段部署的线性主流程（on_deploy 阶段 + spawn 阶段 + ingress 收集），
+// 拆 helper 会切碎时序的关键不变量（阶段 1 全部完成才能进阶段 2），损可读性。
 #[allow(clippy::too_many_lines)]
 pub async fn deploy_workflow_with_ai(
     graph: WorkflowGraph,
@@ -99,7 +100,7 @@ pub async fn deploy_workflow_with_ai(
     }
     let shared_resources: SharedResources = Arc::new(resource_bag);
 
-    // ---- 阶段 1：按拓扑序实例化节点 + on_deploy（ADR-0009）----
+    // ---- 阶段 1：按拓扑序实例化节点 + on_deploy ----
     //
     // 拓扑序保证上游节点先完成 on_deploy，让下游节点 on_deploy 时上游的资源
     // （连接、订阅）已就绪——为未来跨节点资源依赖打基础。任一节点失败时

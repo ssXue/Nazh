@@ -1,24 +1,22 @@
 //! 定时触发节点，按固定间隔生成包含计时元数据的上下文。
 //!
-//! ## 触发模式（ADR-0009 后）
+//! ## 触发模式
 //!
-//! Timer 节点是 ADR-0009 中**触发器**模式的范本：在 [`on_deploy`] 中 spawn
-//! 后台任务，按 `interval_ms` 调用 [`NodeHandle::emit`] 把数据推进 DAG。
-//! 撤销时 [`LifecycleGuard`] 通过 `CancellationToken` 通知后台任务退出。
+//! Timer 是触发器节点的最简范本：[`on_deploy`] 中 spawn 后台任务，按
+//! `interval_ms` 调用 [`NodeHandle::emit`] 推数据进 DAG；[`LifecycleGuard`]
+//! 通过 `CancellationToken` 在撤销时通知后台任务退出。
 //!
-//! ## 等价语义
+//! `transform` 路径仍可被手动 dispatch 调用并得到等价输出——两条路径共用
+//! [`TimerNode::trigger_payload`] / [`timer_metadata`] helper，确保 payload
+//! 含 inject 字段、`metadata.timer` 含 `node_id` / `interval_ms` /
+//! `immediate` / `triggered_at`。
 //!
-//! `transform` 路径仍保留——若调用方手动 dispatch 到 timer 节点，会得到
-//! 等价输出。两条路径共用 [`TimerNode::trigger_payload`] / [`timer_metadata`]
-//! helper，确保 emit 与 transform 输出**结构一致**（payload 含 inject 字段、
-//! `metadata.timer` 含 `node_id` / `interval_ms` / `immediate` / `triggered_at`）。
+//! ## 背压策略说明
 //!
-//! ## 与壳层 `dispatch_router` 的语义差异
-//!
-//! 迁移前壳层通过 `WorkflowDispatchRouter::submit_trigger_to` 进入 trigger
-//! lane（带 backpressure / 死信队列 / 重试 / metrics）。迁移后直接走
-//! `NodeHandle::emit`，失去这套防御能力——但 timer 触发规律可控，DLQ /
-//! retry 几乎无触发场景。后续 ADR-0014 / ADR-0016 引擎级背压能力再补回。
+//! emit 走 `NodeHandle` 而非 `WorkflowDispatchRouter` 的 trigger lane；
+//! 后者带的 backpressure / 死信队列 / 重试 / metrics 在本节点不生效。timer
+//! 触发规律可控（按固定 interval），DLQ / retry 几乎无触发场景。引擎级背压
+//! 能力规划见 ADR-0014 / ADR-0016。
 //!
 //! [`on_deploy`]: NodeTrait::on_deploy
 //! [`NodeHandle::emit`]: nazh_core::NodeHandle::emit

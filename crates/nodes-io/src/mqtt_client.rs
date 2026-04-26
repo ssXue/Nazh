@@ -4,17 +4,16 @@
 //!
 //! - **发布模式（publish）**：`transform` 调用 broker 发布 payload，`on_deploy`
 //!   返回 noop guard。
-//! - **订阅模式（subscribe）**：节点在 `on_deploy` 中建立 broker 长连接 +
-//!   订阅 topic，收到消息后通过 `NodeHandle::emit` 推进 DAG（ADR-0009 Task 4）。
-//!   `transform` 路径仍保留——若调用方手动 dispatch 节点带 `_mqtt_message`
-//!   payload，会得到等价输出。
+//! - **订阅模式（subscribe）**：`on_deploy` 中建立 broker 长连接 + 订阅 topic，
+//!   收到消息后通过 `NodeHandle::emit` 推进 DAG。`transform` 路径仍可被手动
+//!   dispatch 调用（带 `_mqtt_message` payload）并得到等价输出。
 //!
-//! ## 与壳层 `dispatch_router` 的语义差异
+//! ## 背压策略说明
 //!
-//! 同 [`crate::TimerNode`] / [`crate::SerialTriggerNode`]：迁移前壳层
-//! `submit_trigger_to` 进入 trigger lane（含 backpressure / DLQ / retry /
-//! metrics）。迁移后直接走 `NodeHandle::emit`。`MQTT` broker 端 `QoS` 与本端
-//! channel buffer 已提供基础背压，DLQ / retry 几乎无触发场景。
+//! 同 [`crate::TimerNode`] / [`crate::SerialTriggerNode`]：emit 走 `NodeHandle`
+//! 而非 `WorkflowDispatchRouter` 的 trigger lane，后者的 backpressure / DLQ /
+//! retry / metrics 在本节点不生效。`MQTT` broker 端 `QoS` 与本端 channel buffer
+//! 已提供基础背压，DLQ / retry 几乎无触发场景。
 
 use async_trait::async_trait;
 use chrono::Utc;

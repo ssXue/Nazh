@@ -415,33 +415,6 @@ impl ObservabilityStore {
         append_jsonl(self.root_dir.join(AUDIT_FILE), &entry).await
     }
 
-    // ADR-0009 Task 4 后没有调用方——壳层 emit_*_trigger_failure helpers 已删除
-    // （触发器节点失败现走 NodeHandle::emit 默认事件流）。Task 5 评估是否删除。
-    #[allow(dead_code)]
-    pub async fn record_external_failure(
-        &self,
-        source: &str,
-        message: String,
-        detail: Option<String>,
-        trace_id: Option<String>,
-        data: Option<Value>,
-    ) -> Result<(), String> {
-        let entry = self.build_entry(ObservabilityEntryDraft {
-            level: "error".to_owned(),
-            category: "execution".to_owned(),
-            source: source.to_owned(),
-            message,
-            detail,
-            trace_id,
-            node_id: Some(source.to_owned()),
-            duration_ms: None,
-            data,
-            timestamp: Utc::now(),
-            event_kind: None,
-        });
-        append_jsonl(self.root_dir.join(EVENTS_FILE), &entry).await
-    }
-
     fn build_entry(&self, draft: ObservabilityEntryDraft) -> ObservabilityEntry {
         ObservabilityEntry {
             id: build_record_id(&draft.category, &draft.timestamp),

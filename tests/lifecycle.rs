@@ -7,7 +7,7 @@
 //! - NodeHandle::emit 与 transform 路径产生等价的事件序列
 
 // 测试代码批量豁免 pedantic 风格 lint：测试更看重表达力，强求与生产代码同
-// 等严格的 lint 反而损可读性（详见 ADR-0009 实施 plan Task 1 实施记录）。
+// 等严格的 lint 反而损可读性。
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -516,13 +516,12 @@ async fn shutdown_有超时保护() {
     assert!(result.is_ok(), "shutdown 必须受超时保护，不能无限挂死");
 }
 
-/// ADR-0009 Task 2 端到端：真正的 TimerNode 部署后能按 interval 触发下游。
+/// 端到端：真正的 `TimerNode` 部署后能按 interval 触发下游。
 ///
-/// 复刻原壳层 `spawn_timer_root_tasks` 的可观察行为——
-/// 1. immediate=true 时部署后立即触发一次
-/// 2. 之后按 interval_ms 周期触发
+/// 1. `immediate=true` 时部署后立即触发一次
+/// 2. 之后按 `interval_ms` 周期触发
 ///
-/// shutdown 后停止触发由 `shutdown_后所有节点的_lifecycle_任务都退出` 间接覆盖。
+/// `shutdown` 后停止触发由 `shutdown_后所有节点的_lifecycle_任务都退出` 间接覆盖。
 #[tokio::test]
 async fn timer_节点_on_deploy_按_interval_触发下游() {
     use nazh_engine::{NodeRegistry, PluginHost, TimerNode, TimerNodeConfig};
