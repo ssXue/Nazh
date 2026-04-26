@@ -15,6 +15,7 @@ pub mod event;
 pub mod guard;
 pub mod lifecycle;
 pub mod node;
+pub mod pin;
 pub mod plugin;
 
 pub use context::{ContextRef, WorkflowContext};
@@ -28,6 +29,7 @@ pub use lifecycle::{
 pub use node::{
     NodeCapabilities, NodeDispatch, NodeExecution, NodeOutput, NodeTrait, into_payload_map,
 };
+pub use pin::{PinDefinition, PinDirection, PinType};
 pub use plugin::{
     NodeRegistry, Plugin, PluginHost, PluginManifest, RuntimeResources, SharedResources,
     WorkflowNodeDefinition,
@@ -40,7 +42,10 @@ pub use uuid::Uuid;
 /// CI 通过 `tauri_bindings::export_all()` 间接调用本模块的 `export_all()`。
 #[cfg(feature = "ts-export")]
 pub mod export_bindings {
-    use super::{CompletedExecutionEvent, ExecutionEvent, WorkflowContext, WorkflowNodeDefinition};
+    use super::{
+        CompletedExecutionEvent, ExecutionEvent, PinDefinition, PinDirection, PinType,
+        WorkflowContext, WorkflowNodeDefinition,
+    };
     use ts_rs::{ExportError, TS};
 
     /// 导出本 crate 的所有 ts-rs 类型到 `web/src/generated/`。
@@ -49,6 +54,9 @@ pub mod export_bindings {
         ExecutionEvent::export()?;
         WorkflowContext::export()?;
         WorkflowNodeDefinition::export()?;
+        PinDirection::export()?;
+        PinType::export()?;
+        PinDefinition::export()?;
         Ok(())
     }
 }

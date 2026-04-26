@@ -96,6 +96,31 @@ pub enum EngineError {
 
     #[error("AI 节点 `{node_id}` 调用失败: {message}")]
     AiNodeError { node_id: String, message: String },
+
+    /// `from` / `to` 形如 `"node_id.pin_id"`；合并字符串是为了把整个 Result 控制在
+    /// `clippy::result_large_err` 阈值（128 字节）以内——结构化字段拆开会让最大变体
+    /// 撑到 144 字节，触发 lint。诊断信息无损。
+    #[error("边 `{from}` → `{to}` 类型不兼容：上游 `{from_type}`，下游期望 `{to_type}`")]
+    IncompatiblePinTypes {
+        from: String,
+        to: String,
+        from_type: String,
+        to_type: String,
+    },
+
+    #[error("节点 `{node}` 不存在 {direction} 引脚 `{pin}`")]
+    UnknownPin {
+        node: String,
+        pin: String,
+        direction: String,
+    },
+
+    #[error("节点 `{node}` 声明了重复的 {direction} 引脚 `{pin}`")]
+    DuplicatePinId {
+        node: String,
+        pin: String,
+        direction: String,
+    },
 }
 
 impl EngineError {
