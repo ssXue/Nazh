@@ -10,7 +10,9 @@ use serde_json::{Value, json};
 
 use uuid::Uuid;
 
-use nazh_core::{EngineError, NodeExecution, NodeTrait, into_payload_map};
+use nazh_core::{
+    EngineError, NodeExecution, NodeTrait, PinDefinition, PinDirection, PinType, into_payload_map,
+};
 
 fn default_sqlite_path() -> String {
     "./nazh-local.sqlite3".to_owned()
@@ -63,6 +65,25 @@ impl SqlWriterNode {
 #[async_trait]
 impl NodeTrait for SqlWriterNode {
     nazh_core::impl_node_meta!("sqlWriter");
+
+    /// 输入引脚：必需的 `Json` 端口。
+    ///
+    /// `sqlWriter` 是纯 sink——payload 必须是有列结构的 JSON 对象，
+    /// 字段名映射到目标表的列。`required: true` 让部署期校验拒绝
+    /// "无上游入边"的 sql 节点（除非它是根节点；ADR-0010 默认 `id == "in"`
+    /// 的根节点豁免该校验）。
+    ///
+    /// 输出端口保留 trait 默认（`Any`）——写入确认元信息基本无下游消费。
+    fn input_pins(&self) -> Vec<PinDefinition> {
+        vec![PinDefinition {
+            id: "in".to_owned(),
+            label: "in".to_owned(),
+            pin_type: PinType::Json,
+            direction: PinDirection::Input,
+            required: true,
+            description: Some("要写入数据库的行数据；JSON 对象的字段映射到目标表的列".to_owned()),
+        }]
+    }
 
     async fn transform(
         &self,
@@ -162,5 +183,37 @@ impl NodeTrait for SqlWriterNode {
         )]);
 
         Ok(NodeExecution::broadcast(Value::Object(payload_map)).with_metadata(metadata))
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    fn make_node() -> SqlWriterNode {
+        let config: SqlWriterNodeConfig = serde_json::from_value(json!({})).unwrap();
+        SqlWriterNode::new("sql-1", config)
+    }
+
+    #[test]
+    fn input_pin_是_json_必需() {
+        let node = make_node();
+        let pins = node.input_pins();
+        assert_eq!(pins.len(), 1, "sqlWriter 只声明单个输入端口");
+        assert_eq!(pins[0].id, "in");
+        assert_eq!(pins[0].pin_type, PinType::Json);
+        assert_eq!(pins[0].direction, PinDirection::Input);
+        assert!(pins[0].required, "sqlWriter 输入必需——sink 节点不能空跑");
+    }
+
+    #[test]
+    fn output_pin_保留默认_any() {
+        // ADR-0010 Phase 3 决策：sqlWriter 是纯 sink，下游基本不消费输出，
+        // 输出端口保留 Any 减少耦合。
+        let node = make_node();
+        let pins = node.output_pins();
+        assert_eq!(pins.len(), 1);
+        assert_eq!(pins[0].pin_type, PinType::Any);
     }
 }
