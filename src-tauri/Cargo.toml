@@ -22,10 +22,11 @@ tauri-build = { version = "2", features = [] }
 nazh-engine = { path = ".." }
 tauri-bindings.workspace = true
 chrono.workspace = true
-rumqttc.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-serialport = "4"
+# ADR-0009 后 src-tauri 仅用 serialport 做 list_serial_ports / test_serial_connection
+# 等 IPC 命令；rumqttc / tokio-modbus 已完全交给 nodes-io，从依赖清单移除。
+serialport.workspace = true
 tauri = { version = "2", features = [] }
 tokio.workspace = true
 tracing.workspace = true

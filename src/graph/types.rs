@@ -268,21 +268,26 @@ impl WorkflowDeployment {
         &self.ingress
     }
 
-    /// 拆分为入口、流与生命周期 guards。
+    /// 拆分为入口、流、生命周期 guards 与撤销根 token。
     ///
     /// **注意**：丢弃返回的 guards 会立即 cancel 所有节点的 lifecycle token——
-    /// 长连接节点（MQTT 订阅 / Timer / Serial 监听）会随之停止。需要保留触发
-    /// 器活动的调用方应持有 guards 直至撤销。本阶段（Task 1）所有节点的
-    /// `on_deploy` 仍是默认 `noop` 实现，丢弃 guards 暂无可观察影响——但等到
-    /// Task 2-4 各类节点迁回引擎后丢弃将造成功能性丢失。
+    /// 长连接节点（MQTT 订阅 / Timer / Serial 监听）会随之停止。调用方需要
+    /// 持有 guards 直至撤销，并在撤销时 cancel `shutdown_token` 让所有节点
+    /// 同时收到取消信号（再串行 await guard.shutdown 等待 cleanup 完成）。
     pub fn into_parts(
         self,
     ) -> (
         WorkflowIngress,
         WorkflowStreams,
         Vec<(String, LifecycleGuard)>,
+        CancellationToken,
     ) {
-        (self.ingress, self.streams, self.lifecycle_guards)
+        (
+            self.ingress,
+            self.streams,
+            self.lifecycle_guards,
+            self.shutdown_token,
+        )
     }
 
     /// 显式撤销整张图：cancel 根 token 后按**逆部署序** shutdown 每个 guard。

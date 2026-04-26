@@ -2172,7 +2172,6 @@ dependencies = [
  "ai",
  "chrono",
  "nazh-engine",
- "rumqttc",
  "serde",
  "serde_json",
  "serialport",

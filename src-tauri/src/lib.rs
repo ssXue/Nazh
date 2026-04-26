@@ -39,7 +39,7 @@ use std::{
     path::{Component, Path, PathBuf},
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
+        atomic::{AtomicU64, AtomicUsize, Ordering},
     },
     time::Duration,
 };
@@ -553,7 +553,11 @@ impl WorkflowDispatchRouter {
     }
 }
 
-/// 已部署工作流的运行时包装，包含入口句柄和根触发任务。
+/// 已部署工作流的运行时包装，含入口句柄、引擎 lifecycle guards 与撤销 token。
+///
+/// ADR-0009 Task 5 重构：壳层不再持有 `Vec<DesktopTriggerTask>`——所有触发器
+/// 节点的后台任务由 `LifecycleGuard`（引擎层）管理。撤销时 cancel
+/// `shutdown_token` 广播给所有节点，再串行 `guard.shutdown().await`。
 struct DesktopWorkflow {
     workflow_id: String,
     metadata: RuntimeWorkflowMetadata,
@@ -563,53 +567,34 @@ struct DesktopWorkflow {
     node_count: usize,
     edge_count: usize,
     root_nodes: Vec<String>,
-    trigger_tasks: Vec<DesktopTriggerTask>,
+    /// 引擎 lifecycle guards（按部署顺序）。撤销时按逆序 await shutdown。
+    lifecycle_guards: Vec<(String, nazh_engine::LifecycleGuard)>,
+    /// 撤销根 token——cancel 后所有 guard 内部派生的 child token 同时收到信号。
+    shutdown_token: nazh_engine::CancellationToken,
+    /// 事件/结果转发任务。
     runtime_tasks: Vec<tauri::async_runtime::JoinHandle<()>>,
 }
 
-// ADR-0009 Task 4 后 trigger_tasks 永远为空（所有触发器迁回引擎），
-// TriggerJoinHandle 两个 variant 都已无构造者。整个 enum + DesktopTriggerTask
-// 留待 Task 5 删除时一并移除——当前保留是为了避免改 DesktopWorkflow 字段类型。
-#[allow(dead_code)]
-enum TriggerJoinHandle {
-    Async(tauri::async_runtime::JoinHandle<()>),
-    Thread(std::thread::JoinHandle<()>),
-}
-
-struct DesktopTriggerTask {
-    cancel: Arc<AtomicBool>,
-    join: TriggerJoinHandle,
-}
-
 impl DesktopWorkflow {
-    /// 中止所有根触发任务和事件转发任务，返回中止的触发任务数量。
-    async fn abort_triggers(&mut self) -> usize {
+    /// 撤销整个运行时：中止事件转发任务 + 广播 cancel + 串行 shutdown 所有 guards。
+    ///
+    /// 返回 shutdown 的 lifecycle guards 数量——通过 `UndeployResponse`
+    /// 的 `aborted_timer_count` 字段透传给前端。该字段名是 ADR-0009 之前的
+    /// 历史名称，迁移后语义为"已撤销的触发器节点数"，保留字段名避免 IPC
+    /// 契约破坏（决策见 plan Task 5 Step 4 方案 A）。
+    async fn shutdown_runtime(&mut self) -> usize {
         for task in &self.runtime_tasks {
             task.abort();
         }
-
-        let tasks = self.trigger_tasks.drain(..).collect::<Vec<_>>();
-        let aborted = tasks.len();
-
-        for task in &tasks {
-            task.cancel.store(true, Ordering::Relaxed);
-            if let TriggerJoinHandle::Async(handle) = &task.join {
-                handle.abort();
-            }
+        let guards = std::mem::take(&mut self.lifecycle_guards);
+        let count = guards.len();
+        // 1. 广播 cancel：所有节点的后台任务立即收到取消信号
+        self.shutdown_token.cancel();
+        // 2. 按逆部署序串行 await join——给每个节点完整的 cleanup 窗口
+        for (_, guard) in guards.into_iter().rev() {
+            guard.shutdown().await;
         }
-
-        for task in tasks {
-            match task.join {
-                TriggerJoinHandle::Async(handle) => {
-                    let _ = handle.await;
-                }
-                TriggerJoinHandle::Thread(handle) => {
-                    let _ = handle.join();
-                }
-            }
-        }
-
-        aborted
+        count
     }
 
     fn summary(&self, active: bool) -> RuntimeWorkflowSummary {
@@ -1048,10 +1033,9 @@ async fn deploy_workflow(
             return Err(stringify_error(&error));
         }
     };
-    // ADR-0009 Task 1: WorkflowDeployment 已携带 lifecycle_guards。本阶段三类
-    // 触发器节点的 on_deploy 仍是默认 noop，guards 立即丢弃无副作用；Task 2-4
-    // 节点迁移完成后，壳层需要持有 guards 直至撤销（详见 plan Task 5 Step 3）。
-    let (ingress, streams, _lifecycle_guards) = deployment.into_parts();
+    // ADR-0009 Task 5: 壳层持有 lifecycle_guards 与 shutdown_token——撤销时
+    // 通过 DesktopWorkflow::shutdown_runtime 串行清理。
+    let (ingress, streams, lifecycle_guards, shutdown_token) = deployment.into_parts();
     let root_nodes = ingress.root_nodes().to_vec();
     let (mut event_rx, mut result_rx, result_store_ref) = streams.into_receivers();
     let dead_letters = DeadLetterSink::new(workspace_dir, metadata.clone()).await?;
@@ -1069,13 +1053,8 @@ async fn deploy_workflow(
     };
     let replaced_existing = existing_workflow.is_some();
     if let Some(mut existing) = existing_workflow {
-        existing.abort_triggers().await;
+        existing.shutdown_runtime().await;
     }
-
-    // ADR-0009 Task 2-4: trigger_tasks 永远为空——所有触发器节点（timer / serial /
-    // mqttClient subscribe）已迁回引擎层，由 WorkflowDeployment.lifecycle_guards 管理。
-    // 字段保留是为了 Task 5 一并删除 DesktopTriggerTask 抽象（同时清理 trigger lane）。
-    let trigger_tasks: Vec<DesktopTriggerTask> = Vec::new();
 
     let event_app = app.clone();
     let event_store = observability_store.clone();
@@ -1136,7 +1115,8 @@ async fn deploy_workflow(
                 node_count,
                 edge_count,
                 root_nodes: root_nodes.clone(),
-                trigger_tasks,
+                lifecycle_guards,
+                shutdown_token,
                 runtime_tasks,
             },
         );
@@ -1282,7 +1262,7 @@ async fn undeploy_workflow(
     let response = if let Some(mut workflow) = existing_workflow {
         UndeployResponse {
             had_workflow: true,
-            aborted_timer_count: workflow.abort_triggers().await,
+            aborted_timer_count: workflow.shutdown_runtime().await,
             workflow_id: Some(target_workflow_id.clone()),
         }
     } else {

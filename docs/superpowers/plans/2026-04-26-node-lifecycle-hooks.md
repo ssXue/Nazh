@@ -410,7 +410,7 @@ mosquitto_pub -h localhost -t test/topic -m "{}"
 - Modify: `web/src/lib/tauri.ts` 与调用方（如改了 `aborted_timer_count` 字段名）
 - Modify: `src-tauri/Cargo.toml`（如可移除 rumqttc / serialport 依赖）
 
-- [ ] **Step 1: 删除 `*RootSpec` 数据 struct**
+- [x] **Step 1: 删除 `*RootSpec` 数据 struct**
 
 `src-tauri/src/lib.rs:736-757` 三个数据 struct 是壳层 collect 阶段的中间产物，迁移完成后已无产生方与消费方：
 - `TimerRootSpec`（line 736）
@@ -419,7 +419,7 @@ mosquitto_pub -h localhost -t test/topic -m "{}"
 
 迁后参数源头变为节点自身 `self.config` + `ctx.resources` 取连接管理器。**全部删除**。
 
-- [ ] **Step 2: 删除 `DesktopTriggerTask` / `TriggerJoinHandle` 抽象**
+- [x] **Step 2: 删除 `DesktopTriggerTask` / `TriggerJoinHandle` 抽象**
 
 `src-tauri/src/lib.rs:561-569`：
 
@@ -430,7 +430,7 @@ struct DesktopTriggerTask { cancel: Arc<AtomicBool>, join: TriggerJoinHandle }
 
 整套被引擎层 `LifecycleGuard` 取代（RAII + `CancellationToken`）。**整体删除**，不留 type alias / fallback。
 
-- [ ] **Step 3: 改造 `DesktopWorkflow` 结构**
+- [x] **Step 3: 改造 `DesktopWorkflow` 结构**
 
 `src-tauri/src/lib.rs:548-619`：
 
@@ -464,7 +464,7 @@ async fn shutdown_runtime(&mut self) -> usize {
 }
 ```
 
-- [ ] **Step 4: 改造 `abort_triggers` 调用点 + IPC 契约**
+- [x] **Step 4: 改造 `abort_triggers` 调用点 + IPC 契约**
 
 调用点 2 处（已确认）：
 - `src-tauri/src/lib.rs:1081` `deploy_workflow` 中替换已存在的工作流时 → 改为 `existing.shutdown_runtime().await`
@@ -476,17 +476,17 @@ async fn shutdown_runtime(&mut self) -> usize {
 
 选 A 即可，不要为了"语义干净"动 IPC 契约。
 
-- [ ] **Step 5: 删除共享 helper**
+- [x] **Step 5: 删除共享 helper**
 
 确认无引用后删除：
 - `emit_trigger_failure`（line 3209）— 触发失败由 `LifecycleGuard` 内部 emit + Runner 路径处理
 - `sleep_with_cancel`（line 3258）— `CancellationToken::cancelled().await` 替代
 
-- [ ] **Step 6: 检查依赖收缩**
+- [x] **Step 6: 检查依赖收缩**
 
 `src-tauri/Cargo.toml` 中的 `rumqttc`、`serialport`、`tokio-modbus` 现在应该只在 `crates/nodes-io` 中需要。如果 `src-tauri` 已不直接 use，可以删依赖。`Arc<AtomicBool>` / `Ordering` 的直接 import 也应可以删除（如果没有其他使用）。
 
-- [ ] **Step 7: 清理 `deploy_workflow` Tauri command 入口**
+- [x] **Step 7: 清理 `deploy_workflow` Tauri command 入口**
 
 `src-tauri/src/lib.rs:952` 中删除：
 - `collect_timer_root_specs` / `collect_serial_root_specs` / `collect_mqtt_root_specs` 三连调用（line 1028-1034）
@@ -495,7 +495,7 @@ async fn shutdown_runtime(&mut self) -> usize {
 
 > **关于 `#[allow(clippy::too_many_lines)]`**：删完后 `deploy_workflow` 从 ~261 行 → ~237 行，**仍超过 100 行阈值**，`#[allow]` 必须保留。如要彻底拆分，留待后续独立 PR（不放在本计划范围）。
 
-- [ ] **Step 8: 验证**
+- [x] **Step 8: 验证**
 
 ```bash
 cargo clippy --workspace --all-targets -- -D warnings
