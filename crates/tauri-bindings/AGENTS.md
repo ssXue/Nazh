@@ -10,7 +10,7 @@
 
 本 crate 是 **Ring 0 与 Tauri 壳层之间的适配层**（ADR-0017 的直接产物）。存在意义有二：
 
-1. **IPC 响应类型**：`DeployResponse` / `DispatchResponse` / `UndeployResponse` / `NodeTypeEntry` / `ListNodeTypesResponse` —— 它们只服务于桌面壳层与前端的契约，不属于引擎运行时。从前住在 `nazh-core::ipc`，ADR-0017 决策后迁出，避免污染 Ring 0。
+1. **IPC 响应类型**：`DeployResponse` / `DispatchResponse` / `UndeployResponse` / `NodeTypeEntry` / `ListNodeTypesResponse` / `DescribeNodePinsRequest` / `DescribeNodePinsResponse` —— 它们只服务于桌面壳层与前端的契约，不属于引擎运行时。从前住在 `nazh-core::ipc`，ADR-0017 决策后迁出，避免污染 Ring 0。`DescribeNodePinsRequest/Response` 由 ADR-0010 Phase 2 引入（2026-04-26），服务前端连接期 pin 类型校验（FlowGram `canAddLine` 钩子读 pin schema 缓存）。
 2. **ts-rs 汇总入口**：`export_all()` 按 feature `ts-export` 触发全工作区（`nazh-core` / `connections` / `ai` / `nazh-engine` + 本 crate）的 TypeScript 类型导出到 `web/src/generated/`。CI 用 `cargo test -p tauri-bindings --features ts-export export_bindings` 验证类型契约。
 
 还提供辅助函数：`list_node_types_response(&NodeRegistry) -> ListNodeTypesResponse`，负责从注册表读节点类型名称、排序、携带能力标签位图，封装给前端。
