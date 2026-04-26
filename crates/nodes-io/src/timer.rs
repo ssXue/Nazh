@@ -107,10 +107,7 @@ impl NodeTrait for TimerNode {
             .with_metadata(self.timer_metadata()))
     }
 
-    async fn on_deploy(
-        &self,
-        ctx: NodeLifecycleContext,
-    ) -> Result<LifecycleGuard, EngineError> {
+    async fn on_deploy(&self, ctx: NodeLifecycleContext) -> Result<LifecycleGuard, EngineError> {
         let interval = Duration::from_millis(self.config.interval_ms.max(1));
         let immediate = self.config.immediate;
         let handle = ctx.handle.clone();
@@ -128,7 +125,9 @@ impl NodeTrait for TimerNode {
             // 失败的极短窗口里及时退出。
             if immediate
                 && !token.is_cancelled()
-                && let Err(error) = handle.emit(node.trigger_payload(), node.timer_metadata()).await
+                && let Err(error) = handle
+                    .emit(node.trigger_payload(), node.timer_metadata())
+                    .await
             {
                 tracing::warn!(node_id = %node.id, ?error, "timer immediate emit 失败");
             }

@@ -13,6 +13,7 @@
 //! | `runner` | 单节点异步执行循环与事件发射 |
 
 mod deploy;
+mod pin_validator;
 mod runner;
 mod topology;
 pub(crate) mod types;

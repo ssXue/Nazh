@@ -5,24 +5,29 @@
 //!
 //! ## 部署阶段
 //!
-//! 部署分两个阶段：
-//! 1. **`on_deploy` 阶段**：按拓扑序为每个节点构造 [`NodeLifecycleContext`] 并调用
+//! 部署分三个阶段：
+//! 1. **阶段 0.5 — Pin 类型校验**：节点按拓扑序实例化（仅调 `registry.create`，
+//!    无副作用），再调 [`pin_validator::validate_pin_compatibility`] 校验所有
+//!    边的两端 pin 类型兼容、`required` 输入有上游、无重复 pin id。失败直接返
+//!    回错误——节点尚未 `on_deploy`，无 RAII 资源需要回滚（详见 ADR-0010）。
+//! 2. **`on_deploy` 阶段**：按拓扑序为每个节点构造 [`NodeLifecycleContext`] 并调用
 //!    [`NodeTrait::on_deploy`]，收集返回的 [`LifecycleGuard`]。任一节点失败则按
 //!    逆序释放已收集的 guards（RAII Drop 自动 cancel 内部任务），整图回滚。
-//! 2. **spawn 阶段**：为每个节点 spawn `run_node` 循环。该阶段仅消费阶段 1 已
+//! 3. **spawn 阶段**：为每个节点 spawn `run_node` 循环。该阶段仅消费阶段 0.5 已
 //!    实例化的节点，不再调用 `registry.create`。
 //!
 //! 触发器节点在 `on_deploy` 中 spawn 的后台任务可能早于 spawn 阶段就调用
 //! [`NodeHandle::emit`](nazh_core::NodeHandle::emit)——通过 channel buffer
 //! 自然缓冲，待 spawn 阶段完成后下游 `run_node` 自然消费。
 //!
-//! 设计决策见 ADR-0009。
+//! 设计决策见 ADR-0009 / ADR-0010。
 
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use ai::AiService;
 use tokio::sync::mpsc;
 
+use super::pin_validator;
 use super::runner::run_node;
 use super::types::{
     DownstreamTarget, WorkflowDeployment, WorkflowGraph, WorkflowIngress, WorkflowStreams,
@@ -55,8 +60,9 @@ pub async fn deploy_workflow(
 ///
 /// DAG 校验失败、节点实例化失败、节点 `on_deploy` 失败或不在 Tokio 运行时
 /// 中调用时返回错误。
-// 函数为两阶段部署的线性主流程（on_deploy 阶段 + spawn 阶段 + ingress 收集），
-// 拆 helper 会切碎时序的关键不变量（阶段 1 全部完成才能进阶段 2），损可读性。
+// 函数为三阶段部署的线性主流程（阶段 0.5 实例化 + Pin 校验、阶段 1 on_deploy、
+// 阶段 2 spawn run_node），拆 helper 会切碎时序的关键不变量（每阶段全部完成
+// 才能进下一阶段），损可读性。
 #[allow(clippy::too_many_lines)]
 pub async fn deploy_workflow_with_ai(
     graph: WorkflowGraph,
@@ -100,20 +106,36 @@ pub async fn deploy_workflow_with_ai(
     }
     let shared_resources: SharedResources = Arc::new(resource_bag);
 
-    // ---- 阶段 1：按拓扑序实例化节点 + on_deploy ----
+    // ---- 阶段 0.5：按拓扑序实例化节点 + Pin 类型校验 ----
     //
-    // 拓扑序保证上游节点先完成 on_deploy，让下游节点 on_deploy 时上游的资源
-    // （连接、订阅）已就绪——为未来跨节点资源依赖打基础。任一节点失败时
-    // `lifecycle_guards` 在函数返回前 drop，按 RAII 自动 cancel 已部署的后台任务。
-    let shutdown_token = CancellationToken::new();
+    // 实例化（registry.create）不应有副作用——节点构造函数只读 config + 资源
+    // 句柄克隆。这一阶段把"trait 元数据查询"与"on_deploy 副作用"清晰分离：
+    // 任何边类型不兼容 / pin id 不存在 / 重复 pin / 缺失 required input 都在
+    // 进入 on_deploy 之前失败，无需 RAII 回滚（无 LifecycleGuard 在手）。
+    //
+    // 设计决策见 ADR-0010。
     let mut nodes_by_id: HashMap<String, Arc<dyn NodeTrait>> = HashMap::new();
-    let mut lifecycle_guards = Vec::with_capacity(topology.deployment_order.len());
-
     for node_id in &topology.deployment_order {
         let node_definition = graph.nodes.get(node_id).ok_or_else(|| {
             EngineError::invalid_graph(format!("拓扑序中的节点 `{node_id}` 在图中不存在"))
         })?;
         let node = registry.create(node_definition, shared_resources.clone())?;
+        nodes_by_id.insert(node_id.clone(), node);
+    }
+    pin_validator::validate_pin_compatibility(&nodes_by_id, &graph.edges)?;
+
+    // ---- 阶段 1：on_deploy ----
+    //
+    // 拓扑序保证上游节点先完成 on_deploy，让下游节点 on_deploy 时上游的资源
+    // （连接、订阅）已就绪——为未来跨节点资源依赖打基础。任一节点失败时
+    // `lifecycle_guards` 在函数返回前 drop，按 RAII 自动 cancel 已部署的后台任务。
+    let shutdown_token = CancellationToken::new();
+    let mut lifecycle_guards = Vec::with_capacity(topology.deployment_order.len());
+
+    for node_id in &topology.deployment_order {
+        let node = nodes_by_id.get(node_id).ok_or_else(|| {
+            EngineError::invalid_graph(format!("阶段 1：节点 `{node_id}` 在阶段 0.5 缺失"))
+        })?;
 
         // 触发器节点 emit 时直接广播给所有下游 sender，不按 port 路由——
         // 路由语义只对 transform 路径有效（ADR-0008 metadata 通道是另一回事）。
@@ -140,7 +162,6 @@ pub async fn deploy_workflow_with_ai(
 
         let guard = node.on_deploy(ctx).await?;
         lifecycle_guards.push((node_id.clone(), guard));
-        nodes_by_id.insert(node_id.clone(), node);
     }
 
     // ---- 阶段 2：spawn run_node ----

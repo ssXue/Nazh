@@ -70,9 +70,13 @@ pub enum PinType {
     /// 二进制字节流（`Vec<u8>` 或 base64 字符串）。
     Binary,
     /// 同质数组，元素类型由 `inner` 给出。
-    Array { inner: Box<PinType> },
+    Array {
+        inner: Box<PinType>,
+    },
     /// 命名的协议级自定义类型；兼容性需精确同名匹配。
-    Custom { name: String },
+    Custom {
+        name: String,
+    },
 }
 
 impl PinType {
@@ -191,10 +195,7 @@ mod tests {
                 name: "modbus-register".to_owned(),
             },
         ] {
-            assert!(
-                PinType::Any.is_compatible_with(&ty),
-                "Any → {ty:?} 应通过"
-            );
+            assert!(PinType::Any.is_compatible_with(&ty), "Any → {ty:?} 应通过");
         }
     }
 
@@ -214,10 +215,7 @@ mod tests {
                 name: "modbus-register".to_owned(),
             },
         ] {
-            assert!(
-                ty.is_compatible_with(&PinType::Any),
-                "{ty:?} → Any 应通过"
-            );
+            assert!(ty.is_compatible_with(&PinType::Any), "{ty:?} → Any 应通过");
         }
     }
 

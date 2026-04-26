@@ -55,7 +55,11 @@ enum ProbeBehavior {
 }
 
 impl ProbeNode {
-    fn new(id: impl Into<String>, recorder: Arc<Mutex<Vec<String>>>, behavior: ProbeBehavior) -> Self {
+    fn new(
+        id: impl Into<String>,
+        recorder: Arc<Mutex<Vec<String>>>,
+        behavior: ProbeBehavior,
+    ) -> Self {
         Self {
             id: id.into(),
             recorder,
@@ -81,17 +85,16 @@ impl NodeTrait for ProbeNode {
         Ok(NodeExecution::broadcast(payload))
     }
 
-    async fn on_deploy(
-        &self,
-        ctx: NodeLifecycleContext,
-    ) -> Result<LifecycleGuard, EngineError> {
+    async fn on_deploy(&self, ctx: NodeLifecycleContext) -> Result<LifecycleGuard, EngineError> {
         self.recorder
             .lock()
             .unwrap()
             .push(format!("on_deploy:{}", self.id));
         match &self.behavior {
             ProbeBehavior::Noop => Ok(LifecycleGuard::noop()),
-            ProbeBehavior::Error(msg) => Err(EngineError::node_config(self.id.clone(), msg.clone())),
+            ProbeBehavior::Error(msg) => {
+                Err(EngineError::node_config(self.id.clone(), msg.clone()))
+            }
             ProbeBehavior::SpawnUntilCancel => {
                 let recorder = Arc::clone(&self.recorder);
                 let id = self.id.clone();
@@ -174,8 +177,11 @@ fn linear_graph_with_recorder(
 
     let mut registry = NodeRegistry::new();
     let recorder: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-    let behaviors_slot: Arc<Mutex<[Option<ProbeBehavior>; 3]>> =
-        Arc::new(Mutex::new([Some(behaviors[0].clone()), Some(behaviors[1].clone()), Some(behaviors[2].clone())]));
+    let behaviors_slot: Arc<Mutex<[Option<ProbeBehavior>; 3]>> = Arc::new(Mutex::new([
+        Some(behaviors[0].clone()),
+        Some(behaviors[1].clone()),
+        Some(behaviors[2].clone()),
+    ]));
     registry.register_with_capabilities("probe", NodeCapabilities::empty(), {
         let recorder = Arc::clone(&recorder);
         let behaviors_slot = Arc::clone(&behaviors_slot);
@@ -224,8 +230,8 @@ async fn on_deploy_按拓扑序调用() {
 #[tokio::test]
 async fn on_deploy_失败时按逆序回滚已部署节点的_guard() {
     let (graph, registry, recorder) = linear_graph_with_recorder([
-        ProbeBehavior::SpawnUntilCancel, // a 部署成功并起后台任务
-        ProbeBehavior::SpawnUntilCancel, // b 部署成功并起后台任务
+        ProbeBehavior::SpawnUntilCancel,             // a 部署成功并起后台任务
+        ProbeBehavior::SpawnUntilCancel,             // b 部署成功并起后台任务
         ProbeBehavior::Error("故意失败".to_owned()), // c 失败
     ]);
 
@@ -270,10 +276,7 @@ async fn shutdown_后所有节点的_lifecycle_任务都退出() {
     deployment.shutdown().await;
 
     let calls = recorder.lock().unwrap().clone();
-    let shutdown_count = calls
-        .iter()
-        .filter(|s| s.starts_with("shutdown:"))
-        .count();
+    let shutdown_count = calls.iter().filter(|s| s.starts_with("shutdown:")).count();
     assert_eq!(
         shutdown_count, 3,
         "三个节点都应记录 shutdown 事件，实际：{calls:?}"
@@ -292,8 +295,8 @@ async fn shutdown_后所有节点的_lifecycle_任务都退出() {
 /// 两者事件**结构等价**（trace_id 和 stage 名不同是预期的）。
 #[tokio::test]
 async fn node_handle_emit_与_transform_路径事件结构等价() {
-    use nazh_engine::NodeHandle;
     use nazh_core::{ArenaDataStore, DataStore};
+    use nazh_engine::NodeHandle;
     use serde_json::Map;
     use tokio::sync::mpsc;
 
@@ -304,7 +307,10 @@ async fn node_handle_emit_与_transform_路径事件结构等价() {
 
     let mut metadata = Map::new();
     metadata.insert("kind".to_owned(), json!("test"));
-    handle.emit(json!({"v": 1}), metadata.clone()).await.unwrap();
+    handle
+        .emit(json!({"v": 1}), metadata.clone())
+        .await
+        .unwrap();
 
     let started = event_rx.recv().await.unwrap();
     let completed = event_rx.recv().await.unwrap();
@@ -336,17 +342,26 @@ async fn on_deploy_的_handle_emit_数据流可被下游接收() {
     }
     #[async_trait]
     impl NodeTrait for EmitterNode {
-        fn id(&self) -> &str { &self.id }
-        fn kind(&self) -> &'static str { "emitter" }
+        fn id(&self) -> &str {
+            &self.id
+        }
+        fn kind(&self) -> &'static str {
+            "emitter"
+        }
         async fn transform(&self, _t: Uuid, p: Value) -> Result<NodeExecution, EngineError> {
             Ok(NodeExecution::broadcast(p))
         }
-        async fn on_deploy(&self, ctx: NodeLifecycleContext) -> Result<LifecycleGuard, EngineError> {
+        async fn on_deploy(
+            &self,
+            ctx: NodeLifecycleContext,
+        ) -> Result<LifecycleGuard, EngineError> {
             // 通过 handle.emit 推一条数据进 DAG
             let handle = ctx.handle.clone();
             let token = ctx.shutdown.clone();
             let join = tokio::spawn(async move {
-                let _ = handle.emit(json!({"emitted": true}), serde_json::Map::new()).await;
+                let _ = handle
+                    .emit(json!({"emitted": true}), serde_json::Map::new())
+                    .await;
                 token.cancelled().await;
             });
             self.emit_count.fetch_add(1, Ordering::SeqCst);
@@ -360,8 +375,12 @@ async fn on_deploy_的_handle_emit_数据流可被下游接收() {
     }
     #[async_trait]
     impl NodeTrait for CollectorNode {
-        fn id(&self) -> &str { &self.id }
-        fn kind(&self) -> &'static str { "collector" }
+        fn id(&self) -> &str {
+            &self.id
+        }
+        fn kind(&self) -> &'static str {
+            "collector"
+        }
         async fn transform(&self, _t: Uuid, p: Value) -> Result<NodeExecution, EngineError> {
             self.recorder
                 .lock()
@@ -426,12 +445,19 @@ async fn deployment_drop_未显式_shutdown_仍能_cancel_token() {
     }
     #[async_trait]
     impl NodeTrait for DropProbeNode {
-        fn id(&self) -> &str { &self.id }
-        fn kind(&self) -> &'static str { "drop_probe" }
+        fn id(&self) -> &str {
+            &self.id
+        }
+        fn kind(&self) -> &'static str {
+            "drop_probe"
+        }
         async fn transform(&self, _t: Uuid, p: Value) -> Result<NodeExecution, EngineError> {
             Ok(NodeExecution::broadcast(p))
         }
-        async fn on_deploy(&self, ctx: NodeLifecycleContext) -> Result<LifecycleGuard, EngineError> {
+        async fn on_deploy(
+            &self,
+            ctx: NodeLifecycleContext,
+        ) -> Result<LifecycleGuard, EngineError> {
             let token = ctx.shutdown.clone();
             let started = Arc::clone(&self.started);
             let cancelled = Arc::clone(&self.cancelled);
@@ -445,13 +471,17 @@ async fn deployment_drop_未显式_shutdown_仍能_cancel_token() {
     }
 
     let mut registry = NodeRegistry::new();
-    registry.register_with_capabilities("drop_probe", NodeCapabilities::empty(), move |def, _res| {
-        Ok(Arc::new(DropProbeNode {
-            id: def.id().to_owned(),
-            started: Arc::clone(&started_c),
-            cancelled: Arc::clone(&cancelled_c),
-        }))
-    });
+    registry.register_with_capabilities(
+        "drop_probe",
+        NodeCapabilities::empty(),
+        move |def, _res| {
+            Ok(Arc::new(DropProbeNode {
+                id: def.id().to_owned(),
+                started: Arc::clone(&started_c),
+                cancelled: Arc::clone(&cancelled_c),
+            }))
+        },
+    );
 
     let ast = json!({
         "nodes": {"x": {"id": "x", "type": "drop_probe"}},
@@ -479,15 +509,24 @@ async fn deployment_drop_未显式_shutdown_仍能_cancel_token() {
 async fn shutdown_有超时保护() {
     // 节点 spawn 一个**不响应 cancel** 的任务（不监听 token）；
     // shutdown 应在 LifecycleGuard 默认 5s 超时内返回——本测试设小超时验证。
-    struct StuckNode { id: String }
+    struct StuckNode {
+        id: String,
+    }
     #[async_trait]
     impl NodeTrait for StuckNode {
-        fn id(&self) -> &str { &self.id }
-        fn kind(&self) -> &'static str { "stuck" }
+        fn id(&self) -> &str {
+            &self.id
+        }
+        fn kind(&self) -> &'static str {
+            "stuck"
+        }
         async fn transform(&self, _t: Uuid, p: Value) -> Result<NodeExecution, EngineError> {
             Ok(NodeExecution::broadcast(p))
         }
-        async fn on_deploy(&self, _ctx: NodeLifecycleContext) -> Result<LifecycleGuard, EngineError> {
+        async fn on_deploy(
+            &self,
+            _ctx: NodeLifecycleContext,
+        ) -> Result<LifecycleGuard, EngineError> {
             // 故意忽略 ctx.shutdown，模拟"卡住"的清理路径
             let join = tokio::spawn(async {
                 tokio::time::sleep(Duration::from_secs(60)).await;
@@ -499,7 +538,9 @@ async fn shutdown_有超时保护() {
 
     let mut registry = NodeRegistry::new();
     registry.register_with_capabilities("stuck", NodeCapabilities::empty(), |def, _res| {
-        Ok(Arc::new(StuckNode { id: def.id().to_owned() }))
+        Ok(Arc::new(StuckNode {
+            id: def.id().to_owned(),
+        }))
     });
 
     let ast = json!({
@@ -534,16 +575,24 @@ async fn timer_节点_on_deploy_按_interval_触发下游() {
     host.load(&IoPlugin);
     let mut registry: NodeRegistry = host.into_registry();
     registry.register_with_capabilities("test_sink", NodeCapabilities::empty(), |def, _res| {
-        struct SinkNode { id: String }
+        struct SinkNode {
+            id: String,
+        }
         #[async_trait]
         impl NodeTrait for SinkNode {
-            fn id(&self) -> &str { &self.id }
-            fn kind(&self) -> &'static str { "test_sink" }
+            fn id(&self) -> &str {
+                &self.id
+            }
+            fn kind(&self) -> &'static str {
+                "test_sink"
+            }
             async fn transform(&self, _t: Uuid, p: Value) -> Result<NodeExecution, EngineError> {
                 Ok(NodeExecution::broadcast(p))
             }
         }
-        Ok(Arc::new(SinkNode { id: def.id().to_owned() }))
+        Ok(Arc::new(SinkNode {
+            id: def.id().to_owned(),
+        }))
     });
 
     let ast = json!({

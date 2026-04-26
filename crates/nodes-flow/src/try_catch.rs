@@ -9,7 +9,9 @@ use serde_json::Value;
 
 use uuid::Uuid;
 
-use nazh_core::{EngineError, NodeExecution, NodeTrait, into_payload_map};
+use nazh_core::{
+    EngineError, NodeExecution, NodeTrait, PinDefinition, PinDirection, PinType, into_payload_map,
+};
 use scripting::{ScriptNodeBase, default_max_operations};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,6 +41,28 @@ impl TryCatchNode {
 #[async_trait]
 impl NodeTrait for TryCatchNode {
     scripting::delegate_node_base!("tryCatch");
+
+    fn output_pins(&self) -> Vec<PinDefinition> {
+        // 与 transform 路由 try/catch 一致。
+        vec![
+            PinDefinition {
+                id: "try".to_owned(),
+                label: "try".to_owned(),
+                pin_type: PinType::Any,
+                direction: PinDirection::Output,
+                required: false,
+                description: Some("脚本执行成功时路由到此".to_owned()),
+            },
+            PinDefinition {
+                id: "catch".to_owned(),
+                label: "catch".to_owned(),
+                pin_type: PinType::Any,
+                direction: PinDirection::Output,
+                required: false,
+                description: Some("脚本抛出异常时路由到此（payload._error 含错误信息）".to_owned()),
+            },
+        ]
+    }
 
     async fn transform(
         &self,

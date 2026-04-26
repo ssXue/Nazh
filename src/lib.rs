@@ -24,9 +24,9 @@ mod registry;
 pub use nazh_core::{
     ArenaDataStore, CancellationToken, CompletedExecutionEvent, ContextRef, DataId, DataStore,
     EngineError, ExecutionEvent, LifecycleGuard, NodeCapabilities, NodeDispatch, NodeExecution,
-    NodeHandle, NodeLifecycleContext, NodeOutput, NodeRegistry, NodeTrait, Plugin, PluginHost,
-    PluginManifest, RuntimeResources, SharedResources, WorkflowContext, WorkflowNodeDefinition,
-    into_payload_map,
+    NodeHandle, NodeLifecycleContext, NodeOutput, NodeRegistry, NodeTrait, PinDefinition,
+    PinDirection, PinType, Plugin, PluginHost, PluginManifest, RuntimeResources, SharedResources,
+    WorkflowContext, WorkflowNodeDefinition, into_payload_map,
 };
 
 pub use connections::{

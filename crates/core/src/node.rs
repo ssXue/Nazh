@@ -311,10 +311,7 @@ pub trait NodeTrait: Send + Sync {
     ///
     /// 部署失败（建连超时、订阅被拒等）返回 [`EngineError`]；Runner 会按
     /// 逆拓扑序 drop 已注册的 guard，整图进入 `DeployFailed` 状态。
-    async fn on_deploy(
-        &self,
-        _ctx: NodeLifecycleContext,
-    ) -> Result<LifecycleGuard, EngineError> {
+    async fn on_deploy(&self, _ctx: NodeLifecycleContext) -> Result<LifecycleGuard, EngineError> {
         Ok(LifecycleGuard::noop())
     }
 }

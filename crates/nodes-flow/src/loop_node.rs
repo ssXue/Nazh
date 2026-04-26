@@ -11,7 +11,8 @@ use serde_json::{Map, Value};
 use uuid::Uuid;
 
 use nazh_core::{
-    EngineError, NodeDispatch, NodeExecution, NodeOutput, NodeTrait, into_payload_map,
+    EngineError, NodeDispatch, NodeExecution, NodeOutput, NodeTrait, PinDefinition, PinDirection,
+    PinType, into_payload_map,
 };
 use scripting::{ScriptNodeBase, default_max_operations};
 
@@ -131,6 +132,31 @@ fn collect_loop_items(node_id: &str, result: Dynamic) -> Result<Vec<Option<Value
 #[async_trait]
 impl NodeTrait for LoopNode {
     scripting::delegate_node_base!("loop");
+
+    fn output_pins(&self) -> Vec<PinDefinition> {
+        // 与 transform 路由 body / done 一致。每次 transform 既会触发若干次
+        // body 也会触发一次 done——这是 MULTI_OUTPUT 节点的典型形态。
+        vec![
+            PinDefinition {
+                id: "body".to_owned(),
+                label: "body".to_owned(),
+                pin_type: PinType::Any,
+                direction: PinDirection::Output,
+                required: false,
+                description: Some(
+                    "迭代每一项时触发，payload._loop 携带 phase/index/count/item".to_owned(),
+                ),
+            },
+            PinDefinition {
+                id: "done".to_owned(),
+                label: "done".to_owned(),
+                pin_type: PinType::Any,
+                direction: PinDirection::Output,
+                required: false,
+                description: Some("迭代结束信号，payload._loop.phase = \"done\"".to_owned()),
+            },
+        ]
+    }
 
     async fn transform(
         &self,

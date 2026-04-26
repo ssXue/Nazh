@@ -51,6 +51,20 @@ Plugin 注册入口：`FlowPlugin::register(&mut NodeRegistry)`，在 `lib.rs:28
 
 这张表是 crate 专属契约，由 facade crate 的 `src/registry.rs::标准注册表节点能力标签与_adr_0011_契约一致` 单测守住。改这张表**必须同时改测试**，否则 CI 会挂。
 
+### 引脚声明（ADR-0010）
+
+| 节点 | 输入 pin | 输出 pin |
+|------|----------|----------|
+| `code` | `in: Any`（默认） | `out: Any`（默认） |
+| `if` | `in: Any`（默认） | `true: Any` / `false: Any` |
+| `switch` | `in: Any`（默认） | **动态**：每个 `branches[i].key` 一个 `Any` 输出 + `default_branch`（去重） |
+| `loop` | `in: Any`（默认） | `body: Any` / `done: Any` |
+| `tryCatch` | `in: Any`（默认） | `try: Any` / `catch: Any` |
+
+**Phase 1 输入端均为默认 `Any`**——脚本节点天然吃任何 payload，没有理由收紧。输出端的具名 pin 与 `transform` 路径上 `NodeDispatch::Route([id])` 的字符串严格一致；改 pin id 必须同步改 transform，反之亦然。
+
+**`switch` 的动态 pin 由 `output_pins(&self)` 实例方法在每次调用时读 `self.branches` + `self.default_branch` 生成**，避免把每个用户配置都注册成新类型。这是 ADR-0010 把 `output_pins` 设计为实例方法（而非 `'static` 表）的典型原因。
+
 ### 共同契约
 
 1. **所有节点都嵌入 `ScriptNodeBase`**。`NodeTrait` 元数据（`id` / `kind`）用 `scripting::delegate_node_base!` 宏委托。**能力标签不走 trait**，而是在 `FlowPlugin::register` 时通过 `register_with_capabilities` 声明——详见 `crates/core/AGENTS.md` 的"为什么 `NodeTrait` 没有 `capabilities()` 方法"。
@@ -73,7 +87,8 @@ Plugin 注册入口：`FlowPlugin::register(&mut NodeRegistry)`，在 `lib.rs:28
 | 新增流程节点 | 本文件能力表 + `FlowPlugin::register` + `src/registry.rs` 契约测试 + `NODE_CATEGORY_MAP`（前端）+ ADR 若决策性 |
 | 改节点能力标签 | 本文件能力表 + `src/registry.rs` 契约测试（两者不能分离） |
 | 改节点 config schema | ts-rs 重新生成（若 `#[ts(export)]`） + 前端配置面板 |
-| 改分支端口名 | 前端画布 + 所有示例工作流（风险高，尽量不做） |
+| 改分支端口名 | 节点 `output_pins()` + `transform` 中的 `Route([...])` + 本文件 pin 表格 + 前端画布 + 所有示例工作流（风险高，尽量不做） |
+| 给某节点收紧 pin 类型（如 `loop` 输入改成 `Array(Any)`） | 节点 `input_pins`/`output_pins` + 本文件 pin 表格 + 集成测试覆盖兼容/不兼容路径 |
 
 测试：
 ```bash
@@ -86,4 +101,4 @@ cargo test -p nazh-engine --test workflow   # 集成测试，覆盖分支+循环
 - **ADR-0002** Rhai 脚本引擎（本 crate 的全部节点都依赖）
 - **ADR-0008** 元数据通道（节点输出遵循此约定）
 - **ADR-0011** 节点能力标签（能力分配见上表）
-- **（待）ADR-0010** Pin 声明系统（未来会让分支/循环的端口声明更强类型）
+- **ADR-0010** Pin 声明系统（Phase 1：4 个分支节点已声明具体 output pin；输入端仍是默认 `Any`，详见引脚声明表）

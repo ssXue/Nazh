@@ -15,9 +15,9 @@ use ai::{
     AiProviderDraft, AiService, AiTestResult, OpenAiCompatibleService,
 };
 use nazh_engine::{
-    ConnectionDefinition, ConnectionRecord, EngineError, ExecutionEvent,
-    WorkflowContext, WorkflowGraph, WorkflowIngress,
-    deploy_workflow_with_ai as deploy_workflow_graph, shared_connection_manager, standard_registry,
+    ConnectionDefinition, ConnectionRecord, EngineError, ExecutionEvent, WorkflowContext,
+    WorkflowGraph, WorkflowIngress, deploy_workflow_with_ai as deploy_workflow_graph,
+    shared_connection_manager, standard_registry,
 };
 use observability::{
     ObservabilityContextInput, ObservabilityQueryResult, ObservabilityStore,
@@ -468,7 +468,6 @@ impl WorkflowDispatchRouter {
             },
         }
     }
-
 }
 
 /// 已部署工作流的运行时包装，含入口句柄、引擎 lifecycle guards 与撤销 token。
@@ -2229,7 +2228,6 @@ fn expand_user_path(app: &AppHandle, raw_path: &str) -> Result<PathBuf, String> 
     Ok(PathBuf::from(raw_path))
 }
 
-
 fn serial_data_bits(value: u8) -> serialport::DataBits {
     match value {
         5 => serialport::DataBits::Five,
@@ -2262,7 +2260,6 @@ fn serial_flow_control(value: &str) -> serialport::FlowControl {
         _ => serialport::FlowControl::None,
     }
 }
-
 
 fn normalize_sql_writer_paths(
     graph: &mut WorkflowGraph,

@@ -355,10 +355,7 @@ mod tests {
         let handle = NodeHandle::new("trigger-1", store, vec![downstream_tx], event_tx);
 
         handle
-            .emit(
-                serde_json::json!({"value": 42}),
-                Map::new(),
-            )
+            .emit(serde_json::json!({"value": 42}), Map::new())
             .await
             .unwrap();
 

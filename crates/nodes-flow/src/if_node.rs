@@ -8,7 +8,7 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use nazh_core::EngineError;
-use nazh_core::{NodeExecution, NodeTrait};
+use nazh_core::{NodeExecution, NodeTrait, PinDefinition, PinDirection, PinType};
 use scripting::{ScriptNodeBase, default_max_operations};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -38,6 +38,29 @@ impl IfNode {
 #[async_trait]
 impl NodeTrait for IfNode {
     scripting::delegate_node_base!("if");
+
+    fn output_pins(&self) -> Vec<PinDefinition> {
+        // 与 transform 中 NodeDispatch::Route(["true"|"false"]) 保持一致；
+        // 改这里时也要改 transform，反之亦然。
+        vec![
+            PinDefinition {
+                id: "true".to_owned(),
+                label: "真".to_owned(),
+                pin_type: PinType::Any,
+                direction: PinDirection::Output,
+                required: false,
+                description: Some("脚本返回 true 时路由到此分支".to_owned()),
+            },
+            PinDefinition {
+                id: "false".to_owned(),
+                label: "假".to_owned(),
+                pin_type: PinType::Any,
+                direction: PinDirection::Output,
+                required: false,
+                description: Some("脚本返回 false 时路由到此分支".to_owned()),
+            },
+        ]
+    }
 
     async fn transform(
         &self,

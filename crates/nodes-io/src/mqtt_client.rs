@@ -345,10 +345,7 @@ impl NodeTrait for MqttClientNode {
         Ok(NodeExecution::broadcast(payload).with_metadata(metadata))
     }
 
-    async fn on_deploy(
-        &self,
-        ctx: NodeLifecycleContext,
-    ) -> Result<LifecycleGuard, EngineError> {
+    async fn on_deploy(&self, ctx: NodeLifecycleContext) -> Result<LifecycleGuard, EngineError> {
         // 仅 subscribe 模式建连——publish 模式 transform 时按需借用
         if !matches!(self.config.mode, MqttMode::Subscribe) {
             return Ok(LifecycleGuard::noop());
@@ -406,8 +403,7 @@ impl NodeTrait for MqttClientNode {
                 return Err(EngineError::node_config(self.id.clone(), reason));
             }
             if host.is_empty() {
-                let reason =
-                    format!("MQTT 连接资源 `{connection_id}` 缺少 host 配置");
+                let reason = format!("MQTT 连接资源 `{connection_id}` 缺少 host 配置");
                 guard.mark_failure(&reason);
                 return Err(EngineError::node_config(self.id.clone(), reason));
             }
@@ -534,8 +530,8 @@ async fn mqtt_subscribe_loop(
             return;
         }
 
-        let reason = disconnected_reason
-            .unwrap_or_else(|| format!("MQTT {host}:{port} 连接已断开"));
+        let reason =
+            disconnected_reason.unwrap_or_else(|| format!("MQTT {host}:{port} 连接已断开"));
         guard.mark_failure(&reason);
         let retry_after_ms = connection_manager
             .record_connect_failure(&connection_id, &reason)
@@ -548,10 +544,7 @@ async fn mqtt_subscribe_loop(
 }
 
 /// 等待 ConnAck，带 5s 超时与 cancel 监听。返回是否成功。
-async fn wait_connack(
-    eventloop: &mut rumqttc::EventLoop,
-    token: &CancellationToken,
-) -> bool {
+async fn wait_connack(eventloop: &mut rumqttc::EventLoop, token: &CancellationToken) -> bool {
     loop {
         if token.is_cancelled() {
             return false;
@@ -565,8 +558,9 @@ async fn wait_connack(
             Ok(Ok(rumqttc::Event::Incoming(rumqttc::Packet::ConnAck(ack)))) => {
                 return ack.code == rumqttc::ConnectReturnCode::Success;
             }
-            Ok(Ok(rumqttc::Event::Incoming(rumqttc::Packet::Disconnect)) | Err(_))
-            | Err(_) => return false,
+            Ok(Ok(rumqttc::Event::Incoming(rumqttc::Packet::Disconnect)) | Err(_)) | Err(_) => {
+                return false;
+            }
             Ok(Ok(_)) => {}
         }
     }
@@ -629,5 +623,3 @@ async fn run_message_loop(
         }
     }
 }
-
-

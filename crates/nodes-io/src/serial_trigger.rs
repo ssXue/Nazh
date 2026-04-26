@@ -324,10 +324,7 @@ impl NodeTrait for SerialTriggerNode {
         Ok(NodeExecution::broadcast(Value::Object(payload_map)).with_metadata(metadata))
     }
 
-    async fn on_deploy(
-        &self,
-        ctx: NodeLifecycleContext,
-    ) -> Result<LifecycleGuard, EngineError> {
+    async fn on_deploy(&self, ctx: NodeLifecycleContext) -> Result<LifecycleGuard, EngineError> {
         // 1. 必须有 connection_id（手动 dispatch 模式无需监听）
         let Some(connection_id) = self.connection_id.clone() else {
             return Ok(LifecycleGuard::noop());
@@ -642,8 +639,7 @@ mod serial_helpers {
             let mut port = match port_result {
                 Ok(port) => {
                     let connect_latency_ms =
-                        u64::try_from(connect_started_at.elapsed().as_millis())
-                            .unwrap_or(u64::MAX);
+                        u64::try_from(connect_started_at.elapsed().as_millis()).unwrap_or(u64::MAX);
                     let _ = runtime.block_on(connection_manager.record_connect_success(
                         connection_id,
                         format!("串口 {} 已建立监听，等待外设上报数据", config.port_path),
@@ -716,10 +712,7 @@ mod serial_helpers {
                             if last_heartbeat_sent_at.elapsed() >= heartbeat_interval {
                                 let _ = runtime.block_on(connection_manager.record_heartbeat(
                                     connection_id,
-                                    format!(
-                                        "串口 {} 空闲等待中，链路仍存活",
-                                        config.port_path
-                                    ),
+                                    format!("串口 {} 空闲等待中，链路仍存活", config.port_path),
                                 ));
                                 last_heartbeat_sent_at = Instant::now();
                             }
@@ -757,8 +750,8 @@ mod serial_helpers {
                 guard.mark_success();
                 let reason = format!("串口 {} 监听已停止", config.port_path);
                 drop(guard);
-                let _ = runtime
-                    .block_on(connection_manager.mark_disconnected(connection_id, &reason));
+                let _ =
+                    runtime.block_on(connection_manager.mark_disconnected(connection_id, &reason));
                 break;
             }
 
@@ -843,7 +836,10 @@ mod tests {
 
     #[test]
     fn decode_serial_delimiter_支持转义与hex() {
-        assert_eq!(serial_helpers::decode_serial_delimiter(""), Vec::<u8>::new());
+        assert_eq!(
+            serial_helpers::decode_serial_delimiter(""),
+            Vec::<u8>::new()
+        );
         assert_eq!(serial_helpers::decode_serial_delimiter("\\n"), b"\n");
         assert_eq!(serial_helpers::decode_serial_delimiter("\\r\\n"), b"\r\n");
         assert_eq!(serial_helpers::decode_serial_delimiter("hex:0d0a"), b"\r\n");
@@ -854,6 +850,9 @@ mod tests {
     fn bytes_to_hex_格式正确() {
         assert_eq!(serial_helpers::bytes_to_hex(&[]), "");
         assert_eq!(serial_helpers::bytes_to_hex(&[0xAB]), "AB");
-        assert_eq!(serial_helpers::bytes_to_hex(&[0x00, 0xFF, 0x10]), "00 FF 10");
+        assert_eq!(
+            serial_helpers::bytes_to_hex(&[0x00, 0xFF, 0x10]),
+            "00 FF 10"
+        );
     }
 }

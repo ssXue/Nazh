@@ -13,7 +13,8 @@ use async_trait::async_trait;
 use nazh_engine::{
     CodeNode, CodeNodeConfig, ConnectionDefinition, ConnectionManager, DebugConsoleNode,
     DebugConsoleNodeConfig, EngineError, HttpClientNode, HttpClientNodeConfig, ModbusReadNode,
-    ModbusReadNodeConfig, MqttClientNode, MqttClientNodeConfig, MqttMode, NodeDispatch, NodeTrait,
+    ModbusReadNodeConfig, MqttClientNode, MqttClientNodeConfig, MqttMode, NodeCapabilities,
+    NodeDispatch, NodeExecution, NodeRegistry, NodeTrait, PinDefinition, PinDirection, PinType,
     SerialTriggerNode, SerialTriggerNodeConfig, SqlWriterNode, SqlWriterNodeConfig, TimerNode,
     TimerNodeConfig, WorkflowContext, WorkflowGraph, deploy_workflow, deploy_workflow_with_ai,
     shared_connection_manager, standard_registry,
@@ -1573,4 +1574,153 @@ async fn mqtt_publish_node_requires_connection() {
         error_message.contains("连接资源"),
         "error should mention connection requirement: {error_message}"
     );
+}
+
+// ========== ADR-0010 Pin 校验集成测试 ==========
+//
+// 在 deploy_workflow 路径上验证阶段 0.5 的 pin_validator 被正确接入：
+// 用一个声明了具体 PinType 的测试节点 + 自定义 NodeRegistry，构造一条
+// 类型不兼容的边，断言 deploy_workflow_with_ai 返回 IncompatiblePinTypes。
+
+/// 测试用类型化节点：input/output pin 由构造时指定。
+struct TypedTestNode {
+    id: String,
+    input_pin: PinType,
+    output_pin: PinType,
+}
+
+#[async_trait]
+impl NodeTrait for TypedTestNode {
+    fn id(&self) -> &str {
+        &self.id
+    }
+    fn kind(&self) -> &'static str {
+        "typedTest"
+    }
+    fn input_pins(&self) -> Vec<PinDefinition> {
+        vec![PinDefinition {
+            id: "in".to_owned(),
+            label: "in".to_owned(),
+            pin_type: self.input_pin.clone(),
+            direction: PinDirection::Input,
+            required: true,
+            description: None,
+        }]
+    }
+    fn output_pins(&self) -> Vec<PinDefinition> {
+        vec![PinDefinition {
+            id: "out".to_owned(),
+            label: "out".to_owned(),
+            pin_type: self.output_pin.clone(),
+            direction: PinDirection::Output,
+            required: false,
+            description: None,
+        }]
+    }
+    async fn transform(
+        &self,
+        _trace_id: Uuid,
+        payload: serde_json::Value,
+    ) -> Result<NodeExecution, EngineError> {
+        Ok(NodeExecution::broadcast(payload))
+    }
+}
+
+#[tokio::test]
+async fn deploy_拒绝_pin_类型不兼容的边() {
+    // 自定义 registry：注册两类 typedTest 工厂——src 输出 String，sink 期望 Integer
+    let mut registry = NodeRegistry::new();
+    registry.register_with_capabilities("typedTestSrc", NodeCapabilities::empty(), |def, _res| {
+        Ok(Arc::new(TypedTestNode {
+            id: def.id().to_owned(),
+            input_pin: PinType::Any,
+            output_pin: PinType::String,
+        }) as Arc<dyn NodeTrait>)
+    });
+    registry.register_with_capabilities("typedTestSink", NodeCapabilities::empty(), |def, _res| {
+        Ok(Arc::new(TypedTestNode {
+            id: def.id().to_owned(),
+            input_pin: PinType::Integer,
+            output_pin: PinType::Any,
+        }) as Arc<dyn NodeTrait>)
+    });
+
+    let graph = match WorkflowGraph::from_json(
+        &json!({
+            "nodes": {
+                "src":  { "type": "typedTestSrc",  "config": {} },
+                "sink": { "type": "typedTestSink", "config": {} },
+            },
+            "edges": [{ "from": "src", "to": "sink" }],
+        })
+        .to_string(),
+    ) {
+        Ok(g) => g,
+        Err(error) => panic!("graph 应可解析: {error}"),
+    };
+
+    let result = deploy_workflow(graph, shared_connection_manager(), &registry).await;
+    match result {
+        Ok(_) => panic!("类型不兼容的 DAG 应被 pin 校验器拒绝"),
+        Err(EngineError::IncompatiblePinTypes {
+            from,
+            to,
+            from_type,
+            to_type,
+        }) => {
+            assert_eq!(from, "src.out");
+            assert_eq!(to, "sink.in");
+            assert!(from_type.contains("String"));
+            assert!(to_type.contains("Integer"));
+        }
+        Err(error) => panic!("应报 IncompatiblePinTypes，实际: {error}"),
+    }
+}
+
+#[tokio::test]
+async fn deploy_拒绝引用未声明_pin_id_的边() {
+    // 用一个只有默认 "out" 的 typedTestSrc，连一条 source_port_id = "ghost" 的边
+    let mut registry = NodeRegistry::new();
+    registry.register_with_capabilities("typedTestSrc", NodeCapabilities::empty(), |def, _res| {
+        Ok(Arc::new(TypedTestNode {
+            id: def.id().to_owned(),
+            input_pin: PinType::Any,
+            output_pin: PinType::Any,
+        }) as Arc<dyn NodeTrait>)
+    });
+    registry.register_with_capabilities("typedTestSink", NodeCapabilities::empty(), |def, _res| {
+        Ok(Arc::new(TypedTestNode {
+            id: def.id().to_owned(),
+            input_pin: PinType::Any,
+            output_pin: PinType::Any,
+        }) as Arc<dyn NodeTrait>)
+    });
+
+    let graph = match WorkflowGraph::from_json(
+        &json!({
+            "nodes": {
+                "src":  { "type": "typedTestSrc",  "config": {} },
+                "sink": { "type": "typedTestSink", "config": {} },
+            },
+            "edges": [{
+                "from": "src",
+                "to": "sink",
+                "source_port_id": "ghost",
+            }],
+        })
+        .to_string(),
+    ) {
+        Ok(g) => g,
+        Err(error) => panic!("graph 应可解析: {error}"),
+    };
+
+    let result = deploy_workflow(graph, shared_connection_manager(), &registry).await;
+    match result {
+        Ok(_) => panic!("引用不存在 pin id 的边应被 pin 校验器拒绝"),
+        Err(EngineError::UnknownPin { node, pin, .. }) => {
+            assert_eq!(node, "src");
+            assert_eq!(pin, "ghost");
+        }
+        Err(error) => panic!("应报 UnknownPin，实际: {error}"),
+    }
 }
