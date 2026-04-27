@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
   onWorkflowVariableChanged,
@@ -90,6 +90,7 @@ export function RuntimeVariablesPanel({ workflowId }: RuntimeVariablesPanelProps
     async (name: string, value: JsonValue) => {
       if (!workflowId) return;
       try {
+        setError(null);
         await setWorkflowVariable({ workflowId, name, value });
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
@@ -115,9 +116,9 @@ export function RuntimeVariablesPanel({ workflowId }: RuntimeVariablesPanelProps
     <div className="runtime-variables-panel">
       {error && <div className="runtime-variables-panel__error">{error}</div>}
       {isLoading && entries.length === 0 ? (
-        <div className="runtime-variables-panel--loading">加载中…</div>
+        <div className="runtime-variables-panel runtime-variables-panel--loading">加载中…</div>
       ) : entries.length === 0 ? (
-        <div className="runtime-variables-panel--empty">该工作流未声明变量</div>
+        <div className="runtime-variables-panel runtime-variables-panel--empty">该工作流未声明变量</div>
       ) : (
         <ul className="runtime-variables-panel__list">
           {entries.map((entry) => (
@@ -138,14 +139,28 @@ function VariableRow({ entry, onSubmit }: VariableRowProps) {
   const [draft, setDraft] = useState<string>(JSON.stringify(entry.value));
   const [isEditing, setIsEditing] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
+  const isSubmittingRef = useRef(false);
+
+  // Issue 1: 外部事件触发的 entry.value 更新——非编辑态时 draft 跟随，避免下次开 edit 看到过期值。
+  // Issue 4: 退出编辑态时同步重置双 submit 防御守卫。
+  useEffect(() => {
+    if (!isEditing) {
+      setDraft(JSON.stringify(entry.value));
+      isSubmittingRef.current = false;
+    }
+  }, [entry.value, isEditing]);
 
   const handleSubmit = async () => {
+    // Issue 4: Enter 触发 handleSubmit 后 setIsEditing(false) 会使 input blur，防止 onBlur 二次提交。
+    if (isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
     let parsed: JsonValue;
     try {
       parsed = parseValueByPinType(draft, entry.variableType);
       setParseError(null);
     } catch (err) {
       setParseError(err instanceof Error ? err.message : String(err));
+      isSubmittingRef.current = false; // 解析失败回退守卫
       return;
     }
     await onSubmit(entry.name, parsed);
@@ -212,11 +227,13 @@ function parseValueByPinType(raw: string, pinType: PinType): JsonValue {
       if (trimmed === 'false') return false;
       throw new Error('期望 true / false');
     case 'integer': {
+      if (trimmed === '') throw new Error('期望整数（不能为空）');
       const n = Number(trimmed);
       if (!Number.isInteger(n)) throw new Error('期望整数');
       return n;
     }
     case 'float': {
+      if (trimmed === '') throw new Error('期望数字（不能为空）');
       const n = Number(trimmed);
       if (Number.isNaN(n)) throw new Error('期望数字');
       return n;
