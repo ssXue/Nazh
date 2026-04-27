@@ -103,7 +103,7 @@ export interface FlowgramCanvasResources {
 export interface FlowgramCanvasRuntime {
   runtimeState: WorkflowRuntimeState;
   workflowStatus: WorkflowWindowStatus;
-  canDispatchPayload?: boolean;
+  canTestRun?: boolean;
 }
 
 export interface FlowgramCanvasAppearance {
@@ -120,7 +120,7 @@ export interface FlowgramCanvasExportTarget {
 export interface FlowgramCanvasActions {
   onRunRequested?: () => void;
   onStopRequested?: () => void;
-  onDispatchRequested?: () => void;
+  onTestRunRequested?: () => void;
   onGraphChange: (nextAstText: string) => void;
   onError?: (title: string, detail?: string | null) => void;
   onStatusMessage?: (message: string) => void;
@@ -155,13 +155,13 @@ type FlowgramInteractiveType = 'MOUSE' | 'PAD';
 
 interface FlowgramToolbarProps {
   canRun: boolean;
-  canDispatch: boolean;
+  canTestRun: boolean;
   isWorkflowActive: boolean;
   minimapVisible: boolean;
   onToggleMinimap: () => void;
   onRun?: () => void;
   onStop?: () => void;
-  onDispatch?: () => void;
+  onTestRun?: () => void;
   onDownload: (format: FlowDownloadFormat) => void | Promise<void>;
 }
 
@@ -791,13 +791,13 @@ function FlowgramToolButton({
 
 function FlowgramToolbar({
   canRun,
-  canDispatch,
+  canTestRun,
   isWorkflowActive,
   minimapVisible,
   onToggleMinimap,
   onRun,
   onStop,
-  onDispatch,
+  onTestRun,
   onDownload,
 }: FlowgramToolbarProps) {
   const { history, playground } = useClientContext();
@@ -1106,7 +1106,7 @@ function FlowgramToolbar({
           </div>
         </details>
 
-        <FlowgramToolButton label="手动触发" data-testid="dispatch-button" onClick={() => onDispatch?.()}>
+        <FlowgramToolButton label="测试运行" data-testid="test-run-button" onClick={() => onTestRun?.()} disabled={!canTestRun}>
           <TriggerActionIcon width={16} height={16} />
         </FlowgramToolButton>
 
@@ -1138,13 +1138,13 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
   actions,
 }, ref) {
   const { connections, aiProviders, activeAiProviderId, copilotParams } = resources;
-  const { runtimeState, workflowStatus, canDispatchPayload = false } = runtime;
+  const { runtimeState, workflowStatus, canTestRun = false } = runtime;
   const { accentHex, themeMode, nodeCodeColor } = appearance;
   const { workspacePath, workflowName } = exportTarget ?? {};
   const {
     onRunRequested,
     onStopRequested,
-    onDispatchRequested,
+    onTestRunRequested,
     onGraphChange,
     onError,
     onStatusMessage,
@@ -1880,13 +1880,13 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
                 <EditorRenderer className="flowgram-editor" />
                 <FlowgramToolbar
                   canRun={Boolean(onRunRequested)}
-                  canDispatch={canDispatchPayload}
+                  canTestRun={canTestRun}
                   isWorkflowActive={isWorkflowActive}
                   minimapVisible={minimapVisible}
                   onToggleMinimap={() => setMinimapVisible((visible) => !visible)}
                   onRun={onRunRequested}
                   onStop={onStopRequested}
-                  onDispatch={onDispatchRequested}
+                  onTestRun={onTestRunRequested}
                   onDownload={handleDownloadCurrentGraph}
                 />
                 <div className="flowgram-overlay">

@@ -89,4 +89,16 @@ describe('reduceRuntimeState', () => {
     const count = state.activeNodeIds.filter((id) => id === 'node-a').length;
     expect(count).toBe(1);
   });
+
+  it('finished 事件：清空 activeNodeIds，保留 completed/failed/output', () => {
+    let state = reduceRuntimeState(EMPTY_RUNTIME_STATE, makeEvent({ kind: 'started', nodeId: 'node-a' }));
+    state = reduceRuntimeState(state, makeEvent({ kind: 'started', nodeId: 'node-b' }));
+    state = reduceRuntimeState(state, makeEvent({ kind: 'completed', nodeId: 'node-a' }));
+    state = reduceRuntimeState(state, makeEvent({ kind: 'failed', nodeId: 'node-b', error: 'err' }));
+    state = reduceRuntimeState(state, makeEvent({ kind: 'finished', nodeId: '' }));
+    expect(state.activeNodeIds).toEqual([]);
+    expect(state.completedNodeIds).toContain('node-a');
+    expect(state.failedNodeIds).toContain('node-b');
+    expect(state.lastEventType).toBe('finished');
+  });
 });

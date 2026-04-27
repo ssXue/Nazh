@@ -8,6 +8,7 @@ import { useProjectLibrary } from './hooks/use-project-library';
 import { useProjectWorkspaceActions } from './hooks/use-project-workspace-actions';
 import { useRuntimeWorkflowCount } from './hooks/use-runtime-workflow-count';
 import { useSettings } from './hooks/use-settings';
+import { useTestRun } from './hooks/use-test-run';
 import { useWorkflowEngine } from './hooks/use-workflow-engine';
 import { useConnectionLibrary } from './hooks/use-connection-library';
 
@@ -30,12 +31,11 @@ import {
 import { buildSidebarSections } from './lib/sidebar';
 import { applyGlobalAiConfigToWorkflowGraph } from './lib/workflow-ai';
 import {
-  dispatchPayload,
   hasTauriRuntime,
   listRuntimeWorkflows,
   undeployWorkflow,
 } from './lib/tauri';
-import type { ConnectionDefinition, WorkflowResult, WorkflowNodeDefinition } from './types';
+import type { ConnectionDefinition, DeployResponse, WorkflowResult, WorkflowNodeDefinition } from './types';
 import { describeUnknownError } from './lib/workflow-events';
 import {
   deriveWorkflowStatus,
@@ -340,6 +340,8 @@ function App() {
   });
 
   async function handleDeploy() {
+    testRun.reset();
+
     if (!activeBoard || !activeProject) {
       engine.setStatusMessage('请先从所有看板进入工程。');
       return;
@@ -370,6 +372,8 @@ function App() {
   }
 
   async function handleUndeploy() {
+    testRun.reset();
+
     if (!activeBoard) {
       engine.setStatusMessage('请先从所有看板进入工程。');
       return;
@@ -408,55 +412,38 @@ function App() {
     }
   }
 
-  async function handleDispatchPayload() {
-    if (!activeBoard) {
-      engine.setStatusMessage('请先从所有看板进入工程。');
-      return;
-    }
+  const currentBoardDeployInfoRef = useRef<DeployResponse | null>(null);
 
-    let payload: unknown;
-
-    try {
-      payload = JSON.parse(payloadText);
-    } catch (error) {
-      engine.appendAppError(
-        'command',
-        '测试载荷 JSON 无法解析',
-        error instanceof Error ? error.message : null,
-      );
-      engine.setStatusMessage(
-        error instanceof Error ? `Payload JSON 无法解析: ${error.message}` : 'Payload JSON 无法解析',
-      );
-      return;
-    }
-
-    if (!hasTauriRuntime()) {
+  const testRun = useTestRun({
+    getPayloadText: () => payloadText,
+    buildAndDeploy: async () => {
+      const snap = buildDeploySnapshot();
+      if (snap.error || !snap.snapshot) {
+        engine.appendAppError('command', '测试运行部署失败', snap.error ?? '未知错误');
+        engine.setStatusMessage(`AST 无法部署: ${snap.error ?? '未知错误'}`);
+        return false;
+      }
+      await runDeploymentSnapshot(snap.snapshot, 'manual');
+      return true;
+    },
+    undeploy: handleUndeploy,
+    beginRestoreCheckPause,
+    endRestoreCheckPause,
+    appendRuntimeLog: engine.appendRuntimeLog,
+    appendAppError: engine.appendAppError,
+    setStatusMessage: engine.setStatusMessage,
+    addPreviewResult: (payload) => {
       engine.addResult({
         trace_id: 'web-preview',
         timestamp: new Date().toISOString(),
         payload: payload as WorkflowResult['payload'],
       });
-      engine.setStatusMessage('已在纯 Web 预览模式下模拟发送 payload。');
-      engine.appendRuntimeLog('system', 'info', '已在预览态模拟发送测试载荷');
-      return;
-    }
-
-    if (!currentBoardDeployInfo) {
-      engine.appendAppError('command', '发送测试载荷失败', '请先部署工作流');
-      engine.setStatusMessage('请先部署工作流，再发送测试消息。');
-      return;
-    }
-
-    try {
-      const response = await dispatchPayload(payload, activeBoard.id);
-      engine.appendRuntimeLog('dispatch', 'info', '已提交测试载荷', `trace_id=${response.traceId}`);
-      engine.setStatusMessage(`已提交 payload，trace_id=${response.traceId}`);
-    } catch (error) {
-      const { message, detail } = describeUnknownError(error);
-      engine.appendAppError('command', '发送测试载荷失败', detail ?? message);
-      engine.setStatusMessage(message);
-    }
-  }
+    },
+    getActiveBoardId: () => activeBoard?.id,
+    isCurrentlyDeployed: () => Boolean(currentBoardDeployInfoRef.current),
+    hasActiveBoard: () => Boolean(activeBoard),
+    hasActiveProject: () => Boolean(activeProject),
+  });
 
   const graphNodeCount = graphState.graph ? Object.keys(graphState.graph.nodes).length : 0;
   const graphEdgeCount = graphState.graph?.edges.length ?? 0;
@@ -466,6 +453,7 @@ function App() {
   const runtimeModeLabel = isTauriRuntime ? '桌面会话' : '浏览器预览';
   const currentBoardDeployInfo =
     activeBoard && getDeployProjectId(engine.deployInfo) === activeBoard.id ? engine.deployInfo : null;
+  currentBoardDeployInfoRef.current = currentBoardDeployInfo;
   const workflowStatus = deriveWorkflowStatus(
     isTauriRuntime,
     Boolean(activeBoard),
@@ -474,8 +462,8 @@ function App() {
   );
   const workflowStatusLabel = getWorkflowStatusLabel(workflowStatus);
   const workflowStatusPillClass = getWorkflowStatusPillClass(workflowStatus);
-  const canDispatchPayload =
-    Boolean(activeBoard) && (!isTauriRuntime || Boolean(currentBoardDeployInfo));
+  const canTestRun = testRun.canTestRun;
+  const isTestRunning = testRun.isTestRunning;
   const connectionPreview = engine.connections.slice(0, 4);
   const sidebarSections = buildSidebarSections(
     workflowStatusLabel,
@@ -548,7 +536,7 @@ function App() {
           aiTestResult={aiTestResult}
           aiTesting={aiTesting}
           boardItems={boardItems}
-          canDispatchPayload={canDispatchPayload}
+          canTestRun={canTestRun}
           connectionLibrary={connectionLibrary}
           connectionPreview={connectionPreview}
           connectionUsageById={connectionUsageById}
@@ -575,7 +563,7 @@ function App() {
           onDeleteBoard={projectActions.handleDeleteBoard}
           onDeleteEnvironment={projectActions.handleDeleteEnvironment}
           onDeleteSnapshot={projectActions.handleDeleteSnapshot}
-          onDispatchPayload={handleDispatchPayload}
+          onTestRun={testRun.handleTestRun}
           onDuplicateEnvironment={projectActions.handleDuplicateEnvironment}
           onEnvironmentChange={projectActions.handleEnvironmentChange}
           onEnvironmentSave={projectActions.handleEnvironmentSave}

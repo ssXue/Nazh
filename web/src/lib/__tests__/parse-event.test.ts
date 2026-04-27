@@ -32,6 +32,12 @@ describe('parseWorkflowEventPayload', () => {
     expect(result).toEqual({ kind: 'output', nodeId: 'node-d', traceId: 'trace-004' });
   });
 
+  it('解析 Finished 事件，返回 kind=finished', () => {
+    const payload = { Finished: { trace_id: 'trace-005' } };
+    const result = parseWorkflowEventPayload(payload);
+    expect(result).toEqual({ kind: 'finished', nodeId: '', traceId: 'trace-005' });
+  });
+
   it('输入 null 时返回 null', () => {
     expect(parseWorkflowEventPayload(null)).toBeNull();
   });

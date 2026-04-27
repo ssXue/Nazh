@@ -44,7 +44,7 @@ interface StudioContentRouterProps {
   aiTestResult: AiTestResult | null;
   aiTesting: boolean;
   boardItems: BoardItem[];
-  canDispatchPayload: boolean;
+  canTestRun: boolean;
   connectionLibrary: UseConnectionLibraryResult;
   connectionPreview: ConnectionRecord[];
   connectionUsageById: Map<string, { nodeIds: string[]; projectNames: string[] }>;
@@ -71,7 +71,7 @@ interface StudioContentRouterProps {
   onDeleteBoard: (board: BoardItem) => void;
   onDeleteEnvironment: (environmentId: string) => void;
   onDeleteSnapshot: (snapshotId: string) => void;
-  onDispatchPayload: () => Promise<void>;
+  onTestRun: () => Promise<void>;
   onDuplicateEnvironment: (environmentId: string) => void;
   onEnvironmentChange: (environmentId: string) => void;
   onEnvironmentSave: (
@@ -130,7 +130,7 @@ export function StudioContentRouter({
   aiTestResult,
   aiTesting,
   boardItems,
-  canDispatchPayload,
+  canTestRun,
   connectionLibrary,
   connectionPreview,
   connectionUsageById,
@@ -157,7 +157,7 @@ export function StudioContentRouter({
   onDeleteBoard,
   onDeleteEnvironment,
   onDeleteSnapshot,
-  onDispatchPayload,
+  onTestRun,
   onDuplicateEnvironment,
   onEnvironmentChange,
   onEnvironmentSave,
@@ -242,7 +242,7 @@ export function StudioContentRouter({
             flowgramRuntime={{
               runtimeState: engine.runtimeState,
               workflowStatus,
-              canDispatchPayload,
+              canTestRun,
             }}
             flowgramAppearance={{
               accentHex: settings.accentHex,
@@ -256,7 +256,7 @@ export function StudioContentRouter({
             flowgramActions={{
               onRunRequested: onStartDeploy,
               onStopRequested: onStopDeploy,
-              onDispatchRequested: onDispatchPayload,
+              onTestRunRequested: onTestRun,
               onGraphChange,
               onError: engine.handleFlowgramError,
               onStatusMessage: engine.setStatusMessage,

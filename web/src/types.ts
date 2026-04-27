@@ -148,7 +148,7 @@ export interface WorkflowLogicBranch {
 
 export interface WorkflowRuntimeState {
   traceId: string | null;
-  lastEventType: 'started' | 'completed' | 'failed' | 'output' | null;
+  lastEventType: 'started' | 'completed' | 'failed' | 'output' | 'finished' | null;
   lastNodeId: string | null;
   lastError: string | null;
   lastUpdatedAt: number | null;

@@ -11,7 +11,7 @@ import type {
 } from '../types';
 
 export interface ParsedWorkflowEvent {
-  kind: 'started' | 'completed' | 'failed' | 'output';
+  kind: 'started' | 'completed' | 'failed' | 'output' | 'finished';
   nodeId: string;
   traceId: string;
   error?: string;
@@ -138,6 +138,14 @@ export function parseWorkflowEventPayload(payload: unknown): ParsedWorkflowEvent
     };
   }
 
+  if ('Finished' in event) {
+    return {
+      kind: 'finished',
+      nodeId: '',
+      traceId: event.Finished.trace_id,
+    };
+  }
+
   return null;
 }
 
@@ -186,6 +194,12 @@ export function reduceRuntimeState(
       nextState.completedNodeIds = pushUnique(baseState.completedNodeIds, event.nodeId);
       nextState.failedNodeIds = removeItem(baseState.failedNodeIds, event.nodeId);
       nextState.outputNodeIds = pushUnique(baseState.outputNodeIds, event.nodeId);
+      return nextState;
+    case 'finished':
+      nextState.activeNodeIds = [];
+      nextState.completedNodeIds = baseState.completedNodeIds;
+      nextState.failedNodeIds = baseState.failedNodeIds;
+      nextState.outputNodeIds = baseState.outputNodeIds;
       return nextState;
   }
 }
