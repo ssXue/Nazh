@@ -303,11 +303,6 @@ impl WorkflowDeployment {
         }
     }
 
-    /// 返回部署时构造的资源句柄（含 `WorkflowVariables` 等），供 IPC 读取共享状态。
-    pub fn resources(&self) -> &SharedResources {
-        &self.shared_resources
-    }
-
     /// 显式撤销整张图：cancel 根 token 后按**逆部署序** shutdown 每个 guard。
     ///
     /// 调用此方法是确定性等待清理完成的唯一方式；未调用时 `Drop` 仅触发

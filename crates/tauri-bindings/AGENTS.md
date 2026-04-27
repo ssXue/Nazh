@@ -25,6 +25,7 @@ crates/tauri-bindings/src/
 关键类型与函数：
 - `DeployResponse` / `DispatchResponse` / `UndeployResponse` — `src/lib.rs:17+`
 - `NodeTypeEntry` / `ListNodeTypesResponse` — `src/lib.rs:59+`
+- `SnapshotWorkflowVariablesRequest` / `SnapshotWorkflowVariablesResponse` — ADR-0012 Phase 1 引入，供 `snapshot_workflow_variables` IPC 命令序列化；包含对 `TypedVariableSnapshot` / `VariableDeclaration`（来自 `nazh-core`，ADR-0012 Phase 1 引入）的透传
 - `list_node_types_response(&NodeRegistry)` — `src/lib.rs:85`
 - `export_all()`（仅 `ts-export` feature） — `src/lib.rs:107`
 

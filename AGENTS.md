@@ -118,7 +118,7 @@ IPC boundary types are defined once in Rust and auto-generated to TypeScript via
 
 ### Tauri IPC Surface (`src-tauri/src/lib.rs`)
 
-~22 commands covering: workflow lifecycle (`deploy_workflow`, `dispatch_payload`, `undeploy_workflow`, `list_runtime_workflows`, `set_active_runtime_workflow`, `list_dead_letters`, `list_node_types`), connections (`list_connections`, `load/save_connection_definitions`), serial (`list_serial_ports`, `test_serial_connection`), AI (`list_ai_providers`, `save_ai_provider`, `delete_ai_provider`, `test_ai_provider`, `copilotComplete`), observability (`query_observability`), deployment persistence, project library.
+~23 commands covering: workflow lifecycle (`deploy_workflow`, `dispatch_payload`, `undeploy_workflow`, `list_runtime_workflows`, `set_active_runtime_workflow`, `list_dead_letters`, `list_node_types`), connections (`list_connections`, `load/save_connection_definitions`), serial (`list_serial_ports`, `test_serial_connection`), AI (`list_ai_providers`, `save_ai_provider`, `delete_ai_provider`, `test_ai_provider`, `copilotComplete`), observability (`query_observability`, `snapshot_workflow_variables` — workflow variables snapshot, ADR-0012), deployment persistence, project library.
 
 Event channels: `workflow://node-status`, `workflow://result`, `workflow://deployed`, `workflow://undeployed`, `workflow://runtime-focus`. Runtime result/status events are scoped payloads with `workflow_id`.
 
@@ -130,7 +130,7 @@ Industrial-reliability requirements. **Enforced by Cargo lints**; violations fai
 2. **No `unsafe`.** `unsafe_code = "forbid"` at workspace level.
 3. **Panic isolation is mandatory.** Node execution is wrapped in `AssertUnwindSafe + catch_unwind + timeout`. One bad node must never crash the DAG.
 4. **Nodes never access hardware directly.** All I/O goes through `ConnectionManager` (borrow → use → release via RAII `ConnectionGuard`).
-5. **Channel-based message passing over shared state.** Tokio MPSC between nodes. The only shared mutable state is `ConnectionManager` behind `Arc<RwLock<...>>` and `DataStore` behind `Arc<dyn DataStore>`.
+5. **Channel-based message passing over shared state.** Tokio MPSC between nodes. The only shared mutable state is `ConnectionManager` behind `Arc<RwLock<...>>`, `DataStore` behind `Arc<dyn DataStore>`, and `WorkflowVariables` behind `Arc<DashMap>` (ADR-0012).
 6. **Rhai scripts must have step limits** (`max_operations`, default 50k) to prevent infinite loops.
 7. **`NodeTrait::transform(trace_id, payload) → NodeExecution` is the contract.** Nodes must not touch `DataStore`. The Runner is solely responsible for store reads/writes.
 8. **Execution metadata must not leak into payload.** Return metadata via `NodeOutput::metadata` + `NodeExecution::with_metadata()`, using non-underscore keys (`"timer"`, `"http"`, `"modbus"`, `"serial"`, `"sql_writer"`, `"debug_console"`, `"connection"`, `"bark"`, `"ai"`). The Runner merges metadata into `ExecutionEvent::Completed` events. Only routing context (`_loop`, `_error`) is allowed to remain in the payload. See ADR-0008.
@@ -141,7 +141,7 @@ Industrial-reliability requirements. **Enforced by Cargo lints**; violations fai
 These principles guide day-to-day decisions. When in doubt, reach for the principle that preserves these.
 
 1. **ADR-driven architecture evolution.** Non-trivial architecture changes go through an ADR (`docs/adr/NNNN-title.md`). Existing code changes that embody a decision should be recorded retrospectively (e.g. ADR-0008 documents the metadata separation that landed before the ADR existed). "Evaluation ADRs" (like ADR-0020) record *decisions not to act*, with trigger conditions.
-2. **Control plane vs data plane separation.** Payload (business data) flows through `DataStore` + `ContextRef`. Metadata (observability, provenance) flows through `ExecutionEvent`. Configuration (setpoints, thresholds, shared state) will flow through `WorkflowVariables` (ADR-0012, pending). These planes do not cross-contaminate.
+2. **Control plane vs data plane separation.** Payload (business data) flows through `DataStore` + `ContextRef`. Metadata (observability, provenance) flows through `ExecutionEvent`. Configuration (setpoints, thresholds, shared state) flows through `WorkflowVariables` (ADR-0012 Phase 1 已实施). These planes do not cross-contaminate.
 3. **Ring purity.** Ring 0 stays free of protocol-specific dependencies. Ring 1 crates depend on Ring 0 and may compose horizontally, but should avoid creating cross-Ring-1 fan-out cycles. Prefer **trait abstraction + dependency injection** over direct imports when coupling Ring 1 crates (ADR-0019 proposes this for AI).
 4. **RAII for resources.** Connections, lifecycle guards, and future resource holders use Drop-based cleanup, never explicit `close()` / `release()` call pairs. Examples: `ConnectionGuard`（连接借出）、`LifecycleGuard`（节点后台任务，ADR-0009）。
 5. **Plugin-first node registration.** Adding a node means implementing `NodeTrait` in a Ring 1 crate and registering via `Plugin::register(&mut NodeRegistry)`. Do not hardcode node types in the engine or facade. `standard_registry()` in `src/lib.rs` loads the baseline set (`FlowPlugin`, `IoPlugin`) — other plugins can be added to compose custom deployments.

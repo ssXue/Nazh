@@ -1329,7 +1329,7 @@ async fn snapshot_workflow_variables(
             .get::<std::sync::Arc<nazh_engine::WorkflowVariables>>()
             .ok_or_else(|| {
                 format!(
-                    "工作流 `{}` 部署中无 WorkflowVariables（可能未声明 variables 字段）",
+                    "工作流 `{}` 部署中找不到 WorkflowVariables 资源（防御性错误，正常路径不应触发；如出现说明引擎层 deploy_workflow_with_ai 注入逻辑有 bug）",
                     request.workflow_id
                 )
             })?
