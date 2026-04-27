@@ -361,6 +361,26 @@ Located in `docs/superpowers/plans/` and `docs/superpowers/specs/`. These are **
 - ~~IPC response types in `crates/core/` contradict Ring 0 purity. ADR-0017 plans to extract `crates/tauri-bindings/`.~~ **已偿还（2026-04-24，ADR-0017 已实施）**
 - ~~`cargo clippy --workspace --all-targets -- -D warnings` 在 `src-tauri` 与 observability 上失败~~ **已偿还（2026-04-26，见 `docs/superpowers/plans/2026-04-25-cargo-clippy-workspace-fixes.md`）**。`crates/nodes-io/src/http_client.rs` / `bark_push.rs` 的 `too_many_lines` 现以 `#[allow]` 抑制（同上）。
 
+**ADR-0012 Phase 3 候选（待立项 / 待 plan，2026-04-27 决策）：**
+
+"Phase 3" **不**作为单一 milestone 推进——8 个候选差异太大，按复杂度与是否需要新 ADR 分类，逐项独立 plan 或 ADR：
+
+*小补丁（无需新 ADR，可单 plan 收尾，~3 commit）：*
+- "变量" Tab badge 显示变量数量 —— 需要从 `RuntimeVariablesPanel` 状态提升到 `RuntimeDock` 跨组件
+- `VariableRow` 双 submit 完全消除 + undo / "are you sure" 提示
+- mutation IPC 扩展：`reset_workflow_variable` / `delete_workflow_variable`（沿用 `set_workflow_variable` IPC pattern）
+
+*独立 ADR 立项（按需逐个推）：*
+- 变量持久化 —— 解除"进程退出即清零"限制，需要 store 抽象 / schema 迁移工具
+- 历史曲线 / time series —— time-series store + 前端图表选型
+- 跨工作流共享变量 / 全局变量 —— 作用域规则 / 命名空间 / 锁竞争
+- `Custom` 类型变量解封 —— 依赖 ADR-0010 Phase 4 deferred Item 2 触发（`Custom` 命名类型 + row-formatter 节点同步引入）
+
+*前端测试基建（与其他前端组件测试合并）：*
+- React Testing Library 配置 + `RuntimeVariablesPanel` 组件交互测试
+
+> 候选项原列在 `docs/adr/0012-工作流变量.md` 末尾"Phase 3 候选项"区。本节是"换机器接续工作"备忘——下次 session 在新机器上 pick up 时优先看此清单。
+
 **ADR Execution Order**（2026-04-24 共识，依赖与独立性已分析过）：
 
 > 0. ✅ **ADR-0017** IPC + ts-rs 迁出 Ring 0 — 已实施（独立支线，crate 卫生）
@@ -368,7 +388,7 @@ Located in `docs/superpowers/plans/` and `docs/superpowers/specs/`. These are **
 > 2. ✅ **ADR-0009** 生命周期钩子（`on_deploy` + `LifecycleGuard`）— **已实施**（2026-04-26，Ring 0 lifecycle 模块 + Runner 两阶段部署 + Timer/Serial/MQTT 三类节点迁回；壳层 `src-tauri/src/lib.rs` 由 3609 → 2498 行）
 > 3. ✅ **ADR-0010** Pin 声明系统 — **Phase 1 + Phase 2 + Phase 3 + Phase 4 部分已实施**（Phase 1: Ring 0 类型 + 部署期校验器 + 4 分支节点；Phase 3: 4 协议节点 input/output 收紧到 `Json`（保守方案，不引入 `Custom`）+ 兼容矩阵合约 fixture 前后端共享；Phase 2: IPC `describe_node_pins` + 前端 pin-compat/cache/validator 三件套 + FlowGram `canAddLine` 接入连接期校验 + branch ports 按 PinType 着色；Phase 4: pin tooltip + AI prompt 携带 pin schema。协议节点端口着色 / `Custom` 类型 + row-formatter 节点 deferred）
 > 4. ✅ **ADR-0018 / ADR-0019**（独立支线，**已实施**，2026-04-26）— `nodes-io` 协议 feature 门控 + AI 依赖反转。`nazh-core::ai` 现为 trait + 类型源头；`nodes-io` 协议 dep 全部 optional
-> 5. ✅ **ADR-0012** 工作流变量 — Phase 1+2 已实施（2026-04-27）
+> 5. ✅ **ADR-0012** 工作流变量 — Phase 1+2 已实施（2026-04-27）；Phase 3 候选项已分类，见上文"ADR-0012 Phase 3 候选"小节
 > 6. **ADR-0013** 子图与宏（依赖 0010）
 > 7. **Phase 6 (RFC-0002)** EventBus + EdgeBackpressure + ConcurrencyPolicy — 与 Pin 系统可并行
 > 8. **ADR-0014** Exec/Data 边分离 — 本批最重，待 Pin 系统稳定后再启动
