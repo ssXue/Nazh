@@ -32,11 +32,11 @@ use super::runner::run_node;
 use super::types::{
     DownstreamTarget, WorkflowDeployment, WorkflowGraph, WorkflowIngress, WorkflowStreams,
 };
+use super::variables_init::build_workflow_variables;
 use crate::SharedConnectionManager;
 use nazh_core::{
     ArenaDataStore, CancellationToken, ContextRef, DataStore, EngineError, NodeHandle,
     NodeLifecycleContext, NodeRegistry, NodeTrait, RuntimeResources, SharedResources,
-    WorkflowVariables,
 };
 
 /// 校验、实例化并将工作流图部署为并发 Tokio 任务。
@@ -78,6 +78,12 @@ pub async fn deploy_workflow_with_ai(
     );
     let topology = graph.topology()?;
 
+    // ---- 阶段 0：构造工作流变量（早于 connection 装配、Pin 校验）----
+    //
+    // 声明的初值类型若与声明类型不匹配立即整图失败——节点尚未实例化、
+    // 无 RAII 资源在手，无需回滚（ADR-0012 早失败原则）。
+    let workflow_variables = build_workflow_variables(graph.variables.as_ref())?;
+
     connection_manager
         .upsert_connections(graph.connections)
         .await;
@@ -101,7 +107,9 @@ pub async fn deploy_workflow_with_ai(
     let (event_tx, event_rx) = mpsc::channel(event_capacity);
     let (result_tx, result_rx) = mpsc::channel(event_capacity);
 
-    let mut resource_bag = RuntimeResources::new().with_resource(connection_manager.clone());
+    let mut resource_bag = RuntimeResources::new()
+        .with_resource(connection_manager.clone())
+        .with_resource(Arc::clone(&workflow_variables));
     if let Some(ai_service) = ai_service {
         resource_bag.insert(ai_service);
     }
@@ -159,8 +167,7 @@ pub async fn deploy_workflow_with_ai(
             resources: shared_resources.clone(),
             handle,
             shutdown: shutdown_token.child_token(),
-            // Task 3 引入（ADR-0012）；Task 5 将替换为 build_workflow_variables 的产物
-            variables: Arc::new(WorkflowVariables::empty()),
+            variables: Arc::clone(&workflow_variables),
         };
 
         let guard = node.on_deploy(ctx).await?;
