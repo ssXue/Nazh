@@ -102,13 +102,50 @@ export function buildDefaultNodeSeed(kind: NazhNodeKind): NodeSeed {
   return def ? def.buildDefaultSeed() : nativeDef.buildDefaultSeed();
 }
 
+/**
+ * 构建子图节点的初始 JSON——自带桥接节点 blocks + edges。
+ */
+function buildSubgraphPaletteJson(
+  seed: NodeSeed,
+  connectionDefaults: FlowgramConnectionDefaults,
+): Partial<import('@flowgram.ai/free-layout-editor').WorkflowNodeJSON> {
+  const base = buildPaletteNodeJson(seed, connectionDefaults);
+  return {
+    ...base,
+    blocks: [
+      {
+        id: 'sg-in',
+        type: 'subgraphInput',
+        data: {
+          label: 'Input',
+          nodeType: 'subgraphInput',
+          config: {},
+        },
+      },
+      {
+        id: 'sg-out',
+        type: 'subgraphOutput',
+        data: {
+          label: 'Output',
+          nodeType: 'subgraphOutput',
+          config: {},
+        },
+      },
+    ],
+    edges: [],
+  };
+}
+
 export function createFlowgramNodeRegistries(
   connectionDefaults: FlowgramConnectionDefaults,
 ): WorkflowNodeRegistry[] {
   return ALL_DEFS.map((def) => ({
     type: def.kind,
     meta: def.buildRegistryMeta(),
-    onAdd: () => buildPaletteNodeJson(def.buildDefaultSeed(), connectionDefaults),
+    onAdd: () =>
+      def.kind === 'subgraph'
+        ? buildSubgraphPaletteJson(def.buildDefaultSeed(), connectionDefaults)
+        : buildPaletteNodeJson(def.buildDefaultSeed(), connectionDefaults),
   }));
 }
 
