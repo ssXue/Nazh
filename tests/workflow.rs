@@ -1816,3 +1816,68 @@ async fn pin_phase3_bool_源_到_sql_writer_部署被拒() {
         ),
     }
 }
+
+// ========== ADR-0013 子图桥接 PassthroughNode 集成测试 ==========
+//
+// 验证 subgraphInput / subgraphOutput（PassthroughNode）在展平后的 DAG 中
+// 能正确部署并透传 payload。前端展平子图后，桥接节点变为 DAG 中的普通节点，
+// 本测试模拟这一场景：native → subgraphInput → subgraphOutput。
+
+#[tokio::test]
+async fn passthrough_nodes_forward_payload() {
+    // 构造展平后的 DAG：native → subgraphInput → subgraphOutput
+    // 模拟前端将子图展平后产生的拓扑结构
+    let graph = match WorkflowGraph::from_json(
+        &json!({
+            "nodes": {
+                "native-1": {
+                    "type": "native",
+                    "config": {
+                        "message": "test-passthrough"
+                    }
+                },
+                "sg-in": {
+                    "type": "subgraphInput",
+                    "config": {}
+                },
+                "sg-out": {
+                    "type": "subgraphOutput",
+                    "config": {}
+                }
+            },
+            "edges": [
+                { "from": "native-1", "to": "sg-in" },
+                { "from": "sg-in", "to": "sg-out" }
+            ]
+        })
+        .to_string(),
+    ) {
+        Ok(graph) => graph,
+        Err(error) => panic!("graph JSON 应可解析: {error}"),
+    };
+
+    let registry = standard_registry();
+    let mut deployment = match deploy_workflow(graph, shared_connection_manager(), &registry).await {
+        Ok(deployment) => deployment,
+        Err(error) => panic!(
+            "含 subgraphInput/subgraphOutput 的 DAG 应能部署成功: {error}"
+        ),
+    };
+
+    // 提交 payload 并验证两个 passthrough 节点透传后最终结果正确
+    let submit_result = deployment
+        .submit(WorkflowContext::new(json!({ "value": 42 })))
+        .await;
+    assert!(submit_result.is_ok(), "workflow 应接受 payload");
+
+    let result = timeout(Duration::from_secs(1), deployment.next_result()).await;
+    match result {
+        Ok(Some(ctx)) => {
+            // native 节点会注入 _native_message，passthrough 节点不应改变 payload
+            assert_eq!(ctx.payload["_native_message"], json!("test-passthrough"));
+            assert_eq!(ctx.payload["value"], json!(42));
+        }
+        Ok(None) => panic!("result stream 意外关闭"),
+        Err(elapsed) => panic!("workflow 未在超时内产出结果: {elapsed}"),
+    }
+}
