@@ -74,7 +74,7 @@ async fn 初值类型不匹配_部署失败() {
 /// 工作流：单节点（code），Rhai 脚本每次执行将 `counter` 变量加 1，
 /// 并将新值写入 `payload.value`。触发三次后 `counter` 应为 3。
 #[tokio::test]
-async fn rhai_code_节点跨次部署独立持有变量() {
+async fn rhai_code_节点同部署多次触发累积变量() {
     // counter = 0；code 节点每次触发 counter += 1，把结果放进 payload.value
     let graph = WorkflowGraph::from_json(
         &json!({
@@ -120,9 +120,8 @@ async fn rhai_code_节点跨次部署独立持有变量() {
         let result = timeout(Duration::from_secs(2), deployment.next_result())
             .await
             .expect("result 应在超时内到达");
-        if let Some(ctx) = result {
-            last_value = Some(ctx.payload);
-        }
+        let ctx = result.expect("next_result 应返回 Some，result channel 不应在 shutdown 前关闭");
+        last_value = Some(ctx.payload);
     }
     let final_payload = last_value.expect("应收到 3 次 result");
     assert_eq!(
