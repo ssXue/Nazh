@@ -189,20 +189,19 @@
 
   .studio-board-workspace,
   .studio-board-workspace.is-runtime-collapsed {
-    grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto auto;
     height: auto;
     min-height: auto;
     overflow: visible;
   }
 
-  .studio-board-workspace__stage {
+  .studio-board-workspace__canvas-area {
     min-height: auto;
     height: auto;
     overflow: visible;
   }
 
-  .studio-board-workspace__stage > .canvas-shell {
+  .studio-board-workspace__canvas-area > .canvas-shell {
     height: auto;
     max-height: none;
     min-height: 520px;

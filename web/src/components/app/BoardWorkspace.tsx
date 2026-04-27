@@ -82,26 +82,26 @@ export const BoardWorkspace = forwardRef<BoardWorkspaceHandle, BoardWorkspacePro
       <div
         className={`studio-board-workspace ${isRuntimeDockCollapsed ? 'is-runtime-collapsed' : ''}`}
       >
-        <div className="studio-board-workspace__stage">
-          <ProjectWorkspaceHeader
-            project={project}
-            nodeCount={nodeCount}
-            onBack={onBack}
-            onCreateSnapshot={onCreateSnapshot}
-            onDeleteSnapshot={onDeleteSnapshot}
-            onRollbackSnapshot={onRollbackSnapshot}
-            onEnvironmentChange={onEnvironmentChange}
-            onEnvironmentSave={onEnvironmentSave}
-            onDuplicateEnvironment={onDuplicateEnvironment}
-            onDeleteEnvironment={onDeleteEnvironment}
-            onOpenAiComposer={onOpenAiComposer}
-            isRuntimeDockCollapsed={isRuntimeDockCollapsed}
-            onToggleRuntimeDockCollapsed={onToggleRuntimeDockCollapsed}
-            aiActionTitle={aiActionTitle}
-            aiActionDisabled={aiActionDisabled}
-            aiActionLoading={aiActionLoading}
-          />
+        <ProjectWorkspaceHeader
+          project={project}
+          nodeCount={nodeCount}
+          onBack={onBack}
+          onCreateSnapshot={onCreateSnapshot}
+          onDeleteSnapshot={onDeleteSnapshot}
+          onRollbackSnapshot={onRollbackSnapshot}
+          onEnvironmentChange={onEnvironmentChange}
+          onEnvironmentSave={onEnvironmentSave}
+          onDuplicateEnvironment={onDuplicateEnvironment}
+          onDeleteEnvironment={onDeleteEnvironment}
+          onOpenAiComposer={onOpenAiComposer}
+          isRuntimeDockCollapsed={isRuntimeDockCollapsed}
+          onToggleRuntimeDockCollapsed={onToggleRuntimeDockCollapsed}
+          aiActionTitle={aiActionTitle}
+          aiActionDisabled={aiActionDisabled}
+          aiActionLoading={aiActionLoading}
+        />
 
+        <div className="studio-board-workspace__canvas-area">
           <FlowgramCanvas
             ref={ref}
             graph={graph}
@@ -111,18 +111,18 @@ export const BoardWorkspace = forwardRef<BoardWorkspaceHandle, BoardWorkspacePro
             exportTarget={flowgramExportTarget}
             actions={flowgramActions}
           />
-        </div>
 
-        <RuntimeDock
-          eventFeed={runtimeDock.eventFeed}
-          appErrors={runtimeDock.appErrors}
-          results={runtimeDock.results}
-          activeWorkflowId={runtimeDock.activeWorkflowId}
-          connectionPreview={connectionPreview}
-          themeMode={themeMode}
-          isCollapsed={isRuntimeDockCollapsed}
-          onToggleCollapsed={onToggleRuntimeDockCollapsed}
-        />
+          <RuntimeDock
+            eventFeed={runtimeDock.eventFeed}
+            appErrors={runtimeDock.appErrors}
+            results={runtimeDock.results}
+            activeWorkflowId={runtimeDock.activeWorkflowId}
+            connectionPreview={connectionPreview}
+            themeMode={themeMode}
+            isCollapsed={isRuntimeDockCollapsed}
+            onToggleCollapsed={onToggleRuntimeDockCollapsed}
+          />
+        </div>
       </div>
     );
   },

@@ -134,7 +134,7 @@ export function ProjectWorkspaceHeader({
       className="studio-board-workspace__header window-safe-header"
       data-window-drag-region
     >
-      <div className="studio-board-workspace__header-main" data-no-window-drag>
+      <div className="studio-board-workspace__header-main">
         <div className="studio-board-workspace__title-pill">
           <button
             type="button"

@@ -332,7 +332,6 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
 }
 
 .studio-board-workspace {
-  --runtime-dock-width: clamp(332px, 25vw, 404px);
   position: relative;
   display: block;
   min-height: 0;
@@ -344,22 +343,23 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
   box-shadow: none;
 }
 
-.studio-board-workspace.is-runtime-collapsed {
-  --runtime-dock-width: 0px;
-}
-
-.studio-board-workspace__stage {
-  display: block;
-  position: relative;
+.studio-board-workspace__canvas-area {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(332px, 25vw, 404px);
+  grid-template-rows: minmax(0, 1fr);
   min-height: 0;
   height: 100%;
+}
+
+.studio-board-workspace.is-runtime-collapsed .studio-board-workspace__canvas-area {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .studio-board-workspace__header {
   position: absolute;
   top: 14px;
   left: calc(var(--board-left-avoid, 0px) + 18px);
-  right: calc(var(--runtime-dock-width) + 24px);
+  right: 24px;
   z-index: calc(var(--z-content) + 3);
   display: flex;
   align-items: flex-start;
@@ -440,11 +440,7 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
 }
 
 .runtime-dock {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: var(--runtime-dock-width);
+  position: relative;
   border: 0;
   border-left: 1px solid color-mix(in srgb, var(--line-soft) 78%, transparent);
   border-radius: 0;
@@ -454,8 +450,8 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
   backdrop-filter: blur(18px) saturate(130%);
   -webkit-backdrop-filter: blur(18px) saturate(130%);
   box-shadow: none;
-  padding: 12px 14px 12px 18px;
-  z-index: calc(var(--z-content) + 2);
+  padding: 68px 14px 12px 18px;
+  overflow: hidden;
 }
 
 .studio-board-workspace.is-runtime-collapsed .runtime-dock {
