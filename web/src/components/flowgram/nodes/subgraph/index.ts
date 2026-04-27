@@ -37,6 +37,7 @@ export const definition: NodeDefinition = {
   buildRegistryMeta() {
     return {
       defaultExpanded: true,
+      isContainer: true,
       size: this.getNodeSize(),
       defaultPorts: [{ type: 'input' as const }, { type: 'output' as const }],
     };
