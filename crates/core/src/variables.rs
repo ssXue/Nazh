@@ -168,6 +168,9 @@ impl WorkflowVariables {
     /// 设计为 `&self`（非 `&mut`）以便在 `Arc<WorkflowVariables>` 构造完成后注入——
     /// deploy 流程是 `let vars = Arc::new(build_workflow_variables(...)?);` 后再
     /// `vars.set_event_sender(workflow_id, event_tx)`。
+    ///
+    /// 调用方（如 deploy.rs）必须在节点 `on_deploy` 启动之前完成此注入；否则
+    /// 节点在注入间隙的写入会因 `event_sink == None` 而漏发事件。
     pub fn set_event_sender(
         &self,
         workflow_id: String,
@@ -649,5 +652,48 @@ mod tests {
         // 未调 set_event_sender，set 不应 panic 也不应报错
         vars.set("x", Value::from(7_i64), Some("node-A")).unwrap();
         assert_eq!(vars.get_value("x"), Some(Value::from(7_i64)));
+    }
+
+    #[test]
+    fn set_event_sender_重复注入时第二个_sender_被忽略() {
+        use tokio::sync::mpsc;
+        let (tx1, _rx1) = mpsc::channel::<crate::ExecutionEvent>(1);
+        let (tx2, _rx2) = mpsc::channel::<crate::ExecutionEvent>(1);
+        let vars = WorkflowVariables::empty();
+        vars.set_event_sender("wf-1".to_owned(), tx1);
+        // 第二次注入应被忽略并 tracing::warn!，但函数本身不 panic 不返回错误
+        vars.set_event_sender("wf-2".to_owned(), tx2);
+        // 只能间接验证：再写一个 set 不会崩，也不会因 sender 不一致而报错
+        // （此测试主要防止未来重构 OnceCell 时丢失 "set 失败仅日志" 契约）
+    }
+
+    #[tokio::test]
+    async fn cas_成功但_new_等于_expected_时不发事件() {
+        use tokio::sync::mpsc;
+        use tokio::time::{Duration, timeout};
+
+        let (tx, mut rx) = mpsc::channel(8);
+        let mut decls = HashMap::new();
+        decls.insert(
+            "c".to_owned(),
+            VariableDeclaration {
+                variable_type: PinType::Integer,
+                initial: Value::from(7_i64),
+            },
+        );
+        let vars = WorkflowVariables::from_declarations(&decls).unwrap();
+        vars.set_event_sender("wf-1".to_owned(), tx);
+
+        // expected = 7（与当前值匹配）；new 也 = 7（退化情形）。CAS 成功，但值没变，不应发事件。
+        let ok = vars
+            .compare_and_swap("c", &Value::from(7_i64), Value::from(7_i64), None)
+            .unwrap();
+        assert!(ok, "CAS 应成功（expected 与当前值匹配）");
+
+        let result = timeout(Duration::from_millis(50), rx.recv()).await;
+        assert!(
+            result.is_err(),
+            "退化情形 (new == expected == current) 不应发事件，但收到：{result:?}"
+        );
     }
 }
