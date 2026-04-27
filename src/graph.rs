@@ -11,13 +11,14 @@
 //! | `topology` | DAG 校验、拓扑排序（Kahn 算法） |
 //! | `deploy` | 工作流部署编排 |
 //! | `runner` | 单节点异步执行循环与事件发射 |
+//! | `variables_init` | 部署期变量声明 → `Arc<WorkflowVariables>` 初始化器（ADR-0012）|
 
 mod deploy;
 mod pin_validator;
 mod runner;
 mod topology;
 pub(crate) mod types;
-pub mod variables_init;
+mod variables_init;
 
 pub use deploy::{deploy_workflow, deploy_workflow_with_ai};
 pub use types::{
