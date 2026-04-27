@@ -1319,15 +1319,22 @@ async fn snapshot_workflow_variables(
     state: State<'_, DesktopState>,
     request: SnapshotWorkflowVariablesRequest,
 ) -> Result<SnapshotWorkflowVariablesResponse, String> {
-    let workflows = state.workflows.lock().await;
-    let workflow = workflows
-        .get(&request.workflow_id)
-        .ok_or_else(|| format!("工作流 `{}` 未部署或已撤销", request.workflow_id))?;
-
-    let vars = workflow
-        .shared_resources
-        .get::<std::sync::Arc<nazh_engine::WorkflowVariables>>()
-        .ok_or_else(|| "部署中无 WorkflowVariables".to_owned())?;
+    let vars = {
+        let workflows = state.workflows.lock().await;
+        let workflow = workflows
+            .get(&request.workflow_id)
+            .ok_or_else(|| format!("工作流 `{}` 未部署或已撤销", request.workflow_id))?;
+        workflow
+            .shared_resources
+            .get::<std::sync::Arc<nazh_engine::WorkflowVariables>>()
+            .ok_or_else(|| {
+                format!(
+                    "工作流 `{}` 部署中无 WorkflowVariables（可能未声明 variables 字段）",
+                    request.workflow_id
+                )
+            })?
+        // workflows MutexGuard 在此 drop，DashMap 迭代期间不持有全局锁
+    };
 
     let variables = vars
         .snapshot()

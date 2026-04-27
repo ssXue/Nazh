@@ -5,8 +5,8 @@ import type { PinType } from "./PinType";
 /**
  * IPC 序列化版变量快照（`updated_at` 用 RFC3339 字符串，避免前端处理时区差异）。
  */
-export type TypedVariableSnapshot = { value: JsonValue, variable_type: PinType, 
+export type TypedVariableSnapshot = { value: JsonValue, variableType: PinType, 
 /**
  * RFC3339 时间戳。
  */
-updated_at: string, updated_by?: string, };
+updatedAt: string, updatedBy?: string, };

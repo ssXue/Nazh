@@ -53,6 +53,7 @@ pub struct TypedVariable {
 /// IPC 序列化版变量快照（`updated_at` 用 RFC3339 字符串，避免前端处理时区差异）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
 pub struct TypedVariableSnapshot {
     pub value: Value,
     pub variable_type: PinType,
