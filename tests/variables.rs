@@ -2,11 +2,11 @@
 
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-use std::{collections::HashMap, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use nazh_engine::{
-    NodeRegistry, PinType, VariableDeclaration, WorkflowContext, WorkflowGraph,
-    deploy_workflow_with_ai, shared_connection_manager, standard_registry,
+    ExecutionEvent, NodeRegistry, PinType, VariableDeclaration, WorkflowContext, WorkflowGraph,
+    WorkflowVariables, deploy_workflow_with_ai, shared_connection_manager, standard_registry,
 };
 use serde_json::json;
 use tokio::time::timeout;
@@ -129,6 +129,65 @@ async fn rhai_code_节点同部署多次触发累积变量() {
         json!(3_i64),
         "三次累加后 counter 应为 3，实际：{final_payload}"
     );
+
+    deployment.shutdown().await;
+}
+
+#[tokio::test]
+async fn 部署后写变量触发_variablechanged_事件() {
+    let mut declarations = HashMap::new();
+    declarations.insert(
+        "setpoint".to_owned(),
+        VariableDeclaration {
+            variable_type: PinType::Float,
+            initial: json!(25.0),
+        },
+    );
+    let graph = WorkflowGraph {
+        name: Some("vars-event-test".to_owned()),
+        connections: vec![],
+        nodes: HashMap::new(),
+        edges: vec![],
+        variables: Some(declarations),
+    };
+
+    let registry: NodeRegistry = standard_registry();
+    let cm = shared_connection_manager();
+    let mut deployment = deploy_workflow_with_ai(graph, cm, None, &registry)
+        .await
+        .expect("空 DAG + 单变量应能部署");
+
+    // 从 deployment 的 SharedResources 取 vars，写一次新值
+    let vars = deployment
+        .resources()
+        .get::<Arc<WorkflowVariables>>()
+        .expect("应注入 WorkflowVariables");
+    vars.set("setpoint", json!(42.0), Some("test"))
+        .expect("写入应成功");
+
+    // 从事件流读，期望收到 VariableChanged
+    let mut received_change = false;
+    for _ in 0..16 {
+        match deployment.next_event().await {
+            Some(ExecutionEvent::VariableChanged {
+                workflow_id,
+                name,
+                value,
+                updated_by,
+                ..
+            }) => {
+                assert_eq!(workflow_id, "vars-event-test");
+                assert_eq!(name, "setpoint");
+                assert_eq!(value, json!(42.0));
+                assert_eq!(updated_by.as_deref(), Some("test"));
+                received_change = true;
+                break;
+            }
+            Some(_) => {}
+            None => break,
+        }
+    }
+    assert!(received_change, "未收到 VariableChanged 事件");
 
     deployment.shutdown().await;
 }

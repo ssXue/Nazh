@@ -111,6 +111,11 @@ pub async fn deploy_workflow_with_ai(
     let (event_tx, event_rx) = mpsc::channel(event_capacity);
     let (result_tx, result_rx) = mpsc::channel(event_capacity);
 
+    // ADR-0012 Phase 2：注入事件通道，让 set/CAS 在值变化时通过 ExecutionEvent::VariableChanged
+    // 流向 Tauri shell drain loop（Task 4 转发到 workflow://variable-changed）。
+    let workflow_id_for_events = graph.name.clone().unwrap_or_else(|| "anonymous".to_owned());
+    workflow_variables.set_event_sender(workflow_id_for_events, event_tx.clone());
+
     let mut resource_bag = RuntimeResources::new()
         .with_resource(connection_manager.clone())
         .with_resource(Arc::clone(&workflow_variables));
