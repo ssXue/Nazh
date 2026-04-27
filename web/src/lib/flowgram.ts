@@ -29,6 +29,8 @@ const FLOWGRAM_BUSINESS_NODE_TYPES = new Set([
   'barkPush',
   'sqlWriter',
   'debugConsole',
+  'subgraphInput',
+  'subgraphOutput',
 ]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -180,11 +182,193 @@ export function toFlowgramWorkflowJson(graph: WorkflowGraph): FlowgramWorkflowJS
   };
 }
 
+/**
+ * 深度遍历 JSON value，对所有 string 值做 `{{paramName}}` 替换。
+ * 未绑定的参数保留原值。
+ */
+function applyParameterBindings(
+  value: unknown,
+  params: Record<string, string | number | boolean>,
+): unknown {
+  if (typeof value === 'string') {
+    return value.replace(/\{\{(\w+)\}\}/g, (match, key: string) => {
+      if (key in params) {
+        return String(params[key]);
+      }
+      return match;
+    });
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => applyParameterBindings(item, params));
+  }
+  if (isRecord(value)) {
+    const result: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value)) {
+      result[k] = applyParameterBindings(v, params);
+    }
+    return result;
+  }
+  return value;
+}
+
+function isContainerNode(node: FlowgramWorkflowJSON['nodes'][number]): boolean {
+  return node.type === 'subgraph';
+}
+
+interface BridgeNodes {
+  inputNodes: FlowgramWorkflowJSON['nodes'];
+  outputNodes: FlowgramWorkflowJSON['nodes'];
+}
+
+function findBridgeNodes(blocks: FlowgramWorkflowJSON['nodes']): BridgeNodes {
+  const inputNodes = blocks.filter((n) => n.type === 'subgraphInput');
+  const outputNodes = blocks.filter((n) => n.type === 'subgraphOutput');
+  return { inputNodes, outputNodes };
+}
+
+interface FlatGraph {
+  nodes: FlowgramWorkflowJSON['nodes'];
+  edges: FlowgramWorkflowJSON['edges'];
+}
+
+const MAX_SUBGRAPH_DEPTH = 8;
+
+/**
+ * 递归展平子图容器节点，返回纯平的 nodes + edges。
+ *
+ * 规则：
+ * 1. 容器节点被移除，内部 blocks 递归展平后加入
+ * 2. 内部节点 ID 加前缀 `<subgraph-id>/`
+ * 3. 外部边重写：容器 input port → sg-in，容器 output port → sg-out
+ * 4. `{{paramName}}` 被参数绑定替换
+ * 5. 嵌套深度超过 8 层报错
+ * 6. 检测循环引用（同一路径下 ID 重复）
+ */
+export function flattenSubgraphs(
+  flowgramGraph: FlowgramWorkflowJSON,
+  depth = 0,
+  ancestorIds: Set<string> = new Set(),
+): FlatGraph {
+  if (depth > MAX_SUBGRAPH_DEPTH) {
+    throw new Error(`子图嵌套超过 ${MAX_SUBGRAPH_DEPTH} 层上限`);
+  }
+
+  const flatNodes: FlowgramWorkflowJSON['nodes'] = [];
+  const flatEdges: FlowgramWorkflowJSON['edges'] = [];
+
+  const containerBridgeMap = new Map<
+    string,
+    { inputNodeIds: string[]; outputNodeIds: string[] }
+  >();
+
+  const flatNodeIds = new Set<string>();
+
+  for (const node of flowgramGraph.nodes) {
+    if (isContainerNode(node)) {
+      if (ancestorIds.has(node.id)) {
+        throw new Error(`子图循环引用：${node.id}`);
+      }
+
+      const params = isRecord(node.data)
+        ? ((node.data as Record<string, unknown>).parameterBindings ?? {})
+        : {};
+      const paramMap: Record<string, string | number | boolean> = {};
+      if (isRecord(params)) {
+        for (const [k, v] of Object.entries(params)) {
+          if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
+            paramMap[k] = v;
+          }
+        }
+      }
+
+      const innerGraph: FlowgramWorkflowJSON = {
+        nodes: node.blocks ?? [],
+        edges: node.edges ?? [],
+      };
+      const nextAncestorIds = new Set(ancestorIds);
+      nextAncestorIds.add(node.id);
+      const inner = flattenSubgraphs(innerGraph, depth + 1, nextAncestorIds);
+
+      const { inputNodes, outputNodes } = findBridgeNodes(innerGraph.nodes);
+      const prefixedInputIds = inputNodes.map((n) => `${node.id}/${n.id}`);
+      const prefixedOutputIds = outputNodes.map((n) => `${node.id}/${n.id}`);
+
+      containerBridgeMap.set(node.id, {
+        inputNodeIds: prefixedInputIds,
+        outputNodeIds: prefixedOutputIds,
+      });
+
+      for (const innerNode of inner.nodes) {
+        const prefixedNode = {
+          ...innerNode,
+          id: `${node.id}/${innerNode.id}`,
+        };
+        if (Object.keys(paramMap).length > 0) {
+          prefixedNode.data = applyParameterBindings(prefixedNode.data, paramMap) as Record<
+            string,
+            unknown
+          >;
+        }
+        flatNodes.push(prefixedNode);
+        flatNodeIds.add(prefixedNode.id);
+      }
+
+      for (const innerEdge of inner.edges) {
+        flatEdges.push({
+          ...innerEdge,
+          sourceNodeID: `${node.id}/${innerEdge.sourceNodeID}`,
+          targetNodeID: `${node.id}/${innerEdge.targetNodeID}`,
+        });
+      }
+    } else {
+      flatNodes.push(node);
+      flatNodeIds.add(node.id);
+    }
+  }
+
+  for (const edge of flowgramGraph.edges) {
+    let sourceId = edge.sourceNodeID;
+    let targetId = edge.targetNodeID;
+    let sourcePortID = edge.sourcePortID;
+    let targetPortID = edge.targetPortID;
+
+    const sourceBridge = containerBridgeMap.get(sourceId);
+    if (sourceBridge) {
+      const outputIds = sourceBridge.outputNodeIds;
+      if (outputIds.length > 0) {
+        sourceId = outputIds[0] ?? sourceId;
+        sourcePortID = undefined;
+      }
+    }
+
+    const targetBridge = containerBridgeMap.get(targetId);
+    if (targetBridge) {
+      const inputIds = targetBridge.inputNodeIds;
+      if (inputIds.length > 0) {
+        targetId = inputIds[0] ?? targetId;
+        targetPortID = undefined;
+      }
+    }
+
+    if (flatNodeIds.has(sourceId) && flatNodeIds.has(targetId)) {
+      flatEdges.push({
+        sourceNodeID: sourceId,
+        targetNodeID: targetId,
+        sourcePortID,
+        targetPortID,
+      });
+    }
+  }
+
+  return { nodes: flatNodes, edges: flatEdges };
+}
+
 export function toNazhWorkflowGraph(
   flowgramGraph: FlowgramWorkflowJSON,
   previousGraph: WorkflowGraph,
 ): WorkflowGraph {
-  const businessNodes = flowgramGraph.nodes.filter(isBusinessNode);
+  const flat = flattenSubgraphs(flowgramGraph);
+  const businessNodes = flat.nodes.filter(isBusinessNode);
   const businessNodeIds = new Set(businessNodes.map((node) => node.id));
   const nodes = businessNodes.reduce<Record<string, WorkflowNodeDefinition>>((acc, node) => {
     const previousNode = previousGraph.nodes[node.id];
@@ -231,7 +415,7 @@ export function toNazhWorkflowGraph(
     editor_graph: flowgramGraph,
     nodes,
     variables: previousGraph.variables,
-    edges: flowgramGraph.edges
+    edges: flat.edges
       .filter(
         (edge) => businessNodeIds.has(edge.sourceNodeID) && businessNodeIds.has(edge.targetNodeID),
       )
