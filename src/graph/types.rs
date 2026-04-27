@@ -32,8 +32,9 @@ pub struct WorkflowGraph {
     #[serde(default)]
     pub edges: Vec<WorkflowEdge>,
     /// ADR-0012：工作流级共享变量声明（`name → { type, initial }`）。
-    /// 旧图 JSON 中无此字段时反序列化为 `None`（`#[serde(default)]` 兜底），
-    /// 消费方调用 `.unwrap_or_default()` 得到空表。
+    /// 旧图 JSON 中无此字段时反序列化为 `None`（`#[serde(default)]` 兜底）；
+    /// 引擎部署期 `build_workflow_variables(graph.variables.as_ref())` 透明处理 `None`，
+    /// 旧图无变量声明时正常部署、不报错。
     #[serde(default)]
     #[cfg_attr(feature = "ts-export", ts(optional))]
     pub variables: Option<HashMap<String, VariableDeclaration>>,

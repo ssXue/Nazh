@@ -112,7 +112,7 @@ impl WorkflowVariables {
             if !pin_type_matches_value(&declaration.variable_type, &declaration.initial) {
                 return Err(EngineError::variable_initial_mismatch(
                     name.clone(),
-                    pin_type_label(&declaration.variable_type),
+                    declaration.variable_type.to_string(),
                     json_value_label(&declaration.initial),
                 ));
             }
@@ -162,7 +162,7 @@ impl WorkflowVariables {
         if !pin_type_matches_value(&entry.variable_type, &value) {
             return Err(EngineError::variable_type_mismatch(
                 name,
-                pin_type_label(&entry.variable_type),
+                entry.variable_type.to_string(),
                 json_value_label(&value),
             ));
         }
@@ -194,7 +194,7 @@ impl WorkflowVariables {
         if !pin_type_matches_value(&entry.variable_type, &new) {
             return Err(EngineError::variable_type_mismatch(
                 name,
-                pin_type_label(&entry.variable_type),
+                entry.variable_type.to_string(),
                 json_value_label(&new),
             ));
         }
@@ -251,20 +251,6 @@ pub fn pin_type_matches_value(pin_type: &PinType, value: &Value) -> bool {
 
         // Phase 1: Custom 完全拒绝（声明初值与运行时写入皆然），见函数级 doc
         _ => false,
-    }
-}
-
-fn pin_type_label(pin_type: &PinType) -> &'static str {
-    match pin_type {
-        PinType::Any => "any",
-        PinType::Bool => "bool",
-        PinType::Integer => "integer",
-        PinType::Float => "float",
-        PinType::String => "string",
-        PinType::Json => "json",
-        PinType::Binary => "binary",
-        PinType::Array { .. } => "array",
-        PinType::Custom { .. } => "custom",
     }
 }
 

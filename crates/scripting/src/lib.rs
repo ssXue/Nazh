@@ -81,9 +81,9 @@ impl ScriptVars {
     /// `vars.get(name)` Rhai 方法：读取工作流变量值。
     fn rhai_get(&mut self, name: &str) -> Result<Dynamic, Box<EvalAltResult>> {
         let vars = self.require_vars()?;
-        let value = vars.get_value(name).ok_or_else(|| {
-            to_script_error(format!("UnknownVariable: 工作流变量 `{name}` 未声明"))
-        })?;
+        let value = vars
+            .get_value(name)
+            .ok_or_else(|| to_script_error(EngineError::unknown_variable(name).to_string()))?;
         rhai::serde::to_dynamic(value)
             .map_err(|err| to_script_error(format!("变量 `{name}` 无法转 Dynamic：{err}")))
     }
@@ -351,7 +351,6 @@ impl ScriptNodeBase {
             .map_err(|error| EngineError::payload_conversion(self.id.clone(), error.to_string()))?;
         let mut scope = Scope::new();
         scope.push_dynamic("payload", dynamic);
-        // ADR-0012：每次 evaluate 都推入一份 ScriptVars，脚本通过 `vars.*` 读写工作流变量
         scope.push("vars", self.script_vars.clone());
         Ok(scope)
     }

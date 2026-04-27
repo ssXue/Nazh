@@ -49,6 +49,24 @@ impl fmt::Display for PinDirection {
     }
 }
 
+impl fmt::Display for PinType {
+    /// 类型名标签，匹配 `#[serde(tag = "kind", rename_all = "lowercase")]` 序列化形态。
+    /// 供 `EngineError::Variable*Mismatch` 等错误消息与日志复用。
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Any => "any",
+            Self::Bool => "bool",
+            Self::Integer => "integer",
+            Self::Float => "float",
+            Self::String => "string",
+            Self::Json => "json",
+            Self::Binary => "binary",
+            Self::Array { .. } => "array",
+            Self::Custom { .. } => "custom",
+        })
+    }
+}
+
 /// 引脚承载的数据形状。
 ///
 /// **Phase 1 不带 JSON Schema payload**——`Json` 仅声明"该端口流通的是任意 JSON"，

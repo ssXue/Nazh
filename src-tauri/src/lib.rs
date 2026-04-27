@@ -1328,8 +1328,14 @@ async fn snapshot_workflow_variables(
             .shared_resources
             .get::<std::sync::Arc<nazh_engine::WorkflowVariables>>()
             .ok_or_else(|| {
+                // 走到这里说明 deploy_workflow_with_ai 漏注入了 WorkflowVariables——
+                // 引擎层 bug；详细诊断走日志，前端只看到精简错误。
+                tracing::error!(
+                    workflow_id = %request.workflow_id,
+                    "WorkflowVariables 缺失：deploy_workflow_with_ai 应无条件注入"
+                );
                 format!(
-                    "工作流 `{}` 部署中找不到 WorkflowVariables 资源（防御性错误，正常路径不应触发；如出现说明引擎层 deploy_workflow_with_ai 注入逻辑有 bug）",
+                    "内部错误：工作流 `{}` 无 WorkflowVariables 资源",
                     request.workflow_id
                 )
             })?
