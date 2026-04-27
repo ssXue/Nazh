@@ -189,6 +189,30 @@ impl WorkflowVariables {
         }
     }
 
+    /// 内部 helper：在 entry 借用已 drop 之后，按 `event_payload` 与 `event_sink` 决定是否 emit
+    /// `VariableChanged`。`name` 仅用于事件构造与失败日志的上下文。
+    ///
+    /// 调用约定：调用方必须**已经** drop 了 `DashMap` 的 `&mut Entry` 借用——本函数不做
+    /// 锁守卫，假设 caller 已让 shard 锁释放。
+    fn try_emit_changed(&self, name: &str, event_payload: Option<(Value, String, Option<String>)>) {
+        let Some((value, updated_at, updated_by)) = event_payload else {
+            return;
+        };
+        let Some(sink) = self.event_sink.get() else {
+            return;
+        };
+        let event = crate::ExecutionEvent::VariableChanged {
+            workflow_id: sink.workflow_id.clone(),
+            name: name.to_owned(),
+            value,
+            updated_at,
+            updated_by,
+        };
+        if let Err(error) = sink.sender.try_send(event) {
+            tracing::debug!(?error, ?name, "VariableChanged 事件 try_send 失败");
+        }
+    }
+
     /// 类型化写入。`updated_by` 一般是节点 id；为 `None` 表示外部接入（IPC、初始化）。
     ///
     /// 值变化时（`entry.value != value`）向已注入的事件通道发送
@@ -233,20 +257,7 @@ impl WorkflowVariables {
         };
         drop(entry);
 
-        if let (Some((value, updated_at, updated_by)), Some(sink)) =
-            (event_payload, self.event_sink.get())
-        {
-            let event = crate::ExecutionEvent::VariableChanged {
-                workflow_id: sink.workflow_id.clone(),
-                name: name.to_owned(),
-                value,
-                updated_at,
-                updated_by,
-            };
-            if let Err(error) = sink.sender.try_send(event) {
-                tracing::debug!(?error, "VariableChanged 事件 try_send 失败（通道满或关闭）");
-            }
-        }
+        self.try_emit_changed(name, event_payload);
 
         Ok(())
     }
@@ -299,20 +310,7 @@ impl WorkflowVariables {
         };
         drop(entry);
 
-        if let (Some((value, updated_at, updated_by)), Some(sink)) =
-            (event_payload, self.event_sink.get())
-        {
-            let event = crate::ExecutionEvent::VariableChanged {
-                workflow_id: sink.workflow_id.clone(),
-                name: name.to_owned(),
-                value,
-                updated_at,
-                updated_by,
-            };
-            if let Err(error) = sink.sender.try_send(event) {
-                tracing::debug!(?error, "VariableChanged 事件 try_send 失败（CAS 路径）");
-            }
-        }
+        self.try_emit_changed(name, event_payload);
 
         Ok(true)
     }

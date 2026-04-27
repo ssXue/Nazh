@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { formatPinType } from '../../lib/pin-schema-cache';
 import {
   onWorkflowVariableChanged,
   setWorkflowVariable,
@@ -141,8 +142,8 @@ function VariableRow({ entry, onSubmit }: VariableRowProps) {
   const [parseError, setParseError] = useState<string | null>(null);
   const isSubmittingRef = useRef(false);
 
-  // Issue 1: 外部事件触发的 entry.value 更新——非编辑态时 draft 跟随，避免下次开 edit 看到过期值。
-  // Issue 4: 退出编辑态时同步重置双 submit 防御守卫。
+  // 外部事件更新 entry.value 时，非编辑态 draft 跟随，避免下次进入编辑看到过期值。
+  // 退出编辑态时重置双 submit 守卫，避免 onBlur+Enter 同时触发。
   useEffect(() => {
     if (!isEditing) {
       setDraft(JSON.stringify(entry.value));
@@ -151,7 +152,7 @@ function VariableRow({ entry, onSubmit }: VariableRowProps) {
   }, [entry.value, isEditing]);
 
   const handleSubmit = async () => {
-    // Issue 4: Enter 触发 handleSubmit 后 setIsEditing(false) 会使 input blur，防止 onBlur 二次提交。
+    // Enter 触发 handleSubmit 后 setIsEditing(false) 会让 input blur，本守卫防止 onBlur 二次提交。
     if (isSubmittingRef.current) return;
     isSubmittingRef.current = true;
     let parsed: JsonValue;
@@ -170,7 +171,7 @@ function VariableRow({ entry, onSubmit }: VariableRowProps) {
   return (
     <li className="runtime-variables-panel__row">
       <div className="runtime-variables-panel__name">{entry.name}</div>
-      <div className="runtime-variables-panel__type">{describePinType(entry.variableType)}</div>
+      <div className="runtime-variables-panel__type">{formatPinType(entry.variableType)}</div>
       {!isEditing ? (
         <>
           <div className="runtime-variables-panel__value">{JSON.stringify(entry.value)}</div>
@@ -208,17 +209,6 @@ function VariableRow({ entry, onSubmit }: VariableRowProps) {
   );
 }
 
-function describePinType(pinType: PinType): string {
-  switch (pinType.kind) {
-    case 'array':
-      return `array<${describePinType(pinType.inner)}>`;
-    case 'custom':
-      return `custom(${pinType.name})`;
-    default:
-      return pinType.kind;
-  }
-}
-
 function parseValueByPinType(raw: string, pinType: PinType): JsonValue {
   const trimmed = raw.trim();
   switch (pinType.kind) {
@@ -249,5 +239,10 @@ function parseValueByPinType(raw: string, pinType: PinType): JsonValue {
         throw new Error('期望有效 JSON 值（不能为空）');
       }
       return JSON.parse(trimmed) as JsonValue;
+    default: {
+      // 编译期保证：PinType 新增 kind 时此处报错，提示更新 parseValueByPinType
+      const _exhaustive: never = pinType;
+      throw new Error(`未知 PinType kind: ${(_exhaustive as { kind?: string }).kind ?? '<unknown>'}`);
+    }
   }
 }

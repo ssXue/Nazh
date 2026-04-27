@@ -31,7 +31,7 @@ use tauri_bindings::{
     DeployResponse, DescribeNodePinsRequest, DescribeNodePinsResponse, DispatchResponse,
     ListNodeTypesResponse, SetWorkflowVariableRequest, SetWorkflowVariableResponse,
     SnapshotWorkflowVariablesRequest, SnapshotWorkflowVariablesResponse, UndeployResponse,
-    VariableChangedPayload, list_node_types_response,
+    list_node_types_response,
 };
 use tokio::fs;
 use tokio::sync::{Mutex, RwLock, mpsc};
@@ -999,35 +999,26 @@ async fn deploy_workflow(
     let workflow_id_for_event = workflow_id.clone();
     runtime_tasks.push(tauri::async_runtime::spawn(async move {
         while let Some(event) = event_rx.recv().await {
-            if let Some(store) = &event_store {
-                let _ = store.record_execution_event(&event).await;
-            }
             // ADR-0012 Phase 2：VariableChanged 单独走 workflow://variable-changed 通道，
             // 与节点生命周期事件（node-status）分离——前端面板免去过滤已知 variant 的成本。
             //
             // 两 wire format 有意不同：ExecutionEvent::VariableChanged 是 Rust 默认
             // snake_case；VariableChangedPayload 用 #[serde(rename_all = "camelCase")]
             // 让前端订阅时类型直接就位，不必从 ExecutionEvent 联合中分支。
-            if let ExecutionEvent::VariableChanged {
-                ref workflow_id,
-                ref name,
-                ref value,
-                ref updated_at,
-                ref updated_by,
-            } = event
-            {
-                let payload = VariableChangedPayload {
-                    workflow_id: workflow_id.clone(),
-                    name: name.clone(),
-                    value: value.clone(),
-                    updated_at: updated_at.clone(),
-                    updated_by: updated_by.clone(),
-                };
-                if let Err(error) = event_app.emit("workflow://variable-changed", payload) {
+            //
+            // VariableChanged 提前过滤——不进 record_execution_event，避免为 ObservabilityEntry
+            // 分配 UUID + String 后立即丢弃（轮询脚本场景每秒数千次的浪费分配）。
+            if matches!(event, ExecutionEvent::VariableChanged { .. }) {
+                if let Some(payload) = tauri_bindings::variable_changed_payload(event)
+                    && let Err(error) = event_app.emit("workflow://variable-changed", payload)
+                {
                     tracing::warn!(?error, "workflow://variable-changed 事件转发失败");
                 }
                 // VariableChanged 不再发到 node-status，避免前端误处理
                 continue;
+            }
+            if let Some(store) = &event_store {
+                let _ = store.record_execution_event(&event).await;
             }
             let _ = event_app.emit(
                 "workflow://node-status",
@@ -1338,6 +1329,32 @@ async fn describe_node_pins(
     })
 }
 
+/// 从已部署工作流中取出 `Arc<WorkflowVariables>` 并释放 `workflows` Mutex。
+///
+/// 两个 IPC 命令（`snapshot_workflow_variables` / `set_workflow_variable`）共享同一套
+/// "取 Arc → 块作用域 drop `MutexGuard`" 模式；提取为 helper 消除重复。
+async fn resolve_workflow_variables(
+    state: &DesktopState,
+    workflow_id: &str,
+) -> Result<Arc<nazh_engine::WorkflowVariables>, String> {
+    let workflows = state.workflows.lock().await;
+    let workflow = workflows
+        .get(workflow_id)
+        .ok_or_else(|| format!("工作流 `{workflow_id}` 未部署或已撤销"))?;
+    workflow
+        .shared_resources
+        .get::<Arc<nazh_engine::WorkflowVariables>>()
+        .ok_or_else(|| {
+            // 走到这里说明 deploy_workflow_with_ai 漏注入了 WorkflowVariables——引擎层 bug
+            tracing::error!(
+                workflow_id = %workflow_id,
+                "WorkflowVariables 缺失：deploy_workflow_with_ai 应无条件注入"
+            );
+            format!("内部错误：工作流 `{workflow_id}` 无 WorkflowVariables 资源")
+        })
+    // workflows MutexGuard 在此 drop，Arc<WorkflowVariables> 为 owned clone（refcount bump）
+}
+
 /// 返回指定已部署工作流的变量快照。
 ///
 /// 若工作流不存在或部署中未注入 [`WorkflowVariables`]，返回错误。
@@ -1348,28 +1365,7 @@ async fn snapshot_workflow_variables(
     state: State<'_, DesktopState>,
     request: SnapshotWorkflowVariablesRequest,
 ) -> Result<SnapshotWorkflowVariablesResponse, String> {
-    let vars = {
-        let workflows = state.workflows.lock().await;
-        let workflow = workflows
-            .get(&request.workflow_id)
-            .ok_or_else(|| format!("工作流 `{}` 未部署或已撤销", request.workflow_id))?;
-        workflow
-            .shared_resources
-            .get::<std::sync::Arc<nazh_engine::WorkflowVariables>>()
-            .ok_or_else(|| {
-                // 走到这里说明 deploy_workflow_with_ai 漏注入了 WorkflowVariables——
-                // 引擎层 bug；详细诊断走日志，前端只看到精简错误。
-                tracing::error!(
-                    workflow_id = %request.workflow_id,
-                    "WorkflowVariables 缺失：deploy_workflow_with_ai 应无条件注入"
-                );
-                format!(
-                    "内部错误：工作流 `{}` 无 WorkflowVariables 资源",
-                    request.workflow_id
-                )
-            })?
-        // workflows MutexGuard 在此 drop，DashMap 迭代期间不持有全局锁
-    };
+    let vars = resolve_workflow_variables(&state, &request.workflow_id).await?;
 
     let variables = vars
         .snapshot()
@@ -1391,27 +1387,8 @@ async fn set_workflow_variable(
     state: State<'_, DesktopState>,
     request: SetWorkflowVariableRequest,
 ) -> Result<SetWorkflowVariableResponse, String> {
-    // 取 Arc<WorkflowVariables>，块作用域释放 workflows Mutex
-    let vars = {
-        let workflows = state.workflows.lock().await;
-        let workflow = workflows
-            .get(&request.workflow_id)
-            .ok_or_else(|| format!("工作流 `{}` 未部署或已撤销", request.workflow_id))?;
-        workflow
-            .shared_resources
-            .get::<std::sync::Arc<nazh_engine::WorkflowVariables>>()
-            .ok_or_else(|| {
-                tracing::error!(
-                    workflow_id = %request.workflow_id,
-                    "WorkflowVariables 缺失：deploy_workflow_with_ai 应无条件注入"
-                );
-                format!(
-                    "内部错误：工作流 `{}` 无 WorkflowVariables 资源",
-                    request.workflow_id
-                )
-            })?
-        // workflows MutexGuard 在此 drop
-    };
+    // 取 Arc<WorkflowVariables>，MutexGuard 在 resolve_workflow_variables 内 drop
+    let vars = resolve_workflow_variables(&state, &request.workflow_id).await?;
 
     // 写入：updated_by = "ipc" 哨兵，与 node_id 路径区分
     vars.set(&request.name, request.value, Some("ipc"))

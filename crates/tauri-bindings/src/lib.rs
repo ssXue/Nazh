@@ -151,6 +151,31 @@ pub struct VariableChangedPayload {
     pub updated_by: Option<String>,
 }
 
+/// 将 [`nazh_core::ExecutionEvent::VariableChanged`] 消耗式转换为 [`VariableChangedPayload`]。
+///
+/// drain loop 中用 `matches!` 提前判断 variant 后调用——消耗 owned event 避免 clone。
+/// 其他 variant 返回 `None`（仅作安全网，正常路径不会到达）。
+pub fn variable_changed_payload(
+    event: nazh_core::ExecutionEvent,
+) -> Option<VariableChangedPayload> {
+    match event {
+        nazh_core::ExecutionEvent::VariableChanged {
+            workflow_id,
+            name,
+            value,
+            updated_at,
+            updated_by,
+        } => Some(VariableChangedPayload {
+            workflow_id,
+            name,
+            value,
+            updated_at,
+            updated_by,
+        }),
+        _ => None,
+    }
+}
+
 /// `snapshot_workflow_variables` 命令的请求。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
