@@ -56,10 +56,15 @@ pub async fn deploy_workflow(
     connection_manager: SharedConnectionManager,
     registry: &NodeRegistry,
 ) -> Result<WorkflowDeployment, EngineError> {
-    deploy_workflow_with_ai(graph, connection_manager, None, registry).await
+    deploy_workflow_with_ai(graph, connection_manager, None, registry, None).await
 }
 
 /// 校验、实例化并将工作流图部署为并发 Tokio 任务，并可选注入 AI 服务。
+///
+/// `workflow_id` 由调用方传入，用于 [`ExecutionEvent::VariableChanged`] 事件的
+/// `workflow_id` 字段。Tauri shell 经 `derive_workflow_id` 派生后传入，保证与
+/// `DesktopWorkflow.workflow_id` 对齐；引擎内部调用 / 测试可传 `None`，
+/// 此时按 `graph.name > "anonymous"` 顺序 fallback。
 ///
 /// # Errors
 ///
@@ -74,6 +79,7 @@ pub async fn deploy_workflow_with_ai(
     connection_manager: SharedConnectionManager,
     ai_service: Option<Arc<dyn AiService>>,
     registry: &NodeRegistry,
+    workflow_id: Option<String>,
 ) -> Result<WorkflowDeployment, EngineError> {
     tracing::info!(
         node_count = graph.nodes.len(),
@@ -113,7 +119,17 @@ pub async fn deploy_workflow_with_ai(
 
     // ADR-0012 Phase 2：注入事件通道，让 set/CAS 在值变化时通过 ExecutionEvent::VariableChanged
     // 流向 Tauri shell drain loop（Task 4 转发到 workflow://variable-changed）。
-    let workflow_id_for_events = graph.name.clone().unwrap_or_else(|| "anonymous".to_owned());
+    //
+    // 必须在 resource_bag 装配和节点 on_deploy 启动之前完成注入——
+    // 节点 on_deploy 期间的写入若 event_sink 尚未就绪将静默丢失事件。
+    //
+    // workflow_id 由调用方传入（src-tauri 经 derive_workflow_id 派生），engine 不再自己
+    // 从 graph.name 派生——避免 src-tauri 用显式 workflow_id 或 project_id 派生时与
+    // engine 内部 fallback 产生 diverge，导致 Task 4 前端事件按 workflow_id 过滤失败。
+    // 优先级：调用方显式传入 > graph.name > "anonymous" fallback。
+    let workflow_id_for_events = workflow_id
+        .or_else(|| graph.name.clone())
+        .unwrap_or_else(|| "anonymous".to_owned());
     workflow_variables.set_event_sender(workflow_id_for_events, event_tx.clone());
 
     let mut resource_bag = RuntimeResources::new()

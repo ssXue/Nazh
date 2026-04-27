@@ -288,6 +288,17 @@ impl WorkflowDeployment {
         &self.ingress
     }
 
+    /// 返回部署时构造的资源句柄（含 `WorkflowVariables` 等），供 IPC 与集成测试读取共享状态。
+    ///
+    /// ADR-0012 Phase 2：集成测试通过 `deployment.resources().get::<Arc<WorkflowVariables>>()`
+    /// 拿到 vars 句柄触发写入并断言事件流。Phase 2 IPC 命令 `set_workflow_variable` 走
+    /// 同样路径（src-tauri 通过 `DesktopWorkflow.shared_resources` 直访问），因此
+    /// 公开访问器为前端 / 集成层提供单一入口。
+    #[must_use]
+    pub fn resources(&self) -> &SharedResources {
+        &self.shared_resources
+    }
+
     /// 拆分为入口、流、生命周期 guards 与撤销根 token。
     ///
     /// **注意**：丢弃返回的 guards 会立即 cancel 所有节点的 lifecycle token——
@@ -318,17 +329,6 @@ impl WorkflowDeployment {
     /// 返回内部 [`DataStore`] 的引用。
     pub fn store(&self) -> &Arc<dyn DataStore> {
         &self.streams.store
-    }
-
-    /// 返回部署时构造的资源句柄（含 `WorkflowVariables` 等），供 IPC 与集成测试读取共享状态。
-    ///
-    /// ADR-0012 Phase 2：集成测试通过 `deployment.resources().get::<Arc<WorkflowVariables>>()`
-    /// 拿到 vars 句柄触发写入并断言事件流。Phase 2 IPC 命令 `set_workflow_variable` 走
-    /// 同样路径（src-tauri 通过 `DesktopWorkflow.shared_resources` 直访问），因此
-    /// 公开访问器为前端 / 集成层提供单一入口。
-    #[must_use]
-    pub fn resources(&self) -> &SharedResources {
-        &self.shared_resources
     }
 }
 

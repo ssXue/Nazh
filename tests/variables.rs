@@ -31,7 +31,7 @@ async fn 部署时变量按声明初始化() {
 
     let registry: NodeRegistry = standard_registry();
     let cm = shared_connection_manager();
-    let deployment = deploy_workflow_with_ai(graph, cm, None, &registry)
+    let deployment = deploy_workflow_with_ai(graph, cm, None, &registry, None)
         .await
         .expect("空 DAG + 单变量应能部署");
 
@@ -59,7 +59,7 @@ async fn 初值类型不匹配_部署失败() {
     let registry: NodeRegistry = standard_registry();
     let cm = shared_connection_manager();
     // WorkflowDeployment 未实现 Debug，不能用 unwrap_err / expect_err；用 let…else 提取错误值
-    let Err(err) = deploy_workflow_with_ai(graph, cm, None, &registry).await else {
+    let Err(err) = deploy_workflow_with_ai(graph, cm, None, &registry, None).await else {
         panic!("初值类型不匹配应阻止部署");
     };
     let msg = err.to_string();
@@ -102,7 +102,7 @@ async fn rhai_code_节点同部署多次触发累积变量() {
 
     let registry: NodeRegistry = standard_registry();
     let cm = shared_connection_manager();
-    let mut deployment = deploy_workflow_with_ai(graph, cm, None, &registry)
+    let mut deployment = deploy_workflow_with_ai(graph, cm, None, &registry, None)
         .await
         .expect("含 code 节点的图应能部署");
 
@@ -153,7 +153,7 @@ async fn 部署后写变量触发_variablechanged_事件() {
 
     let registry: NodeRegistry = standard_registry();
     let cm = shared_connection_manager();
-    let mut deployment = deploy_workflow_with_ai(graph, cm, None, &registry)
+    let mut deployment = deploy_workflow_with_ai(graph, cm, None, &registry, None)
         .await
         .expect("空 DAG + 单变量应能部署");
 
@@ -165,29 +165,33 @@ async fn 部署后写变量触发_variablechanged_事件() {
     vars.set("setpoint", json!(42.0), Some("test"))
         .expect("写入应成功");
 
-    // 从事件流读，期望收到 VariableChanged
-    let mut received_change = false;
-    for _ in 0..16 {
-        match deployment.next_event().await {
-            Some(ExecutionEvent::VariableChanged {
-                workflow_id,
-                name,
-                value,
-                updated_by,
-                ..
-            }) => {
-                assert_eq!(workflow_id, "vars-event-test");
-                assert_eq!(name, "setpoint");
-                assert_eq!(value, json!(42.0));
-                assert_eq!(updated_by.as_deref(), Some("test"));
-                received_change = true;
-                break;
+    // 期望在 1 秒内收到 VariableChanged；空 DAG 几乎无干扰事件。
+    let received_change = timeout(Duration::from_secs(1), async {
+        loop {
+            match deployment.next_event().await {
+                Some(ExecutionEvent::VariableChanged {
+                    workflow_id,
+                    name,
+                    value,
+                    updated_by,
+                    ..
+                }) => {
+                    assert_eq!(workflow_id, "vars-event-test");
+                    assert_eq!(name, "setpoint");
+                    assert_eq!(value, json!(42.0));
+                    assert_eq!(updated_by.as_deref(), Some("test"));
+                    return true;
+                }
+                Some(_) => {}
+                None => return false,
             }
-            Some(_) => {}
-            None => break,
         }
-    }
-    assert!(received_change, "未收到 VariableChanged 事件");
+    })
+    .await;
+    assert!(
+        matches!(received_change, Ok(true)),
+        "未在 1s 内收到 VariableChanged"
+    );
 
     deployment.shutdown().await;
 }

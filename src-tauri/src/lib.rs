@@ -945,6 +945,7 @@ async fn deploy_workflow(
         state.connection_manager.clone(),
         Some(ai_service),
         registry,
+        Some(workflow_id.clone()),
     )
     .await
     {

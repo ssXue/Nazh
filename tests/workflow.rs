@@ -267,6 +267,7 @@ async fn workflow_script_node_can_call_ai_complete() {
         shared_connection_manager(),
         Some(ai_service),
         &registry,
+        None,
     )
     .await
     {
@@ -319,7 +320,8 @@ async fn workflow_rejects_script_ai_config_without_ai_service() {
     };
 
     let registry = standard_registry();
-    let result = deploy_workflow_with_ai(graph, shared_connection_manager(), None, &registry).await;
+    let result =
+        deploy_workflow_with_ai(graph, shared_connection_manager(), None, &registry, None).await;
 
     match result {
         Ok(_) => panic!("workflow deployment should fail without ai service"),
@@ -365,6 +367,7 @@ async fn ai_complete_auto_parses_json_object_response() {
         shared_connection_manager(),
         Some(ai_service),
         &registry,
+        None,
     )
     .await
     {
@@ -422,6 +425,7 @@ async fn ai_complete_keeps_plain_text_as_string() {
         shared_connection_manager(),
         Some(ai_service),
         &registry,
+        None,
     )
     .await
     {
@@ -477,6 +481,7 @@ async fn ai_complete_auto_parses_json_array_response() {
         shared_connection_manager(),
         Some(ai_service),
         &registry,
+        None,
     )
     .await
     {
