@@ -1004,6 +1004,10 @@ async fn deploy_workflow(
             }
             // ADR-0012 Phase 2：VariableChanged 单独走 workflow://variable-changed 通道，
             // 与节点生命周期事件（node-status）分离——前端面板免去过滤已知 variant 的成本。
+            //
+            // 两 wire format 有意不同：ExecutionEvent::VariableChanged 是 Rust 默认
+            // snake_case；VariableChangedPayload 用 #[serde(rename_all = "camelCase")]
+            // 让前端订阅时类型直接就位，不必从 ExecutionEvent 联合中分支。
             if let ExecutionEvent::VariableChanged {
                 ref workflow_id,
                 ref name,

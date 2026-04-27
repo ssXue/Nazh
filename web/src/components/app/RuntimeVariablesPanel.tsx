@@ -245,6 +245,9 @@ function parseValueByPinType(raw: string, pinType: PinType): JsonValue {
     case 'binary':
     case 'any':
     case 'custom':
+      if (trimmed === '') {
+        throw new Error('期望有效 JSON 值（不能为空）');
+      }
       return JSON.parse(trimmed) as JsonValue;
   }
 }
