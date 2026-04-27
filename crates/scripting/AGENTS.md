@@ -61,7 +61,20 @@ cargo test -p scripting
 cargo test -p nodes-flow      # 脚本节点集成测试
 ```
 
+## Rhai 全局对象
+
+`ScriptNodeBase::new` 的第 5 参 `variables: Option<Arc<WorkflowVariables>>` 控制脚本对工作流变量的访问能力（ADR-0012）：
+
+- `Some(_)` 注入时脚本可调用：
+  - `vars.get(name)` —— 读取变量当前值（返回 Dynamic）
+  - `vars.set(name, value)` —— 写入（含类型校验，wrong type 返回 ErrorRuntime）
+  - `vars.cas(name, expected, new) -> bool` —— 原子比较交换
+- `None` 注入时调用 `vars.*` 抛 ErrorRuntime（"未注入"提示带 node_id）
+- 内部用 `ScriptVars { binding: Arc<VarsBinding> }`（`pub(crate)`，仅 crate 内 reachable），`prepare_scope` 每次 evaluate 把 clone push 进 Scope
+- 类型校验在 Rust 侧 `WorkflowVariables` 拦截，错误转 ErrorRuntime 上抛
+
 ## 关联 ADR / RFC
 
 - **ADR-0002** Rhai 作为脚本引擎
+- **ADR-0012** 工作流变量 — **已实施 Phase 1**（2026-04-27），`ScriptNodeBase` 注入 `vars.get/set/cas`
 - **ADR-0019** AI 能力依赖反转 — **已实施**（2026-04-26），本 crate 已脱离 `ai` 依赖

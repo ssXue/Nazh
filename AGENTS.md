@@ -353,7 +353,8 @@ Located in `docs/superpowers/plans/` and `docs/superpowers/specs/`. These are **
 - ADR-0010 (Pin 声明系统) — **已实施 Phase 1 + Phase 2 + Phase 3 + Phase 4 (部分)**（Phase 1: 2026-04-26，Ring 0 类型 + 部署期校验器 + `if`/`switch`/`loop`/`tryCatch` 四个分支节点声明具体输出 pin；Phase 3: 2026-04-26，`modbusRead` / `sqlWriter` / `httpClient` / `mqttClient` 四协议节点 input/output 收紧到 `Json`（mqttClient 按 mode 实例方法切换）+ 兼容矩阵合约 fixture `tests/fixtures/pin_compat_matrix.jsonc` 作为前后端共享真值源 + 反向兼容性集成测试；Phase 2: 2026-04-26，IPC `describe_node_pins` + `web/src/lib/{pin-compat,pin-schema-cache,pin-validator}.ts` + FlowGram `canAddLine` 钩子接入连接期校验 + branch ports 按 PinType 着色。Phase 4: 2026-04-27，pin tooltip + AI 脚本生成 prompt 携带 pin schema；协议节点端口着色 / `Custom` 类型 + row-formatter 节点 deferred。两层防御=UI 拦截+部署期 backstop）
 - ADR-0019 (AI 能力依赖反转) — **已实施**（2026-04-26，`AiService` trait + 请求/响应类型上移到 `crates/core/src/ai.rs`；`ai` crate 改为纯实现 + 配置型；`scripting` / `nodes-flow` 不再依赖 `ai`）
 - ADR-0018 (`nodes-io` 按协议 feature 门控) — **已实施**（2026-04-26，`io-sql/io-http/io-mqtt/io-modbus/io-serial/io-notify` + 元 feature `io-all`；facade 转传；`debug/native/timer/template` 永远启用）
-- ADR-0012 ~ ADR-0016 / ADR-0020 — **proposed**, awaiting review. See `docs/adr/README.md` for the index.
+- ADR-0012 (工作流变量) — **已实施 Phase 1**（2026-04-27，`crates/core/src/variables.rs` + `src/graph/variables_init.rs` + Rhai `vars.get/set/cas`；前端面板 + 变更事件留 Phase 2）
+- ADR-0013 ~ ADR-0016 / ADR-0020 — **proposed**, awaiting review. See `docs/adr/README.md` for the index.
 
 **Immediate known tech debt:**
 - ~~MQTT subscriber / Timer / Serial root lifecycle is owned by the Tauri shell.~~ **已偿还（2026-04-26，ADR-0009 已实施）**。三类触发器节点现自持 `on_deploy` + `LifecycleGuard`；壳层 `src-tauri/src/lib.rs` 由 3609 行降至 2498 行（约 -31%）。**语义变化**：触发器节点走 `NodeHandle::emit` 而非 `dispatch_router` 的 trigger lane，失去 backpressure / DLQ / retry / metrics 防御能力，等 ADR-0014 / ADR-0016 引擎级背压能力补回。
@@ -367,7 +368,7 @@ Located in `docs/superpowers/plans/` and `docs/superpowers/specs/`. These are **
 > 2. ✅ **ADR-0009** 生命周期钩子（`on_deploy` + `LifecycleGuard`）— **已实施**（2026-04-26，Ring 0 lifecycle 模块 + Runner 两阶段部署 + Timer/Serial/MQTT 三类节点迁回；壳层 `src-tauri/src/lib.rs` 由 3609 → 2498 行）
 > 3. ✅ **ADR-0010** Pin 声明系统 — **Phase 1 + Phase 2 + Phase 3 + Phase 4 部分已实施**（Phase 1: Ring 0 类型 + 部署期校验器 + 4 分支节点；Phase 3: 4 协议节点 input/output 收紧到 `Json`（保守方案，不引入 `Custom`）+ 兼容矩阵合约 fixture 前后端共享；Phase 2: IPC `describe_node_pins` + 前端 pin-compat/cache/validator 三件套 + FlowGram `canAddLine` 接入连接期校验 + branch ports 按 PinType 着色；Phase 4: pin tooltip + AI prompt 携带 pin schema。协议节点端口着色 / `Custom` 类型 + row-formatter 节点 deferred）
 > 4. ✅ **ADR-0018 / ADR-0019**（独立支线，**已实施**，2026-04-26）— `nodes-io` 协议 feature 门控 + AI 依赖反转。`nazh-core::ai` 现为 trait + 类型源头；`nodes-io` 协议 dep 全部 optional
-> 5. **ADR-0012** 工作流变量（依赖 0009 + 0010）
+> 5. ✅ **ADR-0012** 工作流变量 — Phase 1 已实施（2026-04-27）；Phase 2（前端面板 + 变更事件）独立 plan
 > 6. **ADR-0013** 子图与宏（依赖 0010）
 > 7. **Phase 6 (RFC-0002)** EventBus + EdgeBackpressure + ConcurrencyPolicy — 与 Pin 系统可并行
 > 8. **ADR-0014** Exec/Data 边分离 — 本批最重，待 Pin 系统稳定后再启动

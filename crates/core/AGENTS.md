@@ -40,7 +40,7 @@ crates/core/src/
 
 关键类型：
 - `NodeTrait` — `src/node.rs`（`transform` + `on_deploy` 默认实现）
-- `LifecycleGuard` / `NodeHandle` / `NodeLifecycleContext` — `src/lifecycle.rs`
+- `LifecycleGuard` / `NodeHandle` / `NodeLifecycleContext` — `src/lifecycle.rs`（`NodeLifecycleContext` 含 `resources: SharedResources` / `handle: NodeHandle` / `shutdown: CancellationToken` / `variables: Arc<WorkflowVariables>`（ADR-0012））
 - `sleep_or_cancel` (async) / `blocking_sleep_or_cancel` (sync) — `src/lifecycle.rs`，`on_deploy` 后台任务用的退避 sleep
 - `NodeCapabilities` bitflags — `src/node.rs`
 - `PinDefinition` / `PinType` / `PinDirection` — `src/pin.rs`（ADR-0010）
@@ -50,7 +50,7 @@ crates/core/src/
 - `WorkflowNodeDefinition` — `src/plugin.rs`
 - `CancellationToken` re-export from `tokio_util::sync`
 - `AiService` trait + 请求/响应/错误类型 — `src/ai.rs`（ADR-0019 上移到 Ring 0；具体实现 `OpenAiCompatibleService` 仍在 `ai` crate）
-- `WorkflowVariables` / `TypedVariable` / `TypedVariableSnapshot` / `VariableDeclaration` — `src/variables.rs`（ADR-0012；DashMap 后端、类型化写入、CAS、部署期 `from_declarations` 校验）
+- `WorkflowVariables` / `TypedVariable` / `TypedVariableSnapshot` / `VariableDeclaration` — `src/variables.rs`（ADR-0012；DashMap 后端、类型化写入、CAS、部署期 `from_declarations` 校验）；辅助函数 `pin_type_matches_value(pin_type, value) -> bool` + `WorkflowVariables::empty()` 无变量工作流构造器
 
 ## 内部约定（本 crate 的契约）
 

@@ -95,10 +95,17 @@ cargo test -p nodes-flow
 cargo test -p nazh-engine --test workflow   # 集成测试，覆盖分支+循环+异常路径
 ```
 
+## 工作流变量集成（ADR-0012）
+
+5 个脚本节点（`if` / `switch` / `loop` / `tryCatch` / `code`）的 `new()` 从工厂闭包接收 `variables: Option<Arc<WorkflowVariables>>`，传给 `ScriptNodeBase::new`。
+工厂闭包在 `lib.rs::FlowPlugin::register()` 内 `res.get::<Arc<WorkflowVariables>>()` 提取（Task 5 的 deploy 注入到 SharedResources）。
+脚本里通过 `vars.get/set/cas` 读写工作流声明的变量；详见 `crates/scripting/AGENTS.md` Rhai 全局对象节。
+
 ## 关联 ADR / RFC
 
 - **ADR-0002** Rhai 脚本引擎（本 crate 的全部节点都依赖）
 - **ADR-0008** 元数据通道（节点输出遵循此约定）
 - **ADR-0011** 节点能力标签（能力分配见上表）
 - **ADR-0010** Pin 声明系统（Phase 1：4 个分支节点已声明具体 output pin；输入端仍是默认 `Any`，详见引脚声明表）
+- **ADR-0012** 工作流变量 — **已实施 Phase 1**（2026-04-27），5 节点工厂从 SharedResources 取 `Arc<WorkflowVariables>` 并注入 Rhai
 - **ADR-0019** AI 能力依赖反转 — 本 crate 已脱离 `ai` 依赖（2026-04-26）
