@@ -14,6 +14,7 @@
   position: relative;
   isolation: isolate;
   padding: 0;
+  transition: grid-template-columns 260ms ease;
 }
 
 html.is-tauri-runtime .studio-frame {
@@ -1078,6 +1079,16 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
   min-height: var(--window-safe-top);
   padding-top: 10px;
   box-sizing: border-box;
+  transition: padding-left 260ms ease;
+}
+
+/* 侧边栏折叠态：标题栏左侧避让折叠按钮 */
+.studio-frame:has(.studio-nav-sidebar.is-collapsed) .window-safe-header {
+  padding-left: 48px;
+}
+
+html.is-tauri-runtime .studio-frame:has(.studio-nav-sidebar.is-collapsed) .window-safe-header {
+  padding-left: 130px;
 }
 
 .studio-board-workspace__stage > .canvas-shell {
@@ -1130,15 +1141,55 @@ html.is-tauri-runtime [data-window-drag-region] {
 .dashboard-hero {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) auto minmax(0, 1fr);
-  gap: 16px;
+  column-gap: 16px;
+  row-gap: 0;
   align-items: center;
-  padding: 16px 20px;
+  padding: 16px 20px 10px;
   border: 1px solid var(--line-soft);
   border-radius: 16px;
   background:
     linear-gradient(180deg, var(--panel-strong), var(--panel)),
     radial-gradient(circle at top right, var(--accent-soft), transparent 36%);
   box-shadow: var(--shadow-low);
+}
+
+.dashboard-hero__slogan {
+  grid-column: 1 / -1;
+  overflow: hidden;
+  border-top: 1px solid var(--line-soft);
+  margin-top: 14px;
+  padding: 8px 0 10px;
+  -webkit-mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);
+  mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);
+}
+
+.dashboard-hero__slogan-track {
+  display: flex;
+  width: max-content;
+  color: var(--accent-ink);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  opacity: 0.38;
+  animation: dashboard-slogan-scroll 36s linear infinite;
+  will-change: transform;
+}
+
+.dashboard-hero__slogan-track span {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+@keyframes dashboard-slogan-scroll {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-hero__slogan-track {
+    animation: none;
+  }
 }
 
 .dashboard-hero__context,

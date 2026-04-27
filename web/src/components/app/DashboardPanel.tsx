@@ -122,6 +122,13 @@ export function DashboardPanel({
             <span className="dashboard-hero__metric-label">异常</span>
           </div>
         </div>
+        <div className="dashboard-hero__slogan" aria-hidden="true">
+          <div className="dashboard-hero__slogan-track">
+            {Array.from({ length: 20 }, (_, i) => (
+              <span key={i}>Make Automation Great Again&nbsp;&nbsp;·&nbsp;&nbsp;</span>
+            ))}
+          </div>
+        </div>
       </section>
 
       <div className="dashboard-telemetry-grid">
