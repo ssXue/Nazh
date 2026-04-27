@@ -344,6 +344,18 @@ impl ObservabilityStore {
                 ),
                 false,
             ),
+            // VariableChanged 事件由 Task 4（Tauri shell 转发）单独处理，
+            // 此处不写入可观测性日志，避免重复。
+            ExecutionEvent::VariableChanged { .. } => {
+                return Ok(self.build_entry(ObservabilityEntryDraft::execution(
+                    "info",
+                    "variable_changed",
+                    "variables".to_owned(),
+                    "工作流变量变更".to_owned(),
+                    String::new(),
+                    now,
+                )));
+            }
         };
 
         if clear_span {

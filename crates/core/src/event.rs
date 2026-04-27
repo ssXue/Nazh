@@ -36,6 +36,20 @@ pub enum ExecutionEvent {
     Output { stage: String, trace_id: Uuid },
     /// 整条流水线执行完毕（仅线性流水线模式下发出）。
     Finished { trace_id: Uuid },
+    /// 工作流变量值变更（ADR-0012 Phase 2，write-on-change 语义）。
+    ///
+    /// 仅当 `set` / `compare_and_swap` 检测到 `entry.value != new` 时 emit；
+    /// 写入相同值不触发本事件（避免轮询脚本制造事件刷屏）。
+    /// `updated_at` 是 RFC3339 字符串，保持与 [`TypedVariableSnapshot`](crate::TypedVariableSnapshot) 一致；
+    /// `updated_by` 是写入方 `node_id`（IPC 写入时为 `Some("ipc")` / 类似哨兵）。
+    VariableChanged {
+        workflow_id: String,
+        name: String,
+        value: serde_json::Value,
+        updated_at: String,
+        #[cfg_attr(feature = "ts-export", ts(optional))]
+        updated_by: Option<String>,
+    },
 }
 
 /// 阶段/节点执行完成事件的详细载荷。
@@ -74,6 +88,14 @@ enum ExecutionEventSerde {
     Finished {
         trace_id: Uuid,
     },
+    VariableChanged {
+        workflow_id: String,
+        name: String,
+        value: serde_json::Value,
+        updated_at: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        updated_by: Option<String>,
+    },
 }
 
 impl From<&ExecutionEvent> for ExecutionEventSerde {
@@ -104,6 +126,19 @@ impl From<&ExecutionEvent> for ExecutionEventSerde {
             ExecutionEvent::Finished { trace_id } => Self::Finished {
                 trace_id: *trace_id,
             },
+            ExecutionEvent::VariableChanged {
+                workflow_id,
+                name,
+                value,
+                updated_at,
+                updated_by,
+            } => Self::VariableChanged {
+                workflow_id: workflow_id.clone(),
+                name: name.clone(),
+                value: value.clone(),
+                updated_at: updated_at.clone(),
+                updated_by: updated_by.clone(),
+            },
         }
     }
 }
@@ -132,6 +167,19 @@ impl From<ExecutionEventSerde> for ExecutionEvent {
             },
             ExecutionEventSerde::Output { stage, trace_id } => Self::Output { stage, trace_id },
             ExecutionEventSerde::Finished { trace_id } => Self::Finished { trace_id },
+            ExecutionEventSerde::VariableChanged {
+                workflow_id,
+                name,
+                value,
+                updated_at,
+                updated_by,
+            } => Self::VariableChanged {
+                workflow_id,
+                name,
+                value,
+                updated_at,
+                updated_by,
+            },
         }
     }
 }
@@ -301,5 +349,44 @@ mod tests {
                 metadata: None,
             })
         );
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod variable_changed_tests {
+    use super::*;
+
+    #[test]
+    fn variable_changed_往返序列化() {
+        let event = ExecutionEvent::VariableChanged {
+            workflow_id: "wf-1".to_owned(),
+            name: "setpoint".to_owned(),
+            value: serde_json::json!(25.5),
+            updated_at: "2026-04-27T10:00:00+00:00".to_owned(),
+            updated_by: Some("node-A".to_owned()),
+        };
+        let json = serde_json::to_string(&event).unwrap();
+        let restored: ExecutionEvent = serde_json::from_str(&json).unwrap();
+        assert_eq!(event, restored);
+    }
+
+    #[test]
+    fn variable_changed_updated_by_缺省时反序列化为_none() {
+        let json = serde_json::json!({
+            "VariableChanged": {
+                "workflow_id": "wf-1",
+                "name": "x",
+                "value": 1,
+                "updated_at": "2026-04-27T10:00:00+00:00"
+            }
+        });
+        let restored: ExecutionEvent = serde_json::from_value(json).unwrap();
+        match restored {
+            ExecutionEvent::VariableChanged { updated_by, .. } => {
+                assert!(updated_by.is_none(), "updated_by 缺省应为 None");
+            }
+            other => panic!("expected VariableChanged, got {other:?}"),
+        }
     }
 }
