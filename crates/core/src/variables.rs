@@ -125,7 +125,9 @@ impl WorkflowVariables {
     /// 仅读取值（Rhai 友好；声明类型/写入者用 `get` 取）。
     #[must_use]
     pub fn get_value(&self, name: &str) -> Option<Value> {
-        self.inner.get(name).map(|entry| entry.value().value.clone())
+        self.inner
+            .get(name)
+            .map(|entry| entry.value().value.clone())
     }
 
     /// 类型化写入。`updated_by` 一般是节点 id；为 `None` 表示外部接入（IPC、初始化）。
@@ -344,12 +346,7 @@ mod tests {
     fn cas_期望值不匹配时返回_false() {
         let vars = vars_with("counter", PinType::Integer, Value::from(0_i64));
         let ok = vars
-            .compare_and_swap(
-                "counter",
-                &Value::from(99_i64),
-                Value::from(1_i64),
-                None,
-            )
+            .compare_and_swap("counter", &Value::from(99_i64), Value::from(1_i64), None)
             .unwrap();
         assert!(!ok);
         assert_eq!(vars.get("counter").unwrap().value, Value::from(0_i64));
@@ -359,12 +356,7 @@ mod tests {
     fn cas_类型不匹配时返回_err() {
         let vars = vars_with("counter", PinType::Integer, Value::from(0_i64));
         let err = vars
-            .compare_and_swap(
-                "counter",
-                &Value::from(0_i64),
-                Value::from("oops"),
-                None,
-            )
+            .compare_and_swap("counter", &Value::from(0_i64), Value::from("oops"), None)
             .unwrap_err();
         assert!(matches!(err, EngineError::VariableTypeMismatch { .. }));
     }

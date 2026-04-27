@@ -11,7 +11,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use crate::{
     CancellationToken, ContextRef, DataStore, EngineError, ExecutionEvent, LifecycleGuard,
-    WorkflowContext, WorkflowNodeDefinition,
+    VariableDeclaration, WorkflowContext, WorkflowNodeDefinition,
 };
 use serde::{Deserialize, Deserializer, Serialize};
 use tokio::sync::mpsc;
@@ -31,6 +31,9 @@ pub struct WorkflowGraph {
     pub nodes: HashMap<String, WorkflowNodeDefinition>,
     #[serde(default)]
     pub edges: Vec<WorkflowEdge>,
+    /// ADR-0012：工作流级共享变量声明（`name → { type, initial }`）。空表表示无变量。
+    #[serde(default)]
+    pub variables: HashMap<String, VariableDeclaration>,
 }
 
 /// 工作流 DAG 中连接两个节点的有向边。
@@ -306,5 +309,49 @@ impl WorkflowDeployment {
     /// 返回内部 [`DataStore`] 的引用。
     pub fn store(&self) -> &Arc<dyn DataStore> {
         &self.streams.store
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod variables_schema_tests {
+    use super::*;
+
+    #[test]
+    fn 旧图无_variables_字段反序列化不报错() {
+        let json = serde_json::json!({
+            "nodes": {},
+            "edges": []
+        });
+        let graph: WorkflowGraph = serde_json::from_value(json).unwrap();
+        assert!(graph.variables.is_empty(), "缺省 variables 应为空表");
+    }
+
+    #[test]
+    fn 新图含_variables_字段反序列化正确() {
+        let json = serde_json::json!({
+            "nodes": {},
+            "edges": [],
+            "variables": {
+                "setpoint": {
+                    "type": { "kind": "float" },
+                    "initial": 25.0
+                },
+                "mode": {
+                    "type": { "kind": "string" },
+                    "initial": "auto"
+                }
+            }
+        });
+        let graph: WorkflowGraph = serde_json::from_value(json).unwrap();
+        assert_eq!(graph.variables.len(), 2);
+        assert_eq!(
+            graph.variables["setpoint"].variable_type,
+            nazh_core::PinType::Float
+        );
+        assert_eq!(
+            graph.variables["mode"].initial,
+            serde_json::Value::from("auto")
+        );
     }
 }
