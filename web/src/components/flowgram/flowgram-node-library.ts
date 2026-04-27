@@ -67,11 +67,15 @@ import { definition as httpClientDef } from './nodes/httpClient';
 import { definition as barkPushDef } from './nodes/barkPush';
 import { definition as sqlWriterDef } from './nodes/sqlWriter';
 import { definition as debugConsoleDef } from './nodes/debugConsole';
+import { definition as subgraphDef } from './nodes/subgraph';
+import { definition as subgraphInputDef } from './nodes/subgraphInput';
+import { definition as subgraphOutputDef } from './nodes/subgraphOutput';
 
 const ALL_DEFS = [
   nativeDef, codeDef, timerDef, serialTriggerDef, modbusReadDef, mqttClientDef,
   ifDef, switchDef, tryCatchDef, loopDef,
   httpClientDef, barkPushDef, sqlWriterDef, debugConsoleDef,
+  subgraphDef, subgraphInputDef, subgraphOutputDef,
 ];
 
 const DEF_MAP = new Map(ALL_DEFS.map((d) => [d.kind, d]));
@@ -143,6 +147,13 @@ export function getFlowgramPaletteSections(): FlowgramPaletteSection[] {
         { key: 'blank-switch', title: 'Switch 分流', description: switchDef.catalog.description, badge: 'Switch', seed: switchDef.buildDefaultSeed() },
         { key: 'blank-try-catch', title: 'Try 捕获', description: tryCatchDef.catalog.description, badge: 'Try', seed: tryCatchDef.buildDefaultSeed() },
         { key: 'blank-loop', title: 'Loop 迭代', description: loopDef.catalog.description, badge: 'Loop', seed: loopDef.buildDefaultSeed() },
+      ],
+    },
+    {
+      key: 'subgraph',
+      title: '子图封装',
+      items: [
+        { key: 'blank-subgraph', title: 'Subgraph', description: subgraphDef.catalog.description, badge: 'Subgraph', seed: subgraphDef.buildDefaultSeed() },
       ],
     },
     {
