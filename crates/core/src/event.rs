@@ -42,6 +42,8 @@ pub enum ExecutionEvent {
     /// 写入相同值不触发本事件（避免轮询脚本制造事件刷屏）。
     /// `updated_at` 是 RFC3339 字符串，保持与 [`TypedVariableSnapshot`](crate::TypedVariableSnapshot) 一致；
     /// `updated_by` 是写入方 `node_id`（IPC 写入时为 `Some("ipc")` / 类似哨兵）。
+    /// `workflow_id` 由 emit 路径在事件构造时注入——`WorkflowVariables` 自身不持有
+    /// 所属 workflow 的 id，调用方（`set` / `compare_and_swap` 的 emit 闭包）负责传入。
     VariableChanged {
         workflow_id: String,
         name: String,
@@ -367,6 +369,25 @@ mod variable_changed_tests {
             updated_by: Some("node-A".to_owned()),
         };
         let json = serde_json::to_string(&event).unwrap();
+        let restored: ExecutionEvent = serde_json::from_str(&json).unwrap();
+        assert_eq!(event, restored);
+    }
+
+    #[test]
+    fn variable_changed_value_为嵌套对象时往返序列化() {
+        let event = ExecutionEvent::VariableChanged {
+            workflow_id: "wf-1".to_owned(),
+            name: "config".to_owned(),
+            value: serde_json::json!({"threshold": 10, "tags": ["a", "b"]}),
+            updated_at: "2026-04-27T10:00:00+00:00".to_owned(),
+            updated_by: None,
+        };
+        let json = serde_json::to_string(&event).unwrap();
+        // 顺带验证 skip_serializing_if = "Option::is_none"：updated_by 字段不应出现
+        assert!(
+            !json.contains("updated_by"),
+            "updated_by = None 时不应出现在序列化输出，实际：{json}"
+        );
         let restored: ExecutionEvent = serde_json::from_str(&json).unwrap();
         assert_eq!(event, restored);
     }
