@@ -113,6 +113,44 @@ pub struct DescribeNodePinsResponse {
     pub output_pins: Vec<PinDefinition>,
 }
 
+/// `set_workflow_variable` 命令的请求。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct SetWorkflowVariableRequest {
+    pub workflow_id: String,
+    pub name: String,
+    pub value: serde_json::Value,
+}
+
+/// `set_workflow_variable` 命令的响应。
+///
+/// 成功时返回写入后的快照（含新 `updated_at` / `updated_by = Some("ipc")`）；
+/// 类型不匹配 / 变量未声明 / 工作流未部署等错误通过 `Err(String)` 上抛。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct SetWorkflowVariableResponse {
+    pub snapshot: TypedVariableSnapshot,
+}
+
+/// `workflow://variable-changed` 事件载荷（ADR-0012 Phase 2）。
+///
+/// 与 `ExecutionEvent::VariableChanged` 字段一致，但走独立 ts-rs 导出路径——
+/// 前端订阅时类型直接就位，不必从 `ExecutionEvent` 联合中分支。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct VariableChangedPayload {
+    pub workflow_id: String,
+    pub name: String,
+    pub value: serde_json::Value,
+    pub updated_at: String,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub updated_by: Option<String>,
+}
+
 /// `snapshot_workflow_variables` 命令的请求。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
@@ -174,6 +212,9 @@ pub fn export_all() -> Result<(), ts_rs::ExportError> {
     DescribeNodePinsResponse::export()?;
     SnapshotWorkflowVariablesRequest::export()?;
     SnapshotWorkflowVariablesResponse::export()?;
+    SetWorkflowVariableRequest::export()?;
+    SetWorkflowVariableResponse::export()?;
+    VariableChangedPayload::export()?;
     Ok(())
 }
 

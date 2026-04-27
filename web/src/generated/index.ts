@@ -43,3 +43,6 @@ export type { AiTestResult } from './AiTestResult';
 export type { AiTokenUsage } from './AiTokenUsage';
 export type { TypedVariableSnapshot } from './TypedVariableSnapshot';
 export type { VariableDeclaration } from './VariableDeclaration';
+export type { SetWorkflowVariableRequest } from './SetWorkflowVariableRequest';
+export type { SetWorkflowVariableResponse } from './SetWorkflowVariableResponse';
+export type { VariableChangedPayload } from './VariableChangedPayload';

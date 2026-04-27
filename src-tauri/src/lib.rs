@@ -29,8 +29,9 @@ use serde_json::{Value, json};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_bindings::{
     DeployResponse, DescribeNodePinsRequest, DescribeNodePinsResponse, DispatchResponse,
-    ListNodeTypesResponse, SnapshotWorkflowVariablesRequest, SnapshotWorkflowVariablesResponse,
-    UndeployResponse, list_node_types_response,
+    ListNodeTypesResponse, SetWorkflowVariableRequest, SetWorkflowVariableResponse,
+    SnapshotWorkflowVariablesRequest, SnapshotWorkflowVariablesResponse, UndeployResponse,
+    VariableChangedPayload, list_node_types_response,
 };
 use tokio::fs;
 use tokio::sync::{Mutex, RwLock, mpsc};
@@ -1001,6 +1002,29 @@ async fn deploy_workflow(
             if let Some(store) = &event_store {
                 let _ = store.record_execution_event(&event).await;
             }
+            // ADR-0012 Phase 2：VariableChanged 单独走 workflow://variable-changed 通道，
+            // 与节点生命周期事件（node-status）分离——前端面板免去过滤已知 variant 的成本。
+            if let ExecutionEvent::VariableChanged {
+                ref workflow_id,
+                ref name,
+                ref value,
+                ref updated_at,
+                ref updated_by,
+            } = event
+            {
+                let payload = VariableChangedPayload {
+                    workflow_id: workflow_id.clone(),
+                    name: name.clone(),
+                    value: value.clone(),
+                    updated_at: updated_at.clone(),
+                    updated_by: updated_by.clone(),
+                };
+                if let Err(error) = event_app.emit("workflow://variable-changed", payload) {
+                    tracing::warn!(?error, "workflow://variable-changed 事件转发失败");
+                }
+                // VariableChanged 不再发到 node-status，避免前端误处理
+                continue;
+            }
             let _ = event_app.emit(
                 "workflow://node-status",
                 ScopedExecutionEvent {
@@ -1350,6 +1374,53 @@ async fn snapshot_workflow_variables(
         .collect();
 
     Ok(SnapshotWorkflowVariablesResponse { variables })
+}
+
+/// IPC 写命令：前端或外部工具直接覆写单个工作流变量。
+///
+/// 取 [`WorkflowVariables`] Arc 后释放 `workflows` Mutex，避免在 `DashMap` 写操作期间
+/// 持有全局锁。`updated_by = "ipc"` 哨兵用于区分节点写路径（`node_id`）。
+/// 写入后立刻读回快照返回，让前端无需额外 `snapshot_workflow_variables` 调用即可看到
+/// 新的 `updated_at`。
+#[tauri::command]
+async fn set_workflow_variable(
+    state: State<'_, DesktopState>,
+    request: SetWorkflowVariableRequest,
+) -> Result<SetWorkflowVariableResponse, String> {
+    // 取 Arc<WorkflowVariables>，块作用域释放 workflows Mutex
+    let vars = {
+        let workflows = state.workflows.lock().await;
+        let workflow = workflows
+            .get(&request.workflow_id)
+            .ok_or_else(|| format!("工作流 `{}` 未部署或已撤销", request.workflow_id))?;
+        workflow
+            .shared_resources
+            .get::<std::sync::Arc<nazh_engine::WorkflowVariables>>()
+            .ok_or_else(|| {
+                tracing::error!(
+                    workflow_id = %request.workflow_id,
+                    "WorkflowVariables 缺失：deploy_workflow_with_ai 应无条件注入"
+                );
+                format!(
+                    "内部错误：工作流 `{}` 无 WorkflowVariables 资源",
+                    request.workflow_id
+                )
+            })?
+        // workflows MutexGuard 在此 drop
+    };
+
+    // 写入：updated_by = "ipc" 哨兵，与 node_id 路径区分
+    vars.set(&request.name, request.value, Some("ipc"))
+        .map_err(|err| err.to_string())?;
+
+    // 写入后读回快照返回（让前端立即看到新 updated_at / updated_by）
+    // 类型由 SetWorkflowVariableResponse::snapshot 字段推断（TypedVariableSnapshot from nazh_core）
+    let snapshot = vars
+        .get(&request.name)
+        .ok_or_else(|| format!("变量 `{}` 写入后未能读回", request.name))?
+        .into();
+
+    Ok(SetWorkflowVariableResponse { snapshot })
 }
 
 #[tauri::command]
@@ -2520,6 +2591,7 @@ pub fn run() {
             list_node_types,
             describe_node_pins,
             snapshot_workflow_variables,
+            set_workflow_variable,
             list_runtime_workflows,
             set_active_runtime_workflow,
             list_dead_letters,
