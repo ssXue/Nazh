@@ -113,7 +113,7 @@ pub struct DescribeNodePinsResponse {
     pub output_pins: Vec<PinDefinition>,
 }
 
-/// `set_workflow_variable` 命令的请求。
+/// `set_workflow_variable` 命令的请求（ADR-0012 Phase 2）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
 #[serde(rename_all = "camelCase")]
@@ -123,7 +123,7 @@ pub struct SetWorkflowVariableRequest {
     pub value: serde_json::Value,
 }
 
-/// `set_workflow_variable` 命令的响应。
+/// `set_workflow_variable` 命令的响应（ADR-0012 Phase 2）。
 ///
 /// 成功时返回写入后的快照（含新 `updated_at` / `updated_by = Some("ipc")`）；
 /// 类型不匹配 / 变量未声明 / 工作流未部署等错误通过 `Err(String)` 上抛。
@@ -146,7 +146,7 @@ pub struct VariableChangedPayload {
     pub name: String,
     pub value: serde_json::Value,
     pub updated_at: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts-export", ts(optional))]
     pub updated_by: Option<String>,
 }

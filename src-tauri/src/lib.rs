@@ -1417,6 +1417,8 @@ async fn set_workflow_variable(
     // 类型由 SetWorkflowVariableResponse::snapshot 字段推断（TypedVariableSnapshot from nazh_core）
     let snapshot = vars
         .get(&request.name)
+        // 当前实现下此分支不可达：变量声明后无 remove API，写入成功必然能读回。
+        // 保留作为未来支持变量删除时的安全网。
         .ok_or_else(|| format!("变量 `{}` 写入后未能读回", request.name))?
         .into();
 

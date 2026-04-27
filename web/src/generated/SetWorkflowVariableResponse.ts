@@ -2,7 +2,7 @@
 import type { TypedVariableSnapshot } from "./TypedVariableSnapshot";
 
 /**
- * `set_workflow_variable` 命令的响应。
+ * `set_workflow_variable` 命令的响应（ADR-0012 Phase 2）。
  *
  * 成功时返回写入后的快照（含新 `updated_at` / `updated_by = Some("ipc")`）；
  * 类型不匹配 / 变量未声明 / 工作流未部署等错误通过 `Err(String)` 上抛。

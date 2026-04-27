@@ -2,6 +2,6 @@
 import type { JsonValue } from "./serde_json/JsonValue";
 
 /**
- * `set_workflow_variable` 命令的请求。
+ * `set_workflow_variable` 命令的请求（ADR-0012 Phase 2）。
  */
 export type SetWorkflowVariableRequest = { workflowId: string, name: string, value: JsonValue, };

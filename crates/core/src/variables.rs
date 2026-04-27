@@ -63,6 +63,7 @@ pub struct TypedVariableSnapshot {
     pub variable_type: PinType,
     /// RFC3339 时间戳。
     pub updated_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts-export", ts(optional))]
     pub updated_by: Option<String>,
 }
