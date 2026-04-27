@@ -9,11 +9,14 @@
 //! - **生命周期与部署同步**：`Arc<WorkflowVariables>` 由 `build_workflow_variables`
 //!   构造（在 `src/graph/variables_init.rs`），注入 `NodeLifecycleContext` +
 //!   `SharedResources`，部署撤销时随 Drop 释放。
+//! - **写即变更事件（Phase 2）**：通过 [`WorkflowVariables::set_event_sender`] 注入事件通道后，
+//!   `set` / `compare_and_swap` 检测到值变化时 `try_send` 一条
+//!   [`ExecutionEvent::VariableChanged`](crate::ExecutionEvent::VariableChanged)。
+//!   值未变化时不发事件，避免轮询脚本制造事件刷屏。
 //!
 //! ## 不包含（Phase 1 范围外）
 //!
 //! - 持久化（进程退出即清零）。
-//! - 变量变更事件广播（Phase 2 与前端面板一并做）。
 
 use std::collections::HashMap;
 use std::hash::BuildHasher;
@@ -22,6 +25,7 @@ use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use tokio::sync::OnceCell;
 #[cfg(feature = "ts-export")]
 use ts_rs::TS;
 
@@ -74,6 +78,15 @@ impl From<TypedVariable> for TypedVariableSnapshot {
     }
 }
 
+/// `WorkflowVariables` 内部用于发送变量变更事件的接收端描述。
+///
+/// `workflow_id` 在注入时固定，避免事件构造时重复传参。
+#[derive(Debug)]
+struct EventSink {
+    workflow_id: String,
+    sender: tokio::sync::mpsc::Sender<crate::ExecutionEvent>,
+}
+
 /// 工作流级共享变量存储。
 ///
 /// 由 `build_workflow_variables`（`src/graph/variables_init.rs`）在部署期构造、
@@ -82,6 +95,9 @@ impl From<TypedVariable> for TypedVariableSnapshot {
 #[derive(Debug)]
 pub struct WorkflowVariables {
     inner: DashMap<String, TypedVariable>,
+    /// ADR-0012 Phase 2：事件发送通道（注入一次）。
+    /// 未注入时 `set` / `compare_and_swap` 仍正常工作但不发事件。
+    event_sink: OnceCell<EventSink>,
 }
 
 impl WorkflowVariables {
@@ -93,6 +109,7 @@ impl WorkflowVariables {
     pub fn empty() -> Self {
         Self {
             inner: DashMap::new(),
+            event_sink: OnceCell::new(),
         }
     }
 
@@ -126,7 +143,10 @@ impl WorkflowVariables {
                 },
             );
         }
-        Ok(Self { inner })
+        Ok(Self {
+            inner,
+            event_sink: OnceCell::new(),
+        })
     }
 
     /// 拷贝读取一份变量（含声明类型与最后写入者）。
@@ -143,7 +163,33 @@ impl WorkflowVariables {
             .map(|entry| entry.value().value.clone())
     }
 
+    /// 注入事件通道。仅可调用一次；重复调用通过 `tracing::warn!` 报告并忽略。
+    ///
+    /// 设计为 `&self`（非 `&mut`）以便在 `Arc<WorkflowVariables>` 构造完成后注入——
+    /// deploy 流程是 `let vars = Arc::new(build_workflow_variables(...)?);` 后再
+    /// `vars.set_event_sender(workflow_id, event_tx)`。
+    pub fn set_event_sender(
+        &self,
+        workflow_id: String,
+        sender: tokio::sync::mpsc::Sender<crate::ExecutionEvent>,
+    ) {
+        if self
+            .event_sink
+            .set(EventSink {
+                workflow_id,
+                sender,
+            })
+            .is_err()
+        {
+            tracing::warn!("WorkflowVariables event_sink 重复注入，已忽略");
+        }
+    }
+
     /// 类型化写入。`updated_by` 一般是节点 id；为 `None` 表示外部接入（IPC、初始化）。
+    ///
+    /// 值变化时（`entry.value != value`）向已注入的事件通道发送
+    /// [`ExecutionEvent::VariableChanged`](crate::ExecutionEvent::VariableChanged)；
+    /// 值未变化或未注入通道时静默跳过。
     ///
     /// # Errors
     ///
@@ -166,9 +212,38 @@ impl WorkflowVariables {
                 json_value_label(&value),
             ));
         }
+        let value_changed = entry.value != value;
         entry.value = value;
         entry.updated_at = Utc::now();
         entry.updated_by = updated_by.map(str::to_owned);
+
+        // 拿到事件需要的快照后释放 entry 借用，避免在 try_send 期间持有 shard 写锁
+        let event_payload = if value_changed {
+            Some((
+                entry.value.clone(),
+                entry.updated_at.to_rfc3339(),
+                entry.updated_by.clone(),
+            ))
+        } else {
+            None
+        };
+        drop(entry);
+
+        if let (Some((value, updated_at, updated_by)), Some(sink)) =
+            (event_payload, self.event_sink.get())
+        {
+            let event = crate::ExecutionEvent::VariableChanged {
+                workflow_id: sink.workflow_id.clone(),
+                name: name.to_owned(),
+                value,
+                updated_at,
+                updated_by,
+            };
+            if let Err(error) = sink.sender.try_send(event) {
+                tracing::debug!(?error, "VariableChanged 事件 try_send 失败（通道满或关闭）");
+            }
+        }
+
         Ok(())
     }
 
@@ -176,6 +251,8 @@ impl WorkflowVariables {
     ///
     /// 返回 `true` 表示交换成功，`false` 表示当前值不匹配（保持不变）。
     /// 类型不匹配仍返回 `Err`——CAS 不绕过类型校验。
+    /// 交换成功且值变化时向已注入的事件通道发送
+    /// [`ExecutionEvent::VariableChanged`](crate::ExecutionEvent::VariableChanged)。
     ///
     /// # Errors
     ///
@@ -201,9 +278,38 @@ impl WorkflowVariables {
         if &entry.value != expected {
             return Ok(false);
         }
+        let value_changed = entry.value != new;
         entry.value = new;
         entry.updated_at = Utc::now();
         entry.updated_by = updated_by.map(str::to_owned);
+
+        // 拿到事件需要的快照后释放 entry 借用，避免在 try_send 期间持有 shard 写锁
+        let event_payload = if value_changed {
+            Some((
+                entry.value.clone(),
+                entry.updated_at.to_rfc3339(),
+                entry.updated_by.clone(),
+            ))
+        } else {
+            None
+        };
+        drop(entry);
+
+        if let (Some((value, updated_at, updated_by)), Some(sink)) =
+            (event_payload, self.event_sink.get())
+        {
+            let event = crate::ExecutionEvent::VariableChanged {
+                workflow_id: sink.workflow_id.clone(),
+                name: name.to_owned(),
+                value,
+                updated_at,
+                updated_by,
+            };
+            if let Err(error) = sink.sender.try_send(event) {
+                tracing::debug!(?error, "VariableChanged 事件 try_send 失败（CAS 路径）");
+            }
+        }
+
         Ok(true)
     }
 
@@ -410,5 +516,138 @@ mod tests {
         );
         let err = WorkflowVariables::from_declarations(&declarations).unwrap_err();
         assert!(matches!(err, EngineError::VariableInitialMismatch { .. }));
+    }
+
+    #[tokio::test]
+    async fn set_值变化时发_variablechanged_事件() {
+        use tokio::sync::mpsc;
+
+        let (tx, mut rx) = mpsc::channel(8);
+        let mut decls = HashMap::new();
+        decls.insert(
+            "x".to_owned(),
+            VariableDeclaration {
+                variable_type: PinType::Integer,
+                initial: Value::from(0_i64),
+            },
+        );
+        let vars = WorkflowVariables::from_declarations(&decls).unwrap();
+        vars.set_event_sender("wf-1".to_owned(), tx);
+
+        vars.set("x", Value::from(1_i64), Some("node-A")).unwrap();
+
+        let event = rx.recv().await.expect("应收到事件");
+        match event {
+            crate::ExecutionEvent::VariableChanged {
+                workflow_id,
+                name,
+                value,
+                updated_by,
+                ..
+            } => {
+                assert_eq!(workflow_id, "wf-1");
+                assert_eq!(name, "x");
+                assert_eq!(value, Value::from(1_i64));
+                assert_eq!(updated_by.as_deref(), Some("node-A"));
+            }
+            other => panic!("expected VariableChanged, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn set_值未变化时不发事件() {
+        use tokio::sync::mpsc;
+        use tokio::time::{Duration, timeout};
+
+        let (tx, mut rx) = mpsc::channel(8);
+        let mut decls = HashMap::new();
+        decls.insert(
+            "x".to_owned(),
+            VariableDeclaration {
+                variable_type: PinType::Integer,
+                initial: Value::from(42_i64),
+            },
+        );
+        let vars = WorkflowVariables::from_declarations(&decls).unwrap();
+        vars.set_event_sender("wf-1".to_owned(), tx);
+
+        // 写入与初值相同的值
+        vars.set("x", Value::from(42_i64), Some("node-A")).unwrap();
+
+        // 等 50ms 确保不会有事件到达
+        let result = timeout(Duration::from_millis(50), rx.recv()).await;
+        assert!(result.is_err(), "值未变化应不发事件，但收到：{result:?}");
+    }
+
+    #[tokio::test]
+    async fn cas_成功且值变化时发事件() {
+        use tokio::sync::mpsc;
+
+        let (tx, mut rx) = mpsc::channel(8);
+        let mut decls = HashMap::new();
+        decls.insert(
+            "c".to_owned(),
+            VariableDeclaration {
+                variable_type: PinType::Integer,
+                initial: Value::from(0_i64),
+            },
+        );
+        let vars = WorkflowVariables::from_declarations(&decls).unwrap();
+        vars.set_event_sender("wf-1".to_owned(), tx);
+
+        let ok = vars
+            .compare_and_swap("c", &Value::from(0_i64), Value::from(1_i64), None)
+            .unwrap();
+        assert!(ok);
+
+        let event = rx.recv().await.expect("应收到事件");
+        assert!(matches!(
+            event,
+            crate::ExecutionEvent::VariableChanged { .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn cas_失败时不发事件() {
+        use tokio::sync::mpsc;
+        use tokio::time::{Duration, timeout};
+
+        let (tx, mut rx) = mpsc::channel(8);
+        let mut decls = HashMap::new();
+        decls.insert(
+            "c".to_owned(),
+            VariableDeclaration {
+                variable_type: PinType::Integer,
+                initial: Value::from(0_i64),
+            },
+        );
+        let vars = WorkflowVariables::from_declarations(&decls).unwrap();
+        vars.set_event_sender("wf-1".to_owned(), tx);
+
+        // expected 不匹配，CAS 应返回 false 不写入
+        let ok = vars
+            .compare_and_swap("c", &Value::from(99_i64), Value::from(1_i64), None)
+            .unwrap();
+        assert!(!ok);
+
+        let result = timeout(Duration::from_millis(50), rx.recv()).await;
+        assert!(result.is_err(), "CAS 失败不应发事件");
+    }
+
+    #[tokio::test]
+    async fn 未设置_event_sender_时_set_仍然正常工作() {
+        let mut decls = HashMap::new();
+        decls.insert(
+            "x".to_owned(),
+            VariableDeclaration {
+                variable_type: PinType::Integer,
+                initial: Value::from(0_i64),
+            },
+        );
+        let vars = WorkflowVariables::from_declarations(&decls).unwrap();
+
+        // 未调 set_event_sender，set 不应 panic 也不应报错
+        vars.set("x", Value::from(7_i64), Some("node-A")).unwrap();
+        assert_eq!(vars.get_value("x"), Some(Value::from(7_i64)));
     }
 }
