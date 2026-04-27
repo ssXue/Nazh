@@ -39,3 +39,5 @@ export type { AiProviderView } from './AiProviderView';
 export type { AiSecretInput } from './AiSecretInput';
 export type { AiTestResult } from './AiTestResult';
 export type { AiTokenUsage } from './AiTokenUsage';
+export type { TypedVariableSnapshot } from './TypedVariableSnapshot';
+export type { VariableDeclaration } from './VariableDeclaration';

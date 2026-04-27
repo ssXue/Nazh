@@ -208,8 +208,10 @@ impl WorkflowVariables {
 /// `Json` 接受 Object / Array，`Binary` 接受 Array of u8 或 base64 字符串
 /// （Phase 1 仅校验形态，不解 base64）。
 ///
-/// `Custom` 仅在 `Value` 含 `__custom_type` 标记时才匹配——Phase 1 不展开
-/// 复杂语义，把 Custom 类型的写入门槛留给未来"产出 Custom 的节点"自带元数据。
+/// **`Custom` 在 Phase 1 完全拒绝**——既不能在 `from_declarations` 通过初值校验，
+/// 也不能在 `set` / `compare_and_swap` 写入。命名类型语义需要"产出 Custom 输出
+/// 的节点对齐"（参见 ADR-0010 Phase 4 deferred Item 2），变量与节点的 `Custom`
+/// 引入要同步而非分头开启；触发条件就绪后将由专门 ADR 升级。
 #[must_use]
 pub fn pin_type_matches_value(pin_type: &PinType, value: &Value) -> bool {
     match (pin_type, value) {
@@ -232,17 +234,23 @@ pub fn pin_type_matches_value(pin_type: &PinType, value: &Value) -> bool {
             arr.iter().all(|item| pin_type_matches_value(inner, item))
         }
 
-        // Phase 1: Custom 变量只能在声明时写入初值（通过 from_declarations）
-        // 运行时 set/cas 一律拒绝，等待 ADR-0010 Phase 4 "产出节点元数据"支撑
+        // Phase 1: Custom 完全拒绝（声明初值与运行时写入皆然），见函数级 doc
         _ => false,
     }
 }
 
-fn pin_type_label(pin_type: &PinType) -> String {
-    serde_json::to_value(pin_type)
-        .ok()
-        .and_then(|v| v.get("kind").and_then(|k| k.as_str().map(str::to_owned)))
-        .unwrap_or_else(|| "<unknown>".to_owned())
+fn pin_type_label(pin_type: &PinType) -> &'static str {
+    match pin_type {
+        PinType::Any => "any",
+        PinType::Bool => "bool",
+        PinType::Integer => "integer",
+        PinType::Float => "float",
+        PinType::String => "string",
+        PinType::Json => "json",
+        PinType::Binary => "binary",
+        PinType::Array { .. } => "array",
+        PinType::Custom { .. } => "custom",
+    }
 }
 
 fn json_value_label(value: &Value) -> &'static str {
