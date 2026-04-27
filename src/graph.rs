@@ -17,9 +17,11 @@ mod pin_validator;
 mod runner;
 mod topology;
 pub(crate) mod types;
+pub mod variables_init;
 
 pub use deploy::{deploy_workflow, deploy_workflow_with_ai};
 pub use types::{
     WorkflowDeployment, WorkflowDeploymentParts, WorkflowEdge, WorkflowGraph, WorkflowIngress,
     WorkflowStreams,
 };
+pub use variables_init::build_workflow_variables;

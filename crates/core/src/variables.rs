@@ -16,6 +16,7 @@
 //! - 变量变更事件广播（Phase 2 与前端面板一并做）。
 
 use std::collections::HashMap;
+use std::hash::BuildHasher;
 
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
@@ -102,8 +103,8 @@ impl WorkflowVariables {
     /// # Errors
     ///
     /// `VariableInitialMismatch` — 任一声明的初值类型与声明类型不匹配。
-    pub fn from_declarations(
-        declarations: &HashMap<String, VariableDeclaration>,
+    pub fn from_declarations<S: BuildHasher>(
+        declarations: &HashMap<String, VariableDeclaration, S>,
     ) -> Result<Self, EngineError> {
         let inner = DashMap::with_capacity(declarations.len());
         for (name, declaration) in declarations {
