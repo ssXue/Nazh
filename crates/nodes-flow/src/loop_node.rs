@@ -10,9 +10,11 @@ use serde_json::{Map, Value};
 
 use uuid::Uuid;
 
+use std::sync::Arc;
+
 use nazh_core::{
     EngineError, NodeDispatch, NodeExecution, NodeOutput, NodeTrait, PinDefinition, PinDirection,
-    PinType, into_payload_map,
+    PinType, WorkflowVariables, into_payload_map,
 };
 use scripting::{ScriptNodeBase, default_max_operations};
 
@@ -36,9 +38,13 @@ impl LoopNode {
     ///
     /// 脚本编译失败时返回 [`EngineError::ScriptCompile`]。
     #[allow(clippy::needless_pass_by_value)]
-    pub fn new(id: impl Into<String>, config: LoopNodeConfig) -> Result<Self, EngineError> {
+    pub fn new(
+        id: impl Into<String>,
+        config: LoopNodeConfig,
+        variables: Option<Arc<WorkflowVariables>>,
+    ) -> Result<Self, EngineError> {
         Ok(Self {
-            base: ScriptNodeBase::new(id, &config.script, config.max_operations, None, None)?, // Task 6 占位；Task 7 替换为从 resources 取 Arc<WorkflowVariables>
+            base: ScriptNodeBase::new(id, &config.script, config.max_operations, None, variables)?,
         })
     }
 }

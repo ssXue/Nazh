@@ -7,8 +7,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
+use std::sync::Arc;
+
 use nazh_core::EngineError;
-use nazh_core::{NodeExecution, NodeTrait, PinDefinition, PinDirection, PinType};
+use nazh_core::{
+    NodeExecution, NodeTrait, PinDefinition, PinDirection, PinType, WorkflowVariables,
+};
 use scripting::{ScriptNodeBase, default_max_operations};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -28,9 +32,13 @@ impl IfNode {
     ///
     /// 脚本编译失败时返回 [`EngineError::ScriptCompile`]。
     #[allow(clippy::needless_pass_by_value)]
-    pub fn new(id: impl Into<String>, config: IfNodeConfig) -> Result<Self, EngineError> {
+    pub fn new(
+        id: impl Into<String>,
+        config: IfNodeConfig,
+        variables: Option<Arc<WorkflowVariables>>,
+    ) -> Result<Self, EngineError> {
         Ok(Self {
-            base: ScriptNodeBase::new(id, &config.script, config.max_operations, None, None)?, // Task 6 占位；Task 7 替换为从 resources 取 Arc<WorkflowVariables>
+            base: ScriptNodeBase::new(id, &config.script, config.max_operations, None, variables)?,
         })
     }
 }

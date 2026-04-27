@@ -9,8 +9,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
+use std::sync::Arc;
+
 use nazh_core::EngineError;
-use nazh_core::{NodeExecution, NodeTrait, PinDefinition, PinDirection, PinType};
+use nazh_core::{
+    NodeExecution, NodeTrait, PinDefinition, PinDirection, PinType, WorkflowVariables,
+};
 use scripting::{ScriptNodeBase, default_max_operations};
 
 fn default_switch_branch() -> String {
@@ -47,14 +51,18 @@ impl SwitchNode {
     ///
     /// 脚本编译失败时返回 [`EngineError::ScriptCompile`]。
     #[allow(clippy::needless_pass_by_value)]
-    pub fn new(id: impl Into<String>, config: SwitchNodeConfig) -> Result<Self, EngineError> {
+    pub fn new(
+        id: impl Into<String>,
+        config: SwitchNodeConfig,
+        variables: Option<Arc<WorkflowVariables>>,
+    ) -> Result<Self, EngineError> {
         let default_branch = if config.default_branch.trim().is_empty() {
             default_switch_branch()
         } else {
             config.default_branch
         };
         Ok(Self {
-            base: ScriptNodeBase::new(id, &config.script, config.max_operations, None, None)?, // Task 6 占位；Task 7 替换为从 resources 取 Arc<WorkflowVariables>
+            base: ScriptNodeBase::new(id, &config.script, config.max_operations, None, variables)?,
             branches: config.branches,
             default_branch,
         })
@@ -136,6 +144,7 @@ mod tests {
                 default_branch: default_branch.to_owned(),
                 max_operations: 50_000,
             },
+            None,
         )
         .unwrap()
     }

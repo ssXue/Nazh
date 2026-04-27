@@ -1,14 +1,15 @@
-//! 端到端：变量声明在部署期初始化、注入 `NodeLifecycleContext` 与 `SharedResources`（ADR-0012 Task 5）。
+//! 端到端：变量声明在部署期初始化、注入 `NodeLifecycleContext` 与 `SharedResources`（ADR-0012 Task 5~7）。
 
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 
 use nazh_engine::{
-    NodeRegistry, PinType, VariableDeclaration, WorkflowGraph, deploy_workflow_with_ai,
-    shared_connection_manager, standard_registry,
+    NodeRegistry, PinType, VariableDeclaration, WorkflowContext, WorkflowGraph,
+    deploy_workflow_with_ai, shared_connection_manager, standard_registry,
 };
 use serde_json::json;
+use tokio::time::timeout;
 
 #[tokio::test]
 async fn 部署时变量按声明初始化() {
@@ -66,4 +67,69 @@ async fn 初值类型不匹配_部署失败() {
         msg.contains("初值类型不匹配") || msg.contains("VariableInitialMismatch"),
         "错误消息应指出 variable initial mismatch，实际：{msg}"
     );
+}
+
+/// Task 7 E2E：code 节点通过 `vars.get` / `vars.set` 累积工作流变量，跨多次触发独立持有状态。
+///
+/// 工作流：单节点（code），Rhai 脚本每次执行将 `counter` 变量加 1，
+/// 并将新值写入 `payload.value`。触发三次后 `counter` 应为 3。
+#[tokio::test]
+async fn rhai_code_节点跨次部署独立持有变量() {
+    // counter = 0；code 节点每次触发 counter += 1，把结果放进 payload.value
+    let graph = WorkflowGraph::from_json(
+        &json!({
+            "nodes": {
+                "inc": {
+                    "type": "code",
+                    "config": {
+                        // 先读出旧值（Integer），加 1 后写回，再写入 payload.value 返回
+                        "script": "let v = vars.get(\"counter\"); let nv = v + 1; vars.set(\"counter\", nv); payload.value = nv; payload",
+                        "max_operations": 10000
+                    }
+                }
+            },
+            "edges": [],
+            "variables": {
+                "counter": {
+                    "type": {"kind": "integer"},
+                    "initial": 0
+                }
+            }
+        })
+        .to_string(),
+    )
+    .expect("含 code 节点 + 变量声明的图应能解析");
+
+    let registry: NodeRegistry = standard_registry();
+    let cm = shared_connection_manager();
+    let mut deployment = deploy_workflow_with_ai(graph, cm, None, &registry)
+        .await
+        .expect("含 code 节点的图应能部署");
+
+    // 触发三次，每次 counter += 1
+    for _ in 0..3 {
+        deployment
+            .submit(WorkflowContext::new(json!({ "value": 0 })))
+            .await
+            .expect("submit 应成功");
+    }
+
+    // 收三次 result，最后一次 value 应为 3（三次累加）
+    let mut last_value: Option<serde_json::Value> = None;
+    for _ in 0..3 {
+        let result = timeout(Duration::from_secs(2), deployment.next_result())
+            .await
+            .expect("result 应在超时内到达");
+        if let Some(ctx) = result {
+            last_value = Some(ctx.payload);
+        }
+    }
+    let final_payload = last_value.expect("应收到 3 次 result");
+    assert_eq!(
+        final_payload["value"],
+        json!(3_i64),
+        "三次累加后 counter 应为 3，实际：{final_payload}"
+    );
+
+    deployment.shutdown().await;
 }

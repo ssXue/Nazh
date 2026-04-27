@@ -105,6 +105,7 @@ async fn code_node_can_transform_json_payload() {
             ai: None,
         },
         None,
+        None,
     ) {
         Ok(node) => node,
         Err(error) => panic!("code node should compile: {error}"),
@@ -137,6 +138,7 @@ async fn code_node_can_generate_random_integer_in_range() {
             max_operations: 10_000,
             ai: None,
         },
+        None,
         None,
     ) {
         Ok(node) => node,
@@ -187,6 +189,7 @@ async fn code_node_can_use_builtin_helper_package() {
             max_operations: 10_000,
             ai: None,
         },
+        None,
         None,
     ) {
         Ok(node) => node,

@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use nazh_core::EngineError;
 use nazh_core::ai::{AiGenerationParams, AiReasoningEffort, AiService, AiThinkingConfig};
-use nazh_core::{NodeExecution, NodeTrait};
+use nazh_core::{NodeExecution, NodeTrait, WorkflowVariables};
 use scripting::{ScriptAiRuntime, ScriptNodeBase, default_max_operations};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -60,6 +60,7 @@ impl CodeNode {
         id: impl Into<String>,
         config: CodeNodeConfig,
         ai_service: Option<Arc<dyn AiService>>,
+        variables: Option<Arc<WorkflowVariables>>,
     ) -> Result<Self, EngineError> {
         let id = id.into();
         let CodeNodeConfig {
@@ -95,7 +96,7 @@ impl CodeNode {
         };
 
         Ok(Self {
-            base: ScriptNodeBase::new(id, &script, max_operations, ai, None)?, // Task 6 占位；Task 7 替换为从 resources 取 Arc<WorkflowVariables>
+            base: ScriptNodeBase::new(id, &script, max_operations, ai, variables)?,
         })
     }
 }
