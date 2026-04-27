@@ -53,7 +53,7 @@ macro_rules! delegate_node_base {
 /// let ok = vars.cas("c", 0, 1);  // CAS，返回 bool
 /// ```
 #[derive(Clone)]
-pub struct ScriptVars {
+pub(crate) struct ScriptVars {
     binding: Arc<VarsBinding>,
 }
 
@@ -485,6 +485,35 @@ mod variables_tests {
     }
 
     #[test]
+    fn rhai_脚本_cas_期望值不匹配时返回_false() {
+        let vars = vars_arc("c", PinType::Integer, serde_json::Value::from(0_i64));
+        let base = ScriptNodeBase::new(
+            "test-script-cas-mismatch",
+            // 期望值给 99（实际是 0），CAS 应返回 false 且变量保持 0
+            r#"
+                let ok = vars.cas("c", 99, 1);
+                #{ ok: ok, current: vars.get("c") }
+            "#,
+            10_000,
+            None,
+            Some(Arc::clone(&vars)),
+        )
+        .unwrap();
+        let (_, result) = base.evaluate(serde_json::Value::Null).unwrap();
+        let final_value = base.dynamic_to_value(&result).unwrap();
+        assert_eq!(
+            final_value["ok"],
+            serde_json::Value::from(false),
+            "CAS 期望值不匹配应返回 false"
+        );
+        assert_eq!(
+            final_value["current"],
+            serde_json::Value::from(0_i64),
+            "CAS 失败后变量应保持原值"
+        );
+    }
+
+    #[test]
     fn rhai_脚本无_variables_注入时_vars_未定义() {
         let base = ScriptNodeBase::new(
             "test-script-4",
@@ -497,8 +526,8 @@ mod variables_tests {
         let err = base.evaluate(serde_json::Value::Null).unwrap_err();
         let msg = format!("{err}");
         assert!(
-            msg.contains("vars") || msg.contains("variables") || msg.contains("未注入"),
-            "未注入 variables 时调用 vars.* 应失败，实际：{msg}"
+            msg.contains("未注入"),
+            "未注入 variables 时调用 vars.* 应返回 `未注入` 错误，实际：{msg}"
         );
     }
 }
