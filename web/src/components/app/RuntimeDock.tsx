@@ -122,37 +122,34 @@ export function RuntimeDock({
       className={`runtime-dock ${isCollapsed ? 'is-collapsed' : ''}`}
       aria-live="polite"
     >
-      <div className="runtime-dock__header">
-        <div className="runtime-dock__tabs" role="tablist" aria-label="运行观测窗体">
-          {runtimeDockTabs.map((tab) => {
-            const count =
-              tab.id === 'events'
-                ? runtimeConsoleEntries.length
-                : tab.id === 'results'
-                  ? results.length
-                  : connectionPreview.length;
-            const isActive = activePanel === tab.id;
+      <div className="runtime-dock__tabs" role="tablist" aria-label="运行观测窗体">
+        {runtimeDockTabs.map((tab) => {
+          const count =
+            tab.id === 'events'
+              ? runtimeConsoleEntries.length
+              : tab.id === 'results'
+                ? results.length
+                : connectionPreview.length;
+          const isActive = activePanel === tab.id;
 
-            return (
-              <button
-                key={tab.id}
-                id={`runtime-dock-tab-${tab.id}`}
-                type="button"
-                role="tab"
-                className={`runtime-dock__tab ${isActive ? 'is-active' : ''}`}
-                aria-selected={isActive}
-                aria-controls={`runtime-dock-panel-${tab.id}`}
-                title={tab.title}
-                onClick={() => handlePanelSelect(tab.id)}
-              >
-                <RuntimeDockTabIcon panel={tab.id} />
-                <span>{tab.label}</span>
-                <em>{count}</em>
-              </button>
-            );
-          })}
-        </div>
-
+          return (
+            <button
+              key={tab.id}
+              id={`runtime-dock-tab-${tab.id}`}
+              type="button"
+              role="tab"
+              className={`runtime-dock__tab ${isActive ? 'is-active' : ''}`}
+              aria-selected={isActive}
+              aria-controls={`runtime-dock-panel-${tab.id}`}
+              title={tab.title}
+              onClick={() => handlePanelSelect(tab.id)}
+            >
+              <RuntimeDockTabIcon panel={tab.id} />
+              <span>{tab.label}</span>
+              <em>{count}</em>
+            </button>
+          );
+        })}
       </div>
 
       <div

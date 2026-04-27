@@ -37,12 +37,6 @@ export function DashboardPanel({
   deployInfo,
   onNavigateToBoards,
 }: DashboardPanelProps) {
-  const structureMetrics = [
-    { label: '看板', value: boardCount },
-    { label: '节点', value: graphNodeCount },
-    { label: '边', value: graphEdgeCount },
-    { label: '绑定', value: graphConnectionCount },
-  ];
   const runtimeMetrics = [
     { label: '运行中', value: activeNodeCount, tone: 'active' },
     { label: '完成', value: completedNodeCount, tone: 'success' },
@@ -50,7 +44,13 @@ export function DashboardPanel({
     { label: '输出', value: outputNodeCount, tone: 'warning' },
   ] as const;
   const runtimeHealthyCount = activeNodeCount + completedNodeCount + outputNodeCount;
-  const structurePeak = Math.max(...structureMetrics.map((metric) => metric.value), 1);
+  const structureMetrics = [
+    { label: '看板', value: boardCount },
+    { label: '节点', value: graphNodeCount },
+    { label: '边', value: graphEdgeCount },
+    { label: '绑定', value: graphConnectionCount },
+  ];
+  const structurePeak = Math.max(...structureMetrics.map((m) => m.value), 1);
 
   const pulseSeries = [
     boardCount * 4 + 8,
@@ -63,33 +63,15 @@ export function DashboardPanel({
   ];
   const pulsePeak = Math.max(...pulseSeries, 1);
 
-  const readinessScore = Math.min(
-    100,
-    (activeBoardName ? 24 : 0) +
-      (graphNodeCount > 0 ? 22 : 0) +
-      (graphConnectionCount > 0 ? 18 : 0) +
-      (deployInfo ? 24 : 0) +
-      (eventCount > 0 || resultCount > 0 ? 12 : 0),
-  );
+  const totalProcessed = completedNodeCount + failedNodeCount + outputNodeCount;
+  const successRate = totalProcessed > 0 ? Math.round((completedNodeCount / totalProcessed) * 100) : null;
+  const throughput = eventCount + resultCount;
+  const hasFailure = failedNodeCount > 0;
+  const healthScore = successRate ?? (deployInfo ? 100 : 0);
+
   const gaugeStyle = {
-    '--dashboard-gauge-progress': `${readinessScore}%`,
+    '--dashboard-gauge-progress': `${healthScore}%`,
   } as CSSProperties;
-  const statusRows = [
-    {
-      label: '当前焦点',
-      value: activeBoardName ? activeBoardName : '全局工作台',
-    },
-    {
-      label: '部署信息',
-      value: deployInfo
-        ? `${deployInfo.nodeCount} 节点 · 根: ${deployInfo.rootNodes.join(', ')}`
-        : '当前尚未部署工作流',
-    },
-    {
-      label: '会话摘要',
-      value: statusMessage,
-    },
-  ];
 
   return (
     <div className="dashboard-panel">
@@ -98,38 +80,49 @@ export function DashboardPanel({
       </div>
 
       <section className="dashboard-hero">
-        <div className="dashboard-hero__copy">
+        <div className="dashboard-hero__context">
           <span className="dashboard-hero__eyebrow">OPERATOR · {userId}</span>
-          <strong>{activeBoardName ? `正在查看 ${activeBoardName}` : '欢迎回到 Nazh 控制台'}</strong>
-          <p>
-            左侧导航负责切换域，右侧保留大面积工作面。这里聚合当前工作流、运行状态和部署就绪度。
-          </p>
+          <strong className="dashboard-hero__title">
+            {activeBoardName ? activeBoardName : 'Nazh 控制台'}
+          </strong>
+          <span className="dashboard-hero__deploy">
+            {deployInfo
+              ? `已部署 ${deployInfo.nodeCount} 节点 · 根: ${deployInfo.rootNodes.join(', ')}`
+              : '未部署工作流'}
+          </span>
         </div>
 
-        <div className="dashboard-hero__orbital" aria-hidden="true">
-          <div className="dashboard-hero__orbital-ring dashboard-hero__orbital-ring--outer" />
-          <div className="dashboard-hero__orbital-ring dashboard-hero__orbital-ring--mid" />
-          <div className="dashboard-hero__orbital-core">
-            <span>就绪度</span>
-            <strong>{readinessScore}%</strong>
+        <div className="dashboard-hero__health" style={gaugeStyle}>
+          <div className="dashboard-hero__health-ring">
+            <div className="dashboard-hero__health-center">
+              <strong>{healthScore}%</strong>
+              <span>{hasFailure ? '异常' : deployInfo ? '健康' : '待机'}</span>
+            </div>
+          </div>
+          <span className="dashboard-hero__health-label">系统健康度</span>
+        </div>
+
+        <div className="dashboard-hero__metrics">
+          <div className="dashboard-hero__metric">
+            <span className="dashboard-hero__metric-value is-active">{activeNodeCount}</span>
+            <span className="dashboard-hero__metric-label">运行中</span>
+          </div>
+          <div className="dashboard-hero__metric">
+            <span className="dashboard-hero__metric-value">{throughput}</span>
+            <span className="dashboard-hero__metric-label">吞吐量</span>
+          </div>
+          <div className="dashboard-hero__metric">
+            <span className="dashboard-hero__metric-value is-success">
+              {successRate !== null ? `${successRate}%` : '--'}
+            </span>
+            <span className="dashboard-hero__metric-label">成功率</span>
+          </div>
+          <div className={`dashboard-hero__metric${hasFailure ? ' has-alert' : ''}`}>
+            <span className="dashboard-hero__metric-value">{failedNodeCount}</span>
+            <span className="dashboard-hero__metric-label">异常</span>
           </div>
         </div>
       </section>
-
-      <div className="dashboard-panel__cards">
-        {[
-          { label: '工程看板', value: boardCount },
-          { label: '节点总数', value: graphNodeCount },
-          { label: '边数量', value: graphEdgeCount },
-          { label: '连接绑定', value: graphConnectionCount },
-          { label: '活跃节点', value: activeNodeCount },
-        ].map((metric) => (
-          <div key={metric.label} className="dashboard-stat-card">
-            <span className="dashboard-stat-card__label">{metric.label}</span>
-            <span className="dashboard-stat-card__value">{metric.value}</span>
-          </div>
-        ))}
-      </div>
 
       <div className="dashboard-telemetry-grid">
         <article className="dashboard-chart-card dashboard-chart-card--dense">
@@ -194,49 +187,32 @@ export function DashboardPanel({
               />
             ))}
           </div>
-          <div className="dashboard-gauge" style={gaugeStyle}>
-            <div className="dashboard-gauge__ring">
-              <div className="dashboard-gauge__center">
-                <strong>{readinessScore}%</strong>
-                <span>{deployInfo ? '已就绪' : '待部署'}</span>
-              </div>
-            </div>
-            <div className="dashboard-gauge__meta">
-              <span>部署就绪度</span>
-              <strong>
-                {deployInfo ? `根节点 ${deployInfo.rootNodes.length}` : '未生成运行快照'}
-              </strong>
-            </div>
-          </div>
         </article>
 
         <article className="dashboard-chart-card dashboard-chart-card--status">
           <div className="dashboard-chart-card__header">
             <strong>工作面摘要</strong>
-            <span>{runtimeHealthyCount} 正常通道</span>
           </div>
           <div className="dashboard-status-list">
-            {statusRows.map((row) => (
-              <div key={row.label} className="dashboard-status-list__row">
-                <span>{row.label}</span>
-                <strong>{row.value}</strong>
-              </div>
-            ))}
+            <div className="dashboard-status-list__row">
+              <span>当前焦点</span>
+              <strong>{activeBoardName ? activeBoardName : '全局工作台'}</strong>
+            </div>
+            <div className="dashboard-status-list__row">
+              <span>最近状态</span>
+              <strong>{statusMessage || '暂无'}</strong>
+            </div>
           </div>
+          <button
+            type="button"
+            className="dashboard-action-card"
+            data-testid="dashboard-navigate-boards"
+            onClick={onNavigateToBoards}
+          >
+            <strong>进入所有看板</strong>
+            <span className="dashboard-action-card__arrow">→</span>
+          </button>
         </article>
-      </div>
-
-      <div className="dashboard-panel__actions">
-        <button
-          type="button"
-          className="dashboard-action-card"
-          data-testid="dashboard-navigate-boards"
-          onClick={onNavigateToBoards}
-        >
-          <strong>进入所有看板</strong>
-          <span>继续查看工程、环境与 FlowGram 工作面</span>
-          <span className="dashboard-action-card__arrow">→</span>
-        </button>
       </div>
     </div>
   );

@@ -20,6 +20,10 @@ html.is-tauri-runtime .studio-frame {
   padding-top: 0;
 }
 
+.studio-frame:has(.studio-nav-sidebar.is-collapsed) {
+  grid-template-columns: 0px minmax(0, 1fr);
+}
+
 .studio-nav-sidebar {
   display: flex;
   flex-direction: column;
@@ -65,9 +69,9 @@ html.is-tauri-runtime .studio-frame {
 
 html.is-tauri-runtime .studio-nav-safe-region {
   display: block;
-  height: calc(var(--window-safe-top) + 10px);
-  flex: 0 0 calc(var(--window-safe-top) + 10px);
-  margin: 0 0 6px;
+  height: calc(var(--window-safe-top) - 8px);
+  flex: 0 0 calc(var(--window-safe-top) - 8px);
+  margin: 0;
 }
 
 .studio-nav-toggle {
@@ -81,41 +85,26 @@ html.is-tauri-runtime .studio-nav-safe-region {
   height: auto;
   padding: 4px;
   border: 0;
-  border-radius: 0;
+  border-radius: 6px;
   background: transparent;
   color: var(--toolbar-text, #6e6e73);
   cursor: pointer;
   z-index: calc(var(--z-nav) + 2);
-  transition: color 160ms ease, opacity 160ms ease;
+  transition: color 160ms ease, opacity 160ms ease, left 260ms ease;
   box-shadow: none;
-}
-
-html.is-tauri-runtime .studio-nav-toggle {
-  top: 20px;
-  left: 80px;
-}
-
-.studio-nav-toggle svg {
-  width: 20px;
-  height: 20px;
-}
-
-.studio-nav-toggle:hover {
-  color: var(--text);
-  background: var(--nav-hover-surface, rgba(0, 0, 0, 0.08));
-  border-radius: 6px;
-  box-shadow: none;
-  transform: none;
-  transition: none;
-}
-
-.studio-nav-toggle:active {
-  opacity: 0.7;
 }
 
 html.is-tauri-runtime .studio-nav-toggle {
   top: 10px;
   left: 90px;
+}
+
+.studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) > .studio-nav-toggle {
+  left: 188px;
+}
+
+html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) > .studio-nav-toggle {
+  left: 196px;
 }
 
 .studio-nav-toggle svg {
@@ -129,10 +118,7 @@ html.is-tauri-runtime .studio-nav-toggle {
 .studio-nav-toggle:hover {
   color: var(--text);
   background: color-mix(in srgb, var(--toolbar-bg, rgba(0,0,0,0.08)) 140%, transparent);
-}
-
-.studio-nav-toggle:active {
-  opacity: 0.7;
+  border-radius: 6px;
 }
 
 .studio-nav-toggle:active {
@@ -1142,13 +1128,11 @@ html.is-tauri-runtime [data-window-drag-region] {
 }
 
 .dashboard-hero {
-  display: block;
-}
-
-.dashboard-hero__copy,
-.dashboard-chart-card {
-  position: relative;
-  overflow: hidden;
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) auto minmax(0, 1fr);
+  gap: 16px;
+  align-items: center;
+  padding: 16px 20px;
   border: 1px solid var(--line-soft);
   border-radius: 16px;
   background:
@@ -1157,60 +1141,127 @@ html.is-tauri-runtime [data-window-drag-region] {
   box-shadow: var(--shadow-low);
 }
 
-.dashboard-hero__copy {
+.dashboard-hero__context,
+.dashboard-chart-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.dashboard-hero__context {
   display: grid;
-  gap: 6px;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-  padding: 6px 0 2px;
+  gap: 3px;
 }
 
 .dashboard-hero__eyebrow {
   color: var(--accent-ink);
-  font-size: var(--font-subheadline);
+  font-size: var(--font-caption);
+  font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
-.dashboard-hero__copy strong {
-  font-size: var(--font-large-title);
-  line-height: 1.08;
-}
-
-.dashboard-hero__copy p {
-  color: var(--muted);
-  font-size: var(--font-body);
-  line-height: 1.45;
-}
-
-.dashboard-panel__cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(118px, 156px));
-  gap: 8px;
-}
-
-.dashboard-stat-card {
-  display: grid;
-  gap: 4px;
-  padding: 10px 12px;
-  border: 1px solid var(--line-soft);
-  border-radius: 12px;
-  background: var(--surface-muted);
-  box-shadow: none;
-  width: 100%;
-}
-
-.dashboard-stat-card__value {
+.dashboard-hero__title {
   font-size: var(--font-title-2);
+  line-height: 1.1;
+}
+
+.dashboard-hero__deploy {
+  color: var(--muted);
+  font-size: var(--font-caption);
+  line-height: 1.4;
+}
+
+.dashboard-hero__health {
+  display: grid;
+  place-items: center;
+  gap: 3px;
+}
+
+.dashboard-hero__health-ring {
+  position: relative;
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+  background: conic-gradient(
+    rgba(var(--accent-rgb), 0.6) var(--dashboard-gauge-progress),
+    var(--surface-muted) var(--dashboard-gauge-progress),
+  );
+  display: grid;
+  place-items: center;
+}
+
+.dashboard-hero__health-ring::after {
+  content: '';
+  position: absolute;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--panel);
+}
+
+.dashboard-hero__health-center {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  text-align: center;
+}
+
+.dashboard-hero__health-center strong {
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.dashboard-hero__health-center span {
+  font-size: 0.55rem;
+  color: var(--muted);
+}
+
+.dashboard-hero__health-label {
+  font-size: 0.6rem;
+  color: var(--muted);
+  text-align: center;
+  letter-spacing: 0.04em;
+}
+
+.dashboard-hero__metrics {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.dashboard-hero__metric {
+  display: grid;
+  gap: 2px;
+  padding: 8px 6px;
+  border-radius: 10px;
+  background: var(--surface-muted);
+  text-align: center;
+}
+
+.dashboard-hero__metric.has-alert {
+  background: rgba(220, 53, 69, 0.08);
+  border: 1px solid rgba(220, 53, 69, 0.2);
+}
+
+.dashboard-hero__metric-value {
+  font-size: var(--font-callout);
   font-weight: 700;
   line-height: 1;
 }
 
-.dashboard-stat-card__label {
+.dashboard-hero__metric-value.is-active {
+  color: var(--accent);
+}
+
+.dashboard-hero__metric-value.is-success {
+  color: var(--success);
+}
+
+.dashboard-hero__metric-label {
+  font-size: 0.6rem;
   color: var(--muted);
-  font-size: var(--font-subheadline);
+  letter-spacing: 0.04em;
 }
 
 .dashboard-panel__status {
@@ -1220,15 +1271,15 @@ html.is-tauri-runtime [data-window-drag-region] {
 
 .dashboard-telemetry-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .dashboard-chart-card {
   display: grid;
-  gap: 12px;
-  padding: 14px;
-  min-height: 228px;
+  gap: 8px;
+  padding: 12px;
+  min-height: 180px;
 }
 
 .dashboard-chart-card__header {
@@ -1467,17 +1518,15 @@ html.is-tauri-runtime [data-window-drag-region] {
   font-size: var(--font-callout);
 }
 
-.dashboard-panel__actions {
-  display: flex;
-}
-
 .dashboard-action-card {
   position: relative;
   display: grid;
-  gap: 4px;
-  width: min(280px, 100%);
-  padding: 12px 14px;
-  border-radius: 14px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 12px;
   border: 1px solid var(--accent-border);
   background: linear-gradient(180deg, var(--accent-soft), rgba(255, 255, 255, 0));
   text-align: left;
@@ -1494,9 +1543,8 @@ html.is-tauri-runtime [data-window-drag-region] {
 }
 
 .dashboard-action-card__arrow {
-  position: absolute;
-  top: 12px;
-  right: 14px;
+  grid-column: 2;
+  grid-row: 1;
   color: var(--text);
 }
 

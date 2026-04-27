@@ -13,7 +13,6 @@ import {
   SwitchUserIcon,
 } from './AppIcons';
 import { useScrollEdgeEffect } from '../../hooks/use-scroll-edge-effect';
-import nazhLogo from '../../assets/nazh-logo.svg';
 import type { SidebarNavProps, SidebarSection } from './types';
 
 const SECTION_ICONS: Record<SidebarSection, typeof DashboardIcon> = {
@@ -75,16 +74,6 @@ export function SidebarNav({
   return (
     <div className="studio-navrail">
       <div className="studio-nav-safe-region" data-window-drag-region aria-hidden="true" />
-
-      <div className="studio-navrail__brand">
-        <div className="studio-navrail__brand-mark" aria-hidden="true">
-          <img src={nazhLogo} alt="" />
-        </div>
-        <div className="studio-navrail__brand-copy">
-          <strong>Nazh</strong>
-          <span>Liquid Console</span>
-        </div>
-      </div>
 
       <div ref={groupsRef} className="studio-nav-groups liquid-scroll-surface">
         {groupedSections.map((group) => (

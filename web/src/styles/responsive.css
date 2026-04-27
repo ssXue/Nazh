@@ -117,10 +117,6 @@
     grid-template-columns: minmax(0, 1fr) clamp(296px, 26vw, 360px);
   }
 
-  .dashboard-panel__cards {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
   .dashboard-telemetry-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -148,12 +144,8 @@
     grid-template-columns: minmax(0, 1fr) clamp(288px, 28vw, 336px);
   }
 
-  .dashboard-panel__cards {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .dashboard-telemetry-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr 1fr;
   }
 }
 
@@ -291,12 +283,11 @@
     max-width: min(360px, calc(100% - 20px));
   }
 
-  .dashboard-panel__cards {
+  .dashboard-telemetry-grid {
     grid-template-columns: 1fr;
   }
 
-  .dashboard-runtime-legend,
-  .dashboard-gauge {
+  .dashboard-runtime-legend {
     grid-template-columns: 1fr;
   }
 

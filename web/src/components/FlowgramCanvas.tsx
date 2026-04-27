@@ -289,13 +289,13 @@ const FLOWGRAM_BUTTON_STYLE: CSSProperties = {
 const FLOWGRAM_TOOLS_STYLE: CSSProperties = {
   position: 'absolute',
   zIndex: 20,
-  left: 'calc(var(--board-left-avoid, 0px) + var(--flowgram-palette-width, 176px) + 20px)',
+  left: '50%',
+  transform: 'translateX(-50%)',
   bottom: 16,
   display: 'flex',
   alignItems: 'center',
   gap: 8,
-  maxWidth:
-    'calc(100% - var(--board-left-avoid, 0px) - var(--runtime-dock-width, 0px) - var(--flowgram-palette-width, 176px) - 56px)',
+  maxWidth: 'calc(100% - 48px)',
   pointerEvents: 'none',
 };
 
@@ -1106,11 +1106,9 @@ function FlowgramToolbar({
           </div>
         </details>
 
-        {canDispatch ? (
-          <FlowgramToolButton label="手动触发" data-testid="dispatch-button" onClick={() => onDispatch?.()}>
-            <TriggerActionIcon width={16} height={16} />
-          </FlowgramToolButton>
-        ) : null}
+        <FlowgramToolButton label="手动触发" data-testid="dispatch-button" onClick={() => onDispatch?.()}>
+          <TriggerActionIcon width={16} height={16} />
+        </FlowgramToolButton>
 
         <button
           type="button"
