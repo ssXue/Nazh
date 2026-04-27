@@ -28,7 +28,8 @@ pub use nazh_core::{
     EngineError, ExecutionEvent, LifecycleGuard, NodeCapabilities, NodeDispatch, NodeExecution,
     NodeHandle, NodeLifecycleContext, NodeOutput, NodeRegistry, NodeTrait, PinDefinition,
     PinDirection, PinType, Plugin, PluginHost, PluginManifest, RuntimeResources, SharedResources,
-    StreamChunk, VariableDeclaration, WorkflowContext, WorkflowNodeDefinition, into_payload_map,
+    StreamChunk, VariableDeclaration, WorkflowContext, WorkflowNodeDefinition, WorkflowVariables,
+    into_payload_map,
 };
 
 pub use connections::{

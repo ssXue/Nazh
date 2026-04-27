@@ -3,11 +3,10 @@
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use nazh_engine::{
-    ConnectionManager, NodeRegistry, PinType, VariableDeclaration, WorkflowGraph,
-    deploy_workflow_with_ai, standard_registry,
+    NodeRegistry, PinType, VariableDeclaration, WorkflowGraph, deploy_workflow_with_ai,
+    shared_connection_manager, standard_registry,
 };
 use serde_json::json;
 
@@ -30,11 +29,12 @@ async fn 部署时变量按声明初始化() {
     };
 
     let registry: NodeRegistry = standard_registry();
-    let cm = Arc::new(ConnectionManager::default());
+    let cm = shared_connection_manager();
     let deployment = deploy_workflow_with_ai(graph, cm, None, &registry)
         .await
         .expect("空 DAG + 单变量应能部署");
 
+    // 变量可达性验证留 Task 7（nodes-flow E2E）；此处只确认部署管线成功 + 干净撤销。
     deployment.shutdown().await;
 }
 
@@ -56,7 +56,7 @@ async fn 初值类型不匹配_部署失败() {
         variables: Some(declarations),
     };
     let registry: NodeRegistry = standard_registry();
-    let cm = Arc::new(ConnectionManager::default());
+    let cm = shared_connection_manager();
     // WorkflowDeployment 未实现 Debug，不能用 unwrap_err / expect_err；用 let…else 提取错误值
     let Err(err) = deploy_workflow_with_ai(graph, cm, None, &registry).await else {
         panic!("初值类型不匹配应阻止部署");

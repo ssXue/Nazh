@@ -5,7 +5,11 @@
 //!
 //! ## 部署阶段
 //!
-//! 部署分三个阶段：
+//! 部署分四个阶段：
+//! 0. **阶段 0 — 工作流变量构造**：调 [`build_workflow_variables`](super::variables_init::build_workflow_variables)
+//!    把 `WorkflowGraph.variables` 声明转成 `Arc<WorkflowVariables>`，注入
+//!    `RuntimeResources` 与 `NodeLifecycleContext`。声明初值类型不匹配立即整图
+//!    拒绝——节点尚未实例化、无 RAII 资源在手，无需回滚（ADR-0012）。
 //! 1. **阶段 0.5 — Pin 类型校验**：节点按拓扑序实例化（仅调 `registry.create`，
 //!    无副作用），再调 [`pin_validator::validate_pin_compatibility`] 校验所有
 //!    边的两端 pin 类型兼容、`required` 输入有上游、无重复 pin id。失败直接返
@@ -61,9 +65,9 @@ pub async fn deploy_workflow(
 ///
 /// DAG 校验失败、节点实例化失败、节点 `on_deploy` 失败或不在 Tokio 运行时
 /// 中调用时返回错误。
-// 函数为三阶段部署的线性主流程（阶段 0.5 实例化 + Pin 校验、阶段 1 on_deploy、
-// 阶段 2 spawn run_node），拆 helper 会切碎时序的关键不变量（每阶段全部完成
-// 才能进下一阶段），损可读性。
+// 函数为四阶段部署的线性主流程（阶段 0 变量构造、阶段 0.5 实例化 + Pin 校验、
+// 阶段 1 on_deploy、阶段 2 spawn run_node），拆 helper 会切碎时序的关键不变量
+// （每阶段全部完成才能进下一阶段），损可读性。
 #[allow(clippy::too_many_lines)]
 pub async fn deploy_workflow_with_ai(
     graph: WorkflowGraph,
