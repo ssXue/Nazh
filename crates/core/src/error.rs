@@ -122,6 +122,23 @@ pub enum EngineError {
         pin: String,
         direction: PinDirection,
     },
+
+    #[error("工作流变量 `{name}` 不存在")]
+    UnknownVariable { name: String },
+
+    #[error("写入工作流变量 `{name}` 失败：声明类型 `{declared}` 与实际值类型 `{actual}` 不匹配")]
+    VariableTypeMismatch {
+        name: String,
+        declared: String,
+        actual: String,
+    },
+
+    #[error("工作流变量 `{name}` 初值类型不匹配：声明 `{declared}` / 初值实际 `{actual}`")]
+    VariableInitialMismatch {
+        name: String,
+        declared: String,
+        actual: String,
+    },
 }
 
 impl EngineError {
@@ -185,6 +202,34 @@ impl EngineError {
         Self::AiNodeError {
             node_id: node_id.into(),
             message: message.into(),
+        }
+    }
+
+    pub fn unknown_variable(name: impl Into<String>) -> Self {
+        Self::UnknownVariable { name: name.into() }
+    }
+
+    pub fn variable_type_mismatch(
+        name: impl Into<String>,
+        declared: impl Into<String>,
+        actual: impl Into<String>,
+    ) -> Self {
+        Self::VariableTypeMismatch {
+            name: name.into(),
+            declared: declared.into(),
+            actual: actual.into(),
+        }
+    }
+
+    pub fn variable_initial_mismatch(
+        name: impl Into<String>,
+        declared: impl Into<String>,
+        actual: impl Into<String>,
+    ) -> Self {
+        Self::VariableInitialMismatch {
+            name: name.into(),
+            declared: declared.into(),
+            actual: actual.into(),
         }
     }
 }

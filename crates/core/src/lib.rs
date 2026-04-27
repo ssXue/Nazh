@@ -18,6 +18,7 @@ pub mod lifecycle;
 pub mod node;
 pub mod pin;
 pub mod plugin;
+pub mod variables;
 
 pub use ai::{
     AiCompletionRequest, AiCompletionResponse, AiError, AiGenerationParams, AiMessage,
@@ -40,6 +41,10 @@ pub use plugin::{
     NodeRegistry, Plugin, PluginHost, PluginManifest, RuntimeResources, SharedResources,
     WorkflowNodeDefinition,
 };
+pub use variables::{
+    TypedVariable, TypedVariableSnapshot, VariableDeclaration, WorkflowVariables,
+    pin_type_matches_value,
+};
 pub use tokio_util::sync::CancellationToken;
 pub use uuid::Uuid;
 
@@ -51,8 +56,8 @@ pub mod export_bindings {
     use super::{
         AiCompletionRequest, AiCompletionResponse, AiGenerationParams, AiMessage, AiMessageRole,
         AiReasoningEffort, AiThinkingConfig, AiThinkingMode, AiTokenUsage, CompletedExecutionEvent,
-        ExecutionEvent, PinDefinition, PinDirection, PinType, WorkflowContext,
-        WorkflowNodeDefinition,
+        ExecutionEvent, PinDefinition, PinDirection, PinType, TypedVariableSnapshot,
+        VariableDeclaration, WorkflowContext, WorkflowNodeDefinition,
     };
     use ts_rs::{ExportError, TS};
 
@@ -74,6 +79,8 @@ pub mod export_bindings {
         AiThinkingConfig::export()?;
         AiThinkingMode::export()?;
         AiReasoningEffort::export()?;
+        TypedVariableSnapshot::export()?;
+        VariableDeclaration::export()?;
         Ok(())
     }
 }

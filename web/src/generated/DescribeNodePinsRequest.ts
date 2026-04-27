@@ -5,10 +5,10 @@ import type { JsonValue } from "./serde_json/JsonValue";
  * `describe_node_pins` IPC 命令的请求。
  *
  * 给定节点类型 + config，返回该实例化节点的输入/输出引脚 schema。
- * 服务于 ADR-0010 Phase 2 前端连接期校验：FlowGram `canAddLine` 钩子
- * 通过缓存的 pin schema 即时判断"上游产出 → 下游期望"是否兼容。
+ * 服务于前端连接期校验——FlowGram `canAddLine` 钩子通过缓存的 pin
+ * schema 即时判断"上游产出 → 下游期望"是否兼容。
  *
- * 注意：`config` 必须是合法的节点 config（能让 `NodeRegistry::create`
+ * 注意：`config` 必须是合法的节点 config（能让 [`NodeRegistry::create`]
  * 成功）。无效 config 会返回错误，前端缓存写 fallback `Any/Any`，
  * 部署期校验作为 backstop 兜底。
  */
