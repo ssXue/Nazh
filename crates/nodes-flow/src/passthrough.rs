@@ -66,10 +66,7 @@ mod tests {
     async fn passthrough_对空_payload_也能正常工作() {
         let node = PassthroughNode::from_definition(&make_def()).unwrap();
 
-        let result = node
-            .transform(Uuid::new_v4(), Value::Null)
-            .await
-            .unwrap();
+        let result = node.transform(Uuid::new_v4(), Value::Null).await.unwrap();
 
         assert_eq!(result.outputs[0].payload, Value::Null);
     }

@@ -99,14 +99,18 @@ impl Plugin for FlowPlugin {
             "subgraphInput",
             NodeCapabilities::empty(),
             |def, _res| {
-                Ok(Arc::new(passthrough::PassthroughNode::from_definition(def)?))
+                Ok(Arc::new(passthrough::PassthroughNode::from_definition(
+                    def,
+                )?))
             },
         );
         registry.register_with_capabilities(
             "subgraphOutput",
             NodeCapabilities::empty(),
             |def, _res| {
-                Ok(Arc::new(passthrough::PassthroughNode::from_definition(def)?))
+                Ok(Arc::new(passthrough::PassthroughNode::from_definition(
+                    def,
+                )?))
             },
         );
     }

@@ -1857,11 +1857,10 @@ async fn passthrough_nodes_forward_payload() {
     };
 
     let registry = standard_registry();
-    let mut deployment = match deploy_workflow(graph, shared_connection_manager(), &registry).await {
+    let mut deployment = match deploy_workflow(graph, shared_connection_manager(), &registry).await
+    {
         Ok(deployment) => deployment,
-        Err(error) => panic!(
-            "含 subgraphInput/subgraphOutput 的 DAG 应能部署成功: {error}"
-        ),
+        Err(error) => panic!("含 subgraphInput/subgraphOutput 的 DAG 应能部署成功: {error}"),
     };
 
     // 提交 payload 并验证两个 passthrough 节点透传后最终结果正确
