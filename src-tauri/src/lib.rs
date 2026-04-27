@@ -29,7 +29,8 @@ use serde_json::{Value, json};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_bindings::{
     DeployResponse, DescribeNodePinsRequest, DescribeNodePinsResponse, DispatchResponse,
-    ListNodeTypesResponse, UndeployResponse, list_node_types_response,
+    ListNodeTypesResponse, SnapshotWorkflowVariablesRequest, SnapshotWorkflowVariablesResponse,
+    UndeployResponse, list_node_types_response,
 };
 use tokio::fs;
 use tokio::sync::{Mutex, RwLock, mpsc};
@@ -501,6 +502,8 @@ struct DesktopWorkflow {
     lifecycle_guards: Vec<(String, nazh_engine::LifecycleGuard)>,
     /// 撤销根 token——cancel 后所有 guard 内部派生的 child token 同时收到信号。
     shutdown_token: nazh_engine::CancellationToken,
+    /// 部署时注入的共享资源句柄（含 `WorkflowVariables`），供 IPC 读取运行时状态。
+    shared_resources: nazh_engine::SharedResources,
     /// 事件/结果转发任务。
     runtime_tasks: Vec<tauri::async_runtime::JoinHandle<()>>,
 }
@@ -967,6 +970,7 @@ async fn deploy_workflow(
         streams,
         lifecycle_guards,
         shutdown_token,
+        shared_resources,
     } = deployment.into_parts();
     let root_nodes = ingress.root_nodes().to_vec();
     let (mut event_rx, mut result_rx, result_store_ref) = streams.into_receivers();
@@ -1049,6 +1053,7 @@ async fn deploy_workflow(
                 root_nodes: root_nodes.clone(),
                 lifecycle_guards,
                 shutdown_token,
+                shared_resources,
                 runtime_tasks,
             },
         );
@@ -1302,6 +1307,35 @@ async fn describe_node_pins(
         input_pins: node.input_pins(),
         output_pins: node.output_pins(),
     })
+}
+
+/// 返回指定已部署工作流的变量快照。
+///
+/// 若工作流不存在或部署中未注入 [`WorkflowVariables`]，返回错误。
+/// 调用方（前端）应以此作为轻量级运行时状态探针——变量值在节点执行中动态更新，
+/// 快照为调用瞬间的一致性读（`DashMap` 逐桶读，非全局锁）。
+#[tauri::command]
+async fn snapshot_workflow_variables(
+    state: State<'_, DesktopState>,
+    request: SnapshotWorkflowVariablesRequest,
+) -> Result<SnapshotWorkflowVariablesResponse, String> {
+    let workflows = state.workflows.lock().await;
+    let workflow = workflows
+        .get(&request.workflow_id)
+        .ok_or_else(|| format!("工作流 `{}` 未部署或已撤销", request.workflow_id))?;
+
+    let vars = workflow
+        .shared_resources
+        .get::<std::sync::Arc<nazh_engine::WorkflowVariables>>()
+        .ok_or_else(|| "部署中无 WorkflowVariables".to_owned())?;
+
+    let variables = vars
+        .snapshot()
+        .into_iter()
+        .map(|(k, v)| (k, v.into()))
+        .collect();
+
+    Ok(SnapshotWorkflowVariablesResponse { variables })
 }
 
 #[tauri::command]
@@ -2471,6 +2505,7 @@ pub fn run() {
             list_connections,
             list_node_types,
             describe_node_pins,
+            snapshot_workflow_variables,
             list_runtime_workflows,
             set_active_runtime_workflow,
             list_dead_letters,

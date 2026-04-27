@@ -256,5 +256,6 @@ pub async fn deploy_workflow_with_ai(
         },
         lifecycle_guards,
         shutdown_token,
+        shared_resources: shared_resources.clone(),
     })
 }

@@ -11,7 +11,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use crate::{
     CancellationToken, ContextRef, DataStore, EngineError, ExecutionEvent, LifecycleGuard,
-    VariableDeclaration, WorkflowContext, WorkflowNodeDefinition,
+    SharedResources, VariableDeclaration, WorkflowContext, WorkflowNodeDefinition,
 };
 use serde::{Deserialize, Deserializer, Serialize};
 use tokio::sync::mpsc;
@@ -110,6 +110,8 @@ pub struct WorkflowDeployment {
     pub(crate) streams: WorkflowStreams,
     pub(crate) lifecycle_guards: Vec<(String, LifecycleGuard)>,
     pub(crate) shutdown_token: CancellationToken,
+    /// 部署时构造的共享资源句柄（含 `WorkflowVariables` 等），供 IPC 读取共享状态。
+    pub(crate) shared_resources: SharedResources,
 }
 
 /// [`WorkflowDeployment::into_parts`] 的返回类型——按字段名访问而非位置解构，
@@ -119,6 +121,8 @@ pub struct WorkflowDeploymentParts {
     pub streams: WorkflowStreams,
     pub lifecycle_guards: Vec<(String, LifecycleGuard)>,
     pub shutdown_token: CancellationToken,
+    /// 部署时构造的共享资源句柄，随 parts 传递给壳层保存。
+    pub shared_resources: SharedResources,
 }
 
 /// 拓扑分析结果（仅模块内部使用）。
@@ -295,7 +299,13 @@ impl WorkflowDeployment {
             streams: self.streams,
             lifecycle_guards: self.lifecycle_guards,
             shutdown_token: self.shutdown_token,
+            shared_resources: self.shared_resources,
         }
+    }
+
+    /// 返回部署时构造的资源句柄（含 `WorkflowVariables` 等），供 IPC 读取共享状态。
+    pub fn resources(&self) -> &SharedResources {
+        &self.shared_resources
     }
 
     /// 显式撤销整张图：cancel 根 token 后按**逆部署序** shutdown 每个 guard。

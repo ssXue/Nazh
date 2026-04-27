@@ -16,6 +16,8 @@ export type { NodeTypeEntry } from './NodeTypeEntry';
 export type { PinDefinition } from './PinDefinition';
 export type { PinDirection } from './PinDirection';
 export type { PinType } from './PinType';
+export type { SnapshotWorkflowVariablesRequest } from './SnapshotWorkflowVariablesRequest';
+export type { SnapshotWorkflowVariablesResponse } from './SnapshotWorkflowVariablesResponse';
 export type { UndeployResponse } from './UndeployResponse';
 export type { WorkflowContext } from './WorkflowContext';
 export type { WorkflowEdge } from './WorkflowEdge';

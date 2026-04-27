@@ -7,7 +7,9 @@
 //! `cargo test -p tauri-bindings --features ts-export export_bindings`
 //! 触发本 crate 与所有依赖 crate 的 TypeScript 类型导出。
 
-use nazh_core::{NodeRegistry, PinDefinition};
+use std::collections::HashMap;
+
+use nazh_core::{NodeRegistry, PinDefinition, TypedVariableSnapshot};
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "ts-export")]
@@ -111,6 +113,26 @@ pub struct DescribeNodePinsResponse {
     pub output_pins: Vec<PinDefinition>,
 }
 
+/// `snapshot_workflow_variables` 命令的请求。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct SnapshotWorkflowVariablesRequest {
+    /// 要查询的工作流 ID。
+    pub workflow_id: String,
+}
+
+/// `snapshot_workflow_variables` 命令的响应——按变量名映射到序列化快照。
+///
+/// `updated_at` 字段为 RFC3339 字符串，避免前端时区差。
+/// 空表表示部署已声明但无变量；若部署不存在，命令侧返回错误（而非空表）以避免歧义。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct SnapshotWorkflowVariablesResponse {
+    pub variables: HashMap<String, TypedVariableSnapshot>,
+}
+
 /// 把 [`NodeRegistry`] 中的节点类型按字母排序后包装成 [`ListNodeTypesResponse`]。
 ///
 /// 排序属于 IPC 展示层关注点，不污染 Ring 0 的注册表 API。
@@ -150,6 +172,8 @@ pub fn export_all() -> Result<(), ts_rs::ExportError> {
     ListNodeTypesResponse::export()?;
     DescribeNodePinsRequest::export()?;
     DescribeNodePinsResponse::export()?;
+    SnapshotWorkflowVariablesRequest::export()?;
+    SnapshotWorkflowVariablesResponse::export()?;
     Ok(())
 }
 
