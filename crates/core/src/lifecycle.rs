@@ -28,6 +28,7 @@ use uuid::Uuid;
 
 use crate::{
     CompletedExecutionEvent, ContextRef, DataStore, EngineError, ExecutionEvent, SharedResources,
+    WorkflowVariables,
 };
 
 /// 节点部署钩子可用的受限上下文。
@@ -42,6 +43,9 @@ pub struct NodeLifecycleContext {
     pub handle: NodeHandle,
     /// 撤销信号。后台任务必须在 `tokio::select!` 第一分支监听 `cancelled().await`。
     pub shutdown: CancellationToken,
+    /// 工作流级共享变量（ADR-0012）。即使工作流未声明任何变量也是非空 `Arc`
+    /// （指向空表），节点无需做 `Option` 分支。
+    pub variables: Arc<WorkflowVariables>,
 }
 
 /// 触发器节点向 DAG 推消息的句柄。
@@ -410,5 +414,38 @@ mod tests {
             .emit(serde_json::Value::Null, Map::new())
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn lifecycle_context_暴露_variables() {
+        use crate::{PinType, VariableDeclaration, WorkflowVariables};
+        use std::collections::HashMap;
+
+        let mut declarations = HashMap::new();
+        declarations.insert(
+            "setpoint".to_owned(),
+            VariableDeclaration {
+                variable_type: PinType::Float,
+                initial: serde_json::Value::from(25.0),
+            },
+        );
+        let vars = Arc::new(WorkflowVariables::from_declarations(&declarations).unwrap());
+
+        let store: Arc<dyn DataStore> = Arc::new(ArenaDataStore::new());
+        let (event_tx, _event_rx) = mpsc::channel(8);
+        let handle = NodeHandle::new("trigger-x", store, vec![], event_tx);
+        let token = CancellationToken::new();
+
+        let ctx = NodeLifecycleContext {
+            resources: Arc::new(crate::RuntimeResources::new()),
+            handle,
+            shutdown: token.child_token(),
+            variables: Arc::clone(&vars),
+        };
+
+        assert_eq!(
+            ctx.variables.get("setpoint").unwrap().value,
+            serde_json::Value::from(25.0)
+        );
     }
 }

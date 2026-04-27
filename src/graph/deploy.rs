@@ -158,6 +158,8 @@ pub async fn deploy_workflow_with_ai(
             resources: shared_resources.clone(),
             handle,
             shutdown: shutdown_token.child_token(),
+            // Task 3 引入；Task 5 将替换为 build_workflow_variables 的产物
+            variables: Arc::new(nazh_core::WorkflowVariables::empty()),
         };
 
         let guard = node.on_deploy(ctx).await?;

@@ -83,6 +83,17 @@ pub struct WorkflowVariables {
 }
 
 impl WorkflowVariables {
+    /// 构造一个无任何声明的空变量集。
+    ///
+    /// 用于尚未启用变量声明的工作流——任意 `set` / `compare_and_swap` 都会因
+    /// `UnknownVariable` 错误立即失败，对节点透明。
+    #[must_use]
+    pub fn empty() -> Self {
+        Self {
+            inner: DashMap::new(),
+        }
+    }
+
     /// 从 `WorkflowGraph.variables` 声明集构造。
     ///
     /// 每个声明的 `initial` 必须匹配其 `variable_type`；任一不匹配立即返回错误，
