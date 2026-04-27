@@ -51,6 +51,7 @@ crates/core/src/
 - `CancellationToken` re-export from `tokio_util::sync`
 - `AiService` trait + 请求/响应/错误类型 — `src/ai.rs`（ADR-0019 上移到 Ring 0；具体实现 `OpenAiCompatibleService` 仍在 `ai` crate）
 - `WorkflowVariables` / `TypedVariable` / `TypedVariableSnapshot` / `VariableDeclaration` — `src/variables.rs`（ADR-0012；DashMap 后端、类型化写入、CAS、部署期 `from_declarations` 校验）；辅助函数 `pin_type_matches_value(pin_type, value) -> bool` + `WorkflowVariables::empty()` 无变量工作流构造器
+  - `set_event_sender(&self, workflow_id: String, sender: mpsc::Sender<ExecutionEvent>)` — ADR-0012 Phase 2，注入事件通道（`OnceCell` 仅设一次；重复调用 `tracing::warn!` 后忽略）；调用方需在节点 `on_deploy` 启动前完成注入，否则节点写入期间漏发 `VariableChanged` 事件。内部封装为 `EventSink { workflow_id, tx }` 结构体，持有 workflow_id 避免每次 emit 时从外部传入。
 
 ## 内部约定（本 crate 的契约）
 
@@ -150,6 +151,7 @@ fn instance_capabilities(&self, type_caps: NodeCapabilities) -> NodeCapabilities
 
 1. **所有错误统一走 `EngineError`**（`thiserror`），不允许 `.unwrap()` / `.expect()` / `panic!()`（测试除外）。
 2. **`ExecutionEvent::Completed` 携带 `metadata: Option<Map>`**。所有协议/执行元数据用此字段；Failed/Started/Output 不承载业务 payload。
+3. **`ExecutionEvent::VariableChanged { workflow_id, name, value, updated_at, updated_by }`** — ADR-0012 Phase 2，write-on-change 语义，仅当 `WorkflowVariables::set` / `compare_and_swap` 检测到 `entry.value != new` 时 emit。`workflow_id` 由 emit 路径在事件构造时注入（注入点：`variables.rs` 的 `EventSink` 在 deploy 期由 `set_event_sender` 注入 workflow_id）。Tauri shell drain loop 收到此变体后 **continue** 短路，不再转发到 `workflow://node-status`，而是单独发往 `workflow://variable-changed`。
 
 ## 依赖约束
 
@@ -171,7 +173,7 @@ fn instance_capabilities(&self, type_caps: NodeCapabilities) -> NodeCapabilities
 | 改 `NodeTrait` 签名 | 所有 Ring 1 `NodeTrait` 实现 + `tests/workflow.rs` + 根 AGENTS.md 的 NodeTrait 章节 |
 | 改 `NodeCapabilities` 位值或新增位 | 本 crate 的位分配单测 + `src/node.rs` 的 rustdoc + `web/src/lib/node-capabilities.ts` 前端常量表 + `src/registry.rs` 契约测试 + ADR-0011 的实施记录表 |
 | 给 `PinType` 加新变体 | 本 crate `pin.rs` 兼容矩阵单测 + `crates/nodes-flow/AGENTS.md` pin 表格（如有相关节点）+ ADR-0010 实施记录 |
-| 改 `ExecutionEvent` / `NodeOutput` 结构 | `web/src/generated/` 重新生成（`cargo test -p tauri-bindings --features ts-export export_bindings`）+ 前端事件解析器 |
+| 改 `ExecutionEvent` / `NodeOutput` 结构 | `web/src/generated/` 重新生成（`cargo test -p tauri-bindings --features ts-export export_bindings`）+ 前端事件解析器；若涉及 `VariableChanged` 变体，同步更新 `crates/tauri-bindings` 的 `VariableChangedPayload` 及 Tauri shell drain loop 分支 |
 | 改 `WorkflowNodeDefinition` 字段 | ts-rs 重新生成 + `src/graph/` 的部署路径 + 前端图解析 |
 | 改 `NodeRegistry` 公共 API | 所有 `Plugin::register` 调用点（至少 `nodes-flow` / `nodes-io`）+ `tauri-bindings::list_node_types_response` |
 | 改 `WorkflowVariables` 公共 API | `crates/scripting/src/lib.rs`（Rhai 注入点）+ `src/graph/variables_init.rs`（构造调用）+ IPC `snapshot_workflow_variables`（如已实施）+ ts-rs 重新生成（`TypedVariableSnapshot` / `VariableDeclaration` 带 `ts-export`）+ ADR-0012 |
