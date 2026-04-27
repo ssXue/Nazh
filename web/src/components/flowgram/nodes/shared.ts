@@ -18,7 +18,10 @@ export type NazhNodeKind =
   | 'httpClient'
   | 'barkPush'
   | 'sqlWriter'
-  | 'debugConsole';
+  | 'debugConsole'
+  | 'subgraph'
+  | 'subgraphInput'
+  | 'subgraphOutput';
 export type NazhNodeDisplayType = NazhNodeKind;
 
 export interface FlowgramLogicBranch {
@@ -221,6 +224,10 @@ export function normalizeNodeKind(value: unknown): NazhNodeKind {
     case 'switch':
     case 'tryCatch':
     case 'loop':
+      return value;
+    case 'subgraph':
+    case 'subgraphInput':
+    case 'subgraphOutput':
       return value;
     case 'native':
     default:
@@ -543,6 +550,12 @@ export function getFallbackNodeLabel(kind: NazhNodeKind): string {
       return 'SQL Writer';
     case 'debugConsole':
       return 'Debug Console';
+    case 'subgraph':
+      return 'Subgraph';
+    case 'subgraphInput':
+      return 'Input';
+    case 'subgraphOutput':
+      return 'Output';
     case 'native':
     default:
       return 'Native Node';
