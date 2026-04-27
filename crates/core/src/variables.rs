@@ -397,6 +397,20 @@ mod tests {
     }
 
     #[test]
+    fn empty_构造器写入任意键都报_unknownvariable() {
+        let vars = WorkflowVariables::empty();
+        let err = vars.set("any-key", Value::from(1_i64), None).unwrap_err();
+        assert!(
+            matches!(err, EngineError::UnknownVariable { ref name } if name == "any-key"),
+            "empty() 构造器写入任意键应返回 UnknownVariable，实际：{err}"
+        );
+        let cas_err = vars
+            .compare_and_swap("any-key", &Value::from(0_i64), Value::from(1_i64), None)
+            .unwrap_err();
+        assert!(matches!(cas_err, EngineError::UnknownVariable { .. }));
+    }
+
+    #[test]
     fn 初值类型不匹配_from_declarations_失败() {
         let mut declarations = HashMap::new();
         declarations.insert(

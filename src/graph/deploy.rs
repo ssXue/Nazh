@@ -36,6 +36,7 @@ use crate::SharedConnectionManager;
 use nazh_core::{
     ArenaDataStore, CancellationToken, ContextRef, DataStore, EngineError, NodeHandle,
     NodeLifecycleContext, NodeRegistry, NodeTrait, RuntimeResources, SharedResources,
+    WorkflowVariables,
 };
 
 /// 校验、实例化并将工作流图部署为并发 Tokio 任务。
@@ -158,8 +159,8 @@ pub async fn deploy_workflow_with_ai(
             resources: shared_resources.clone(),
             handle,
             shutdown: shutdown_token.child_token(),
-            // Task 3 引入；Task 5 将替换为 build_workflow_variables 的产物
-            variables: Arc::new(nazh_core::WorkflowVariables::empty()),
+            // Task 3 引入（ADR-0012）；Task 5 将替换为 build_workflow_variables 的产物
+            variables: Arc::new(WorkflowVariables::empty()),
         };
 
         let guard = node.on_deploy(ctx).await?;
