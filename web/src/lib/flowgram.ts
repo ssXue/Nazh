@@ -97,6 +97,13 @@ function buildBaseFlowgramWorkflowJson(graph: WorkflowGraph): FlowgramWorkflowJS
   };
 }
 
+function isFlattenedBridgeNode(node: FlowgramWorkflowJSON['nodes'][number]): boolean {
+  if (node.type !== 'subgraphInput' && node.type !== 'subgraphOutput') {
+    return false;
+  }
+  return node.id.includes('/');
+}
+
 function sanitizeEditorNodes(
   nodes: FlowgramWorkflowJSON['nodes'],
 ): FlowgramWorkflowJSON['nodes'] {
@@ -159,7 +166,11 @@ export function toFlowgramWorkflowJson(graph: WorkflowGraph): FlowgramWorkflowJS
   const editorOnlyNodes = editorGraph.nodes.filter(
     (node) => !businessNodeIds.has(node.id) && !isBusinessNode(node),
   );
-  const nodes = sanitizeEditorNodes([...mergedBusinessNodes, ...editorOnlyNodes]);
+  const nodes = sanitizeEditorNodes(
+    [...mergedBusinessNodes, ...editorOnlyNodes].filter(
+      (node) => !isFlattenedBridgeNode(node),
+    ),
+  );
   const nodeIds = new Set(nodes.map((node) => node.id));
   const businessEdgeKeys = new Set(baseGraph.edges.map(buildEdgeKey));
   const editorOnlyEdges = editorGraph.edges.filter((edge) => {
