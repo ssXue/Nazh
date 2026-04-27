@@ -6,6 +6,7 @@
 
 use std::sync::Arc;
 
+use nazh_core::WorkflowVariables;
 use nazh_core::ai::{AiCompletionRequest, AiGenerationParams, AiMessage, AiMessageRole, AiService};
 use rhai::{
     AST, Dynamic, Engine, EvalAltResult, Position, Scope,
@@ -40,6 +41,99 @@ macro_rules! delegate_node_base {
     };
 }
 
+/// Rhai 脚本中暴露给脚本的 `vars` 全局对象（ADR-0012）。
+///
+/// 内部持有 `Arc<WorkflowVariables>` + `node_id`（用于 `set` / `cas` 时记录 `updated_by`）。
+/// 未注入变量时（旧行为兼容）调用任意方法均返回 `ErrorRuntime`。
+///
+/// 脚本用法：
+/// ```rhai
+/// let v = vars.get("counter");   // 读取
+/// vars.set("counter", v + 1);    // 写入（类型检查）
+/// let ok = vars.cas("c", 0, 1);  // CAS，返回 bool
+/// ```
+#[derive(Clone)]
+pub struct ScriptVars {
+    binding: Arc<VarsBinding>,
+}
+
+struct VarsBinding {
+    node_id: String,
+    variables: Option<Arc<WorkflowVariables>>,
+}
+
+impl ScriptVars {
+    fn new(node_id: String, variables: Option<Arc<WorkflowVariables>>) -> Self {
+        Self {
+            binding: Arc::new(VarsBinding { node_id, variables }),
+        }
+    }
+
+    fn require_vars(&self) -> Result<&Arc<WorkflowVariables>, Box<EvalAltResult>> {
+        self.binding.variables.as_ref().ok_or_else(|| {
+            to_script_error(format!(
+                "脚本节点 `{}` 未注入 vars——工作流定义中 variables 字段为空",
+                self.binding.node_id
+            ))
+        })
+    }
+
+    /// `vars.get(name)` Rhai 方法：读取工作流变量值。
+    fn rhai_get(&mut self, name: &str) -> Result<Dynamic, Box<EvalAltResult>> {
+        let vars = self.require_vars()?;
+        let value = vars.get_value(name).ok_or_else(|| {
+            to_script_error(format!("UnknownVariable: 工作流变量 `{name}` 未声明"))
+        })?;
+        rhai::serde::to_dynamic(value)
+            .map_err(|err| to_script_error(format!("变量 `{name}` 无法转 Dynamic：{err}")))
+    }
+
+    /// `vars.set(name, value)` Rhai 方法：写入工作流变量（类型校验）。
+    // Rhai 1.x register_fn 要求 Dynamic 值参以 owned 形式接收；clippy 误报 needless_pass_by_value
+    #[allow(clippy::needless_pass_by_value)]
+    fn rhai_set(&mut self, name: &str, value: Dynamic) -> Result<(), Box<EvalAltResult>> {
+        let vars = self.require_vars()?;
+        let json_value: Value = rhai::serde::from_dynamic(&value)
+            .map_err(|err| to_script_error(format!("变量 `{name}` 写入值无法序列化：{err}")))?;
+        vars.set(name, json_value, Some(&self.binding.node_id))
+            .map_err(|err| to_script_error(err.to_string()))
+    }
+
+    /// `vars.cas(name, expected, new)` Rhai 方法：比较交换，返回是否成功。
+    // Rhai 1.x register_fn 要求 Dynamic 值参以 owned 形式接收；clippy 误报 needless_pass_by_value
+    #[allow(clippy::needless_pass_by_value)]
+    fn rhai_cas(
+        &mut self,
+        name: &str,
+        expected: Dynamic,
+        new: Dynamic,
+    ) -> Result<bool, Box<EvalAltResult>> {
+        let vars = self.require_vars()?;
+        let expected_value: Value = rhai::serde::from_dynamic(&expected)
+            .map_err(|err| to_script_error(format!("CAS expected 值反序列化失败：{err}")))?;
+        let new_value: Value = rhai::serde::from_dynamic(&new)
+            .map_err(|err| to_script_error(format!("CAS new 值反序列化失败：{err}")))?;
+        vars.compare_and_swap(
+            name,
+            &expected_value,
+            new_value,
+            Some(&self.binding.node_id),
+        )
+        .map_err(|err| to_script_error(err.to_string()))
+    }
+}
+
+/// 向引擎注册 `ScriptVars` 类型及其 `get` / `set` / `cas` 方法。
+///
+/// 注意：仅注册类型与方法绑定；`ScriptVars` 实例通过 `Scope` 在每次 `evaluate` 时推入。
+fn register_vars_helpers(engine: &mut Engine) {
+    engine
+        .register_type_with_name::<ScriptVars>("ScriptVars")
+        .register_fn("get", ScriptVars::rhai_get)
+        .register_fn("set", ScriptVars::rhai_set)
+        .register_fn("cas", ScriptVars::rhai_cas);
+}
+
 /// 脚本节点的通用基座。
 ///
 /// 封装了引擎初始化、脚本编译和求值逻辑，供所有基于脚本的节点复用。
@@ -50,6 +144,8 @@ pub struct ScriptNodeBase {
     id: String,
     engine: Engine,
     ast: AST,
+    /// ADR-0012：每次 evaluate 时 push 进 Scope，供脚本通过 `vars.*` 访问。
+    script_vars: ScriptVars,
 }
 
 /// 脚本节点的 AI 运行时配置。
@@ -217,33 +313,46 @@ fn register_ai_complete(engine: &mut Engine, node_id: &str, ai: Option<ScriptAiR
 
 impl ScriptNodeBase {
     /// 创建基座：编译脚本并设置步数上限。
+    ///
+    /// `variables` 传 `Some(arc)` 时脚本可通过 `vars.get` / `vars.set` / `vars.cas`
+    /// 读写工作流变量（ADR-0012）；传 `None` 时调用会在运行期返回脚本错误。
     pub fn new(
         id: impl Into<String>,
         script: &str,
         max_operations: u64,
         ai: Option<ScriptAiRuntime>,
+        variables: Option<Arc<WorkflowVariables>>,
     ) -> Result<Self, EngineError> {
         let id = id.into();
         let mut engine = Engine::new();
         engine.set_max_operations(max_operations);
         NazhScriptPackage::new().register_into_engine(&mut engine);
         register_ai_complete(&mut engine, &id, ai);
+        register_vars_helpers(&mut engine);
         let ast = engine
             .compile(script)
             .map_err(|error| EngineError::script_compile(id.clone(), error.to_string()))?;
-        Ok(Self { id, engine, ast })
+        let script_vars = ScriptVars::new(id.clone(), variables);
+        Ok(Self {
+            id,
+            engine,
+            ast,
+            script_vars,
+        })
     }
 
     pub fn id(&self) -> &str {
         &self.id
     }
 
-    /// 将 JSON payload 转换为 Rhai 作用域。
+    /// 将 JSON payload 转换为 Rhai 作用域，并推入 `vars` 全局对象。
     fn prepare_scope(&self, payload: Value) -> Result<Scope<'static>, EngineError> {
         let dynamic = to_dynamic(payload)
             .map_err(|error| EngineError::payload_conversion(self.id.clone(), error.to_string()))?;
         let mut scope = Scope::new();
         scope.push_dynamic("payload", dynamic);
+        // ADR-0012：每次 evaluate 都推入一份 ScriptVars，脚本通过 `vars.*` 读写工作流变量
+        scope.push("vars", self.script_vars.clone());
         Ok(scope)
     }
 
@@ -290,5 +399,106 @@ impl ScriptNodeBase {
     pub fn dynamic_to_value(&self, result: &Dynamic) -> Result<Value, EngineError> {
         from_dynamic::<Value>(result)
             .map_err(|error| EngineError::payload_conversion(self.id.clone(), error.to_string()))
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod variables_tests {
+    use std::collections::HashMap;
+    use std::sync::Arc;
+
+    use nazh_core::{PinType, VariableDeclaration, WorkflowVariables};
+
+    use super::*;
+
+    fn vars_arc(name: &str, ty: PinType, initial: serde_json::Value) -> Arc<WorkflowVariables> {
+        let mut decls = HashMap::new();
+        decls.insert(
+            name.to_owned(),
+            VariableDeclaration {
+                variable_type: ty,
+                initial,
+            },
+        );
+        Arc::new(WorkflowVariables::from_declarations(&decls).unwrap())
+    }
+
+    #[test]
+    fn rhai_脚本可读写变量() {
+        let vars = vars_arc("counter", PinType::Integer, serde_json::Value::from(5_i64));
+        let base = ScriptNodeBase::new(
+            "test-script",
+            r#"
+                let v = vars.get("counter");
+                vars.set("counter", v + 1);
+                vars.get("counter")
+            "#,
+            10_000,
+            None,
+            Some(Arc::clone(&vars)),
+        )
+        .unwrap();
+
+        let (_, result) = base.evaluate(serde_json::Value::Null).unwrap();
+        let final_value = base.dynamic_to_value(&result).unwrap();
+        assert_eq!(final_value, serde_json::Value::from(6_i64));
+        assert_eq!(
+            vars.get("counter").unwrap().value,
+            serde_json::Value::from(6_i64)
+        );
+    }
+
+    #[test]
+    fn rhai_脚本写入未声明变量返回错误() {
+        let vars = vars_arc("a", PinType::Integer, serde_json::Value::from(0_i64));
+        let base = ScriptNodeBase::new(
+            "test-script-2",
+            r#"vars.set("undeclared", 42)"#,
+            10_000,
+            None,
+            Some(Arc::clone(&vars)),
+        )
+        .unwrap();
+        let err = base.evaluate(serde_json::Value::Null).unwrap_err();
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("undeclared") || msg.contains("UnknownVariable"),
+            "错误消息应包含变量名，实际：{msg}"
+        );
+    }
+
+    #[test]
+    fn rhai_脚本_cas_成功返回_true() {
+        let vars = vars_arc("c", PinType::Integer, serde_json::Value::from(0_i64));
+        let base = ScriptNodeBase::new(
+            "test-script-3",
+            r#"vars.cas("c", 0, 1)"#,
+            10_000,
+            None,
+            Some(Arc::clone(&vars)),
+        )
+        .unwrap();
+        let (_, result) = base.evaluate(serde_json::Value::Null).unwrap();
+        let final_value = base.dynamic_to_value(&result).unwrap();
+        assert_eq!(final_value, serde_json::Value::from(true));
+    }
+
+    #[test]
+    fn rhai_脚本无_variables_注入时_vars_未定义() {
+        let base = ScriptNodeBase::new(
+            "test-script-4",
+            r#"vars.get("anything")"#,
+            10_000,
+            None,
+            None,
+        )
+        .unwrap();
+        let err = base.evaluate(serde_json::Value::Null).unwrap_err();
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("vars") || msg.contains("variables") || msg.contains("未注入"),
+            "未注入 variables 时调用 vars.* 应失败，实际：{msg}"
+        );
     }
 }

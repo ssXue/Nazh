@@ -54,7 +54,7 @@ impl SwitchNode {
             config.default_branch
         };
         Ok(Self {
-            base: ScriptNodeBase::new(id, &config.script, config.max_operations, None)?,
+            base: ScriptNodeBase::new(id, &config.script, config.max_operations, None, None)?, // Task 6 占位；Task 7 替换为从 resources 取 Arc<WorkflowVariables>
             branches: config.branches,
             default_branch,
         })

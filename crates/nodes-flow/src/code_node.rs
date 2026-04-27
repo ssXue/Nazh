@@ -95,7 +95,7 @@ impl CodeNode {
         };
 
         Ok(Self {
-            base: ScriptNodeBase::new(id, &script, max_operations, ai)?,
+            base: ScriptNodeBase::new(id, &script, max_operations, ai, None)?, // Task 6 占位；Task 7 替换为从 resources 取 Arc<WorkflowVariables>
         })
     }
 }
