@@ -28,7 +28,7 @@ interface BoardWorkspaceProps {
   flowgramAppearance: FlowgramCanvasAppearance;
   flowgramExportTarget: FlowgramCanvasExportTarget;
   flowgramActions: FlowgramCanvasActions;
-  runtimeDock: Pick<RuntimeDockProps, 'eventFeed' | 'appErrors' | 'results'>;
+  runtimeDock: Pick<RuntimeDockProps, 'eventFeed' | 'appErrors' | 'results' | 'activeWorkflowId'>;
   onToggleRuntimeDockCollapsed: () => void;
   onBack: () => void;
   onCreateSnapshot: () => void;
@@ -117,6 +117,7 @@ export const BoardWorkspace = forwardRef<BoardWorkspaceHandle, BoardWorkspacePro
           eventFeed={runtimeDock.eventFeed}
           appErrors={runtimeDock.appErrors}
           results={runtimeDock.results}
+          activeWorkflowId={runtimeDock.activeWorkflowId}
           connectionPreview={connectionPreview}
           themeMode={themeMode}
           isCollapsed={isRuntimeDockCollapsed}

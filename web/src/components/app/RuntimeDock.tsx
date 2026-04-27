@@ -8,6 +8,7 @@ import {
   buildRuntimeConsoleEntries,
   formatLogTimestamp,
 } from './runtime-console';
+import { RuntimeVariablesPanel } from './RuntimeVariablesPanel';
 import type { RuntimeDockProps } from './types';
 
 function normalizeResultPayload(payload: unknown): Record<string, unknown> | unknown[] {
@@ -22,12 +23,13 @@ function normalizeResultPayload(payload: unknown): Record<string, unknown> | unk
   return { value: payload };
 }
 
-type RuntimeDockPanel = 'events' | 'results' | 'connections';
+type RuntimeDockPanel = 'events' | 'results' | 'connections' | 'variables';
 
 const runtimeDockTabs: Array<{ id: RuntimeDockPanel; label: string; title: string }> = [
   { id: 'events', label: '事件', title: '执行事件流' },
   { id: 'results', label: '结果', title: '结果载荷' },
   { id: 'connections', label: '连接', title: '连接资源' },
+  { id: 'variables', label: '变量', title: '运行时变量' },
 ];
 
 function RuntimeDockTabIcon({ panel }: { panel: RuntimeDockPanel }) {
@@ -37,6 +39,11 @@ function RuntimeDockTabIcon({ panel }: { panel: RuntimeDockPanel }) {
 
   if (panel === 'connections') {
     return <ConnectionsIcon width={14} height={14} />;
+  }
+
+  if (panel === 'variables') {
+    // 暂复用 PayloadIcon；后续可替换为专属变量图标
+    return <PayloadIcon width={14} height={14} />;
   }
 
   return <LogsIcon width={14} height={14} />;
@@ -50,6 +57,7 @@ export function RuntimeDock({
   themeMode,
   isCollapsed,
   onToggleCollapsed,
+  activeWorkflowId,
 }: RuntimeDockProps) {
   const logViewportRef = useRef<HTMLDivElement | null>(null);
   const [hasCopiedEventFeed, setHasCopiedEventFeed] = useState(false);
@@ -129,7 +137,9 @@ export function RuntimeDock({
               ? runtimeConsoleEntries.length
               : tab.id === 'results'
                 ? results.length
-                : connectionPreview.length;
+                : tab.id === 'connections'
+                  ? connectionPreview.length
+                  : 0;
           const isActive = activePanel === tab.id;
 
           return (
@@ -291,6 +301,24 @@ export function RuntimeDock({
                   </div>
                 )}
               </div>
+            </div>
+          </section>
+
+          <section
+            id="runtime-dock-panel-variables"
+            className={`runtime-dock__panel runtime-dock__panel--variables ${activePanel === 'variables' ? 'is-active' : ''}`}
+            role="tabpanel"
+            aria-labelledby="runtime-dock-tab-variables"
+            hidden={activePanel !== 'variables' || isCollapsed}
+          >
+            <div className="runtime-dock__panel-header">
+              <div>
+                <h3>运行时变量</h3>
+              </div>
+            </div>
+
+            <div className="runtime-dock__panel-body">
+              <RuntimeVariablesPanel workflowId={activeWorkflowId} />
             </div>
           </section>
         </div>

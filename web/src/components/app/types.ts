@@ -74,6 +74,8 @@ export interface RuntimeDockProps {
   themeMode: ThemeMode;
   isCollapsed: boolean;
   onToggleCollapsed: () => void;
+  /** 当前活跃部署的 workflow_id，用于变量面板。null 时面板显示占位。 */
+  activeWorkflowId: string | null;
 }
 
 export interface SettingsPanelProps {

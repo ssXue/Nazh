@@ -265,6 +265,7 @@ export function StudioContentRouter({
               eventFeed: engine.eventFeed,
               appErrors: engine.appErrors,
               results: engine.results,
+              activeWorkflowId: currentBoardDeployInfo?.workflowId ?? null,
             }}
             onToggleRuntimeDockCollapsed={() =>
               engine.setIsRuntimeDockCollapsed((current) => !current)
