@@ -57,6 +57,7 @@ import { HttpClientNodeSettings } from './nodes/httpClient/settings';
 import { BarkPushNodeSettings } from './nodes/barkPush/settings';
 import { SqlWriterNodeSettings } from './nodes/sqlWriter/settings';
 import { DebugConsoleNodeSettings } from './nodes/debugConsole/settings';
+import { SubgraphNodeSettings } from './nodes/subgraph/settings';
 
 export interface FlowgramNodeSettingsPanelProps {
   nodeId: string;
@@ -144,6 +145,13 @@ function readNodeDraft(node: FlowNodeEntity): SelectedNodeDraft {
     sqlTable: readString(config.table, 'workflow_logs'),
     debugLabel: readString(config.label),
     debugPretty: readBoolean(config.pretty, true),
+    parameterBindings: (() => {
+      const raw = config.parameterBindings;
+      if (typeof raw === 'object' && raw !== null && !Array.isArray(raw)) {
+        return raw as Record<string, string>;
+      }
+      return {};
+    })(),
   };
 }
 
@@ -190,6 +198,10 @@ function buildNodeConfig(draft: SelectedNodeDraft, currentConfig: NodeConfigMap)
     return { ...currentConfig, label: draft.debugLabel.trim(), pretty: draft.debugPretty };
   }
 
+  if (draft.nodeType === 'subgraph') {
+    return { ...currentConfig, parameterBindings: draft.parameterBindings };
+  }
+
   if (supportsScriptAi(draft.nodeType)) {
     const { ai: _ai, ...restConfig } = currentConfig;
     return { ...restConfig, script: draft.script };
@@ -232,6 +244,7 @@ const NODE_SETTINGS_MAP: Record<string, React.FC<NodeSettingsProps>> = {
   barkPush: BarkPushNodeSettings,
   sqlWriter: SqlWriterNodeSettings,
   debugConsole: DebugConsoleNodeSettings,
+  subgraph: SubgraphNodeSettings,
 };
 
 function FlowgramNodeSettingsPanel({
