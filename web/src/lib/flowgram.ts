@@ -230,6 +230,7 @@ export function toNazhWorkflowGraph(
     connections: [],
     editor_graph: flowgramGraph,
     nodes,
+    variables: previousGraph.variables,
     edges: flowgramGraph.edges
       .filter(
         (edge) => businessNodeIds.has(edge.sourceNodeID) && businessNodeIds.has(edge.targetNodeID),

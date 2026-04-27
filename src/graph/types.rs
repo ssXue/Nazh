@@ -31,9 +31,12 @@ pub struct WorkflowGraph {
     pub nodes: HashMap<String, WorkflowNodeDefinition>,
     #[serde(default)]
     pub edges: Vec<WorkflowEdge>,
-    /// ADR-0012：工作流级共享变量声明（`name → { type, initial }`）。空表表示无变量。
+    /// ADR-0012：工作流级共享变量声明（`name → { type, initial }`）。
+    /// 旧图 JSON 中无此字段时反序列化为 `None`（`#[serde(default)]` 兜底），
+    /// 消费方调用 `.unwrap_or_default()` 得到空表。
     #[serde(default)]
-    pub variables: HashMap<String, VariableDeclaration>,
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub variables: Option<HashMap<String, VariableDeclaration>>,
 }
 
 /// 工作流 DAG 中连接两个节点的有向边。
@@ -324,7 +327,22 @@ mod variables_schema_tests {
             "edges": []
         });
         let graph: WorkflowGraph = serde_json::from_value(json).unwrap();
-        assert!(graph.variables.is_empty(), "缺省 variables 应为空表");
+        assert!(
+            graph.variables.unwrap_or_default().is_empty(),
+            "缺省 variables 应为 None（等价空表）"
+        );
+    }
+
+    #[test]
+    fn variables_字段为_null_时反序列化为_none() {
+        // `Option<HashMap>` 对应 JSON null → None；前端不会主动产出 null，
+        // 但外部修改工程文件时能容错而不是报错。
+        let json = serde_json::json!({ "nodes": {}, "edges": [], "variables": null });
+        let graph: WorkflowGraph = serde_json::from_value(json).unwrap();
+        assert!(
+            graph.variables.is_none(),
+            "variables: null 应反序列化为 None"
+        );
     }
 
     #[test]
@@ -344,14 +362,9 @@ mod variables_schema_tests {
             }
         });
         let graph: WorkflowGraph = serde_json::from_value(json).unwrap();
-        assert_eq!(graph.variables.len(), 2);
-        assert_eq!(
-            graph.variables["setpoint"].variable_type,
-            nazh_core::PinType::Float
-        );
-        assert_eq!(
-            graph.variables["mode"].initial,
-            serde_json::Value::from("auto")
-        );
+        let vars = graph.variables.unwrap();
+        assert_eq!(vars.len(), 2);
+        assert_eq!(vars["setpoint"].variable_type, nazh_core::PinType::Float);
+        assert_eq!(vars["mode"].initial, serde_json::Value::from("auto"));
     }
 }
