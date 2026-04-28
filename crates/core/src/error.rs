@@ -151,6 +151,19 @@ pub enum EngineError {
         declared: String,
         actual: String,
     },
+
+    /// ADR-0014 Phase 3：被 Exec 触发的下游节点声明了 Data 输入引脚，但图中
+    /// 找不到指向该 pin 的 Data 边。部署期 `pin_validator` 应已捕获 `required`
+    /// 输入缺边——本错误用于运行时 Data 收集器对非 required Data 输入的兜底。
+    #[error("节点 `{consumer}` 的 Data 输入引脚 `{pin}` 没有上游 Data 边")]
+    DataPinUpstreamMissing { consumer: String, pin: String },
+
+    /// ADR-0014 Phase 3：从上游节点的 Data 输出缓存槽读取时槽位为空——
+    /// 上游节点尚未执行过 transform。Phase 3 直接拒绝；Phase 4 引入引脚级
+    /// 兜底策略（`default_value` / `block_until_ready` / `skip`）后此错误
+    /// 仅在 `block_until_ready` 超时时触发。
+    #[error("上游节点 `{upstream}` 的 Data 输出引脚 `{pin}` 缓存为空（尚未执行）")]
+    DataPinCacheEmpty { upstream: String, pin: String },
 }
 
 impl EngineError {

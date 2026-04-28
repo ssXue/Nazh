@@ -330,6 +330,33 @@ pub fn into_payload_map(payload: Value) -> Map<String, Value> {
     }
 }
 
+/// 判定节点是否为 **pure-form**（UE5 Blueprint 风格的"表达式节点"）。
+///
+/// 定义：节点的 `input_pins` 与 `output_pins` 中**没有任何** [`PinKind::Exec`]
+/// 引脚——意味着它**不参与触发链**：既不会被上游 Exec 边推、也不会向下游 Exec 推。
+/// 此种节点在 `deploy_workflow` 的 spawn 阶段被跳过 Tokio task 创建，
+/// 仅在被下游 Data 输入拉取时按需 `transform`（递归求值）。
+///
+/// **与 [`NodeCapabilities::PURE`] 的关系**：正交。
+/// - `is_pure_form` 看引脚形态，由 `input_pins` / `output_pins` 自动推导
+/// - `PURE` capability 是节点作者声明的"同输入同输出 + 无副作用"承诺，启用
+///   未来 Phase 4 的输入哈希缓存。
+///
+/// 一个节点可以是 pure-form 而不打 PURE（少见，谨慎），也可以是 PURE 而非
+/// pure-form（如 `if` / `switch`——参与触发链的纯函数）。`c2f` / `minutesSince`
+/// 这种"理想 pure 计算节点"两者都满足。
+pub fn is_pure_form(node: &dyn NodeTrait) -> bool {
+    let no_exec_input = node
+        .input_pins()
+        .iter()
+        .all(|p| p.kind != crate::PinKind::Exec);
+    let no_exec_output = node
+        .output_pins()
+        .iter()
+        .all(|p| p.kind != crate::PinKind::Exec);
+    no_exec_input && no_exec_output
+}
+
 /// 为持有 `id` 字段的非脚本节点实现 [`NodeTrait`] 元数据方法。
 #[macro_export]
 macro_rules! impl_node_meta {
@@ -374,5 +401,100 @@ mod tests {
         let caps = NodeCapabilities::default();
         assert!(caps.is_empty());
         assert_eq!(caps.bits(), 0);
+    }
+
+    mod is_pure_form_tests {
+        use super::*;
+        use crate::{PinDefinition, PinDirection, PinKind, PinType};
+        use async_trait::async_trait;
+        use serde_json::Value;
+
+        struct StubNode {
+            inputs: Vec<PinDefinition>,
+            outputs: Vec<PinDefinition>,
+        }
+
+        #[async_trait]
+        impl NodeTrait for StubNode {
+            fn id(&self) -> &str {
+                "stub"
+            }
+            fn kind(&self) -> &'static str {
+                "stub"
+            }
+            fn input_pins(&self) -> Vec<PinDefinition> {
+                self.inputs.clone()
+            }
+            fn output_pins(&self) -> Vec<PinDefinition> {
+                self.outputs.clone()
+            }
+            async fn transform(
+                &self,
+                _: Uuid,
+                payload: Value,
+            ) -> Result<NodeExecution, EngineError> {
+                Ok(NodeExecution::broadcast(payload))
+            }
+        }
+
+        fn data_pin(id: &str, dir: PinDirection) -> PinDefinition {
+            PinDefinition {
+                id: id.to_owned(),
+                label: id.to_owned(),
+                pin_type: PinType::Float,
+                direction: dir,
+                required: false,
+                kind: PinKind::Data,
+                description: None,
+            }
+        }
+
+        fn exec_pin(id: &str, dir: PinDirection) -> PinDefinition {
+            PinDefinition {
+                id: id.to_owned(),
+                label: id.to_owned(),
+                pin_type: PinType::Any,
+                direction: dir,
+                required: matches!(dir, PinDirection::Input),
+                kind: PinKind::Exec,
+                description: None,
+            }
+        }
+
+        #[test]
+        fn 全_data_引脚是_pure_form() {
+            let n = StubNode {
+                inputs: vec![data_pin("in", PinDirection::Input)],
+                outputs: vec![data_pin("out", PinDirection::Output)],
+            };
+            assert!(is_pure_form(&n));
+        }
+
+        #[test]
+        fn 输入混_exec_不是_pure_form() {
+            let n = StubNode {
+                inputs: vec![exec_pin("in", PinDirection::Input)],
+                outputs: vec![data_pin("out", PinDirection::Output)],
+            };
+            assert!(!is_pure_form(&n));
+        }
+
+        #[test]
+        fn 输出混_exec_不是_pure_form() {
+            let n = StubNode {
+                inputs: vec![data_pin("in", PinDirection::Input)],
+                outputs: vec![exec_pin("out", PinDirection::Output)],
+            };
+            assert!(!is_pure_form(&n));
+        }
+
+        #[test]
+        fn 仅有输出且全_data_仍是_pure_form() {
+            let n = StubNode {
+                inputs: vec![],
+                outputs: vec![data_pin("out", PinDirection::Output)],
+            };
+            assert!(is_pure_form(&n));
+        }
     }
 }

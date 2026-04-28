@@ -37,6 +37,7 @@ pub use lifecycle::{
 };
 pub use node::{
     NodeCapabilities, NodeDispatch, NodeExecution, NodeOutput, NodeTrait, into_payload_map,
+    is_pure_form,
 };
 pub use pin::{PinDefinition, PinDirection, PinKind, PinType};
 pub use plugin::{
