@@ -32,6 +32,7 @@ scripting = { path = "crates/scripting" }
 nodes-flow = { path = "crates/nodes-flow" }
 nodes-io = { path = "crates/nodes-io", default-features = false }
 tauri-bindings = { path = "crates/tauri-bindings" }
+arc-swap = "1"
 async-trait = "0.1"
 bitflags = { version = "2", features = ["serde"] }
 chrono = { version = "0.4", features = ["clock", "serde"] }

@@ -12,6 +12,7 @@ repository.workspace = true
 workspace = true
 
 [dependencies]
+arc-swap.workspace = true
 async-trait.workspace = true
 bitflags.workspace = true
 chrono.workspace = true
