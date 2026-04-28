@@ -67,11 +67,15 @@ import { definition as httpClientDef } from './nodes/httpClient';
 import { definition as barkPushDef } from './nodes/barkPush';
 import { definition as sqlWriterDef } from './nodes/sqlWriter';
 import { definition as debugConsoleDef } from './nodes/debugConsole';
+import { definition as subgraphDef, SG_IN_POS, SG_OUT_POS } from './nodes/subgraph';
+import { definition as subgraphInputDef } from './nodes/subgraphInput';
+import { definition as subgraphOutputDef } from './nodes/subgraphOutput';
 
 const ALL_DEFS = [
   nativeDef, codeDef, timerDef, serialTriggerDef, modbusReadDef, mqttClientDef,
   ifDef, switchDef, tryCatchDef, loopDef,
   httpClientDef, barkPushDef, sqlWriterDef, debugConsoleDef,
+  subgraphDef, subgraphInputDef, subgraphOutputDef,
 ];
 
 const DEF_MAP = new Map(ALL_DEFS.map((d) => [d.kind, d]));
@@ -93,9 +97,50 @@ export function getNodeDefinition(kind: NazhNodeKind) {
   return DEF_MAP.get(kind);
 }
 
+export function getAllNodeDefinitions() {
+  return [...ALL_DEFS];
+}
+
 export function buildDefaultNodeSeed(kind: NazhNodeKind): NodeSeed {
   const def = DEF_MAP.get(kind);
   return def ? def.buildDefaultSeed() : nativeDef.buildDefaultSeed();
+}
+
+/**
+ * 子图节点拖入画布时自带 sg-in / sg-out 桥接节点，
+ * 用户连内部业务节点即可形成完整子图（ADR-0013）。
+ */
+function buildSubgraphPaletteJson(
+  seed: NodeSeed,
+  connectionDefaults: FlowgramConnectionDefaults,
+): Partial<import('@flowgram.ai/free-layout-editor').WorkflowNodeJSON> {
+  const base = buildPaletteNodeJson(seed, connectionDefaults);
+  return {
+    ...base,
+    blocks: [
+      {
+        id: 'sg-in',
+        type: 'subgraphInput',
+        meta: { position: { x: SG_IN_POS.x, y: SG_IN_POS.y } },
+        data: {
+          label: 'Input',
+          nodeType: 'subgraphInput',
+          config: {},
+        },
+      },
+      {
+        id: 'sg-out',
+        type: 'subgraphOutput',
+        meta: { position: { x: SG_OUT_POS.x, y: SG_OUT_POS.y } },
+        data: {
+          label: 'Output',
+          nodeType: 'subgraphOutput',
+          config: {},
+        },
+      },
+    ],
+    edges: [],
+  };
 }
 
 export function createFlowgramNodeRegistries(
@@ -104,7 +149,12 @@ export function createFlowgramNodeRegistries(
   return ALL_DEFS.map((def) => ({
     type: def.kind,
     meta: def.buildRegistryMeta(),
-    onAdd: () => buildPaletteNodeJson(def.buildDefaultSeed(), connectionDefaults),
+    onAdd: () => {
+      if (def.kind === 'subgraph') {
+        return buildSubgraphPaletteJson(def.buildDefaultSeed(), connectionDefaults);
+      }
+      return buildPaletteNodeJson(def.buildDefaultSeed(), connectionDefaults);
+    },
   }));
 }
 
@@ -143,6 +193,13 @@ export function getFlowgramPaletteSections(): FlowgramPaletteSection[] {
         { key: 'blank-switch', title: 'Switch 分流', description: switchDef.catalog.description, badge: 'Switch', seed: switchDef.buildDefaultSeed() },
         { key: 'blank-try-catch', title: 'Try 捕获', description: tryCatchDef.catalog.description, badge: 'Try', seed: tryCatchDef.buildDefaultSeed() },
         { key: 'blank-loop', title: 'Loop 迭代', description: loopDef.catalog.description, badge: 'Loop', seed: loopDef.buildDefaultSeed() },
+      ],
+    },
+    {
+      key: 'subgraph',
+      title: '子图封装',
+      items: [
+        { key: 'blank-subgraph', title: 'Subgraph', description: subgraphDef.catalog.description, badge: 'Subgraph', seed: subgraphDef.buildDefaultSeed() },
       ],
     },
     {

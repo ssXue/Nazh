@@ -999,6 +999,7 @@ html[data-theme='dark'] .flowgram-floating-panel--node {
 
 .flowgram-card {
   width: 214px;
+  box-sizing: border-box;
   border-radius: 16px;
   border: 1px solid var(--panel-border);
   background: color-mix(in srgb, var(--flowgram-canvas-bg) 60%, var(--panel-strong));
@@ -1009,6 +1010,15 @@ html[data-theme='dark'] .flowgram-floating-panel--node {
   -webkit-user-select: none;
   transition: box-shadow 160ms ease, transform 160ms ease;
   z-index: var(--z-content);
+}
+
+/* 容器节点（subgraph）由 FlowGram 插件控制尺寸，填满 gedit-flow-activity-node */
+.flowgram-card--subgraph {
+  width: 100%;
+  height: 100%;
+  border-radius: 14px;
+  overflow: hidden;
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--panel-border));
 }
 
 .flowgram-card--if,
@@ -1022,6 +1032,57 @@ html[data-theme='dark'] .flowgram-floating-panel--node {
 
 .flowgram-card--loop {
   width: 244px;
+}
+
+/* 子图容器 header */
+.flowgram-subgraph__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 14px 6px;
+  min-height: 28px;
+}
+
+.flowgram-subgraph__header-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* 桥接节点：方形 icon 卡片 */
+.flowgram-card--bridge {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.flowgram-bridge-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+}
+
+.flowgram-card--subgraphInput .flowgram-bridge-icon,
+.flowgram-card--subgraphOutput .flowgram-bridge-icon {
+  color: color-mix(in srgb, var(--accent) 60%, var(--muted));
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .flowgram-card.is-activated {

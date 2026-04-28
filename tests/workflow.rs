@@ -1816,3 +1816,60 @@ async fn pin_phase3_bool_源_到_sql_writer_部署被拒() {
         ),
     }
 }
+
+// ADR-0013：前端 flattenSubgraphs 之后，subgraphInput / subgraphOutput
+// 在执行 DAG 中是普通节点；契约是 payload 原样过、不引入 metadata。
+
+#[tokio::test]
+async fn passthrough_nodes_forward_payload() {
+    let graph = match WorkflowGraph::from_json(
+        &json!({
+            "nodes": {
+                "native-1": {
+                    "type": "native",
+                    "config": {
+                        "message": "test-passthrough"
+                    }
+                },
+                "sg-in": {
+                    "type": "subgraphInput",
+                    "config": {}
+                },
+                "sg-out": {
+                    "type": "subgraphOutput",
+                    "config": {}
+                }
+            },
+            "edges": [
+                { "from": "native-1", "to": "sg-in" },
+                { "from": "sg-in", "to": "sg-out" }
+            ]
+        })
+        .to_string(),
+    ) {
+        Ok(graph) => graph,
+        Err(error) => panic!("graph JSON 应可解析: {error}"),
+    };
+
+    let registry = standard_registry();
+    let mut deployment = match deploy_workflow(graph, shared_connection_manager(), &registry).await
+    {
+        Ok(deployment) => deployment,
+        Err(error) => panic!("含 subgraphInput/subgraphOutput 的 DAG 应能部署成功: {error}"),
+    };
+
+    let submit_result = deployment
+        .submit(WorkflowContext::new(json!({ "value": 42 })))
+        .await;
+    assert!(submit_result.is_ok(), "workflow 应接受 payload");
+
+    let result = timeout(Duration::from_secs(1), deployment.next_result()).await;
+    match result {
+        Ok(Some(ctx)) => {
+            assert_eq!(ctx.payload["_native_message"], json!("test-passthrough"));
+            assert_eq!(ctx.payload["value"], json!(42));
+        }
+        Ok(None) => panic!("result stream 意外关闭"),
+        Err(elapsed) => panic!("workflow 未在超时内产出结果: {elapsed}"),
+    }
+}

@@ -18,7 +18,10 @@ export type NazhNodeKind =
   | 'httpClient'
   | 'barkPush'
   | 'sqlWriter'
-  | 'debugConsole';
+  | 'debugConsole'
+  | 'subgraph'
+  | 'subgraphInput'
+  | 'subgraphOutput';
 export type NazhNodeDisplayType = NazhNodeKind;
 
 export interface FlowgramLogicBranch {
@@ -221,6 +224,10 @@ export function normalizeNodeKind(value: unknown): NazhNodeKind {
     case 'switch':
     case 'tryCatch':
     case 'loop':
+      return value;
+    case 'subgraph':
+    case 'subgraphInput':
+    case 'subgraphOutput':
       return value;
     case 'native':
     default:
@@ -557,6 +564,12 @@ export function getFallbackNodeLabel(kind: NazhNodeKind): string {
       return 'SQL Writer';
     case 'debugConsole':
       return 'Debug Console';
+    case 'subgraph':
+      return 'Subgraph';
+    case 'subgraphInput':
+      return 'Input';
+    case 'subgraphOutput':
+      return 'Output';
     case 'native':
     default:
       return 'Native Node';
@@ -593,9 +606,15 @@ export interface NodeDefinition {
   getNodeSize(): { width: number; height: number };
   buildRegistryMeta(): {
     defaultExpanded: boolean;
+    isContainer?: boolean;
     size: { width: number; height: number };
     defaultPorts?: Array<{ type: 'input' | 'output' }>;
     useDynamicPort?: boolean;
+    deleteDisable?: boolean;
+    copyDisable?: boolean;
+    padding?: (transform: unknown) => { top: number; bottom: number; left: number; right: number };
+    selectable?: (node: unknown, mousePos?: unknown) => boolean;
+    wrapperStyle?: Record<string, string>;
   };
   validate(ctx: NodeValidationContext): NodeValidation[];
 }
@@ -781,6 +800,21 @@ export function normalizeNodeConfig(
       ...rawConfig,
       label: typeof rawConfig.label === 'string' ? rawConfig.label : '',
       pretty: rawConfig.pretty !== false,
+    };
+  }
+
+  if (nodeType === 'subgraph') {
+    return {
+      ...rawConfig,
+      parameterBindings: isRecord(rawConfig.parameterBindings)
+        ? rawConfig.parameterBindings
+        : {},
+    };
+  }
+
+  if (nodeType === 'subgraphInput' || nodeType === 'subgraphOutput') {
+    return {
+      ...rawConfig,
     };
   }
 

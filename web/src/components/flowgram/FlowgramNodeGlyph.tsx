@@ -33,7 +33,10 @@ export function normalizeFlowgramDisplayType(value: unknown): NazhNodeDisplayTyp
     value === 'httpClient' ||
     value === 'barkPush' ||
     value === 'sqlWriter' ||
-    value === 'debugConsole'
+    value === 'debugConsole' ||
+    value === 'subgraph' ||
+    value === 'subgraphInput' ||
+    value === 'subgraphOutput'
   ) {
     return value;
   }
@@ -71,6 +74,12 @@ export function getFlowgramDisplayLabel(displayType: NazhNodeDisplayType): strin
       return 'Code';
     case 'native':
       return 'Native';
+    case 'subgraph':
+      return 'SUB';
+    case 'subgraphInput':
+      return 'IN';
+    case 'subgraphOutput':
+      return 'OUT';
   }
 }
 
@@ -104,6 +113,10 @@ export function FlowgramNodeGlyph({
     case 'code':
       return <ScriptNodeIcon {...props} />;
     case 'native':
+      return <NativeNodeIcon {...props} />;
+    case 'subgraph':
+    case 'subgraphInput':
+    case 'subgraphOutput':
       return <NativeNodeIcon {...props} />;
   }
 }

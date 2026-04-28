@@ -29,6 +29,7 @@ import {
   useState,
 } from 'react';
 import { MinimapRender } from '@flowgram.ai/minimap-plugin';
+import { SubCanvasRender } from '@flowgram.ai/free-container-plugin';
 
 import {
   AutoLayoutIcon,
@@ -523,7 +524,10 @@ function isBusinessFlowNode(node: FlowNodeEntity | null): node is FlowNodeEntity
     nodeType === 'httpClient' ||
     nodeType === 'barkPush' ||
     nodeType === 'sqlWriter' ||
-    nodeType === 'debugConsole'
+    nodeType === 'debugConsole' ||
+    nodeType === 'subgraph' ||
+    nodeType === 'subgraphInput' ||
+    nodeType === 'subgraphOutput'
   );
 }
 
@@ -586,6 +590,11 @@ function resolveNodePortColor(
     case 'sqlWriter':
       return 'color-mix(in srgb, var(--success) 68%, var(--accent) 32%)';
     case 'debugConsole':
+      return 'var(--muted)';
+    case 'subgraph':
+      return 'var(--accent)';
+    case 'subgraphInput':
+    case 'subgraphOutput':
       return 'var(--muted)';
     case 'code':
       return nodeCodeColor;
@@ -694,7 +703,81 @@ function FlowgramNodeCard(props: FlowgramNodeMaterialProps) {
           ? `${rawData?.config?.table ?? 'workflow_logs'} → ${rawData?.config?.database_path ?? './nazh-local.sqlite3'}`
         : nodeType === 'debugConsole'
           ? rawData?.config?.label ?? 'Console output'
+        : nodeType === 'subgraphInput'
+          ? '输入桥接'
+        : nodeType === 'subgraphOutput'
+          ? '输出桥接'
         : rawData?.config?.script ?? 'Guarded script';
+
+  // 子图容器节点（ADR-0013）：标题栏 + SubCanvasRender 内嵌画布区域
+  if (nodeType === 'subgraph') {
+    return (
+      <WorkflowNodeRenderer
+        node={props.node}
+        className={`flowgram-card flowgram-card--subgraph flowgram-card--${runtimeStatus} ${props.activated ? 'is-activated' : ''}`}
+        portClassName="flowgram-card__port"
+        portBackgroundColor="var(--panel-strong)"
+        portPrimaryColor="var(--accent)"
+        portSecondaryColor="var(--surface-elevated)"
+        portErrorColor="var(--danger)"
+      >
+        <div className="flowgram-subgraph__header">
+          <div className="flowgram-subgraph__header-left">
+            <span className={`flowgram-card__icon flowgram-card__icon--${displayType}`}>
+              <FlowgramNodeGlyph displayType={displayType} width={14} height={14} />
+            </span>
+            <strong>{rawData?.label ?? props.node.id}</strong>
+          </div>
+          {runtimeStatus !== 'idle' ? (
+            <span className={`flowgram-card__runtime flowgram-card__runtime--${runtimeStatus}`}>
+              {runtimeStatus}
+            </span>
+          ) : null}
+        </div>
+        <SubCanvasRender offsetY={-48} />
+      </WorkflowNodeRenderer>
+    );
+  }
+
+  // 桥接节点（ADR-0013）：方形 icon 卡片 — 竖线 + 圆点
+  if (nodeType === 'subgraphInput' || nodeType === 'subgraphOutput') {
+    const isInput = nodeType === 'subgraphInput';
+    return (
+      <WorkflowNodeRenderer
+        node={props.node}
+        className={`flowgram-card flowgram-card--bridge flowgram-card--${nodeType} flowgram-card--${runtimeStatus}`}
+        portClassName="flowgram-card__port"
+        portBackgroundColor="var(--panel-strong)"
+        portPrimaryColor="var(--accent)"
+        portSecondaryColor="var(--surface-elevated)"
+        portErrorColor="var(--danger)"
+      >
+        <div data-flow-editor-selectable="false" className="flowgram-bridge-icon" draggable={false}>
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 20 20"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            aria-hidden="true"
+          >
+            {isInput ? (
+              <>
+                <line x1="14" y1="4" x2="14" y2="16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                <circle cx="6" cy="10" r="3" fill="currentColor" />
+              </>
+            ) : (
+              <>
+                <line x1="6" y1="4" x2="6" y2="16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                <circle cx="14" cy="10" r="3" fill="currentColor" />
+              </>
+            )}
+          </svg>
+        </div>
+        <span className="sr-only">{preview}</span>
+      </WorkflowNodeRenderer>
+    );
+  }
 
   return (
     <WorkflowNodeRenderer

@@ -10,7 +10,15 @@ mod tests {
         let registry = standard_registry();
         let types = registry.registered_types();
 
-        for expected in ["if", "switch", "tryCatch", "loop", "code"] {
+        for expected in [
+            "if",
+            "switch",
+            "tryCatch",
+            "loop",
+            "code",
+            "subgraphInput",
+            "subgraphOutput",
+        ] {
             assert!(
                 types.contains(&expected),
                 "FlowPlugin 缺少节点类型: {expected}"
@@ -42,12 +50,12 @@ mod tests {
     }
 
     #[test]
-    fn 两个插件合并后覆盖全部_14_种节点类型() {
+    fn 两个插件合并后覆盖全部_16_种节点类型() {
         let registry = standard_registry();
         assert_eq!(
             registry.registered_types().len(),
-            14,
-            "应注册 14 种节点类型"
+            16,
+            "应注册 16 种节点类型"
         );
     }
 
@@ -75,6 +83,10 @@ mod tests {
             "loop",
             NodeCapabilities::BRANCHING | NodeCapabilities::MULTI_OUTPUT,
         );
+
+        // 子图桥接（ADR-0013）
+        expect("subgraphInput", NodeCapabilities::empty());
+        expect("subgraphOutput", NodeCapabilities::empty());
 
         // I/O
         expect("native", NodeCapabilities::empty());

@@ -8,12 +8,14 @@ use nazh_core::{NodeCapabilities, NodeRegistry, Plugin, PluginManifest, Workflow
 mod code_node;
 mod if_node;
 mod loop_node;
+mod passthrough;
 mod switch_node;
 mod try_catch;
 
 pub use code_node::{CodeNode, CodeNodeAiConfig, CodeNodeConfig};
 pub use if_node::{IfNode, IfNodeConfig};
 pub use loop_node::{LoopNode, LoopNodeConfig};
+pub use passthrough::PassthroughNode;
 pub use switch_node::{SwitchBranchConfig, SwitchNode, SwitchNodeConfig};
 pub use try_catch::{TryCatchNode, TryCatchNodeConfig};
 
@@ -88,6 +90,26 @@ impl Plugin for FlowPlugin {
                     def.id().to_owned(),
                     config,
                     variables,
+                )?))
+            },
+        );
+
+        // ADR-0013 子图桥接：前端 flattenSubgraphs 后参与执行 DAG。
+        registry.register_with_capabilities(
+            "subgraphInput",
+            NodeCapabilities::empty(),
+            |def, _res| {
+                Ok(Arc::new(passthrough::PassthroughNode::from_definition(
+                    def,
+                )?))
+            },
+        );
+        registry.register_with_capabilities(
+            "subgraphOutput",
+            NodeCapabilities::empty(),
+            |def, _res| {
+                Ok(Arc::new(passthrough::PassthroughNode::from_definition(
+                    def,
                 )?))
             },
         );

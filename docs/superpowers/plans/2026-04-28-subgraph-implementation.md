@@ -1,6 +1,6 @@
 # ADR-0013 子图节点实施 Plan
 
-> **Status:** 子图核心已在当前工作树实施并验证（2026-04-28）；提交 SHA 待合并后回填。
+> **Status:** 子图核心 2026-04-28 实施；origin commits 3c04016..7b5ae43 → merge 68ab709 解决冲突时丢失部分文件 → 同日重写恢复（详见 AGENTS.md ADR-0013 entry）。三件套全绿。loop 升级为容器（origin commit `e35cb43`）未带回，后续 polish。
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
