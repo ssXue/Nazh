@@ -49,6 +49,46 @@ impl fmt::Display for PinDirection {
     }
 }
 
+/// 引脚的求值语义。与 [`PinType`]（数据形状）正交。
+///
+/// 设计动机与决策见 ADR-0014（重构后的"引脚二分"方案）。
+///
+/// - [`Exec`](Self::Exec)：上游完成 transform → MPSC push → 下游 transform。
+///   这是 Nazh 1.0 的默认语义；所有现有节点不显式声明时走这条路径。
+/// - [`Data`](Self::Data)：上游完成 transform → 写入输出缓存槽（不 push）；
+///   下游被自己的 `Exec` 边触发时在 transform 前从缓存槽拉取（Phase 2 起）。
+///
+/// **设计前提**：引脚对引脚必须 `PinKind` 一致——`Exec` 只能连 `Exec`、`Data` 只能连 `Data`。
+/// 部署期 [`pin_validator`](crate::PinDefinition) 拒绝跨 Kind 连接。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "lowercase")]
+pub enum PinKind {
+    /// 推语义。**默认值**——所有现有引脚不声明时为 Exec，向后兼容。
+    #[default]
+    Exec,
+    /// 拉语义。上游写缓存、下游被自己的 Exec 边触发时读缓存。
+    Data,
+}
+
+impl fmt::Display for PinKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Exec => "exec",
+            Self::Data => "data",
+        })
+    }
+}
+
+impl PinKind {
+    /// 判断"上游引脚 self → 下游引脚 other"在求值语义维度上是否兼容。
+    /// 规则：必须严格相等——Exec ↔ Exec、Data ↔ Data。
+    #[must_use]
+    pub fn is_compatible_with(self, other: Self) -> bool {
+        self == other
+    }
+}
+
 impl fmt::Display for PinType {
     /// 类型名标签，匹配 `#[serde(tag = "kind", rename_all = "lowercase")]` 序列化形态。
     /// 供 `EngineError::Variable*Mismatch` 等错误消息与日志复用。
@@ -231,6 +271,35 @@ impl PinDefinition {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    // ---- PinKind ----
+
+    #[test]
+    fn pin_kind_默认值是_exec() {
+        assert_eq!(PinKind::default(), PinKind::Exec);
+    }
+
+    #[test]
+    fn pin_kind_序列化为小写字符串() {
+        assert_eq!(serde_json::to_string(&PinKind::Exec).unwrap(), "\"exec\"");
+        assert_eq!(serde_json::to_string(&PinKind::Data).unwrap(), "\"data\"");
+    }
+
+    #[test]
+    fn pin_kind_反序列化从小写字符串() {
+        let exec: PinKind = serde_json::from_str("\"exec\"").unwrap();
+        let data: PinKind = serde_json::from_str("\"data\"").unwrap();
+        assert_eq!(exec, PinKind::Exec);
+        assert_eq!(data, PinKind::Data);
+    }
+
+    #[test]
+    fn pin_kind_兼容性必须严格相等() {
+        assert!(PinKind::Exec.is_compatible_with(PinKind::Exec));
+        assert!(PinKind::Data.is_compatible_with(PinKind::Data));
+        assert!(!PinKind::Exec.is_compatible_with(PinKind::Data));
+        assert!(!PinKind::Data.is_compatible_with(PinKind::Exec));
+    }
 
     // ---- 兼容矩阵 ----
 
