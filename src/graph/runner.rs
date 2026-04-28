@@ -9,7 +9,7 @@
 //! [`NodeOutput::metadata`](nazh_core::NodeOutput::metadata) 不进入 payload，
 //! 而是通过 [`ExecutionEvent::Completed`] 事件独立传递给前端。
 
-use std::{collections::HashSet, sync::Arc, time::Duration};
+use std::{collections::HashMap, collections::HashSet, sync::Arc, time::Duration};
 
 use tokio::sync::mpsc;
 use tracing::Instrument;
@@ -20,6 +20,7 @@ use nazh_core::{
     guard::guarded_execute,
 };
 
+use super::pull::EdgesByConsumer;
 use super::types::DownstreamTarget;
 
 /// 单节点的异步执行循环：接收 [`ContextRef`] → 读取数据 → 执行 → 写入输出 → 分发。
@@ -34,6 +35,10 @@ pub(crate) async fn run_node(
     store: Arc<dyn DataStore>,
     output_cache: Arc<OutputCache>,
     data_output_pin_ids: HashSet<String>,
+    // ADR-0014 Phase 3：拉路径所需
+    _edges_by_consumer: Arc<EdgesByConsumer>,
+    _nodes_index: Arc<HashMap<String, Arc<dyn NodeTrait>>>,
+    _output_caches_index: Arc<HashMap<String, Arc<OutputCache>>>,
 ) {
     let node_id = node.id().to_owned();
 

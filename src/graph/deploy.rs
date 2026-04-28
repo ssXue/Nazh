@@ -168,6 +168,11 @@ pub async fn deploy_workflow_with_ai(
     let classified = classify_edges(&graph.edges, &nodes_by_id)?;
     detect_data_edge_cycle(&classified.data_edges)?;
 
+    // ADR-0014 Phase 3：构造 Data 入边反向索引（每个 consumer → 其 Data 入边列表）
+    let edges_by_consumer = Arc::new(super::pull::build_edges_by_consumer(
+        &classified.data_edges,
+    ));
+
     // 单次遍历给每节点同时构造 OutputCache（slots 预分配）与 data_output_pin_ids 集合
     let mut output_caches: HashMap<String, Arc<OutputCache>> =
         HashMap::with_capacity(nodes_by_id.len());
@@ -231,12 +236,34 @@ pub async fn deploy_workflow_with_ai(
     //
     // 不再调用 registry.create——节点实例已在阶段 1 创建并持有 lifecycle guard。
     // 阶段 2 失败仍需要保留已收集的 guards 让 RAII 清理 on_deploy 拉起的任务。
+    //
+    // ADR-0014 Phase 3：run_node 需要在拉路径中递归求值 pure-form 上游节点，
+    // 需要持有所有节点的 Arc 句柄。nodes_index 在 spawn loop 中 clone Arc 而非
+    // remove——pull collector 需要保留索引。
+    let nodes_index: Arc<HashMap<String, Arc<dyn NodeTrait>>> = Arc::new(
+        nodes_by_id
+            .iter()
+            .map(|(k, v)| (k.clone(), Arc::clone(v)))
+            .collect(),
+    );
+    let output_caches_index = Arc::new(output_caches.clone());
+
     for node_id in &topology.deployment_order {
-        let Some(node) = nodes_by_id.remove(node_id) else {
+        let Some(node) = nodes_index.get(node_id).cloned() else {
             return Err(EngineError::invalid_graph(format!(
                 "节点 `{node_id}` 在阶段 2 缺失"
             )));
         };
+
+        // ADR-0014 Phase 3：pure-form 节点不参与触发链——不创建 input channel、
+        // 不 spawn run_node task。它们仅在被下游 Data 输入拉取时即时求值。
+        if nazh_core::is_pure_form(node.as_ref()) {
+            // 释放预创建的 channel——pure 节点不会从 senders/receivers 收消息
+            senders.remove(node_id);
+            receivers.remove(node_id);
+            continue;
+        }
+
         let node_definition = graph
             .nodes
             .get(node_id)
@@ -281,6 +308,10 @@ pub async fn deploy_workflow_with_ai(
             Arc::clone(&store),
             output_cache,
             data_output_pin_ids,
+            // ADR-0014 Phase 3 拉路径参数
+            Arc::clone(&edges_by_consumer),
+            Arc::clone(&nodes_index),
+            Arc::clone(&output_caches_index),
         ));
     }
 
