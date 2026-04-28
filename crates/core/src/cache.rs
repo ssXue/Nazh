@@ -60,6 +60,21 @@ impl OutputCache {
         }
     }
 
+    /// 便利方法：用当前时间戳构造 [`CachedOutput`] 并写入指定 pin。
+    ///
+    /// 把 `chrono::Utc::now()` 调用封装在 Ring 0，让 Ring 1 调用方（Runner）
+    /// 不需要直接依赖 `chrono`，也减少时钟来源的散布点。
+    pub fn write_now(&self, pin_id: &str, value: Value, trace_id: Uuid) {
+        self.write(
+            pin_id,
+            CachedOutput {
+                value,
+                produced_at: Utc::now(),
+                trace_id,
+            },
+        );
+    }
+
     /// 读取指定 pin 的最新缓存值。pin 未预分配或槽空时返回 `None`。
     pub fn read(&self, pin_id: &str) -> Option<CachedOutput> {
         let slot = self.slots.get(pin_id)?;

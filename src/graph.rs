@@ -20,6 +20,13 @@ mod topology;
 pub(crate) mod types;
 mod variables_init;
 
+/// 默认输入引脚 id——节点单输入约定（[`PinDefinition::default_input`](nazh_core::PinDefinition::default_input)）。
+/// `WorkflowEdge.target_port_id == None` 时回落到此值。
+pub(crate) const DEFAULT_INPUT_PIN_ID: &str = "in";
+/// 默认输出引脚 id——节点单输出约定（[`PinDefinition::default_output`](nazh_core::PinDefinition::default_output)）。
+/// `WorkflowEdge.source_port_id == None` 时回落到此值。
+pub(crate) const DEFAULT_OUTPUT_PIN_ID: &str = "out";
+
 pub use deploy::{deploy_workflow, deploy_workflow_with_ai};
 pub use types::{
     WorkflowDeployment, WorkflowDeploymentParts, WorkflowEdge, WorkflowGraph, WorkflowIngress,

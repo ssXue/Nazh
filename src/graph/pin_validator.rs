@@ -18,9 +18,7 @@ use std::sync::Arc;
 use nazh_core::{EngineError, NodeTrait, PinDefinition, PinDirection};
 
 use super::types::WorkflowEdge;
-
-const DEFAULT_INPUT_PIN_ID: &str = "in";
-const DEFAULT_OUTPUT_PIN_ID: &str = "out";
+use super::{DEFAULT_INPUT_PIN_ID, DEFAULT_OUTPUT_PIN_ID};
 
 /// 节点 pin 索引：每个节点拆成 input / output 两张 id → `PinDefinition` 的 map。
 struct NodePinIndex {
@@ -116,8 +114,8 @@ pub(crate) fn validate_pin_compatibility(
             return Err(EngineError::IncompatiblePinKinds {
                 from: format!("{}.{}", edge.from, from_pin.id),
                 to: format!("{}.{}", edge.to, to_pin.id),
-                from_kind: from_pin.kind.to_string(),
-                to_kind: to_pin.kind.to_string(),
+                from_kind: from_pin.kind,
+                to_kind: to_pin.kind,
             });
         }
     }
@@ -476,8 +474,8 @@ mod tests {
             } => {
                 assert_eq!(from, "a.out");
                 assert_eq!(to, "b.in");
-                assert_eq!(from_kind, "data");
-                assert_eq!(to_kind, "exec");
+                assert_eq!(from_kind, PinKind::Data);
+                assert_eq!(to_kind, PinKind::Exec);
             }
             other => panic!("应报 IncompatiblePinKinds，实际：{other:?}"),
         }

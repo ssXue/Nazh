@@ -39,8 +39,7 @@ use super::pin_validator;
 use super::runner::run_node;
 use super::topology::{classify_edges, detect_data_edge_cycle};
 use super::types::{
-    DataDownstreamTarget, DownstreamTarget, WorkflowDeployment, WorkflowGraph, WorkflowIngress,
-    WorkflowStreams,
+    DownstreamTarget, WorkflowDeployment, WorkflowGraph, WorkflowIngress, WorkflowStreams,
 };
 use super::variables_init::build_workflow_variables;
 use crate::SharedConnectionManager;
@@ -169,57 +168,23 @@ pub async fn deploy_workflow_with_ai(
     let classified = classify_edges(&graph.edges, &nodes_by_id)?;
     detect_data_edge_cycle(&classified.data_edges)?;
 
-    // 给每个节点准备 OutputCache：仅声明 Data 输出 pin 的节点会有非空 slots
-    let output_caches: HashMap<String, Arc<OutputCache>> = nodes_by_id
-        .iter()
-        .map(|(id, node)| {
-            let cache = OutputCache::new();
-            for pin in node.output_pins() {
-                if pin.kind == PinKind::Data {
-                    cache.prepare_slot(&pin.id);
-                }
+    // 单次遍历给每节点同时构造 OutputCache（slots 预分配）与 data_output_pin_ids 集合
+    let mut output_caches: HashMap<String, Arc<OutputCache>> =
+        HashMap::with_capacity(nodes_by_id.len());
+    let mut data_output_pin_ids_by_node: HashMap<String, HashSet<String>> =
+        HashMap::with_capacity(nodes_by_id.len());
+    for (id, node) in &nodes_by_id {
+        let cache = OutputCache::new();
+        let mut pin_ids = HashSet::new();
+        for pin in node.output_pins() {
+            if pin.kind == PinKind::Data {
+                cache.prepare_slot(&pin.id);
+                pin_ids.insert(pin.id);
             }
-            (id.clone(), Arc::new(cache))
-        })
-        .collect();
-
-    // Data 边按 from 节点分组：from_node_id → Vec<DataDownstreamTarget>
-    // Phase 1 暂未消费（Phase 2 起 Runner 用此计算下游 transform 时需读取的上游 cache）
-    let mut data_targets_by_source: HashMap<String, Vec<DataDownstreamTarget>> = HashMap::new();
-    for edge in &classified.data_edges {
-        let source_pin_id = edge
-            .source_port_id
-            .clone()
-            .unwrap_or_else(|| "out".to_owned());
-        let target_pin_id = edge
-            .target_port_id
-            .clone()
-            .unwrap_or_else(|| "in".to_owned());
-        data_targets_by_source
-            .entry(edge.from.clone())
-            .or_default()
-            .push(DataDownstreamTarget {
-                target_node_id: edge.to.clone(),
-                target_pin_id,
-                source_pin_id,
-            });
+        }
+        output_caches.insert(id.clone(), Arc::new(cache));
+        data_output_pin_ids_by_node.insert(id.clone(), pin_ids);
     }
-    // 借 _ binding 显式 silence "unused" warning（Phase 2 起会被消费）
-    let _ = data_targets_by_source;
-
-    // 计算每个节点的 Data 输出 pin id 集合（Runner 用来决定哪些 output 写 cache）
-    let data_output_pin_ids_by_node: HashMap<String, HashSet<String>> = nodes_by_id
-        .iter()
-        .map(|(id, node)| {
-            let pins: HashSet<String> = node
-                .output_pins()
-                .into_iter()
-                .filter(|p| p.kind == PinKind::Data)
-                .map(|p| p.id)
-                .collect();
-            (id.clone(), pins)
-        })
-        .collect();
 
     // ---- 阶段 1：on_deploy ----
     //

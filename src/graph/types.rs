@@ -142,16 +142,6 @@ pub(crate) struct DownstreamTarget {
     pub(crate) sender: mpsc::Sender<ContextRef>,
 }
 
-/// Data 边的下游目标（ADR-0014 Phase 1）：仅记录目标节点 id 与目标 pin id。
-/// Phase 1 不实际使用——Phase 2 起下游 transform 前据此读取上游 [`OutputCache`] 槽位。
-#[allow(dead_code, clippy::struct_field_names)]
-#[derive(Clone, Debug)]
-pub(crate) struct DataDownstreamTarget {
-    pub(crate) target_node_id: String,
-    pub(crate) target_pin_id: String,
-    pub(crate) source_pin_id: String,
-}
-
 impl WorkflowIngress {
     /// 将 [`WorkflowContext`] 写入 [`DataStore`] 并向所有根节点发送 [`ContextRef`]。
     ///

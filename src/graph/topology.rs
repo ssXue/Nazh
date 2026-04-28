@@ -200,7 +200,7 @@ pub(crate) struct ClassifiedEdges<'a> {
     pub data_edges: Vec<&'a super::types::WorkflowEdge>,
 }
 
-const DEFAULT_OUTPUT_PIN_ID: &str = "out";
+use super::DEFAULT_OUTPUT_PIN_ID;
 
 /// 按上游节点 source pin 的 [`PinKind`] 把边分类为 exec / data。
 ///

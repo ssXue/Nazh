@@ -4,17 +4,10 @@
 //! 从 [`DataStore`] 读取数据，调用节点的 [`transform`](nazh_core::NodeTrait::transform)
 //! 方法，将输出写回 `DataStore`，并将新的 [`ContextRef`] 分发到下游或结果流。
 //!
-//! ## 元数据通道
-//!
-//! 节点返回的 [`nazh_core::NodeOutput::metadata`] 不进入 payload，而是通过
-//! [`ExecutionEvent::Completed`] 事件独立传递给前端，实现业务数据与执行元数据的完全分离。
-//!
-//! ## ADR-0014 Phase 1：双路径输出
-//!
-//! transform 完成后，对每条 [`NodeOutput`]，按 [`NodeDispatch`] 解析的目标 port id
-//! 与 `data_output_pin_ids` 求交集——交集中的 pin 走 Data 路径（写 [`OutputCache`]
-//! 槽位，不 push）；其余 pin 走 Exec 路径（推 MPSC）。Phase 1 不读 cache（下游消费
-//! 在 Phase 2 接入）。
+//! 输出走双路径（ADR-0014）：dispatch 解析后的目标 port id 若属于节点的 Data 输出
+//! 引脚集合，写 [`OutputCache`] 槽位；其余走 Exec MPSC 推送。节点返回的
+//! [`NodeOutput::metadata`](nazh_core::NodeOutput::metadata) 不进入 payload，
+//! 而是通过 [`ExecutionEvent::Completed`] 事件独立传递给前端。
 
 use std::{collections::HashSet, sync::Arc, time::Duration};
 
@@ -22,8 +15,7 @@ use tokio::sync::mpsc;
 use tracing::Instrument;
 
 use nazh_core::{
-    CachedOutput, ContextRef, DataStore, EngineError, ExecutionEvent, NodeDispatch, NodeTrait,
-    OutputCache,
+    ContextRef, DataStore, EngineError, ExecutionEvent, NodeDispatch, NodeTrait, OutputCache,
     event::{emit_event, emit_failure},
     guard::guarded_execute,
 };
@@ -31,10 +23,6 @@ use nazh_core::{
 use super::types::DownstreamTarget;
 
 /// 单节点的异步执行循环：接收 [`ContextRef`] → 读取数据 → 执行 → 写入输出 → 分发。
-///
-/// ADR-0014 Phase 1：transform 完成后，按 dispatch 解析的目标 port id 与
-/// `data_output_pin_ids` 求交集——交集走 Data 路径（写 [`OutputCache`] 槽位），
-/// 其余走 Exec 路径（推 MPSC）。Phase 1 仅写不读，下游消费 Phase 2 接入。
 #[allow(clippy::too_many_lines, clippy::too_many_arguments)]
 pub(crate) async fn run_node(
     node: Arc<dyn NodeTrait>,
@@ -91,7 +79,8 @@ pub(crate) async fn run_node(
                 let mut merged_metadata = serde_json::Map::new();
 
                 for node_output in output.outputs {
-                    // ADR-0014 Phase 1：先写 Data 缓存槽（不 push）
+                    // 先写 Data 缓存槽（不 push）。当前生产 14 类节点
+                    // data_output_pin_ids 永远空——is_empty 短路保证零额外工作。
                     if !data_output_pin_ids.is_empty() {
                         let data_pins_to_write: Vec<&String> = match &node_output.dispatch {
                             NodeDispatch::Broadcast => data_output_pin_ids.iter().collect(),
@@ -101,14 +90,7 @@ pub(crate) async fn run_node(
                                 .collect(),
                         };
                         for pin_id in data_pins_to_write {
-                            output_cache.write(
-                                pin_id,
-                                CachedOutput {
-                                    value: node_output.payload.clone(),
-                                    produced_at: chrono::Utc::now(),
-                                    trace_id,
-                                },
-                            );
+                            output_cache.write_now(pin_id, node_output.payload.clone(), trace_id);
                         }
                     }
 
