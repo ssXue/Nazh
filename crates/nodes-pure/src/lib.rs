@@ -11,7 +11,9 @@
 use nazh_core::{NodeCapabilities, NodeRegistry, Plugin, PluginManifest};
 
 mod c2f;
+mod minutes_since;
 pub use c2f::C2fNode;
+pub use minutes_since::MinutesSinceNode;
 
 pub struct PurePlugin;
 
@@ -27,5 +29,14 @@ impl Plugin for PurePlugin {
         registry.register_with_capabilities("c2f", NodeCapabilities::PURE, |def, _res| {
             Ok(std::sync::Arc::new(C2fNode::new(def.id().to_owned())))
         });
+        registry.register_with_capabilities(
+            "minutesSince",
+            NodeCapabilities::PURE,
+            |def, _res| {
+                Ok(std::sync::Arc::new(MinutesSinceNode::new(
+                    def.id().to_owned(),
+                )))
+            },
+        );
     }
 }
