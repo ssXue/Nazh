@@ -212,6 +212,7 @@ function App() {
     flowgramCanvasRef,
     openBoard,
     projectLibrary,
+    setSidebarCollapsed,
   });
 
   const aiWorkflowComposer = useAiWorkflowComposerState({

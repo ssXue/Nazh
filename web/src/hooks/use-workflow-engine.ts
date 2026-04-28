@@ -164,6 +164,7 @@ export function useWorkflowEngine(
     setStatusMessage(
       nextMessage ?? `已部署 ${payload.nodeCount} 个节点，根节点: ${payload.rootNodes.join(', ')}`,
     );
+    setIsRuntimeDockCollapsed(false);
   }
 
   async function refreshConnections() {

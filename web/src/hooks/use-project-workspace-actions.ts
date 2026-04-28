@@ -28,6 +28,7 @@ interface UseProjectWorkspaceActionsOptions {
   flowgramCanvasRef: RefObject<BoardWorkspaceHandle>;
   openBoard: (boardId: string) => void;
   projectLibrary: UseProjectLibraryResult;
+  setSidebarCollapsed: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 export function useProjectWorkspaceActions({
@@ -38,6 +39,7 @@ export function useProjectWorkspaceActions({
   flowgramCanvasRef,
   openBoard,
   projectLibrary,
+  setSidebarCollapsed,
 }: UseProjectWorkspaceActionsOptions) {
   function updateProjectDraft(
     projectId: string,
@@ -117,6 +119,7 @@ export function useProjectWorkspaceActions({
 
   function handleOpenBoard(board: BoardItem) {
     openBoard(board.id);
+    setSidebarCollapsed(true);
 
     if (getDeployProjectId(engine.deployInfo) === board.id) {
       engine.setStatusMessage(`已进入工程 ${board.name}，已保留当前运行态。`);
@@ -128,12 +131,14 @@ export function useProjectWorkspaceActions({
 
   function handleBackToBoards() {
     clearActiveBoard();
+    setSidebarCollapsed(false);
     engine.resetWorkspaceRuntime('已返回所有看板。');
   }
 
   function handleCreateBoard() {
     const nextProject = projectLibrary.createProject();
     openBoard(nextProject.id);
+    setSidebarCollapsed(true);
     engine.resetWorkspaceRuntime(`已创建工程 ${nextProject.name}。`);
     engine.appendRuntimeLog('project', 'success', '已创建工程', nextProject.name);
   }
