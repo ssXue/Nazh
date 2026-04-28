@@ -118,14 +118,17 @@ mod tests {
     }
 
     #[test]
-    fn pure_plugin_节点带_pure_capability() {
+    fn pure_plugin_节点能力标签符合_adr_0011_契约() {
         let registry = standard_registry();
-        for kind in ["c2f", "minutesSince"] {
-            let caps = registry.capabilities_of(kind).expect("注册");
-            assert!(
-                caps.contains(NodeCapabilities::PURE),
-                "节点 `{kind}` 应带 PURE capability"
-            );
-        }
+        assert_eq!(
+            registry.capabilities_of("c2f"),
+            Some(NodeCapabilities::PURE),
+            "c2f 同输入必得同输出，应声明 PURE"
+        );
+        assert_eq!(
+            registry.capabilities_of("minutesSince"),
+            Some(NodeCapabilities::empty()),
+            "minutesSince 读取系统时钟，不能声明 PURE"
+        );
     }
 }

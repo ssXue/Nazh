@@ -11,12 +11,13 @@ Data 输入拉取时即时求值（不进 Tokio task spawn 列表）。
 | 节点 kind | 输入 | 输出 | capability |
 |-----------|------|------|------------|
 | `c2f` | `value: Float` (Data) | `out: Float` (Data) | `PURE` |
-| `minutesSince` | `since: String` (Data, RFC3339) | `out: Integer` (Data) | `PURE` |
+| `minutesSince` | `since: String` (Data, RFC3339) | `out: Integer` (Data) | 空（读取系统时钟，非确定性） |
 
 ## 内部约定
 
-- 节点必须真·无副作用：不读时钟（`minutesSince` 是例外，明确依赖 `Utc::now()`，
-  这是它的语义本身）、不发起 IO、不读 `WorkflowVariables`、不调 `AiService`
+- 节点必须无外部 IO：不发起网络/文件/设备访问、不读 `WorkflowVariables`、不调
+  `AiService`。若节点读取系统时钟（如 `minutesSince`），可以是 pure-form，
+  但**不能**声明 `NodeCapabilities::PURE`。
 - 节点必须线程安全（`Send + Sync`）——递归 pull 求值在不同 task 上下文里
 - 错误返回 `EngineError::PayloadConversion { node_id, message }`，
   携带节点 ID 与具体描述（类型不匹配 / 解析失败 / 数学溢出等）

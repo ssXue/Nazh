@@ -39,6 +39,7 @@ pub(crate) async fn run_node(
     edges_by_consumer: Arc<EdgesByConsumer>,
     nodes_index: Arc<HashMap<String, Arc<dyn NodeTrait>>>,
     output_caches_index: Arc<HashMap<String, Arc<OutputCache>>>,
+    node_timeouts_index: Arc<HashMap<String, Option<Duration>>>,
 ) {
     let node_id = node.id().to_owned();
 
@@ -73,6 +74,7 @@ pub(crate) async fn run_node(
             &edges_by_consumer,
             &nodes_index,
             &output_caches_index,
+            &node_timeouts_index,
             trace_id,
         )
         .await
@@ -115,7 +117,11 @@ pub(crate) async fn run_node(
                                 .collect(),
                         };
                         for pin_id in data_pins_to_write {
-                            output_cache.write_now(pin_id, node_output.payload.clone(), trace_id);
+                            output_cache.write_now(
+                                pin_id,
+                                data_cache_value_for_pin(pin_id, &node_output.payload),
+                                trace_id,
+                            );
                         }
                     }
 
@@ -227,4 +233,13 @@ pub(crate) async fn run_node(
             }
         }
     }
+}
+
+fn data_cache_value_for_pin(pin_id: &str, payload: &serde_json::Value) -> serde_json::Value {
+    if let serde_json::Value::Object(map) = payload
+        && let Some(value) = map.get(pin_id)
+    {
+        return value.clone();
+    }
+    payload.clone()
 }

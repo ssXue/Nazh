@@ -4,9 +4,9 @@
 //! [`PinKind::Data`](nazh_core::PinKind::Data)，即 [`is_pure_form`](nazh_core::is_pure_form)
 //! 判定为 `true`——它们不参与触发链，仅在被下游 Data 输入拉取时即时求值。
 //!
-//! 同时打上 [`NodeCapabilities::PURE`](nazh_core::NodeCapabilities::PURE)
-//! capability：与 ADR-0011 PURE 优化提示语义一致（同输入同输出 / 无副作用），
-//! 为未来 Phase 4 输入哈希缓存奠定元数据基础。
+//! 只有同输入必得同输出的节点才能打上
+//! [`NodeCapabilities::PURE`](nazh_core::NodeCapabilities::PURE) capability。
+//! 例如 `minutesSince` 读取系统时钟，虽是 pure-form，但不能声明 `PURE`。
 
 use nazh_core::{NodeCapabilities, NodeRegistry, Plugin, PluginManifest};
 
@@ -31,7 +31,7 @@ impl Plugin for PurePlugin {
         });
         registry.register_with_capabilities(
             "minutesSince",
-            NodeCapabilities::PURE,
+            NodeCapabilities::empty(),
             |def, _res| {
                 Ok(std::sync::Arc::new(MinutesSinceNode::new(
                     def.id().to_owned(),

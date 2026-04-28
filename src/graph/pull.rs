@@ -10,9 +10,11 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 
-use nazh_core::{EngineError, NodeTrait, OutputCache, Uuid, is_pure_form};
+use nazh_core::{EngineError, NodeTrait, OutputCache, Uuid, guard::guarded_execute, is_pure_form};
 use serde_json::{Map, Value};
+use tracing::Instrument;
 
 use super::DEFAULT_OUTPUT_PIN_ID;
 use super::types::WorkflowEdge;
@@ -79,6 +81,7 @@ pub(crate) async fn pull_data_inputs(
     edges_by_consumer: &EdgesByConsumer,
     nodes_index: &HashMap<String, Arc<dyn NodeTrait>>,
     output_caches_index: &HashMap<String, Arc<OutputCache>>,
+    node_timeouts_index: &HashMap<String, Option<Duration>>,
     trace_id: Uuid,
 ) -> Result<Value, EngineError> {
     let entries = edges_by_consumer.for_consumer(consumer_node_id);
@@ -93,6 +96,7 @@ pub(crate) async fn pull_data_inputs(
             &entry.upstream_output_pin_id,
             nodes_index,
             output_caches_index,
+            node_timeouts_index,
             edges_by_consumer,
             trace_id,
         )
@@ -125,6 +129,7 @@ fn pull_one<'a>(
     upstream_output_pin_id: &'a str,
     nodes_index: &'a HashMap<String, Arc<dyn NodeTrait>>,
     output_caches_index: &'a HashMap<String, Arc<OutputCache>>,
+    node_timeouts_index: &'a HashMap<String, Option<Duration>>,
     edges_by_consumer: &'a EdgesByConsumer,
     trace_id: Uuid,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Value, EngineError>> + Send + 'a>> {
@@ -143,10 +148,25 @@ fn pull_one<'a>(
                 edges_by_consumer,
                 nodes_index,
                 output_caches_index,
+                node_timeouts_index,
                 trace_id,
             )
             .await?;
-            let result = upstream.transform(trace_id, upstream_payload).await?;
+            let span = tracing::info_span!(
+                "node.transform",
+                node_id = %upstream_node_id,
+                trace_id = %trace_id,
+                pull = true,
+            );
+            let timeout = node_timeouts_index.get(upstream_node_id).copied().flatten();
+            let result = guarded_execute(
+                upstream_node_id,
+                trace_id,
+                timeout,
+                upstream.transform(trace_id, upstream_payload),
+            )
+            .instrument(span)
+            .await?;
             // 找匹配 upstream_output_pin_id 的输出 payload
             // pure 节点 transform payload 约定为 `{ <pin_id>: value, ... }`
             for output in &result.outputs {
@@ -177,18 +197,7 @@ fn pull_one<'a>(
                         upstream: upstream_node_id.to_owned(),
                         pin: upstream_output_pin_id.to_owned(),
                     })?;
-            // OutputCache 存储的是完整 payload；提取 pin 对应的值
-            match cached.value {
-                Value::Object(map) => {
-                    map.get(upstream_output_pin_id)
-                        .cloned()
-                        .ok_or(EngineError::DataPinCacheEmpty {
-                            upstream: upstream_node_id.to_owned(),
-                            pin: upstream_output_pin_id.to_owned(),
-                        })
-                }
-                other => Ok(other),
-            }
+            Ok(cached.value)
         }
     })
 }

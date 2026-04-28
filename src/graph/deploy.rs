@@ -169,9 +169,7 @@ pub async fn deploy_workflow_with_ai(
     detect_data_edge_cycle(&classified.data_edges)?;
 
     // ADR-0014 Phase 3：构造 Data 入边反向索引（每个 consumer → 其 Data 入边列表）
-    let edges_by_consumer = Arc::new(super::pull::build_edges_by_consumer(
-        &classified.data_edges,
-    ));
+    let edges_by_consumer = Arc::new(super::pull::build_edges_by_consumer(&classified.data_edges));
 
     // 单次遍历给每节点同时构造 OutputCache（slots 预分配）与 data_output_pin_ids 集合
     let mut output_caches: HashMap<String, Arc<OutputCache>> =
@@ -247,6 +245,13 @@ pub async fn deploy_workflow_with_ai(
             .collect(),
     );
     let output_caches_index = Arc::new(output_caches.clone());
+    let node_timeouts_index: Arc<HashMap<String, Option<Duration>>> = Arc::new(
+        graph
+            .nodes
+            .iter()
+            .map(|(id, def)| (id.clone(), def.timeout_ms().map(Duration::from_millis)))
+            .collect(),
+    );
 
     for node_id in &topology.deployment_order {
         let Some(node) = nodes_index.get(node_id).cloned() else {
@@ -312,6 +317,7 @@ pub async fn deploy_workflow_with_ai(
             Arc::clone(&edges_by_consumer),
             Arc::clone(&nodes_index),
             Arc::clone(&output_caches_index),
+            Arc::clone(&node_timeouts_index),
         ));
     }
 

@@ -206,6 +206,14 @@ export function getFlowgramPaletteSections(): FlowgramPaletteSection[] {
       ],
     },
     {
+      key: 'pure',
+      title: '纯计算',
+      items: [
+        { key: 'blank-c2f', title: 'C→F 转换', description: c2fDef.catalog.description, badge: 'C→F', seed: c2fDef.buildDefaultSeed() },
+        { key: 'blank-minutes-since', title: '距今分钟', description: minutesSinceDef.catalog.description, badge: '分钟', seed: minutesSinceDef.buildDefaultSeed() },
+      ],
+    },
+    {
       key: 'templates',
       title: '预设模板',
       items: NODE_TEMPLATES,

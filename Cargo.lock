@@ -2210,6 +2210,7 @@ dependencies = [
  "nazh-core",
  "nodes-flow",
  "nodes-io",
+ "nodes-pure",
  "pipeline",
  "rusqlite",
  "scripting",
@@ -2309,6 +2310,19 @@ dependencies = [
  "tokio-modbus",
  "tracing",
  "url",
+ "uuid",
+]
+
+[[package]]
+name = "nodes-pure"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "nazh-core",
+ "serde",
+ "serde_json",
+ "tokio",
  "uuid",
 ]
 
