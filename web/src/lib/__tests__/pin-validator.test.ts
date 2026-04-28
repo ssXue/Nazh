@@ -18,17 +18,26 @@ import { checkConnection, formatRejection } from '../pin-validator';
 
 const mockedFindPin = vi.mocked(findPin);
 
-function pin(id: string, kind: string, direction: 'input' | 'output', extra?: { name?: string }) {
+// 第二参 `pinTypeKind` 是 PinType 的 kind（'json' / 'bool' / 'custom' …），
+// 不是 PinKind。`extra.pinKind` 才是 PinKind（'exec' | 'data'），默认 'exec'
+// 以兼容所有既有 Exec 用例。命名刻意区分，避免阅读时与 PinKind 混淆。
+function pin(
+  id: string,
+  pinTypeKind: string,
+  direction: 'input' | 'output',
+  extra?: { name?: string; pinKind?: 'exec' | 'data' },
+) {
   const pin_type =
-    kind === 'custom' && extra?.name
+    pinTypeKind === 'custom' && extra?.name
       ? ({ kind: 'custom', name: extra.name } as const)
-      : ({ kind } as const);
+      : ({ kind: pinTypeKind } as const);
   return {
     id,
     label: id,
     pin_type: pin_type as never,
     direction,
     required: direction === 'input',
+    kind: extra?.pinKind ?? 'exec',
   };
 }
 
@@ -133,5 +142,71 @@ describe('formatRejection', () => {
     });
     expect(message).toContain('array<json>');
     expect(message).toContain('custom(modbus-register)');
+  });
+});
+
+describe('PinKind 跨 Kind 拒连接（ADR-0014 Phase 2）', () => {
+  beforeEach(() => {
+    mockedFindPin.mockReset();
+  });
+
+  it('Exec → Data 即使 PinType 兼容也被拒（求值语义不同）', () => {
+    mockedFindPin
+      .mockReturnValueOnce(pin('out', 'json', 'output', { pinKind: 'exec' }))
+      .mockReturnValueOnce(pin('in', 'json', 'input', { pinKind: 'data' }));
+
+    const result = checkConnection('src', 'out', 'sink', 'in');
+    expect(result.allow).toBe(false);
+    expect(result.rejection).toEqual({
+      kind: 'incompatible-kinds',
+      fromNodeId: 'src',
+      fromPortId: 'out',
+      toNodeId: 'sink',
+      toPortId: 'in',
+      fromKind: 'exec',
+      toKind: 'data',
+    });
+  });
+
+  it('Data → Exec 同样被拒', () => {
+    mockedFindPin
+      .mockReturnValueOnce(pin('latest', 'json', 'output', { pinKind: 'data' }))
+      .mockReturnValueOnce(pin('in', 'json', 'input', { pinKind: 'exec' }));
+
+    expect(checkConnection('src', 'latest', 'sink', 'in').allow).toBe(false);
+  });
+
+  it('Data → Data 即使 PinType 严格相同也通过', () => {
+    mockedFindPin
+      .mockReturnValueOnce(pin('latest', 'json', 'output', { pinKind: 'data' }))
+      .mockReturnValueOnce(pin('cached_input', 'json', 'input', { pinKind: 'data' }));
+
+    expect(checkConnection('src', 'latest', 'sink', 'cached_input').allow).toBe(true);
+  });
+
+  it('Exec → Data + PinType 跨类时优先报 PinKind 错（不报 PinType）', () => {
+    mockedFindPin
+      .mockReturnValueOnce(pin('out', 'bool', 'output', { pinKind: 'exec' }))
+      .mockReturnValueOnce(pin('in', 'json', 'input', { pinKind: 'data' }));
+
+    const result = checkConnection('src', 'out', 'sink', 'in');
+    expect(result.rejection?.kind).toBe('incompatible-kinds');
+  });
+});
+
+describe('formatRejection（ADR-0014 PinKind 文案）', () => {
+  it('incompatible-kinds 文案含 Exec/Data 字样', () => {
+    const message = formatRejection({
+      kind: 'incompatible-kinds',
+      fromNodeId: 'src',
+      fromPortId: 'out',
+      toNodeId: 'sink',
+      toPortId: 'in',
+      fromKind: 'exec',
+      toKind: 'data',
+    });
+    expect(message).toContain('求值语义不同');
+    expect(message).toContain('exec');
+    expect(message).toContain('data');
   });
 });
