@@ -58,3 +58,20 @@ export function isCompatibleWith(from: PinType, to: PinType): boolean {
 export function isKindCompatible(from: PinKind, to: PinKind): boolean {
   return from === to;
 }
+
+/**
+ * 判定节点是否为 pure-form（无 Exec 引脚）。
+ *
+ * 与 Rust `nazh_core::is_pure_form` 同语义——任一端有 `kind: 'exec'` 引脚即非
+ * pure-form。空输入 / 空输出 + 全 Data 仍算 pure-form（典型如"设备表"常量节点）。
+ *
+ * 跨语言契约 fixture：`tests/fixtures/pure_form_matrix.jsonc`（仓库根）。
+ */
+export function isPureForm(
+  inputPins: ReadonlyArray<{ kind?: string }>,
+  outputPins: ReadonlyArray<{ kind?: string }>,
+): boolean {
+  const noExecIn = inputPins.every((p) => (p.kind ?? 'exec') !== 'exec');
+  const noExecOut = outputPins.every((p) => (p.kind ?? 'exec') !== 'exec');
+  return noExecIn && noExecOut;
+}

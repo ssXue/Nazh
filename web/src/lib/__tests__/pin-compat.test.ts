@@ -14,9 +14,12 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { isCompatibleWith } from '../pin-compat';
+import { isCompatibleWith, isPureForm } from '../pin-compat';
 import type { PinType } from '../../types';
 import { fixturePath, loadJsoncFixture } from './_fixture-helpers';
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 interface CompatPair {
   from: PinType;
@@ -71,5 +74,30 @@ describe('isCompatibleWith vs Rust 合约 fixture', () => {
     ].forEach((kind) => {
       expect(seen).toContain(kind);
     });
+  });
+});
+
+describe('isPureForm — fixture parity with Rust `nazh_core::is_pure_form`', () => {
+  const __dirname = dirname(fileURLToPath(import.meta.url));
+  const raw = readFileSync(
+    resolve(__dirname, '../../../../tests/fixtures/pure_form_matrix.jsonc'),
+    'utf8',
+  );
+  const stripped = raw
+    .split('\n')
+    .map((line) => {
+      const idx = line.indexOf('//');
+      return idx >= 0 ? line.slice(0, idx) : line;
+    })
+    .join('\n');
+  const cases = JSON.parse(stripped) as Array<{
+    name: string;
+    input_pins: Array<{ kind: 'exec' | 'data' }>;
+    output_pins: Array<{ kind: 'exec' | 'data' }>;
+    expected_pure_form: boolean;
+  }>;
+
+  it.each(cases)('$name → $expected_pure_form', (c) => {
+    expect(isPureForm(c.input_pins, c.output_pins)).toBe(c.expected_pure_form);
   });
 });
