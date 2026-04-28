@@ -401,7 +401,7 @@ mod tests {
     }
 
     #[test]
-    fn output_pin_是_json_单端口() {
+    fn output_pins_声明_out_exec_与_latest_data() {
         let node = make_node();
         let pins = node.output_pins();
         assert_eq!(
