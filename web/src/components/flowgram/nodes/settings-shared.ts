@@ -230,7 +230,7 @@ export function isScriptNode(nodeType: string): boolean {
 }
 
 export function supportsScriptAi(nodeType: string): boolean {
-  return nodeType === 'code';
+  return nodeType === 'code' || nodeType === 'if' || nodeType === 'loop' || nodeType === 'tryCatch';
 }
 
 export function isUsableAiProvider(provider: AiProviderView | null | undefined): provider is AiProviderView {

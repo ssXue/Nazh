@@ -525,7 +525,7 @@ export function getLogicNodeBranchDefinitions(
     case 'tryCatch':
       return TRYCATCH_BRANCHES;
     case 'loop':
-      return LOOP_BRANCHES;
+      return [];
     case 'switch': {
       const normalizedConfig = isRecord(config) ? config : {};
       const branches = normalizeSwitchBranches(normalizedConfig.branches);

@@ -27,15 +27,6 @@ export function SubgraphNodeSettings({ draft, updateDraft }: NodeSettingsProps) 
   return (
     <>
       <label>
-        <span>子图标题</span>
-        <input
-          type="text"
-          value={draft.label}
-          onChange={(event) => updateDraft({ label: event.target.value })}
-          placeholder="子图标题"
-        />
-      </label>
-      <label>
         <span>参数绑定</span>
         <textarea
           value={bindingsJson}
