@@ -86,14 +86,16 @@ test.describe('ADR-0014 Phase 2: modbusRead 双引脚 DOM wiring', () => {
 
       const pinType = await port.getAttribute('data-port-pin-type');
       expect(pinType).not.toBeNull();
-      // PinType.kind 枚举：any / json / bool / number / string / bytes / array / custom
+      // PinType.kind 枚举（与 web/src/generated/PinType.ts 保持同步）：
+      //   any / bool / integer / float / string / json / binary / array / custom
       expect([
         'any',
-        'json',
         'bool',
-        'number',
+        'integer',
+        'float',
         'string',
-        'bytes',
+        'json',
+        'binary',
         'array',
         'custom',
       ]).toContain(pinType);

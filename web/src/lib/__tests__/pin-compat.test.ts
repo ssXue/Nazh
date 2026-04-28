@@ -12,14 +12,11 @@
 // 4. 跑 cargo test -p nazh-core --test pin_compat_contract
 // 5. 跑 npm --prefix web run test pin-compat
 
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-
-import { parse as parseJsonc } from 'jsonc-parser';
 import { describe, expect, it } from 'vitest';
 
 import { isCompatibleWith } from '../pin-compat';
 import type { PinType } from '../../types';
+import { fixturePath, loadJsoncFixture } from './_fixture-helpers';
 
 interface CompatPair {
   from: PinType;
@@ -31,23 +28,8 @@ interface Fixture {
   pairs: CompatPair[];
 }
 
-// fixture 在 workspace 根 tests/fixtures/——前后端共享。
-// 路径：web/src/lib/__tests__/ → 4 层上 → tests/fixtures/...
-const fixturePath = path.resolve(
-  __dirname,
-  '../../../../tests/fixtures/pin_compat_matrix.jsonc',
-);
-
-function loadFixture(): Fixture {
-  const raw = fs.readFileSync(fixturePath, 'utf-8');
-  const parsed = parseJsonc(raw) as Fixture | undefined;
-  if (!parsed?.pairs?.length) {
-    throw new Error(
-      `pin_compat_matrix.jsonc 反序列化为空 / 缺 pairs 数组（路径: ${fixturePath}）`,
-    );
-  }
-  return parsed;
-}
+const loadFixture = (): Fixture =>
+  loadJsoncFixture<Fixture>(fixturePath(__dirname, 'pin_compat_matrix.jsonc'));
 
 describe('isCompatibleWith vs Rust 合约 fixture', () => {
   const fixture = loadFixture();

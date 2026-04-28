@@ -324,9 +324,13 @@ impl WorkflowDeployment {
     /// 返回 `None` 仅当节点 id 不在该工作流中——节点存在但无 Data 引脚时
     /// 返回 `Some(empty_cache)` 而非 `None`，这一约定让调用方的"节点不存在"
     /// 与"节点无 Data 引脚"两种语义保持解耦。
+    ///
+    /// **返回 owned `Arc`**：调用方常需把句柄保存到 IPC 处理器闭包 / 后台任务，
+    /// 寿命可能超过 `&self` 借用范围。一次 `Arc::clone`（refcount bump）成本
+    /// 远低于强迫调用方写 `cache.clone()`。
     #[must_use]
-    pub fn output_cache(&self, node_id: &str) -> Option<&Arc<OutputCache>> {
-        self.output_caches.get(node_id)
+    pub fn output_cache(&self, node_id: &str) -> Option<Arc<OutputCache>> {
+        self.output_caches.get(node_id).map(Arc::clone)
     }
 
     /// 拆分为入口、流、生命周期 guards 与撤销根 token。
