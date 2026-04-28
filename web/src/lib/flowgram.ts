@@ -196,9 +196,11 @@ export function toFlowgramWorkflowJson(graph: WorkflowGraph): FlowgramWorkflowJS
  * 深度遍历 JSON value，对所有 string 值做 `{{paramName}}` 替换。
  * 未绑定的参数保留原值。
  */
+type ParameterBindingValue = string | number | boolean;
+
 function applyParameterBindings(
   value: unknown,
-  params: Record<string, string | number | boolean>,
+  params: Record<string, ParameterBindingValue>,
 ): unknown {
   if (typeof value === 'string') {
     return value.replace(/\{\{(\w+)\}\}/g, (match, key: string) => {
@@ -219,6 +221,38 @@ function applyParameterBindings(
     return result;
   }
   return value;
+}
+
+function normalizeParameterBindings(value: unknown): Record<string, ParameterBindingValue> {
+  const normalized: Record<string, ParameterBindingValue> = {};
+
+  if (!isRecord(value)) {
+    return normalized;
+  }
+
+  for (const [key, rawValue] of Object.entries(value)) {
+    if (
+      typeof rawValue === 'string' ||
+      typeof rawValue === 'number' ||
+      typeof rawValue === 'boolean'
+    ) {
+      normalized[key] = rawValue;
+    }
+  }
+
+  return normalized;
+}
+
+function extractSubgraphParameterBindings(
+  node: FlowgramWorkflowJSON['nodes'][number],
+): Record<string, ParameterBindingValue> {
+  const data = isRecord(node.data) ? (node.data as Record<string, unknown>) : {};
+  const config = isRecord(data.config) ? (data.config as Record<string, unknown>) : {};
+
+  return {
+    ...normalizeParameterBindings(data.parameterBindings),
+    ...normalizeParameterBindings(config.parameterBindings),
+  };
 }
 
 function isContainerNode(node: FlowgramWorkflowJSON['nodes'][number]): boolean {
@@ -279,17 +313,7 @@ export function flattenSubgraphs(
         throw new Error(`子图循环引用：${node.id}`);
       }
 
-      const params = isRecord(node.data)
-        ? ((node.data as Record<string, unknown>).parameterBindings ?? {})
-        : {};
-      const paramMap: Record<string, string | number | boolean> = {};
-      if (isRecord(params)) {
-        for (const [k, v] of Object.entries(params)) {
-          if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
-            paramMap[k] = v;
-          }
-        }
-      }
+      const paramMap = extractSubgraphParameterBindings(node);
 
       const innerGraph: FlowgramWorkflowJSON = {
         nodes: node.blocks ?? [],

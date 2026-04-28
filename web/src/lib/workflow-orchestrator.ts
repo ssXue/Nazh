@@ -9,15 +9,24 @@ import type {
   WorkflowGraph,
   WorkflowNodeDefinition,
 } from '../types';
+import type { WorkflowJSON as FlowgramWorkflowJSON } from '@flowgram.ai/free-layout-editor';
 
 import {
   buildDefaultNodeSeed,
   normalizeNodeConfig,
   type NazhNodeKind,
 } from '../components/flowgram/flowgram-node-library';
-import { toFlowgramWorkflowJson } from './flowgram';
+import { toFlowgramWorkflowJson, toNazhWorkflowGraph } from './flowgram';
 import { copilotCompleteStream } from './tauri';
 import { isUsableGlobalAiProvider, resolveGlobalAiProvider } from './workflow-ai';
+import {
+  buildWorkflowAiNodeGuideText,
+  getLocalWorkflowAiNodeCatalog,
+  getWorkflowAiAllowedNodeKinds,
+  loadWorkflowAiNodeCatalog,
+  normalizeWorkflowAiNodeKind,
+  type WorkflowAiNodeCatalog,
+} from './workflow-node-capabilities';
 
 const DEFAULT_WORKFLOW_TIMEOUT_MS = 90_000;
 const MAX_WORKFLOW_TRANSPORT_RETRY_ATTEMPTS = 2;
@@ -29,47 +38,17 @@ const DEFAULT_COPILOT_PARAMS: AiGenerationParams = {
   topP: 1,
 };
 
-const ALLOWED_NODE_KINDS: NazhNodeKind[] = [
-  'native',
-  'code',
-  'timer',
-  'serialTrigger',
-  'modbusRead',
-  'if',
-  'switch',
-  'tryCatch',
-  'loop',
-  'httpClient',
-  'barkPush',
-  'sqlWriter',
-  'debugConsole',
-];
-
-const NODE_GUIDE_TEXT = `可用节点类型与建议：
-- timer: 定时触发。config 可含 interval_ms, immediate, inject
-- native: 本地透传/注入。config 可含 message
-- code: Rhai 脚本处理。config 必须含 script，脚本输入变量是 payload，常用能力有 ai_complete("prompt"), rand(min, max), now_ms(), from_json(text), to_json(value), is_blank(text)
-- if: 条件分支。config 必须含 script；下游边 sourcePortId 只能是 true / false
-- switch: 多路分支。config 必须含 script 与 branches，branches 形如 [{key, label}]；下游边 sourcePortId 必须对应 branch key 或 default
-- tryCatch: 异常分支。config 必须含 script；下游边 sourcePortId 只能是 try / catch
-- loop: 循环分发。config 必须含 script；下游边 sourcePortId 只能是 body / done
-- serialTrigger: 串口触发。通常不填写 connectionId，等待用户后续绑定
-- modbusRead: Modbus 读取。config 可含 unit_id, register, quantity, register_type, base_value, amplitude；通常不填写 connectionId
-- httpClient: HTTP/Webhook 发送。config 可含 body_mode, title_template, body_template；通常不填写 connectionId
-- barkPush: Bark 推送。config 可含 title_template, subtitle_template, body_template, level；通常不填写 connectionId
-- sqlWriter: SQLite 写入。config 可含 database_path, table
-- debugConsole: 调试输出。config 可含 label, pretty
-
-协议要求：
+const PROTOCOL_GUIDE_TEXT = `协议要求：
 - 只输出 JSON Lines，每行一个 JSON 对象
 - 不要输出 Markdown、代码块、解释文字或序号
 - 一旦确定一个节点或一条边，就立即输出，不要等全部设计完再统一输出
-- 先输出 project，再输出 node，再输出 edge，最后输出 done
+- 先输出 project，再输出 node 或 upsert_subgraph，再输出 edge，最后输出 done
 - 编辑已有工作流时，只输出必要修改，不要重复未改动的节点
 - 节点 id 使用简短的 snake_case 英文
 - 不要编造不存在的节点类型
 - connectionId 只有在用户明确给出可复用的连接 id 时才填写，否则留空或省略
-- 输出的 payloadText 必须是合法 JSON 字符串`;
+- 输出的 payloadText 必须是合法 JSON 字符串
+- 需要把一段可复用拓扑封装成单节点时，用 upsert_subgraph；不要直接输出 subgraphInput / subgraphOutput，它们由系统自动生成`;
 
 export type WorkflowOrchestrationMode = 'create' | 'edit';
 
@@ -95,6 +74,31 @@ export interface UpsertNodeOperation {
   connectionId?: string | null;
   timeoutMs?: number | null;
   config?: JsonValue;
+}
+
+export interface SubgraphBlockOperation {
+  id: string;
+  nodeType: NazhNodeKind;
+  label?: string;
+  connectionId?: string | null;
+  timeoutMs?: number | null;
+  config?: JsonValue;
+}
+
+export interface SubgraphEdgeOperation {
+  from: string;
+  to: string;
+  sourcePortId?: string;
+  targetPortId?: string;
+}
+
+export interface UpsertSubgraphOperation {
+  type: 'upsert_subgraph';
+  id: string;
+  label?: string;
+  parameterBindings?: Record<string, string | number | boolean>;
+  blocks: SubgraphBlockOperation[];
+  edges: SubgraphEdgeOperation[];
 }
 
 export interface DeleteNodeOperation {
@@ -126,6 +130,7 @@ export interface DoneOperation {
 export type WorkflowOrchestrationOperation =
   | ProjectMetadataOperation
   | UpsertNodeOperation
+  | UpsertSubgraphOperation
   | DeleteNodeOperation
   | UpsertEdgeOperation
   | DeleteEdgeOperation
@@ -201,24 +206,15 @@ function hasOwnKey<T extends object>(value: T, key: string): boolean {
 }
 
 function normalizeAllowedNodeKind(value: unknown): NazhNodeKind | null {
-  switch (value) {
-    case 'native':
-    case 'code':
-    case 'timer':
-    case 'serialTrigger':
-    case 'modbusRead':
-    case 'if':
-    case 'switch':
-    case 'tryCatch':
-    case 'loop':
-    case 'httpClient':
-    case 'barkPush':
-    case 'sqlWriter':
-    case 'debugConsole':
-      return value;
-    default:
-      return null;
+  return normalizeWorkflowAiNodeKind(value, getLocalWorkflowAiNodeCatalog());
+}
+
+function normalizeSubgraphBlockNodeKind(value: unknown): NazhNodeKind | null {
+  const kind = normalizeAllowedNodeKind(value);
+  if (kind === 'subgraph') {
+    return null;
   }
+  return kind;
 }
 
 function isRecoverableWorkflowOrchestrationError(error: Error): boolean {
@@ -363,18 +359,117 @@ function normalizeEdgePortId(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }
 
+function normalizeParameterBindings(
+  value: unknown,
+): Record<string, string | number | boolean> | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const bindings = Object.entries(value).reduce<Record<string, string | number | boolean>>(
+    (acc, [key, rawValue]) => {
+      if (
+        typeof rawValue === 'string' ||
+        typeof rawValue === 'number' ||
+        typeof rawValue === 'boolean'
+      ) {
+        acc[key] = rawValue;
+      }
+      return acc;
+    },
+    {},
+  );
+
+  return Object.keys(bindings).length > 0 ? bindings : undefined;
+}
+
+function normalizeSubgraphBlocks(value: unknown): SubgraphBlockOperation[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item): SubgraphBlockOperation | null => {
+      if (!isRecord(item)) {
+        return null;
+      }
+
+      const id = readString(item, ['id', 'nodeId', 'node_id']);
+      const nodeType = normalizeSubgraphBlockNodeKind(
+        readString(item, ['nodeType', 'node_type', 'kind']),
+      );
+      if (!id || !nodeType) {
+        return null;
+      }
+
+      const hasConnectionId =
+        hasOwnKey(item, 'connectionId') || hasOwnKey(item, 'connection_id');
+      const connectionId = hasConnectionId
+        ? readString(item, ['connectionId', 'connection_id']) ?? null
+        : undefined;
+      const config = isRecord(item.config) || Array.isArray(item.config)
+        ? (item.config as JsonValue)
+        : undefined;
+
+      return {
+        id,
+        nodeType,
+        label: readString(item, ['label', 'title']),
+        connectionId,
+        timeoutMs: toPositiveRoundedNumber(
+          readFiniteNumber(item, ['timeoutMs', 'timeout_ms']),
+        ),
+        config,
+      };
+    })
+    .filter((block): block is SubgraphBlockOperation => Boolean(block));
+}
+
+function normalizeSubgraphEdges(value: unknown): SubgraphEdgeOperation[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item): SubgraphEdgeOperation | null => {
+      if (!isRecord(item)) {
+        return null;
+      }
+
+      const from = readString(item, ['from', 'source', 'sourceNodeId', 'source_node_id']);
+      const to = readString(item, ['to', 'target', 'targetNodeId', 'target_node_id']);
+      if (!from || !to) {
+        return null;
+      }
+
+      return {
+        from,
+        to,
+        sourcePortId: readString(item, ['sourcePortId', 'source_port_id', 'sourcePort']),
+        targetPortId: readString(item, ['targetPortId', 'target_port_id', 'targetPort']),
+      };
+    })
+    .filter((edge): edge is SubgraphEdgeOperation => Boolean(edge));
+}
+
 function buildEdgeKey(edge: Pick<WorkflowEdge, 'from' | 'to' | 'source_port_id' | 'target_port_id'>): string {
   return `${edge.from}:${edge.source_port_id ?? ''}->${edge.to}:${edge.target_port_id ?? ''}`;
+}
+
+function buildFlowgramEdgeKey(
+  edge: Pick<
+    FlowgramWorkflowJSON['edges'][number],
+    'sourceNodeID' | 'targetNodeID' | 'sourcePortID' | 'targetPortID'
+  >,
+): string {
+  return `${edge.sourceNodeID}:${edge.sourcePortID ?? ''}->${edge.targetNodeID}:${edge.targetPortID ?? ''}`;
 }
 
 function buildGraphWithLabels(
   graph: WorkflowGraph,
   nodeLabels: Record<string, string>,
 ): WorkflowGraph {
-  const editorGraph = toFlowgramWorkflowJson({
-    ...graph,
-    editor_graph: undefined,
-  });
+  const editorGraph = toFlowgramWorkflowJson(graph);
 
   const nextEditorGraph = {
     ...editorGraph,
@@ -382,7 +477,11 @@ function buildGraphWithLabels(
       ...node,
       data: {
         ...(isRecord(node.data) ? node.data : {}),
-        label: nodeLabels[node.id] ?? node.id,
+        label:
+          nodeLabels[node.id] ??
+          (isRecord(node.data) && typeof node.data.label === 'string'
+            ? node.data.label
+            : node.id),
       },
     })),
   };
@@ -400,12 +499,14 @@ function buildStateDraft(
   nodes: Record<string, WorkflowNodeDefinition>,
   edges: WorkflowEdge[],
   nodeLabels: Record<string, string>,
+  editorGraph?: WorkflowGraph['editor_graph'],
 ): WorkflowOrchestrationDraft {
   const baseGraph: WorkflowGraph = {
     name,
     connections: [],
     nodes,
     edges,
+    editor_graph: editorGraph,
   };
 
   return {
@@ -414,6 +515,122 @@ function buildStateDraft(
     payloadText,
     graph: buildGraphWithLabels(baseGraph, nodeLabels),
   };
+}
+
+function buildFlowgramNodeData(
+  nodeType: NazhNodeKind,
+  label: string,
+  config: JsonValue | undefined,
+  connectionId?: string | null,
+  timeoutMs?: number | null,
+) {
+  const defaultSeed = buildDefaultNodeSeed(nodeType);
+  const mergedConfig = mergeJsonValue(
+    defaultSeed.config as JsonValue,
+    (config ?? {}) as JsonValue,
+  );
+
+  return {
+    label,
+    nodeType,
+    displayType: nodeType,
+    connectionId: connectionId ?? defaultSeed.connectionId ?? null,
+    timeoutMs: timeoutMs ?? defaultSeed.timeoutMs ?? null,
+    config: normalizeNodeConfig(nodeType, mergedConfig),
+  };
+}
+
+function buildSubgraphFlowgramNode(
+  operation: UpsertSubgraphOperation,
+  currentLabels: Record<string, string>,
+): FlowgramWorkflowJSON['nodes'][number] {
+  const blocks: FlowgramWorkflowJSON['nodes'] = [
+    {
+      id: 'sg-in',
+      type: 'subgraphInput',
+      meta: { position: { x: 0, y: 0 } },
+      data: buildFlowgramNodeData('subgraphInput', 'Input', {}),
+    },
+    ...operation.blocks.map((block, index) => ({
+      id: block.id,
+      type: block.nodeType,
+      meta: { position: { x: 160 + index * 220, y: 96 } },
+      data: buildFlowgramNodeData(
+        block.nodeType,
+        resolveNodeLabel(block.id, block.label, currentLabels),
+        block.config,
+        block.connectionId,
+        block.timeoutMs,
+      ),
+    })),
+    {
+      id: 'sg-out',
+      type: 'subgraphOutput',
+      meta: { position: { x: 160 + operation.blocks.length * 220, y: 0 } },
+      data: buildFlowgramNodeData('subgraphOutput', 'Output', {}),
+    },
+  ];
+
+  const innerEdges =
+    operation.edges.length > 0
+      ? operation.edges
+      : operation.blocks.reduce<SubgraphEdgeOperation[]>((acc, block, index, allBlocks) => {
+          if (index === 0) {
+            acc.push({ from: 'sg-in', to: block.id });
+          }
+          const nextBlock = allBlocks[index + 1];
+          acc.push({ from: block.id, to: nextBlock?.id ?? 'sg-out' });
+          return acc;
+        }, []);
+
+  return {
+    id: operation.id,
+    type: 'subgraph',
+    meta: { position: { x: 80, y: 80 } },
+    data: {
+      label: resolveNodeLabel(operation.id, operation.label, currentLabels),
+      nodeType: 'subgraph',
+      displayType: 'subgraph',
+      connectionId: null,
+      timeoutMs: null,
+      config: {
+        parameterBindings: operation.parameterBindings ?? {},
+      },
+    },
+    blocks,
+    edges: innerEdges.map((edge) => ({
+      sourceNodeID: edge.from,
+      targetNodeID: edge.to,
+      sourcePortID: normalizeEdgePortId(edge.sourcePortId),
+      targetPortID: normalizeEdgePortId(edge.targetPortId),
+    })),
+  };
+}
+
+function removeEditorNode(
+  editorGraph: FlowgramWorkflowJSON,
+  nodeId: string,
+): FlowgramWorkflowJSON {
+  return {
+    nodes: editorGraph.nodes.filter((node) => node.id !== nodeId),
+    edges: editorGraph.edges.filter(
+      (edge) => edge.sourceNodeID !== nodeId && edge.targetNodeID !== nodeId,
+    ),
+  };
+}
+
+function rebuildGraphFromEditorGraph(
+  name: string,
+  nodes: Record<string, WorkflowNodeDefinition>,
+  edges: WorkflowEdge[],
+  editorGraph: FlowgramWorkflowJSON,
+): WorkflowGraph {
+  return toNazhWorkflowGraph(editorGraph, {
+    name,
+    connections: [],
+    nodes,
+    edges,
+  });
 }
 
 export function createEmptyWorkflowDraft(name = 'AI 编排草稿'): WorkflowOrchestrationDraft {
@@ -437,8 +654,12 @@ export function createWorkflowOrchestrationState(
   baseDraft?: WorkflowOrchestrationDraft | null,
 ): WorkflowOrchestrationSessionState {
   const draft = baseDraft ?? createEmptyWorkflowDraft();
-  const nodeLabels = Object.keys(draft.graph.nodes).reduce<Record<string, string>>((acc, nodeId) => {
-    acc[nodeId] = nodeId;
+  const editorGraph = toFlowgramWorkflowJson(draft.graph);
+  const nodeLabels = editorGraph.nodes.reduce<Record<string, string>>((acc, node) => {
+    const data = isRecord(node.data) ? node.data : {};
+    acc[node.id] = typeof data.label === 'string' && data.label.trim()
+      ? data.label.trim()
+      : node.id;
     return acc;
   }, {});
 
@@ -450,6 +671,7 @@ export function createWorkflowOrchestrationState(
       { ...draft.graph.nodes },
       [...(draft.graph.edges ?? [])],
       nodeLabels,
+      editorGraph,
     ),
     nodeLabels,
     operations: [],
@@ -465,6 +687,8 @@ export function describeWorkflowOrchestrationOperation(
       return `更新工程信息${operation.name ? `：${operation.name}` : ''}`;
     case 'upsert_node':
       return `编排节点 ${operation.id} · ${operation.nodeType}`;
+    case 'upsert_subgraph':
+      return `编排子图 ${operation.id} · ${operation.blocks.length} 个内部节点`;
     case 'delete_node':
       return `删除节点 ${operation.id}`;
     case 'upsert_edge':
@@ -554,8 +778,12 @@ export function buildWorkflowOrchestrationPrompt(options: {
   mode: WorkflowOrchestrationMode;
   requirement: string;
   baseDraft?: WorkflowOrchestrationDraft | null;
+  nodeCatalog?: WorkflowAiNodeCatalog;
 }): AiMessage[] {
   const { mode, requirement, baseDraft } = options;
+  const nodeCatalog = options.nodeCatalog ?? getLocalWorkflowAiNodeCatalog();
+  const allowedNodeKinds = getWorkflowAiAllowedNodeKinds(nodeCatalog);
+  const nodeGuideText = buildWorkflowAiNodeGuideText(nodeCatalog);
   const currentGraphText =
     mode === 'edit' && baseDraft
       ? buildExistingGraphSummary(baseDraft)
@@ -576,20 +804,25 @@ ${currentGraphText}
       role: 'system',
       content: `你是 Nazh 的工业工作流 AI 编排助手。你必须使用可流式消费的 JSON Lines 操作协议完成工作流创建或编辑。
 
-${NODE_GUIDE_TEXT}
+可用节点类型与能力（由当前节点定义 / 运行时注册表自动生成）：
+${nodeGuideText}
+
+${PROTOCOL_GUIDE_TEXT}
 
 操作格式：
 {"type":"project","name":"工程名","description":"说明","payloadText":"{\\"manual\\":true}"}
 {"type":"upsert_node","id":"timer_trigger","nodeType":"timer","label":"定时触发","timeoutMs":null,"config":{"interval_ms":5000,"immediate":true,"inject":{"source":"timer"}}}
+{"type":"upsert_subgraph","id":"cleaning_group","label":"数据清洗子图","parameterBindings":{"threshold":88},"blocks":[{"id":"clean_code","nodeType":"code","label":"清洗脚本","config":{"script":"payload"}}],"edges":[{"from":"sg-in","to":"clean_code"},{"from":"clean_code","to":"sg-out"}]}
 {"type":"upsert_edge","from":"timer_trigger","to":"debug_console"}
 {"type":"delete_node","id":"old_node"}
 {"type":"delete_edge","from":"old_a","to":"old_b"}
 {"type":"done","summary":"完成摘要"}
 
 注意：
-- nodeType 只能从 ${ALLOWED_NODE_KINDS.join(', ')} 中选择
+- nodeType 只能从 ${allowedNodeKinds.join(', ')} 中选择
 - switch / if / tryCatch / loop 的 sourcePortId 要合法
 - code 节点脚本只输出 Rhai 可执行逻辑，不要使用未声明 API
+- subgraph 是编辑器容器；需要封装拓扑时用 upsert_subgraph，外部 edge 可连接到 subgraph id，部署前系统会自动展平为 subgraphInput/subgraphOutput 桥接链路
 - 对于工业场景，优先给出可以直接继续编辑和绑定连接的稳定草图
 - 如果需求不清晰，优先从最小可运行链路开始，再补上分支和输出
 - 保持输出紧凑；每个 JSON 对象单独一行`,
@@ -608,11 +841,13 @@ function buildWorkflowOrchestrationContinuationPrompt(options: {
   rawText: string;
   error: Error;
   attempt: number;
+  nodeCatalog?: WorkflowAiNodeCatalog;
 }): AiMessage[] {
   const baseMessages = buildWorkflowOrchestrationPrompt({
     mode: options.mode,
     requirement: options.requirement,
     baseDraft: options.acceptedState.draft,
+    nodeCatalog: options.nodeCatalog,
   });
   const acceptedOperationsText = options.acceptedState.operations
     .map((operation) => JSON.stringify(operation))
@@ -683,6 +918,24 @@ function normalizeOperation(input: unknown): WorkflowOrchestrationOperation | nu
         description: readString(input, ['description', 'desc']),
         payloadText: readString(input, ['payloadText', 'payload_text']),
       };
+    case 'subgraph':
+    case 'upsert_subgraph': {
+      const id = readString(input, ['id', 'nodeId', 'node_id']);
+      if (!id) {
+        return null;
+      }
+
+      return {
+        type: 'upsert_subgraph',
+        id,
+        label: readString(input, ['label', 'title']),
+        parameterBindings: normalizeParameterBindings(
+          input.parameterBindings ?? input.parameter_bindings,
+        ),
+        blocks: normalizeSubgraphBlocks(input.blocks),
+        edges: normalizeSubgraphEdges(input.edges),
+      };
+    }
     case 'node':
     case 'upsert_node': {
       const id = readString(input, ['id', 'nodeId', 'node_id']);
@@ -691,6 +944,21 @@ function normalizeOperation(input: unknown): WorkflowOrchestrationOperation | nu
       );
       if (!id || !nodeType) {
         return null;
+      }
+
+      if (nodeType === 'subgraph') {
+        return {
+          type: 'upsert_subgraph',
+          id,
+          label: readString(input, ['label', 'title']),
+          parameterBindings: normalizeParameterBindings(
+            input.parameterBindings ??
+              input.parameter_bindings ??
+              (isRecord(input.config) ? input.config.parameterBindings : undefined),
+          ),
+          blocks: normalizeSubgraphBlocks(input.blocks),
+          edges: normalizeSubgraphEdges(input.edges),
+        };
       }
 
       const config = isRecord(input.config) || Array.isArray(input.config)
@@ -810,6 +1078,7 @@ export function applyWorkflowOrchestrationOperation(
   let nextNodes = { ...state.draft.graph.nodes };
   let nextNodeLabels = { ...state.nodeLabels };
   let nextEdges = [...(state.draft.graph.edges ?? [])];
+  let nextEditorGraph = state.draft.graph.editor_graph;
   let nextSummary = state.summary;
 
   switch (operation.type) {
@@ -851,10 +1120,64 @@ export function applyWorkflowOrchestrationOperation(
       };
       break;
     }
+    case 'upsert_subgraph': {
+      nextNodeLabels[operation.id] = resolveNodeLabel(
+        operation.id,
+        operation.label,
+        nextNodeLabels,
+      );
+      const currentGraph: WorkflowGraph = {
+        name: nextName,
+        connections: [],
+        nodes: nextNodes,
+        edges: nextEdges,
+        editor_graph: nextEditorGraph,
+      };
+      const editorGraph = removeEditorNode(
+        toFlowgramWorkflowJson(currentGraph),
+        operation.id,
+      );
+      const nextSubgraph = buildSubgraphFlowgramNode(operation, nextNodeLabels);
+      const rebuiltGraph = rebuildGraphFromEditorGraph(
+        nextName,
+        nextNodes,
+        nextEdges,
+        {
+          nodes: [...editorGraph.nodes, nextSubgraph],
+          edges: editorGraph.edges,
+        },
+      );
+      nextNodes = rebuiltGraph.nodes;
+      nextEdges = rebuiltGraph.edges ?? [];
+      nextEditorGraph = rebuiltGraph.editor_graph;
+      break;
+    }
     case 'delete_node':
       delete nextNodes[operation.id];
       delete nextNodeLabels[operation.id];
-      nextEdges = nextEdges.filter((edge) => edge.from !== operation.id && edge.to !== operation.id);
+      nextEdges = nextEdges.filter(
+        (edge) => edge.from !== operation.id && edge.to !== operation.id,
+      );
+      if (nextEditorGraph) {
+        const rebuiltGraph = rebuildGraphFromEditorGraph(
+          nextName,
+          nextNodes,
+          nextEdges,
+          removeEditorNode(
+            toFlowgramWorkflowJson({
+              name: nextName,
+              connections: [],
+              nodes: nextNodes,
+              edges: nextEdges,
+              editor_graph: nextEditorGraph,
+            }),
+            operation.id,
+          ),
+        );
+        nextNodes = rebuiltGraph.nodes;
+        nextEdges = rebuiltGraph.edges ?? [];
+        nextEditorGraph = rebuiltGraph.editor_graph;
+      }
       break;
     case 'upsert_edge': {
       const nextEdge: WorkflowEdge = {
@@ -866,6 +1189,40 @@ export function applyWorkflowOrchestrationOperation(
       const nextEdgeKey = buildEdgeKey(nextEdge);
       nextEdges = nextEdges.filter((edge) => buildEdgeKey(edge) !== nextEdgeKey);
       nextEdges.push(nextEdge);
+      if (nextEditorGraph) {
+        const currentGraph: WorkflowGraph = {
+          name: nextName,
+          connections: [],
+          nodes: nextNodes,
+          edges: nextEdges,
+          editor_graph: nextEditorGraph,
+        };
+        const editorGraph = toFlowgramWorkflowJson(currentGraph);
+        const nextFlowEdge = {
+          sourceNodeID: nextEdge.from,
+          targetNodeID: nextEdge.to,
+          sourcePortID: nextEdge.source_port_id,
+          targetPortID: nextEdge.target_port_id,
+        };
+        const edgeKey = buildFlowgramEdgeKey(nextFlowEdge);
+        const rebuiltGraph = rebuildGraphFromEditorGraph(
+          nextName,
+          nextNodes,
+          nextEdges,
+          {
+            nodes: editorGraph.nodes,
+            edges: [
+              ...editorGraph.edges.filter(
+                (edge) => buildFlowgramEdgeKey(edge) !== edgeKey,
+              ),
+              nextFlowEdge,
+            ],
+          },
+        );
+        nextNodes = rebuiltGraph.nodes;
+        nextEdges = rebuiltGraph.edges ?? [];
+        nextEditorGraph = rebuiltGraph.editor_graph;
+      }
       break;
     }
     case 'delete_edge': {
@@ -876,6 +1233,36 @@ export function applyWorkflowOrchestrationOperation(
         target_port_id: normalizeEdgePortId(operation.targetPortId),
       });
       nextEdges = nextEdges.filter((edge) => buildEdgeKey(edge) !== nextEdgeKey);
+      if (nextEditorGraph) {
+        const currentGraph: WorkflowGraph = {
+          name: nextName,
+          connections: [],
+          nodes: nextNodes,
+          edges: nextEdges,
+          editor_graph: nextEditorGraph,
+        };
+        const editorGraph = toFlowgramWorkflowJson(currentGraph);
+        const flowEdgeKey = buildFlowgramEdgeKey({
+          sourceNodeID: operation.from,
+          targetNodeID: operation.to,
+          sourcePortID: operation.sourcePortId,
+          targetPortID: operation.targetPortId,
+        });
+        const rebuiltGraph = rebuildGraphFromEditorGraph(
+          nextName,
+          nextNodes,
+          nextEdges,
+          {
+            nodes: editorGraph.nodes,
+            edges: editorGraph.edges.filter(
+              (edge) => buildFlowgramEdgeKey(edge) !== flowEdgeKey,
+            ),
+          },
+        );
+        nextNodes = rebuiltGraph.nodes;
+        nextEdges = rebuiltGraph.edges ?? [];
+        nextEditorGraph = rebuiltGraph.editor_graph;
+      }
       break;
     }
     case 'done':
@@ -891,6 +1278,7 @@ export function applyWorkflowOrchestrationOperation(
       nextNodes,
       nextEdges,
       nextNodeLabels,
+      nextEditorGraph,
     ),
     nodeLabels: nextNodeLabels,
     operations: [...state.operations, operation],
@@ -980,6 +1368,7 @@ export async function streamWorkflowOrchestration(
   options: StreamWorkflowOrchestrationOptions,
 ): Promise<WorkflowOrchestrationSessionState> {
   let nextState = createWorkflowOrchestrationState(options.baseDraft);
+  const nodeCatalog = await loadWorkflowAiNodeCatalog();
   let transportRetryCount = 0;
   let resumeAttemptCount = 0;
   let restartAttemptCount = 0;
@@ -1003,11 +1392,13 @@ export async function streamWorkflowOrchestration(
             rawText: lastInterruptedRawText,
             error: lastInterruptedError,
             attempt: resumeAttemptCount,
+            nodeCatalog,
           })
         : buildWorkflowOrchestrationPrompt({
             mode: options.mode,
             requirement: options.requirement,
             baseDraft: options.baseDraft,
+            nodeCatalog,
           });
 
     const request: AiCompletionRequest = {

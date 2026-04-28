@@ -789,6 +789,21 @@ export function normalizeNodeConfig(
     };
   }
 
+  if (nodeType === 'subgraph') {
+    return {
+      ...rawConfig,
+      parameterBindings: isRecord(rawConfig.parameterBindings)
+        ? rawConfig.parameterBindings
+        : {},
+    };
+  }
+
+  if (nodeType === 'subgraphInput' || nodeType === 'subgraphOutput') {
+    return {
+      ...rawConfig,
+    };
+  }
+
   if (nodeType === 'code') {
     const { ai: _unusedAi, ...restConfig } = rawConfig;
     const ai = normalizeScriptAiConfig(rawConfig.ai);

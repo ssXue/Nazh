@@ -11,6 +11,9 @@ import {
 
 vi.mock('../../lib/tauri', () => ({
   copilotCompleteStream: vi.fn(),
+  describeNodePins: vi.fn(),
+  hasTauriRuntime: vi.fn(() => false),
+  listNodeTypes: vi.fn(),
 }));
 
 describe('buildWorkflowOrchestrationPrompt', () => {
@@ -24,6 +27,8 @@ describe('buildWorkflowOrchestrationPrompt', () => {
     expect(messages[0].content).toContain('JSON Lines');
     expect(messages[0].content).toContain('不要等全部设计完再统一输出');
     expect(messages[0].content).toContain('timer');
+    expect(messages[0].content).toContain('subgraph');
+    expect(messages[0].content).toContain('upsert_subgraph');
     expect(messages[1].content).toContain('create（从空白开始编排新工作流）');
     expect(messages[1].content).toContain('做一个定时采集并记录 SQLite 的温度工作流');
   });
@@ -147,6 +152,92 @@ describe('applyWorkflowOrchestrationOperation', () => {
       body_mode: 'template',
       body_template: '告警：{{payload}}',
     });
+  });
+
+  it('可以创建子图容器并同步展平后的运行图', () => {
+    let state = createWorkflowOrchestrationState(createEmptyWorkflowDraft('AI 子图草稿'));
+
+    state = applyWorkflowOrchestrationOperation(state, {
+      type: 'upsert_node',
+      id: 'timer_trigger',
+      nodeType: 'timer',
+      label: '定时触发',
+      config: { interval_ms: 5000 },
+    });
+    state = applyWorkflowOrchestrationOperation(state, {
+      type: 'upsert_subgraph',
+      id: 'cleaning_group',
+      label: '清洗子图',
+      parameterBindings: { threshold: 88 },
+      blocks: [
+        {
+          id: 'clean_code',
+          nodeType: 'code',
+          label: '清洗脚本',
+          config: { script: 'payload["threshold"] = "{{threshold}}"; payload' },
+        },
+      ],
+      edges: [
+        { from: 'sg-in', to: 'clean_code' },
+        { from: 'clean_code', to: 'sg-out' },
+      ],
+    });
+    state = applyWorkflowOrchestrationOperation(state, {
+      type: 'upsert_edge',
+      from: 'timer_trigger',
+      to: 'cleaning_group',
+    });
+
+    expect(
+      state.draft.graph.editor_graph?.nodes.find((node) => node.id === 'cleaning_group'),
+    ).toMatchObject({
+      type: 'subgraph',
+      data: {
+        label: '清洗子图',
+      },
+    });
+    expect(state.draft.graph.nodes['cleaning_group/clean_code']?.type).toBe('code');
+    expect(state.draft.graph.nodes['cleaning_group/sg-in']?.type).toBe('subgraphInput');
+    expect(state.draft.graph.edges).toContainEqual({
+      from: 'timer_trigger',
+      to: 'cleaning_group/sg-in',
+      source_port_id: undefined,
+      target_port_id: undefined,
+    });
+  });
+
+  it('继续编辑已有子图时保留编辑器容器', () => {
+    let state = createWorkflowOrchestrationState(createEmptyWorkflowDraft('已有子图草稿'));
+
+    state = applyWorkflowOrchestrationOperation(state, {
+      type: 'upsert_subgraph',
+      id: 'cleaning_group',
+      label: '清洗子图',
+      blocks: [
+        {
+          id: 'clean_code',
+          nodeType: 'code',
+          label: '清洗脚本',
+          config: { script: 'payload' },
+        },
+      ],
+      edges: [
+        { from: 'sg-in', to: 'clean_code' },
+        { from: 'clean_code', to: 'sg-out' },
+      ],
+    });
+
+    const resumed = createWorkflowOrchestrationState(state.draft);
+
+    expect(
+      resumed.draft.graph.editor_graph?.nodes.find((node) => node.id === 'cleaning_group'),
+    ).toMatchObject({
+      type: 'subgraph',
+      data: {
+        label: '清洗子图',
+      },
+    });
+    expect(resumed.draft.graph.nodes['cleaning_group/clean_code']?.type).toBe('code');
   });
 });
 

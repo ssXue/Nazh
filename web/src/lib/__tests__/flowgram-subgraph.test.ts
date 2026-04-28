@@ -25,10 +25,11 @@ function subgraphNode(
   edges: FlowgramWorkflowJSON['edges'] = [],
   parameterBindings?: Record<string, string | number | boolean>,
 ) {
-  const data: Record<string, unknown> = { label: id };
+  const config: Record<string, unknown> = {};
   if (parameterBindings) {
-    data.parameterBindings = parameterBindings;
+    config.parameterBindings = parameterBindings;
   }
+  const data: Record<string, unknown> = { label: id, nodeType: 'subgraph', config };
   return {
     id,
     type: 'subgraph',
@@ -141,6 +142,16 @@ describe('flattenSubgraphs', () => {
     expect(ids).toContain('outer/inner/native-1');
     expect(ids).toContain('timer-1');
     expect(ids).toContain('sql-1');
+
+    const edgePairs = flat.edges.map((e) => `${e.sourceNodeID}->${e.targetNodeID}`).sort();
+    expect(edgePairs).toEqual([
+      'outer/inner/in-in->outer/inner/native-1',
+      'outer/inner/in-out->outer/out-out',
+      'outer/inner/native-1->outer/inner/in-out',
+      'outer/out-in->outer/inner/in-in',
+      'outer/out-out->sql-1',
+      'timer-1->outer/out-in',
+    ]);
   });
 
   // ── 测试 4: 深度限制（8 层） ──────────────────────────────────

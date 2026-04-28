@@ -95,6 +95,8 @@ flowchart TB
 | | tryCatch | 异常捕获处理 |
 | | loop | 迭代循环 |
 | | code | Rhai 脚本（支持自然语言生成） |
+| **组合封装** | subgraph | FlowGram 子画布容器，部署前展平为扁平 DAG |
+| | subgraphInput / subgraphOutput | 子图边界桥接节点，执行时 passthrough |
 | **I/O 操作** | modbusRead | Modbus TCP 寄存器读取 |
 | | httpClient | HTTP 请求 / Webhook |
 | | mqttClient | MQTT 消息发布 |

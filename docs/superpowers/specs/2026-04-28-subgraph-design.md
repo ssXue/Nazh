@@ -2,7 +2,7 @@
 
 **日期**: 2026-04-28
 **ADR**: ADR-0013（子图与宏系统）
-**范围**: 全量实施（嵌套 + 参数化），模板库延后
+**范围**: 子图核心实施（嵌套 + 参数化），模板库延后
 
 ## 概述
 
@@ -15,6 +15,7 @@
 - **前端展平，Rust 不感知** — `flowgram.ts` 递归展平，Runner 处理扁平 DAG
 - **参数化** — `{{paramName}}` 占位符在展平时替换
 - **嵌套上限 8 层** + 循环引用检测
+- **AI 编排读取节点能力** — 从节点定义 / 默认 config 键 / 运行时注册表 / pin schema 生成 prompt，支持 `upsert_subgraph`
 - **模板库延后** — `definitionRef` 字段预留，不实现存储/加载
 
 ## 数据模型
@@ -171,12 +172,14 @@ function applyParameterBindings(
 | `web/src/components/flowgram/nodes/SubgraphInputNode.tsx` | 新建 |
 | `web/src/components/flowgram/nodes/SubgraphOutputNode.tsx` | 新建 |
 | `web/src/components/flowgram/flowgram-node-library.ts` | 注册新节点 |
+| `web/src/lib/workflow-node-capabilities.ts` | AI 节点能力目录 |
+| `web/src/lib/workflow-orchestrator.ts` | `upsert_subgraph` 操作 + 自动节点能力 prompt |
 | `web/src/lib/__tests__/flowgram-subgraph.test.ts` | 新建 |
 | `crates/nodes-flow/src/passthrough.rs` | 新建 |
 | `crates/nodes-flow/src/lib.rs` | 注册 passthrough |
 | `crates/nodes-flow/src/plugin.rs` | FlowPlugin 加 subgraphInput/subgraphOutput |
 | `tests/workflow.rs` | 集成测试 |
-| `docs/adr/0013-子图与宏系统.md` | 状态更新 → 已接受 |
+| `docs/adr/0013-子图与宏系统.md` | 状态更新 → 已实施（子图核心） |
 
 ## 不在本范围
 

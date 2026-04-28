@@ -97,6 +97,10 @@ export function getNodeDefinition(kind: NazhNodeKind) {
   return DEF_MAP.get(kind);
 }
 
+export function getAllNodeDefinitions() {
+  return [...ALL_DEFS];
+}
+
 export function buildDefaultNodeSeed(kind: NazhNodeKind): NodeSeed {
   const def = DEF_MAP.get(kind);
   return def ? def.buildDefaultSeed() : nativeDef.buildDefaultSeed();
