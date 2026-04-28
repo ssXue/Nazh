@@ -4,7 +4,7 @@
 // 严格一致。任意一方漂移由 tests/fixtures/pin_compat_matrix.jsonc 合约
 // 测试在 CI 抓——前端在 `__tests__/pin-compat.test.ts` 跑全表断言。
 
-import type { PinType } from '../types';
+import type { PinKind, PinType } from '../types';
 
 /**
  * 判断"上游产出 `from` → 下游期望 `to`"是否兼容。
@@ -44,4 +44,17 @@ export function isCompatibleWith(from: PinType, to: PinType): boolean {
   }
 
   return false;
+}
+
+/**
+ * 判断"上游引脚 Kind `from` → 下游引脚 Kind `to`"是否可连。
+ *
+ * ADR-0014 求值语义二分：引脚 Kind 必须完全一致——Exec ↔ Exec、Data ↔ Data，
+ * 跨 Kind 一律拒绝。理由见 docs/superpowers/specs/2026-04-28-pin-kind-exec-data-design.md。
+ *
+ * 必须与 Rust 端 `PinKind::is_compatible_with`（在 crates/core/src/pin.rs）严格
+ * 一致——由 tests/fixtures/pin_kind_matrix.jsonc 合约保证（前后端共享 fixture）。
+ */
+export function isKindCompatible(from: PinKind, to: PinKind): boolean {
+  return from === to;
 }

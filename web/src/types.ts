@@ -26,6 +26,7 @@ export type {
   NodeTypeEntry,
   PinDefinition,
   PinDirection,
+  PinKind,
   PinType,
   UndeployResponse,
   WorkflowContext,

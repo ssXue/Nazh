@@ -15,6 +15,7 @@ export type { ListNodeTypesResponse } from './ListNodeTypesResponse';
 export type { NodeTypeEntry } from './NodeTypeEntry';
 export type { PinDefinition } from './PinDefinition';
 export type { PinDirection } from './PinDirection';
+export type { PinKind } from './PinKind';
 export type { PinType } from './PinType';
 export type { SnapshotWorkflowVariablesRequest } from './SnapshotWorkflowVariablesRequest';
 export type { SnapshotWorkflowVariablesResponse } from './SnapshotWorkflowVariablesResponse';
