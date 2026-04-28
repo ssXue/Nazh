@@ -829,6 +829,19 @@ export function normalizeNodeConfig(
     };
   }
 
+  if (nodeType === 'subgraph') {
+    return {
+      ...rawConfig,
+      parameterBindings: isRecord(rawConfig.parameterBindings)
+        ? rawConfig.parameterBindings
+        : {},
+    };
+  }
+
+  if (nodeType === 'subgraphInput' || nodeType === 'subgraphOutput') {
+    return {};
+  }
+
   return {
     ...rawConfig,
     script: typeof rawConfig.script === 'string' ? rawConfig.script : 'payload',

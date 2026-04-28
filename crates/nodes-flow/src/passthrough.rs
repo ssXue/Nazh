@@ -1,9 +1,36 @@
 //! 子图桥接节点的 passthrough 实现——payload 直传，无副作用。
 
 use async_trait::async_trait;
-use nazh_core::{EngineError, NodeExecution, NodeTrait, WorkflowNodeDefinition};
+use nazh_core::{
+    EngineError, NodeExecution, NodeTrait, PinDefinition, PinType, WorkflowNodeDefinition,
+};
 use serde_json::Value;
 use uuid::Uuid;
+
+#[derive(Clone, Copy)]
+enum PassthroughKind {
+    SubgraphInput,
+    SubgraphOutput,
+    Fallback,
+}
+
+impl PassthroughKind {
+    fn from_node_type(node_type: &str) -> Self {
+        match node_type {
+            "subgraphInput" => Self::SubgraphInput,
+            "subgraphOutput" => Self::SubgraphOutput,
+            _ => Self::Fallback,
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::SubgraphInput => "subgraphInput",
+            Self::SubgraphOutput => "subgraphOutput",
+            Self::Fallback => "passthrough",
+        }
+    }
+}
 
 /// Passthrough 节点：将输入 payload 原样广播输出。
 ///
@@ -11,6 +38,7 @@ use uuid::Uuid;
 /// 在执行 DAG 中充当透传桥梁，不做任何变换或副作用。
 pub struct PassthroughNode {
     id: String,
+    kind: PassthroughKind,
 }
 
 impl PassthroughNode {
@@ -18,6 +46,7 @@ impl PassthroughNode {
     pub fn from_definition(definition: &WorkflowNodeDefinition) -> Result<Self, EngineError> {
         Ok(Self {
             id: definition.id().to_owned(),
+            kind: PassthroughKind::from_node_type(definition.node_type()),
         })
     }
 }
@@ -29,7 +58,21 @@ impl NodeTrait for PassthroughNode {
     }
 
     fn kind(&self) -> &'static str {
-        "passthrough"
+        self.kind.as_str()
+    }
+
+    fn input_pins(&self) -> Vec<PinDefinition> {
+        vec![PinDefinition::required_input(
+            PinType::Json,
+            "子图桥接节点接收上游 JSON payload。",
+        )]
+    }
+
+    fn output_pins(&self) -> Vec<PinDefinition> {
+        vec![PinDefinition::output(
+            PinType::Json,
+            "子图桥接节点原样输出 JSON payload。",
+        )]
     }
 
     async fn transform(
@@ -75,5 +118,28 @@ mod tests {
     fn passthrough_工厂返回正确的_kind() {
         let node = PassthroughNode::from_definition(&make_def()).unwrap();
         assert_eq!(node.kind(), "passthrough");
+    }
+
+    #[test]
+    fn 子图桥接_kind_跟随注册类型() {
+        let input = WorkflowNodeDefinition::probe("subgraphInput", serde_json::Value::Null);
+        let output = WorkflowNodeDefinition::probe("subgraphOutput", serde_json::Value::Null);
+
+        assert_eq!(
+            PassthroughNode::from_definition(&input).unwrap().kind(),
+            "subgraphInput"
+        );
+        assert_eq!(
+            PassthroughNode::from_definition(&output).unwrap().kind(),
+            "subgraphOutput"
+        );
+    }
+
+    #[test]
+    fn passthrough_声明_json_exec_输入输出引脚() {
+        let node = PassthroughNode::from_definition(&make_def()).unwrap();
+
+        assert_eq!(node.input_pins()[0].pin_type, PinType::Json);
+        assert_eq!(node.output_pins()[0].pin_type, PinType::Json);
     }
 }

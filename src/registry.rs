@@ -84,9 +84,9 @@ mod tests {
             NodeCapabilities::BRANCHING | NodeCapabilities::MULTI_OUTPUT,
         );
 
-        // 子图桥接（ADR-0013）
-        expect("subgraphInput", NodeCapabilities::empty());
-        expect("subgraphOutput", NodeCapabilities::empty());
+        // 子图桥接（ADR-0013）— 透传无副作用
+        expect("subgraphInput", NodeCapabilities::PURE);
+        expect("subgraphOutput", NodeCapabilities::PURE);
 
         // I/O
         expect("native", NodeCapabilities::empty());
