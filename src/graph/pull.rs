@@ -170,12 +170,25 @@ fn pull_one<'a>(
                     "上游 Exec 节点 `{upstream_node_id}` 在 output_caches_index 缺失"
                 ))
             })?;
-            cache.read(upstream_output_pin_id).map(|c| c.value).ok_or(
-                EngineError::DataPinCacheEmpty {
-                    upstream: upstream_node_id.to_owned(),
-                    pin: upstream_output_pin_id.to_owned(),
-                },
-            )
+            let cached =
+                cache
+                    .read(upstream_output_pin_id)
+                    .ok_or(EngineError::DataPinCacheEmpty {
+                        upstream: upstream_node_id.to_owned(),
+                        pin: upstream_output_pin_id.to_owned(),
+                    })?;
+            // OutputCache 存储的是完整 payload；提取 pin 对应的值
+            match cached.value {
+                Value::Object(map) => {
+                    map.get(upstream_output_pin_id)
+                        .cloned()
+                        .ok_or(EngineError::DataPinCacheEmpty {
+                            upstream: upstream_node_id.to_owned(),
+                            pin: upstream_output_pin_id.to_owned(),
+                        })
+                }
+                other => Ok(other),
+            }
         }
     })
 }
