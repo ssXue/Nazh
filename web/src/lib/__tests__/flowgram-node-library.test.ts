@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { WorkflowNodeJSON } from '@flowgram.ai/free-layout-editor';
 
 import {
+  createFlowgramNodeRegistries,
   normalizeFlowgramNodeJson,
   normalizeNodeKind,
   normalizeNodeConfig,
@@ -111,6 +112,22 @@ describe('normalizeFlowgramNodeJson', () => {
     const config = (normalized.data as { config?: { script?: string } })?.config;
     expect(config?.script).toBe('payload');
   });
+
+  it('data label 缺失时显示名称回退到节点类型默认名而不是 node id', () => {
+    const json: WorkflowNodeJSON = {
+      id: 'loop_1',
+      type: 'loop',
+      meta: { position: { x: 0, y: 0 } },
+      data: {
+        nodeType: 'loop',
+        config: {},
+      },
+    };
+
+    const normalized = normalizeFlowgramNodeJson(json, CONNECTION_DEFAULTS);
+
+    expect((normalized.data as { label?: string })?.label).toBe('Loop Node');
+  });
 });
 
 describe('normalizeNodeConfig', () => {
@@ -173,5 +190,56 @@ describe('normalizeNodeKind', () => {
   it('未知类型回退到 native', () => {
     expect(normalizeNodeKind('rhai')).toBe('native');
     expect(normalizeNodeKind('unknown')).toBe('native');
+  });
+});
+
+describe('createFlowgramNodeRegistries', () => {
+  it('loop 节点注册为容器并自带迭代桥接节点', () => {
+    const registries = createFlowgramNodeRegistries(CONNECTION_DEFAULTS);
+    const loopRegistry = registries.find((registry) => registry.type === 'loop');
+    const meta = loopRegistry?.meta as
+      | {
+          isContainer?: boolean;
+          size?: { width?: number; height?: number };
+          defaultPorts?: Array<{ type?: string }>;
+        }
+      | undefined;
+
+    expect(meta).toMatchObject({
+      isContainer: true,
+      size: { width: 344, height: 136 },
+      defaultPorts: [{ type: 'input' }, { type: 'output' }],
+    });
+
+    const nodeJson = loopRegistry?.onAdd?.({} as never) as
+      | {
+          data?: { label?: string };
+          blocks?: Array<{ id?: string; type?: string; meta?: { position?: { x?: number; y?: number } } }>;
+        }
+      | undefined;
+
+    expect(nodeJson?.data?.label).toBe('Loop Node');
+    expect(nodeJson?.blocks).toEqual([
+      {
+        id: 'loop-iterate',
+        type: 'subgraphInput',
+        meta: { position: { x: 0, y: 0 } },
+        data: {
+          label: 'Iterate',
+          nodeType: 'subgraphInput',
+          config: {},
+        },
+      },
+      {
+        id: 'loop-emit',
+        type: 'subgraphOutput',
+        meta: { position: { x: 200, y: 0 } },
+        data: {
+          label: 'Emit',
+          nodeType: 'subgraphOutput',
+          config: {},
+        },
+      },
+    ]);
   });
 });

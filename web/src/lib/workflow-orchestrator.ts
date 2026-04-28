@@ -12,7 +12,9 @@ import type {
 
 import {
   buildDefaultNodeSeed,
+  createFlowgramNodeRegistries,
   normalizeNodeConfig,
+  resolveNodeDisplayLabel,
   type NazhNodeKind,
 } from '../components/flowgram/flowgram-node-library';
 import { toFlowgramWorkflowJson } from './flowgram';
@@ -28,6 +30,20 @@ const DEFAULT_COPILOT_PARAMS: AiGenerationParams = {
   maxTokens: 4096,
   topP: 1,
 };
+const EMPTY_FLOWGRAM_CONNECTION_DEFAULTS = {
+  any: null,
+  modbus: null,
+  serial: null,
+  mqtt: null,
+  http: null,
+  bark: null,
+};
+const FLOWGRAM_NODE_REGISTRY_MAP = new Map(
+  createFlowgramNodeRegistries(EMPTY_FLOWGRAM_CONNECTION_DEFAULTS).map((registry) => [
+    registry.type,
+    registry,
+  ]),
+);
 
 const ALLOWED_NODE_KINDS: NazhNodeKind[] = [
   'native',
@@ -378,13 +394,18 @@ function buildGraphWithLabels(
 
   const nextEditorGraph = {
     ...editorGraph,
-    nodes: editorGraph.nodes.map((node) => ({
-      ...node,
-      data: {
-        ...(isRecord(node.data) ? node.data : {}),
-        label: nodeLabels[node.id] ?? node.id,
-      },
-    })),
+    nodes: editorGraph.nodes.map((node) => {
+      const defaults = FLOWGRAM_NODE_REGISTRY_MAP.get(String(node.type))?.onAdd?.();
+      return {
+        ...node,
+        blocks: node.blocks ?? defaults?.blocks,
+        edges: node.edges ?? defaults?.edges,
+        data: {
+          ...(isRecord(node.data) ? node.data : {}),
+          label: resolveNodeDisplayLabel(node.type, nodeLabels[node.id]),
+        },
+      };
+    }),
   };
 
   return {
@@ -438,7 +459,10 @@ export function createWorkflowOrchestrationState(
 ): WorkflowOrchestrationSessionState {
   const draft = baseDraft ?? createEmptyWorkflowDraft();
   const nodeLabels = Object.keys(draft.graph.nodes).reduce<Record<string, string>>((acc, nodeId) => {
-    acc[nodeId] = nodeId;
+    const node = draft.graph.nodes[nodeId];
+    const editorNode = draft.graph.editor_graph?.nodes.find((item) => item.id === nodeId);
+    const editorData = isRecord(editorNode?.data) ? editorNode.data : {};
+    acc[nodeId] = resolveNodeDisplayLabel(node?.type, editorData.label);
     return acc;
   }, {});
 
@@ -790,6 +814,7 @@ function parseOperationLine(line: string): WorkflowOrchestrationOperation | null
 
 function resolveNodeLabel(
   nodeId: string,
+  nodeType: NazhNodeKind,
   nextLabel: string | undefined,
   currentLabels: Record<string, string>,
 ): string {
@@ -797,7 +822,11 @@ function resolveNodeLabel(
     return nextLabel.trim();
   }
 
-  return currentLabels[nodeId] ?? nodeId;
+  const currentLabel = currentLabels[nodeId];
+  return resolveNodeDisplayLabel(
+    nodeType,
+    currentLabel && currentLabel !== nodeId ? currentLabel : undefined,
+  );
 }
 
 export function applyWorkflowOrchestrationOperation(
@@ -831,6 +860,7 @@ export function applyWorkflowOrchestrationOperation(
 
       nextNodeLabels[operation.id] = resolveNodeLabel(
         operation.id,
+        operation.nodeType,
         operation.label,
         nextNodeLabels,
       );

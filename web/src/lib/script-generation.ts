@@ -1,5 +1,6 @@
 import type { FlowNodeEntity } from '@flowgram.ai/free-layout-editor';
 
+import { resolveNodeDisplayLabel } from '../components/flowgram/flowgram-node-library';
 import type {
   AiCompletionRequest,
   AiGenerationParams,
@@ -54,14 +55,15 @@ function extractNodeInfo(node: FlowNodeEntity): NodeContextInfo {
     label?: string;
     nodeType?: string;
   };
+  const nodeType = extInfo.nodeType ?? String(node.flowNodeType);
   // 从 pin schema 缓存读 input/output pin 摘要。缓存未命中（节点刚加 /
   // IPC 还没回）→ 字段保持 undefined，prompt 不渲染该节点的 pin 信息。
   // Graceful degradation：缺数据不阻断生成流程。
   const schema = getCachedPinSchema(node.id);
   return {
     nodeId: node.id,
-    nodeType: extInfo.nodeType ?? String(node.flowNodeType),
-    label: extInfo.label ?? node.id,
+    nodeType,
+    label: resolveNodeDisplayLabel(nodeType, extInfo.label),
     inputPins: summarizePins(schema?.inputPins),
     outputPins: summarizePins(schema?.outputPins),
   };

@@ -430,7 +430,7 @@ export function resolveNodeData(
     seed.connectionId === undefined
       ? resolveDefaultConnectionId(seed.kind, connectionDefaults)
       : seed.connectionId;
-  const label = seed.label.trim() || fallbackLabel;
+  const label = resolveNodeDisplayLabel(seed.kind, seed.label || fallbackLabel);
 
   return {
     label,
@@ -447,7 +447,7 @@ export function buildPaletteNodeJson(
   connectionDefaults: FlowgramConnectionDefaults,
   baseJson?: Partial<WorkflowNodeJSON>,
 ): Partial<WorkflowNodeJSON> {
-  const fallbackLabel = seed.label.trim() || getFallbackNodeLabel(seed.kind);
+  const fallbackLabel = resolveNodeDisplayLabel(seed.kind, seed.label);
   const baseData = isRecord(baseJson?.data) ? (baseJson.data as Record<string, unknown>) : {};
   const nextData = resolveNodeData(seed, fallbackLabel, connectionDefaults);
 
@@ -471,7 +471,7 @@ export function normalizeFlowgramNodeJson(
 ): FlowNodeJSON {
   const rawData = isRecord(json.data) ? (json.data as FlowgramNodeData) : {};
   const nodeType = normalizeNodeKind(rawData.nodeType ?? json.type);
-  const fallbackLabel = json.id || getFallbackNodeLabel(nodeType);
+  const fallbackLabel = resolveNodeDisplayLabel(nodeType);
   const rawConfig = rawData.config;
   const normalizedConfig = normalizeNodeConfig(nodeType, rawConfig);
 
@@ -482,7 +482,7 @@ export function normalizeFlowgramNodeJson(
       ...rawData,
       label:
         typeof rawData.label === 'string' && rawData.label.trim()
-          ? rawData.label
+          ? rawData.label.trim()
           : fallbackLabel,
       nodeType,
       displayType: normalizeDisplayType(rawData.displayType, nodeType),
@@ -583,6 +583,17 @@ export function getFallbackNodeLabel(kind: NazhNodeKind): string {
     default:
       return 'Native Node';
   }
+}
+
+export function resolveNodeDisplayLabel(
+  nodeType: unknown,
+  label?: unknown,
+): string {
+  if (typeof label === 'string' && label.trim()) {
+    return label.trim();
+  }
+
+  return getFallbackNodeLabel(normalizeNodeKind(nodeType));
 }
 
 export interface NodeValidation {

@@ -102,6 +102,20 @@ describe('toFlowgramWorkflowJson', () => {
     expect(typeof nodeX?.meta?.position?.y).toBe('number');
   });
 
+  it('基础图生成 FlowGram JSON 时显示名称回退到节点类型默认名', () => {
+    const graph: WorkflowGraph = {
+      nodes: {
+        loop_1: { type: 'loop', config: { script: '[payload]' } },
+      },
+      edges: [],
+    } as WorkflowGraph;
+
+    const result = toFlowgramWorkflowJson(graph);
+    const node = result.nodes.find((item) => item.id === 'loop_1');
+
+    expect((node?.data as { label?: string } | undefined)?.label).toBe('Loop Node');
+  });
+
   it('单节点无边图，边列表为空', () => {
     const graph: WorkflowGraph = {
       nodes: {
@@ -112,5 +126,40 @@ describe('toFlowgramWorkflowJson', () => {
     const result = toFlowgramWorkflowJson(graph);
     expect(result.nodes).toHaveLength(1);
     expect(result.edges).toHaveLength(0);
+  });
+
+  it('保留 editor_graph 中的显示名称，同时用当前 graph 刷新运行字段', () => {
+    const graph: WorkflowGraph = {
+      nodes: {
+        loop_1: {
+          type: 'loop',
+          config: { script: 'payload.map(|item| item)' },
+          meta: { position: { x: 80, y: 120 } },
+        },
+      },
+      edges: [],
+      editor_graph: {
+        nodes: [
+          {
+            id: 'loop_1',
+            type: 'loop',
+            meta: { position: { x: 10, y: 20 } },
+            data: {
+              label: '逐项处理',
+              nodeType: 'loop',
+              config: { script: '[payload]' },
+            },
+          },
+        ],
+        edges: [],
+      },
+    } as WorkflowGraph;
+
+    const result = toFlowgramWorkflowJson(graph);
+    const node = result.nodes.find((item) => item.id === 'loop_1');
+    const data = node?.data as { label?: string; config?: { script?: string } } | undefined;
+
+    expect(data?.label).toBe('逐项处理');
+    expect(data?.config?.script).toBe('payload.map(|item| item)');
   });
 });

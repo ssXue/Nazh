@@ -2,6 +2,7 @@ import type { WorkflowJSON as FlowgramWorkflowJSON } from '@flowgram.ai/free-lay
 
 import { layoutGraph } from './graph';
 import { stripNodeLocalAiConfig } from './workflow-ai';
+import { resolveNodeDisplayLabel } from '../components/flowgram/flowgram-node-library';
 import type { WorkflowGraph, WorkflowNodeDefinition } from '../types';
 
 interface FlowgramNodeData {
@@ -87,7 +88,7 @@ function buildBaseFlowgramWorkflowJson(graph: WorkflowGraph): FlowgramWorkflowJS
       const nodeType = definition?.type ?? 'unknown';
       const config = definition?.config ?? {};
       const data: FlowgramNodeData = {
-        label: positionedNode.id,
+        label: resolveNodeDisplayLabel(nodeType),
         nodeType,
         displayType: nodeType,
         connectionId: definition?.connection_id ?? null,
@@ -111,6 +112,17 @@ function buildBaseFlowgramWorkflowJson(graph: WorkflowGraph): FlowgramWorkflowJS
       targetPortID: edge.target_port_id,
     })),
   };
+}
+
+function resolvePersistedLabel(
+  nodeType: unknown,
+  persistedData: Record<string, unknown>,
+  runtimeData: Record<string, unknown>,
+): unknown {
+  if (typeof persistedData.label === 'string' && persistedData.label.trim()) {
+    return resolveNodeDisplayLabel(nodeType, persistedData.label);
+  }
+  return resolveNodeDisplayLabel(nodeType, runtimeData.label);
 }
 
 function sanitizeEditorNodes(
@@ -161,12 +173,16 @@ export function toFlowgramWorkflowJson(graph: WorkflowGraph): FlowgramWorkflowJS
       return node;
     }
 
+    const persistedData = isRecord(persistedNode.data) ? persistedNode.data : {};
+    const runtimeData = isRecord(node.data) ? node.data : {};
+
     return {
       ...node,
       meta: persistedNode.meta ?? node.meta,
       data: {
-        ...(isRecord(persistedNode.data) ? persistedNode.data : {}),
-        ...(isRecord(node.data) ? node.data : {}),
+        ...persistedData,
+        ...runtimeData,
+        label: resolvePersistedLabel(runtimeData.nodeType ?? node.type, persistedData, runtimeData),
       },
       blocks: persistedNode.blocks,
       edges: persistedNode.edges,

@@ -148,6 +148,64 @@ describe('applyWorkflowOrchestrationOperation', () => {
       body_template: '告警：{{payload}}',
     });
   });
+
+  it('AI 新增 loop 节点时补齐容器内部出入桥接点', () => {
+    let state = createWorkflowOrchestrationState(createEmptyWorkflowDraft('AI 草稿'));
+
+    state = applyWorkflowOrchestrationOperation(state, {
+      type: 'upsert_node',
+      id: 'loop_items',
+      nodeType: 'loop',
+      label: '逐项处理',
+      config: {
+        script: '[payload]',
+      },
+    });
+
+    const loopNode = state.draft.graph.editor_graph?.nodes.find((node) => node.id === 'loop_items');
+
+    expect((loopNode?.data as { label?: string } | undefined)?.label).toBe('逐项处理');
+    expect(loopNode?.blocks).toEqual([
+      {
+        id: 'loop-iterate',
+        type: 'subgraphInput',
+        meta: { position: { x: 0, y: 0 } },
+        data: {
+          label: 'Iterate',
+          nodeType: 'subgraphInput',
+          config: {},
+        },
+      },
+      {
+        id: 'loop-emit',
+        type: 'subgraphOutput',
+        meta: { position: { x: 200, y: 0 } },
+        data: {
+          label: 'Emit',
+          nodeType: 'subgraphOutput',
+          config: {},
+        },
+      },
+    ]);
+  });
+
+  it('AI 新增节点未给 label 时显示名称回退到节点类型默认名', () => {
+    let state = createWorkflowOrchestrationState(createEmptyWorkflowDraft('AI 草稿'));
+
+    state = applyWorkflowOrchestrationOperation(state, {
+      type: 'upsert_node',
+      id: 'loop_items',
+      nodeType: 'loop',
+      config: {
+        script: '[payload]',
+      },
+    });
+
+    const loopNode = state.draft.graph.editor_graph?.nodes.find((node) => node.id === 'loop_items');
+
+    expect(state.nodeLabels.loop_items).toBe('Loop Node');
+    expect((loopNode?.data as { label?: string } | undefined)?.label).toBe('Loop Node');
+  });
 });
 
 describe('streamWorkflowOrchestration', () => {

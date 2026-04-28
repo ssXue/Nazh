@@ -13,6 +13,7 @@ import {
   normalizeNodeKind,
   normalizeHttpBodyMode,
   parseTimeoutMs,
+  resolveNodeDisplayLabel,
   type FlowgramLogicBranch,
   getNodeDefinition,
 } from './flowgram-node-library';
@@ -98,7 +99,7 @@ function readNodeDraft(node: FlowNodeEntity): SelectedNodeDraft {
   return {
     id: node.id,
     nodeType,
-    label: rawData.label ?? node.id,
+    label: resolveNodeDisplayLabel(nodeType, rawData.label),
     connectionId: rawData.connectionId ?? '',
     timeoutMs: rawData.timeoutMs ? String(rawData.timeoutMs) : '',
     message: readString(config.message),
@@ -430,7 +431,7 @@ function FlowgramNodeSettingsPanel({
 
         const nextExtInfo = {
           ...currentExtInfo,
-          label: nextDraft.label || nextDraft.id,
+          label: resolveNodeDisplayLabel(nextDraft.nodeType, nextDraft.label),
           nodeType: nextDraft.nodeType,
           connectionId: nextDraft.connectionId.trim() || null,
           timeoutMs: parseTimeoutMs(nextDraft.timeoutMs),
