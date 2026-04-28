@@ -1,0 +1,28 @@
+// PinKind 兼容矩阵的权威合约（ADR-0014）。
+//
+// Rust: crates/core/src/pin.rs `PinKind::is_compatible_with`
+// TS:   web/src/lib/pin-compat.ts `isKindCompatible`（Phase 2 Task 5 接入）
+//
+// 设计前提（ADR-0014 设计文档 §五）：
+//   引脚必须 Kind 完全一致——Exec ↔ Exec、Data ↔ Data。
+//   跨 Kind 是部署期与连接期硬错误。
+//
+// 修改本文件时同步检查上述两份实现，且必须跑：
+//   cargo test -p nazh-core --test pin_kind_contract
+//   npm --prefix web run test pin-kind-compat
+//
+// 序列化形态：PinKind 是 #[serde(rename_all = "lowercase")] 的简单枚举：
+//   "exec"  -> PinKind::Exec
+//   "data"  -> PinKind::Data
+//
+// 覆盖纪律：每个 PinKind 变体需补 N 条配对——至少自反兼容 + 与所有其他变体
+// 不兼容（互相）。本矩阵当前 4 条已穷尽 2×2 笛卡儿积。
+
+{
+  "pairs": [
+    { "from": "exec", "to": "exec", "compatible": true  },
+    { "from": "data", "to": "data", "compatible": true  },
+    { "from": "exec", "to": "data", "compatible": false },
+    { "from": "data", "to": "exec", "compatible": false }
+  ]
+}
