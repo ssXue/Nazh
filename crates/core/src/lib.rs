@@ -26,6 +26,7 @@ pub use ai::{
     AiMessageRole, AiReasoningEffort, AiService, AiThinkingConfig, AiThinkingMode, AiTokenUsage,
     StreamChunk,
 };
+pub use cache::{CachedOutput, OutputCache};
 pub use context::{ContextRef, WorkflowContext};
 pub use data::{ArenaDataStore, DataId, DataStore};
 pub use error::EngineError;
