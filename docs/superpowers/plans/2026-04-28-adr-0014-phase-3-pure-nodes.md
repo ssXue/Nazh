@@ -1,3 +1,5 @@
+> **Status:** merged in f1f23a2
+
 # ADR-0014 Phase 3 实施计划：UE5 风格 Pure 节点（pull 路径首次激活）
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

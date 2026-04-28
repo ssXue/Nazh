@@ -16,7 +16,7 @@
 
 ### ADR-0014 引脚求值语义二分
 
-- [ ] **Phase 3** PURE 节点 — `docs/superpowers/plans/2026-04-28-adr-0014-phase-3-pure-nodes.md`
+- [x] **Phase 3** PURE 节点 — `docs/superpowers/plans/2026-04-28-adr-0014-phase-3-pure-nodes.md`（merged in f1f23a2）
 - [ ] **Phase 3b** lookup + mixed input — `docs/superpowers/plans/2026-04-28-adr-0014-phase-3b-lookup-mixed-input.md`
 - [ ] **Phase 4** cache lifecycle — `docs/superpowers/plans/2026-04-28-adr-0014-phase-4-cache-lifecycle.md`
 - [ ] **Phase 5** visual + AI — `docs/superpowers/plans/2026-04-28-adr-0014-phase-5-visual-ai.md`
