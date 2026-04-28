@@ -97,7 +97,7 @@ impl Plugin for FlowPlugin {
         // ADR-0013 子图桥接：前端 flattenSubgraphs 后参与执行 DAG。
         registry.register_with_capabilities(
             "subgraphInput",
-            NodeCapabilities::empty(),
+            NodeCapabilities::PURE,
             |def, _res| {
                 Ok(Arc::new(passthrough::PassthroughNode::from_definition(
                     def,
@@ -106,7 +106,7 @@ impl Plugin for FlowPlugin {
         );
         registry.register_with_capabilities(
             "subgraphOutput",
-            NodeCapabilities::empty(),
+            NodeCapabilities::PURE,
             |def, _res| {
                 Ok(Arc::new(passthrough::PassthroughNode::from_definition(
                     def,
