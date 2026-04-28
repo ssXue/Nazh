@@ -1250,6 +1250,18 @@ html[data-theme='dark'] .flowgram-floating-panel--node {
   border-color: #ef4444;
 }
 
+/* 端口求值语义（PinKind）视觉区分：data-port-pin-kind 由 FlowgramCanvas
+ * 写入端口 DOM。Exec 引脚保留实心既有外观；Data 引脚改空心 + 冷色边框，
+ * 让用户一眼区分"推送式"vs"拉取式"求值语义。
+ *
+ * Kind 与 Type 是正交属性——Kind 选择器单独成块，不与 [data-port-pin-type]
+ * 组合以避免规则爆炸。ADR-0014 Phase 2 引入；视觉细节（颜色变量、形状）
+ * 将在 Phase 5 视觉打磨章节统一收口。 */
+.flowgram-card__branch-port[data-port-pin-kind='data'] {
+  background: var(--surface-elevated);
+  border: 2px solid var(--accent-cool, #6366f1);
+}
+
 .flowgram-card__meta {
   display: flex;
   flex-direction: column;

@@ -494,6 +494,15 @@ export function parseTimeoutMs(value: string): number | null {
   return normalizeTimeoutValue(numeric);
 }
 
+/**
+ * 获取节点的"具名输出端口"定义（FlowGram 动态端口列表）。
+ *
+ * 历史上仅服务 if / switch / tryCatch / loop 这类"逻辑分支"节点——函数名
+ * 仍以 logic / branch 命名以保持向后兼容。ADR-0014 Phase 2 起，本函数也用于
+ * 声明协议节点的多输出引脚（如 modbusRead 的 `out` Exec + `latest` Data），
+ * 让 portId 受控匹配 Rust 端 pin id，使 pin-validator 的连接期 PinKind 校验
+ * 真正生效；rename 到更中性的命名留待 Phase 5 视觉打磨统一收口。
+ */
 export function getLogicNodeBranchDefinitions(
   nodeType: unknown,
   config: unknown,
@@ -510,6 +519,11 @@ export function getLogicNodeBranchDefinitions(
       const branches = normalizeSwitchBranches(normalizedConfig.branches);
       return [...branches, ...DEFAULT_SWITCH_BRANCHES];
     }
+    case 'modbusRead':
+      return [
+        { key: 'out', label: 'out' },
+        { key: 'latest', label: 'latest' },
+      ];
     default:
       return [];
   }

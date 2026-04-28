@@ -76,6 +76,7 @@ import {
   getPortTooltip,
   invalidateNodePinSchema,
   refreshNodePinSchema,
+  resolvePinKind,
   resolvePinTypeKind,
 } from '../lib/pin-schema-cache';
 import {
@@ -732,6 +733,7 @@ function FlowgramNodeCard(props: FlowgramNodeMaterialProps) {
                   data-port-type="output"
                   data-port-location="right"
                   data-port-pin-type={resolvePinTypeKind(props.node.id, branch.key, 'output')}
+                  data-port-pin-kind={resolvePinKind(props.node.id, branch.key, 'output')}
                   title={getPortTooltip(props.node.id, branch.key, 'output')}
                 />
               </div>

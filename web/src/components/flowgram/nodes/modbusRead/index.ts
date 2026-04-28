@@ -40,7 +40,15 @@ export const definition: NodeDefinition = {
   },
 
   buildRegistryMeta() {
-    return { defaultExpanded: true, size: this.getNodeSize() };
+    // ADR-0014 Phase 2 Task 7：modbusRead 加入 useDynamicPort 族，让
+    // `out`（Exec）/ `latest`（Data）两个具名输出端口受控渲染，匹配 Rust
+    // 端 pin id；pin-validator 的连接期 PinKind 校验由此真正生效。
+    return {
+      defaultExpanded: true,
+      size: this.getNodeSize(),
+      defaultPorts: [{ type: 'input' as const }],
+      useDynamicPort: true,
+    };
   },
 
   validate(_ctx: NodeValidationContext): NodeValidation[] {

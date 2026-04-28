@@ -19,6 +19,8 @@ import {
   getPortTooltip,
   invalidateNodePinSchema,
   refreshNodePinSchema,
+  resolvePinKind,
+  resolvePinTypeKind,
 } from '../pin-schema-cache';
 
 describe('pin-schema-cache', () => {
@@ -240,6 +242,136 @@ describe('getPortTooltip', () => {
     const tooltip = getPortTooltip('node-1', 'out', 'output');
     expect(tooltip).toContain('输出');
     expect(tooltip).not.toContain('必需');
+  });
+});
+
+describe('resolvePinKind', () => {
+  beforeEach(() => {
+    _resetCacheForTests();
+    vi.mocked(describeNodePins).mockReset();
+  });
+
+  it('缓存命中时返回引脚的 kind（exec / data）', async () => {
+    vi.mocked(describeNodePins).mockResolvedValueOnce({
+      inputPins: [],
+      outputPins: [
+        {
+          id: 'out',
+          label: 'out',
+          pin_type: { kind: 'json' },
+          direction: 'output',
+          required: false,
+          kind: 'exec',
+        },
+        {
+          id: 'latest',
+          label: 'latest',
+          pin_type: { kind: 'json' },
+          direction: 'output',
+          required: false,
+          kind: 'data',
+        },
+      ],
+    });
+    await refreshNodePinSchema('mb-1', 'modbusRead', {});
+    expect(resolvePinKind('mb-1', 'out', 'output')).toBe('exec');
+    expect(resolvePinKind('mb-1', 'latest', 'output')).toBe('data');
+  });
+
+  it('缓存未命中回退 "exec"（与存量 Exec 节点分布一致）', () => {
+    expect(resolvePinKind('未知节点', 'out', 'output')).toBe('exec');
+  });
+
+  it('端口在缓存里查不到时也回退 "exec"', async () => {
+    vi.mocked(describeNodePins).mockResolvedValueOnce({
+      inputPins: [],
+      outputPins: [
+        {
+          id: 'out',
+          label: 'out',
+          pin_type: { kind: 'json' },
+          direction: 'output',
+          required: false,
+          kind: 'exec',
+        },
+      ],
+    });
+    await refreshNodePinSchema('node-1', 'foo', {});
+    expect(resolvePinKind('node-1', 'ghost', 'output')).toBe('exec');
+  });
+});
+
+describe('resolvePinTypeKind', () => {
+  beforeEach(() => {
+    _resetCacheForTests();
+    vi.mocked(describeNodePins).mockReset();
+  });
+
+  it('缓存命中返回 PinType 顶层 kind', async () => {
+    vi.mocked(describeNodePins).mockResolvedValueOnce({
+      inputPins: [
+        {
+          id: 'in',
+          label: 'in',
+          pin_type: { kind: 'json' },
+          direction: 'input',
+          required: true,
+          kind: 'exec',
+        },
+      ],
+      outputPins: [],
+    });
+    await refreshNodePinSchema('node-1', 'sqlWriter', {});
+    expect(resolvePinTypeKind('node-1', 'in', 'input')).toBe('json');
+  });
+
+  it('缓存未命中回退 "any"（与 PinKind 的 exec 不同——Type 中性默认）', () => {
+    expect(resolvePinTypeKind('未知节点', 'in', 'input')).toBe('any');
+  });
+});
+
+describe('getPortTooltip 求值语义', () => {
+  beforeEach(() => {
+    _resetCacheForTests();
+    vi.mocked(describeNodePins).mockReset();
+  });
+
+  it('Exec 引脚 tooltip 含 "Exec（推送式）"', async () => {
+    vi.mocked(describeNodePins).mockResolvedValueOnce({
+      inputPins: [],
+      outputPins: [
+        {
+          id: 'out',
+          label: 'out',
+          pin_type: { kind: 'json' },
+          direction: 'output',
+          required: false,
+          kind: 'exec',
+        },
+      ],
+    });
+    await refreshNodePinSchema('node-1', 'foo', {});
+    const tooltip = getPortTooltip('node-1', 'out', 'output');
+    expect(tooltip).toContain('Exec（推送式）');
+  });
+
+  it('Data 引脚 tooltip 含 "Data（拉取式）"', async () => {
+    vi.mocked(describeNodePins).mockResolvedValueOnce({
+      inputPins: [],
+      outputPins: [
+        {
+          id: 'latest',
+          label: 'latest',
+          pin_type: { kind: 'json' },
+          direction: 'output',
+          required: false,
+          kind: 'data',
+        },
+      ],
+    });
+    await refreshNodePinSchema('mb-1', 'modbusRead', {});
+    const tooltip = getPortTooltip('mb-1', 'latest', 'output');
+    expect(tooltip).toContain('Data（拉取式）');
   });
 });
 
