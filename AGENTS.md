@@ -178,10 +178,14 @@ When Claude Code is used to work on this repo, a persistent memory system at `~/
 
 - **`project_system_architecture.md`** — current ring layout, phase progress, known tech debt.
 - **`project_architecture_review_2026_04.md`** — proposal ↔ ADR mapping (提案-01~09 ↔ ADR-0008~0016).
+- **`project_e2e_tauri_browser_mode.md`** — Playwright 跑在 Chromium 而非 Tauri webview（IPC 不可用），E2E 设计选型须知。详细规则已搬到本文件 `## Testing > 测试基建注意事项 > E2E：Playwright 在浏览器而非 Tauri webview`。
+- **`project_vitest_navigator_polyfill.md`** — `web/vitest.setup.ts` 的 navigator polyfill 删除守护。详细规则已搬到本文件同上小节。
 - **`user_nazh_owner.md`** — owner profile and working preferences.
 - **`MEMORY.md`** — index.
 
 **Updating memory:** when a commit materially changes the architecture state (Phase completes, ADR lands, tech debt paid/created), update the relevant memory file in the same PR. Stale memory misleads future sessions.
+
+**跨机器协作**：memory 文件不进 git，换机器即丢。任何"非派生事实"（不能从代码 / git log 推断的约定、删除守护、坑点备忘）必须冗余写入本 `AGENTS.md`，memory 仅作"point-in-time 观察"的轻量副本。`AGENTS.md` 永远是跨机器/跨人工作的真值源——见上文 "Single Source of Truth"。
 
 ## Documentation Rules
 
@@ -341,6 +345,30 @@ Located in `docs/superpowers/plans/` and `docs/superpowers/specs/`. These are **
 - Bug fix → add a regression test that would have caught the bug, before fixing.
 - Refactor (no behavior change) → existing tests must pass unchanged; if they require modification, that's a behavior change in disguise — split the PR.
 
+### 测试基建注意事项（坑点备忘）
+
+这两条是"读不到代码就猜不到"的约定，删除/改动它们之前必读：
+
+#### Vitest 的 `navigator` polyfill（`web/vitest.setup.ts`）
+
+`@flowgram.ai/variable-plugin` 在模块加载期 import 时立即读 `navigator.userAgent`（`use-node-render.tsx:37`），`@flowgram.ai/i18n` 构造时读 `navigator.language`。Vitest 默认 `environment: 'node'`，不带 navigator。任何 import 链最终触达 FlowGram SDK 的测试都会**模块加载失败**（不是测试 fail，是 `import` 直接抛）。
+
+`web/vitest.setup.ts` 在 `globalThis.navigator === undefined` 时 polyfill `{ userAgent, language, languages }`，由 `web/vitest.config.ts` 通过 `setupFiles: ['./vitest.setup.ts']` 引入。
+
+**删除/修改前必查**：grep `flowgram-node-library` 等 import 是否还会触达 `variable-plugin` 或 `i18n`；若 `environment` 升级到 `jsdom`，本 polyfill 多余但无害（保留亦可）。引入于 2026-04-28（恢复 ADR-0013 子图实施时）。
+
+#### E2E：Playwright 在浏览器而非 Tauri webview
+
+`web/e2e/playwright.config.ts` 的 `webServer` 启动 `tauri dev`，但 Playwright runner 通过 headless **Chromium** 连 `http://localhost:1420`——**不是** Tauri webview。后果：
+
+- E2E 中 `hasTauriRuntime() === false`
+- IPC commands（`describe_node_pins`、`invoke('xxx', ...)`）不可调用
+- 任何依赖 IPC 数据的代码路径走 fallback：`pin-schema-cache` 走 `FALLBACK_SCHEMA = { Any/Any/exec }`；`workflow://*` 事件不会到达
+
+**写新 E2E spec 时**：避免断言 IPC 真值；改成断言"wiring presence"——DOM 元素存在 + attribute 存在 + 取值在合法 enum 内，把"取值是否符合后端真值"留给 Vitest（jsdom mock）+ Rust 集成测试。`web/e2e/pin-kind-modbus.spec.ts`（ADR-0014 Phase 2 烟雾测试）是范本：断言 `data-port-pin-kind in ['exec', 'data']` 而非 `=== 'data'`，因 fallback 永远返回 `'exec'`。
+
+**未来若需 IPC 真值的 E2E**：改用 `@tauri-apps/playwright` 或 webview/electron-mode；或加 IPC mock 层（`hasTauriRuntime() === false` 时让 `invoke` 返回 fixture 值）。不要硬撞——拖拽连接 + console capture 断言跨 Kind 拒绝在 Chromium 模式下也仍可行（`pin-validator` 是纯函数，不依赖 IPC），但 ADR-0014 Phase 2 评审决定不做（拖拽脆弱性 + Vitest 已覆盖）。
+
 ## Project Status
 
 **Phases 1-5 complete** (crate extraction, DataStore, ConnectionGuard, Ring 1 split, Plugin system). See `docs/rfcs/0002-分层内核与插件架构.md`.
@@ -354,7 +382,7 @@ Located in `docs/superpowers/plans/` and `docs/superpowers/specs/`. These are **
 - ADR-0019 (AI 能力依赖反转) — **已实施**（2026-04-26，`AiService` trait + 请求/响应类型上移到 `crates/core/src/ai.rs`；`ai` crate 改为纯实现 + 配置型；`scripting` / `nodes-flow` 不再依赖 `ai`）
 - ADR-0018 (`nodes-io` 按协议 feature 门控) — **已实施**（2026-04-26，`io-sql/io-http/io-mqtt/io-modbus/io-serial/io-notify` + 元 feature `io-all`；facade 转传；`debug/native/timer/template` 永远启用）
 - ADR-0012 (工作流变量) — **已实施 Phase 1+2**（Phase 1: 2026-04-27 / Phase 2: 2026-04-27，`crates/core/src/variables.rs` + Rhai `vars.get/set/cas` + `ExecutionEvent::VariableChanged` write-on-change 事件广播 + IPC `set_workflow_variable` 写命令 + 前端 `RuntimeVariablesPanel` + `workflow://variable-changed` 事件通道）
-- ADR-0014（执行边与数据边分离 → 重命名为「引脚求值语义二分」）— **已实施 Phase 1 + Phase 2**（2026-04-28）。Phase 1：Ring 0 加 `PinKind` + `OutputCache`；部署期跨 Kind 校验 + Data 边独立环检测；Runner 双路径写入骨架；ts-rs 导出。生产 14 类节点 0 改动。Phase 2：`PinDefinition::output_named_data` 工厂；`modbusRead.latest` 第二输出引脚（首个真实 Data 用例）；`WorkflowDeployment.output_cache(node_id)` 访问器；`tests/fixtures/pin_kind_matrix.jsonc` 4 配对穷尽 Rust + TS 共享 fixture；前端 `isKindCompatible` + `pin-validator` 跨 Kind 闸门 + `incompatible-kinds` rejection variant；FlowGram `modbusRead` 加入 `useDynamicPort` 族 + 端口 DOM `data-port-pin-kind` attribute + CSS `[data-port-pin-kind='data']` 空心冷色边框；Playwright DOM 烟雾测试。设计文档 `docs/superpowers/specs/2026-04-28-pin-kind-exec-data-design.md`；Phase 1 plan `docs/superpowers/plans/2026-04-28-adr-0014-phase-1-pin-kind-基础.md`；Phase 2 plan `docs/superpowers/plans/2026-04-28-adr-0014-phase-2-pin-kind-modbus-真实用例.md`
+- ADR-0014（执行边与数据边分离 → 重命名为「引脚求值语义二分」）— **已实施 Phase 1 + Phase 2**（2026-04-28）。**Phase 3 plan 已写、待执行**：`docs/superpowers/plans/2026-04-28-adr-0014-phase-3-pure-nodes.md`（14 task：新 crate `crates/nodes-pure/` + `c2f` / `minutesSince` + Runner pull 路径首次激活 + 前端绿头 pure-form 视觉；`lookup` / 4 处 PinKind ↔ 子图交叉点 / formatJson 混合输入 payload 合并语义全部明确 out-of-scope）。Phase 1：Ring 0 加 `PinKind` + `OutputCache`；部署期跨 Kind 校验 + Data 边独立环检测；Runner 双路径写入骨架；ts-rs 导出。生产 14 类节点 0 改动。Phase 2：`PinDefinition::output_named_data` 工厂；`modbusRead.latest` 第二输出引脚（首个真实 Data 用例）；`WorkflowDeployment.output_cache(node_id)` 访问器；`tests/fixtures/pin_kind_matrix.jsonc` 4 配对穷尽 Rust + TS 共享 fixture；前端 `isKindCompatible` + `pin-validator` 跨 Kind 闸门 + `incompatible-kinds` rejection variant；FlowGram `modbusRead` 加入 `useDynamicPort` 族 + 端口 DOM `data-port-pin-kind` attribute + CSS `[data-port-pin-kind='data']` 空心冷色边框；Playwright DOM 烟雾测试。设计文档 `docs/superpowers/specs/2026-04-28-pin-kind-exec-data-design.md`；Phase 1 plan `docs/superpowers/plans/2026-04-28-adr-0014-phase-1-pin-kind-基础.md`；Phase 2 plan `docs/superpowers/plans/2026-04-28-adr-0014-phase-2-pin-kind-modbus-真实用例.md`
 - ADR-0013（子图与宏系统）— **已实施 子图核心**（2026-04-28，merge 68ab709 时丢失的 ADR-0013 改动恢复完成）。前端 `subgraph` 容器 + `subgraphInput` / `subgraphOutput` 桥接 + 设置面板 + AI 编排器扩展全部就位；`web/src/lib/flowgram.ts` 的 `flattenSubgraphs` 完整实现（递归展平 + 参数替换 `{{name}}` + 8 层深度上限 + 循环引用检测）；Rust `crates/nodes-flow/src/passthrough.rs` 已注册（`mod passthrough` + `subgraphInput` / `subgraphOutput` 通过 `NodeCapabilities::empty()` 在 `FlowPlugin::register` 内注册）；`tests/workflow.rs` `passthrough_nodes_forward_payload` 集成测试通过；`vitest.config.ts` 新增 `setupFiles: ['./vitest.setup.ts']` polyfill `navigator` 让 FlowGram SDK 在 node 环境正常 import；顺手修了 pre-existing 的 `flowgram-shortcuts.test.ts` 失败。loop 升级为容器（origin commit `e35cb43`）的工作未带回，留作后续 polish。
 - ADR-0015 / ADR-0016 / ADR-0020 — **proposed**, awaiting review. See `docs/adr/README.md` for the index.
 
@@ -395,7 +423,10 @@ Located in `docs/superpowers/plans/` and `docs/superpowers/specs/`. These are **
 > 6. **ADR-0013** 子图与宏（依赖 0010）
 > 7. **Phase 6 (RFC-0002)** EventBus + EdgeBackpressure + ConcurrencyPolicy — 与 Pin 系统可并行
 > 8. ✅ **ADR-0014** Pin 求值语义二分（原"Exec/Data 边分离"，方案重写为"引脚二分"）—
->    **Phase 1 + Phase 2 已实施**（2026-04-28）；Phase 3-5 各自独立 plan
+>    **Phase 1 + Phase 2 已实施**（2026-04-28）；**Phase 3 plan 已写、待执行**
+>    （`docs/superpowers/plans/2026-04-28-adr-0014-phase-3-pure-nodes.md`，14 task，
+>    新 crate `crates/nodes-pure/` + Runner pull 路径首次激活 + UE5 风格 pure-form 视觉）；
+>    Phase 4-5 各自独立 plan
 > 9. **ADR-0015 / ADR-0016** 反应式数据引脚 + 边级可观测性 — polish 阶段
 > 10. 真实协议驱动扩展（OPC-UA、Kafka 消费者等）
 > 11. AI 能力扩展（embeddings、vision，未来 ADR）
