@@ -111,6 +111,15 @@ pub(crate) fn validate_pin_compatibility(
                 to_type: format!("{:?}", to_pin.pin_type),
             });
         }
+
+        if !from_pin.kind.is_compatible_with(to_pin.kind) {
+            return Err(EngineError::IncompatiblePinKinds {
+                from: format!("{}.{}", edge.from, from_pin.id),
+                to: format!("{}.{}", edge.to, to_pin.id),
+                from_kind: from_pin.kind.to_string(),
+                to_kind: to_pin.kind.to_string(),
+            });
+        }
     }
 
     // 3. 校验 required 输入引脚有上游入边
@@ -198,6 +207,24 @@ mod tests {
             direction: dir,
             required,
             kind: PinKind::Exec,
+            description: None,
+        }
+    }
+
+    fn pin_with_kind(
+        id: &str,
+        dir: PinDirection,
+        ty: PinType,
+        required: bool,
+        kind: PinKind,
+    ) -> PinDefinition {
+        PinDefinition {
+            id: id.to_owned(),
+            label: id.to_owned(),
+            pin_type: ty,
+            direction: dir,
+            required,
+            kind,
             description: None,
         }
     }
@@ -408,6 +435,80 @@ mod tests {
             ),
         ]);
         // Array(Any) 上游 → Array(Integer) 下游应通过
+        let edges = vec![edge("a", "b", None, None)];
+        validate_pin_compatibility(&nodes, &edges).unwrap();
+    }
+
+    #[test]
+    fn 跨_kind_连接报_incompatible_pin_kinds() {
+        let nodes = HashMap::from([
+            node(
+                "a",
+                vec![PinDefinition::default_input()],
+                vec![pin_with_kind(
+                    "out",
+                    PinDirection::Output,
+                    PinType::Any,
+                    false,
+                    PinKind::Data,
+                )],
+            ),
+            node(
+                "b",
+                vec![pin_with_kind(
+                    "in",
+                    PinDirection::Input,
+                    PinType::Any,
+                    false,
+                    PinKind::Exec,
+                )],
+                vec![PinDefinition::default_output()],
+            ),
+        ]);
+        let edges = vec![edge("a", "b", None, None)];
+        let err = validate_pin_compatibility(&nodes, &edges).unwrap_err();
+        match err {
+            EngineError::IncompatiblePinKinds {
+                from,
+                to,
+                from_kind,
+                to_kind,
+            } => {
+                assert_eq!(from, "a.out");
+                assert_eq!(to, "b.in");
+                assert_eq!(from_kind, "data");
+                assert_eq!(to_kind, "exec");
+            }
+            other => panic!("应报 IncompatiblePinKinds，实际：{other:?}"),
+        }
+    }
+
+    #[test]
+    fn 同_kind_data_data_连接通过校验() {
+        let nodes = HashMap::from([
+            node(
+                "a",
+                vec![PinDefinition::default_input()],
+                vec![pin_with_kind(
+                    "out",
+                    PinDirection::Output,
+                    PinType::Any,
+                    false,
+                    PinKind::Data,
+                )],
+            ),
+            node(
+                "b",
+                vec![pin_with_kind(
+                    "in",
+                    PinDirection::Input,
+                    PinType::Any,
+                    false,
+                    PinKind::Data,
+                )],
+                vec![PinDefinition::default_output()],
+            ),
+        ]);
         let edges = vec![edge("a", "b", None, None)];
         validate_pin_compatibility(&nodes, &edges).unwrap();
     }
