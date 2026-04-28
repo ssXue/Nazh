@@ -4,7 +4,9 @@
 //! 入度为零的节点被识别为根节点，用作工作流数据入口。
 
 use std::collections::{HashMap, VecDeque};
+use std::sync::Arc;
 
+use nazh_core::{NodeTrait, PinKind};
 use serde_json::Value;
 
 use super::types::{WorkflowGraph, WorkflowTopology};
@@ -124,5 +126,221 @@ impl WorkflowGraph {
             downstream,
             deployment_order,
         })
+    }
+}
+
+/// 边按 [`PinKind`] 分类的结果（ADR-0014 Phase 1）。
+///
+/// `'a` 借用 `WorkflowEdge` 列表本身的生命周期——分类只重组引用，不克隆。
+#[derive(Debug)]
+#[allow(dead_code)] // Task 11 在 deploy.rs 中调用
+pub(crate) struct ClassifiedEdges<'a> {
+    pub exec_edges: Vec<&'a super::types::WorkflowEdge>,
+    pub data_edges: Vec<&'a super::types::WorkflowEdge>,
+}
+
+#[allow(dead_code)] // Task 11 在 deploy.rs 中调用
+const DEFAULT_OUTPUT_PIN_ID: &str = "out";
+
+/// 按上游节点 source pin 的 [`PinKind`] 把边分类为 exec / data。
+///
+/// 参数 `nodes` 必须包含图中所有节点（阶段 0.5 实例化后）。
+///
+/// # Errors
+///
+/// 边引用的源节点不存在、或源节点 `output_pins` 中找不到对应 pin id 时返回
+/// [`EngineError::UnknownPin`]——这种 case 也应在 `pin_validator` 提前发现，
+/// 但本函数自包含校验避免依赖前置阶段，便于单测。
+#[allow(dead_code)] // Task 11 在 deploy.rs 中调用
+pub(crate) fn classify_edges<'a>(
+    edges: &'a [super::types::WorkflowEdge],
+    nodes: &HashMap<String, Arc<dyn NodeTrait>>,
+) -> Result<ClassifiedEdges<'a>, crate::EngineError> {
+    let mut exec_edges = Vec::new();
+    let mut data_edges = Vec::new();
+
+    for edge in edges {
+        let from_node = nodes.get(&edge.from).ok_or_else(|| {
+            crate::EngineError::invalid_graph(format!(
+                "classify_edges：边的源节点 `{}` 不存在",
+                edge.from
+            ))
+        })?;
+        let from_pin_id = edge
+            .source_port_id
+            .as_deref()
+            .unwrap_or(DEFAULT_OUTPUT_PIN_ID);
+        let from_pin = from_node
+            .output_pins()
+            .into_iter()
+            .find(|p| p.id == from_pin_id)
+            .ok_or_else(|| crate::EngineError::UnknownPin {
+                node: edge.from.clone(),
+                pin: from_pin_id.to_owned(),
+                direction: nazh_core::PinDirection::Output,
+            })?;
+
+        match from_pin.kind {
+            PinKind::Exec => exec_edges.push(edge),
+            PinKind::Data => data_edges.push(edge),
+        }
+    }
+
+    Ok(ClassifiedEdges {
+        exec_edges,
+        data_edges,
+    })
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::graph::types::WorkflowEdge;
+    use async_trait::async_trait;
+    use nazh_core::{NodeExecution, NodeTrait, PinDefinition, PinDirection, PinKind, PinType};
+    use serde_json::Value;
+    use std::sync::Arc;
+    use uuid::Uuid;
+
+    /// 测试 stub 节点：通过构造函数注入 input / output pin 列表。
+    struct StubNode {
+        id: String,
+        inputs: Vec<PinDefinition>,
+        outputs: Vec<PinDefinition>,
+    }
+
+    #[async_trait]
+    impl NodeTrait for StubNode {
+        fn id(&self) -> &str {
+            &self.id
+        }
+        fn kind(&self) -> &'static str {
+            "stub"
+        }
+        fn input_pins(&self) -> Vec<PinDefinition> {
+            self.inputs.clone()
+        }
+        fn output_pins(&self) -> Vec<PinDefinition> {
+            self.outputs.clone()
+        }
+        async fn transform(
+            &self,
+            _trace_id: Uuid,
+            _payload: Value,
+        ) -> Result<NodeExecution, nazh_core::EngineError> {
+            Ok(NodeExecution::broadcast(Value::Null))
+        }
+    }
+
+    fn pin(id: &str, dir: PinDirection, kind: PinKind) -> PinDefinition {
+        PinDefinition {
+            id: id.to_owned(),
+            label: id.to_owned(),
+            pin_type: PinType::Any,
+            direction: dir,
+            required: false,
+            kind,
+            description: None,
+        }
+    }
+
+    fn make_node(
+        id: &str,
+        inputs: Vec<PinDefinition>,
+        outputs: Vec<PinDefinition>,
+    ) -> Arc<dyn NodeTrait> {
+        Arc::new(StubNode {
+            id: id.to_owned(),
+            inputs,
+            outputs,
+        })
+    }
+
+    fn edge(from: &str, to: &str, source_port: Option<&str>) -> WorkflowEdge {
+        WorkflowEdge {
+            from: from.to_owned(),
+            to: to.to_owned(),
+            source_port_id: source_port.map(str::to_owned),
+            target_port_id: None,
+        }
+    }
+
+    #[test]
+    fn classify_edges_把_data_pin_出边归为_data() {
+        let mut nodes: HashMap<String, Arc<dyn NodeTrait>> = HashMap::new();
+        nodes.insert(
+            "a".to_owned(),
+            make_node(
+                "a",
+                vec![pin("in", PinDirection::Input, PinKind::Exec)],
+                vec![pin("latest", PinDirection::Output, PinKind::Data)],
+            ),
+        );
+        nodes.insert(
+            "b".to_owned(),
+            make_node(
+                "b",
+                vec![pin("in", PinDirection::Input, PinKind::Data)],
+                vec![PinDefinition::default_output()],
+            ),
+        );
+
+        let edges = vec![edge("a", "b", Some("latest"))];
+        let classified = classify_edges(&edges, &nodes).unwrap();
+        assert_eq!(classified.exec_edges.len(), 0);
+        assert_eq!(classified.data_edges.len(), 1);
+        assert_eq!(classified.data_edges[0].from, "a");
+    }
+
+    #[test]
+    fn classify_edges_把_exec_pin_出边归为_exec() {
+        let mut nodes: HashMap<String, Arc<dyn NodeTrait>> = HashMap::new();
+        nodes.insert(
+            "a".to_owned(),
+            make_node(
+                "a",
+                vec![PinDefinition::default_input()],
+                vec![PinDefinition::default_output()],
+            ),
+        );
+        nodes.insert(
+            "b".to_owned(),
+            make_node(
+                "b",
+                vec![PinDefinition::default_input()],
+                vec![PinDefinition::default_output()],
+            ),
+        );
+
+        let edges = vec![edge("a", "b", None)];
+        let classified = classify_edges(&edges, &nodes).unwrap();
+        assert_eq!(classified.exec_edges.len(), 1);
+        assert_eq!(classified.data_edges.len(), 0);
+    }
+
+    #[test]
+    fn classify_edges_未知_source_port_报错() {
+        let mut nodes: HashMap<String, Arc<dyn NodeTrait>> = HashMap::new();
+        nodes.insert(
+            "a".to_owned(),
+            make_node(
+                "a",
+                vec![PinDefinition::default_input()],
+                vec![PinDefinition::default_output()],
+            ),
+        );
+        nodes.insert(
+            "b".to_owned(),
+            make_node(
+                "b",
+                vec![PinDefinition::default_input()],
+                vec![PinDefinition::default_output()],
+            ),
+        );
+
+        let edges = vec![edge("a", "b", Some("ghost"))];
+        let err = classify_edges(&edges, &nodes).unwrap_err();
+        assert!(matches!(err, nazh_core::EngineError::UnknownPin { .. }));
     }
 }
