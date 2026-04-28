@@ -10,6 +10,9 @@
 
 use nazh_core::{NodeCapabilities, NodeRegistry, Plugin, PluginManifest};
 
+mod c2f;
+pub use c2f::C2fNode;
+
 pub struct PurePlugin;
 
 impl Plugin for PurePlugin {
@@ -20,8 +23,9 @@ impl Plugin for PurePlugin {
         }
     }
 
-    fn register(&self, _registry: &mut NodeRegistry) {
-        // Phase 3 Task 3 / Task 4 接入 c2f / minutesSince
-        let _ = NodeCapabilities::PURE;
+    fn register(&self, registry: &mut NodeRegistry) {
+        registry.register_with_capabilities("c2f", NodeCapabilities::PURE, |def, _res| {
+            Ok(std::sync::Arc::new(C2fNode::new(def.id().to_owned())))
+        });
     }
 }
