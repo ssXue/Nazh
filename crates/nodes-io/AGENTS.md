@@ -79,7 +79,7 @@ Plugin 注册入口：`IoPlugin::register(&mut NodeRegistry)`，在 `lib.rs:50` 
 
 | 节点 | mode | input | output | 备注 |
 |------|------|-------|--------|------|
-| `modbusRead` | — | `Any` | `Json` | 常作根节点或被 `timer` 触发，input 形状不重要 |
+| `modbusRead` | — | `Any` | `out`: `Json` (Exec) + `latest`: `Json` (Data) | ADR-0014 Phase 2 加 `latest` 拉取式 Data 引脚（首个真实 Data 用例）；`out` Exec 语义不变 |
 | `sqlWriter` | — | `Json` (required) | `Any` | 纯 sink；payload 必须有列结构 |
 | `httpClient` | — | `Json` (required) | `Json` | body / template / 钉钉三种 mode 都期待 JSON 对象输入 |
 | `mqttClient` | publish | `Json` (required) | `Any` | 实例方法按 `self.config.mode` 切换 pin 类型 |
@@ -91,6 +91,7 @@ Plugin 注册入口：`IoPlugin::register(&mut NodeRegistry)`，在 `lib.rs:50` 
 - 节点 inline `#[cfg(test)] mod tests` 中的 pin 形状断言
 - 本表格
 - 兼容矩阵 fixture（`tests/fixtures/pin_compat_matrix.jsonc`）：若引入新 `PinType` 变体，至少补 3 条配对（自反 / `Any` 双向 / 与至少一类不兼容）。`crates/core/tests/pin_compat_contract.rs` 的覆盖纪律测试会拒绝新变体没条目的 PR
+- 若声明了 `PinKind::Data` 输出引脚（如 `modbusRead.latest`），同步更新前端 `web/src/components/flowgram/nodes/<node>/index.ts` 的 `flowgram` 块改 `useDynamicPort: true` + 在 `web/src/components/flowgram/nodes/shared.ts` 的 `getLogicNodeBranchDefinitions` 增加分支——否则画布会用 FlowGram 默认渲染，新引脚不可见
 
 **关于 `Custom` 类型推迟到未来 Phase**：Phase 3 故意不引入 `Custom("modbus-register")` / `Custom("sql-row")` 等命名类型。理由是若引入则常见链路（`modbusRead → sqlWriter`）会被部署期校验拒，等于"消费者孤岛"。Custom 推迟到未来配套生产者节点（如 row-formatter）一并引入。
 

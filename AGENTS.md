@@ -354,7 +354,7 @@ Located in `docs/superpowers/plans/` and `docs/superpowers/specs/`. These are **
 - ADR-0019 (AI 能力依赖反转) — **已实施**（2026-04-26，`AiService` trait + 请求/响应类型上移到 `crates/core/src/ai.rs`；`ai` crate 改为纯实现 + 配置型；`scripting` / `nodes-flow` 不再依赖 `ai`）
 - ADR-0018 (`nodes-io` 按协议 feature 门控) — **已实施**（2026-04-26，`io-sql/io-http/io-mqtt/io-modbus/io-serial/io-notify` + 元 feature `io-all`；facade 转传；`debug/native/timer/template` 永远启用）
 - ADR-0012 (工作流变量) — **已实施 Phase 1+2**（Phase 1: 2026-04-27 / Phase 2: 2026-04-27，`crates/core/src/variables.rs` + Rhai `vars.get/set/cas` + `ExecutionEvent::VariableChanged` write-on-change 事件广播 + IPC `set_workflow_variable` 写命令 + 前端 `RuntimeVariablesPanel` + `workflow://variable-changed` 事件通道）
-- ADR-0014（执行边与数据边分离 → 重命名为「引脚求值语义二分」）— **已实施 Phase 1**（2026-04-28，Ring 0 加 `PinKind` + `OutputCache`；部署期跨 Kind 校验 + Data 边独立环检测；Runner 双路径写入骨架；ts-rs 导出。生产 14 类节点 0 改动）。设计文档 `docs/superpowers/specs/2026-04-28-pin-kind-exec-data-design.md`；Phase 1 plan `docs/superpowers/plans/2026-04-28-adr-0014-phase-1-pin-kind-基础.md`
+- ADR-0014（执行边与数据边分离 → 重命名为「引脚求值语义二分」）— **已实施 Phase 1 + Phase 2**（2026-04-28）。Phase 1：Ring 0 加 `PinKind` + `OutputCache`；部署期跨 Kind 校验 + Data 边独立环检测；Runner 双路径写入骨架；ts-rs 导出。生产 14 类节点 0 改动。Phase 2：`PinDefinition::output_named_data` 工厂；`modbusRead.latest` 第二输出引脚（首个真实 Data 用例）；`WorkflowDeployment.output_cache(node_id)` 访问器；`tests/fixtures/pin_kind_matrix.jsonc` 4 配对穷尽 Rust + TS 共享 fixture；前端 `isKindCompatible` + `pin-validator` 跨 Kind 闸门 + `incompatible-kinds` rejection variant；FlowGram `modbusRead` 加入 `useDynamicPort` 族 + 端口 DOM `data-port-pin-kind` attribute + CSS `[data-port-pin-kind='data']` 空心冷色边框；Playwright DOM 烟雾测试。设计文档 `docs/superpowers/specs/2026-04-28-pin-kind-exec-data-design.md`；Phase 1 plan `docs/superpowers/plans/2026-04-28-adr-0014-phase-1-pin-kind-基础.md`；Phase 2 plan `docs/superpowers/plans/2026-04-28-adr-0014-phase-2-pin-kind-modbus-真实用例.md`
 - ADR-0013 ~ ADR-0016 / ADR-0020 — **proposed**, awaiting review. See `docs/adr/README.md` for the index.
 
 **Immediate known tech debt:**
@@ -393,7 +393,7 @@ Located in `docs/superpowers/plans/` and `docs/superpowers/specs/`. These are **
 > 6. **ADR-0013** 子图与宏（依赖 0010）
 > 7. **Phase 6 (RFC-0002)** EventBus + EdgeBackpressure + ConcurrencyPolicy — 与 Pin 系统可并行
 > 8. ✅ **ADR-0014** Pin 求值语义二分（原"Exec/Data 边分离"，方案重写为"引脚二分"）—
->    **Phase 1 已实施**（2026-04-28）；Phase 2-5 各自独立 plan
+>    **Phase 1 + Phase 2 已实施**（2026-04-28）；Phase 3-5 各自独立 plan
 > 9. **ADR-0015 / ADR-0016** 反应式数据引脚 + 边级可观测性 — polish 阶段
 > 10. 真实协议驱动扩展（OPC-UA、Kafka 消费者等）
 > 11. AI 能力扩展（embeddings、vision，未来 ADR）
