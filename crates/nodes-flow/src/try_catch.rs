@@ -12,8 +12,8 @@ use uuid::Uuid;
 use std::sync::Arc;
 
 use nazh_core::{
-    EngineError, NodeExecution, NodeTrait, PinDefinition, PinDirection, PinType, WorkflowVariables,
-    into_payload_map,
+    EngineError, NodeExecution, NodeTrait, PinDefinition, PinDirection, PinKind, PinType,
+    WorkflowVariables, into_payload_map,
 };
 use scripting::{ScriptNodeBase, default_max_operations};
 
@@ -57,6 +57,7 @@ impl NodeTrait for TryCatchNode {
                 pin_type: PinType::Any,
                 direction: PinDirection::Output,
                 required: false,
+                kind: PinKind::Exec,
                 description: Some("脚本执行成功时路由到此".to_owned()),
             },
             PinDefinition {
@@ -65,6 +66,7 @@ impl NodeTrait for TryCatchNode {
                 pin_type: PinType::Any,
                 direction: PinDirection::Output,
                 required: false,
+                kind: PinKind::Exec,
                 description: Some("脚本抛出异常时路由到此（payload._error 含错误信息）".to_owned()),
             },
         ]

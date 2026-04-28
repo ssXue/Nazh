@@ -154,7 +154,9 @@ mod tests {
     use std::sync::Arc;
 
     use async_trait::async_trait;
-    use nazh_core::{EngineError, NodeExecution, NodeTrait, PinDefinition, PinDirection, PinType};
+    use nazh_core::{
+        EngineError, NodeExecution, NodeTrait, PinDefinition, PinDirection, PinKind, PinType,
+    };
     use serde_json::Value;
     use uuid::Uuid;
 
@@ -195,6 +197,7 @@ mod tests {
             pin_type: ty,
             direction: dir,
             required,
+            kind: PinKind::Exec,
             description: None,
         }
     }

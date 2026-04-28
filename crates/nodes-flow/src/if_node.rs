@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use nazh_core::EngineError;
 use nazh_core::{
-    NodeExecution, NodeTrait, PinDefinition, PinDirection, PinType, WorkflowVariables,
+    NodeExecution, NodeTrait, PinDefinition, PinDirection, PinKind, PinType, WorkflowVariables,
 };
 use scripting::{ScriptNodeBase, default_max_operations};
 
@@ -55,6 +55,7 @@ impl NodeTrait for IfNode {
                 pin_type: PinType::Any,
                 direction: PinDirection::Output,
                 required: false,
+                kind: PinKind::Exec,
                 description: Some("脚本返回 true 时路由到此分支".to_owned()),
             },
             PinDefinition {
@@ -63,6 +64,7 @@ impl NodeTrait for IfNode {
                 pin_type: PinType::Any,
                 direction: PinDirection::Output,
                 required: false,
+                kind: PinKind::Exec,
                 description: Some("脚本返回 false 时路由到此分支".to_owned()),
             },
         ]

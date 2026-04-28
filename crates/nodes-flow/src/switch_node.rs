@@ -13,7 +13,7 @@ use std::sync::Arc;
 
 use nazh_core::EngineError;
 use nazh_core::{
-    NodeExecution, NodeTrait, PinDefinition, PinDirection, PinType, WorkflowVariables,
+    NodeExecution, NodeTrait, PinDefinition, PinDirection, PinKind, PinType, WorkflowVariables,
 };
 use scripting::{ScriptNodeBase, default_max_operations};
 
@@ -90,6 +90,7 @@ impl NodeTrait for SwitchNode {
                 pin_type: PinType::Any,
                 direction: PinDirection::Output,
                 required: false,
+                kind: PinKind::Exec,
                 description: None,
             })
             .collect();
@@ -101,6 +102,7 @@ impl NodeTrait for SwitchNode {
                 pin_type: PinType::Any,
                 direction: PinDirection::Output,
                 required: false,
+                kind: PinKind::Exec,
                 description: Some("脚本返回值未匹配任何分支 key 时路由到此".to_owned()),
             });
         }

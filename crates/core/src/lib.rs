@@ -36,7 +36,7 @@ pub use lifecycle::{
 pub use node::{
     NodeCapabilities, NodeDispatch, NodeExecution, NodeOutput, NodeTrait, into_payload_map,
 };
-pub use pin::{PinDefinition, PinDirection, PinType};
+pub use pin::{PinDefinition, PinDirection, PinKind, PinType};
 pub use plugin::{
     NodeRegistry, Plugin, PluginHost, PluginManifest, RuntimeResources, SharedResources,
     WorkflowNodeDefinition,

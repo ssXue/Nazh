@@ -193,6 +193,9 @@ pub struct PinDefinition {
     pub direction: PinDirection,
     /// **输入引脚**：是否必须有上游边指向。**输出引脚**：是否每次执行必触发。
     pub required: bool,
+    /// 求值语义（ADR-0014 引脚二分）。未声明默认 [`PinKind::Exec`]，向后兼容现有节点。
+    #[serde(default)]
+    pub kind: PinKind,
     /// 给前端 / AI 的描述文本。
     #[serde(default)]
     #[cfg_attr(feature = "ts-export", ts(optional))]
@@ -218,6 +221,7 @@ impl PinDefinition {
             pin_type: PinType::Any,
             direction: PinDirection::Input,
             required: true,
+            kind: PinKind::Exec,
             description: None,
         }
     }
@@ -234,6 +238,7 @@ impl PinDefinition {
             pin_type: PinType::Any,
             direction: PinDirection::Output,
             required: false,
+            kind: PinKind::Exec,
             description: None,
         }
     }
@@ -250,6 +255,7 @@ impl PinDefinition {
             pin_type,
             direction: PinDirection::Input,
             required: true,
+            kind: PinKind::Exec,
             description: Some(description.into()),
         }
     }
@@ -262,6 +268,7 @@ impl PinDefinition {
             pin_type,
             direction: PinDirection::Output,
             required: false,
+            kind: PinKind::Exec,
             description: Some(description.into()),
         }
     }
@@ -401,6 +408,37 @@ mod tests {
         assert!(!PinType::Bool.is_compatible_with(&PinType::Json));
     }
 
+    // ---- PinDefinition kind 字段 ----
+
+    #[test]
+    fn pin_definition_默认工厂方法的_kind_是_exec() {
+        assert_eq!(PinDefinition::default_input().kind, PinKind::Exec);
+        assert_eq!(PinDefinition::default_output().kind, PinKind::Exec);
+        assert_eq!(
+            PinDefinition::required_input(PinType::Json, "test").kind,
+            PinKind::Exec
+        );
+        assert_eq!(
+            PinDefinition::output(PinType::Json, "test").kind,
+            PinKind::Exec
+        );
+    }
+
+    #[test]
+    fn pin_definition_缺_kind_字段反序列化默认_exec() {
+        // 旧前端 / 旧节点 JSON 不带 kind 字段，必须能反序列化为 Exec
+        let json = r#"{"id":"in","label":"in","pin_type":{"kind":"any"},"direction":"input","required":true}"#;
+        let pin: PinDefinition = serde_json::from_str(json).unwrap();
+        assert_eq!(pin.kind, PinKind::Exec);
+    }
+
+    #[test]
+    fn pin_definition_显式_kind_字段反序列化正确() {
+        let json = r#"{"id":"latest","label":"latest","pin_type":{"kind":"any"},"direction":"output","required":false,"kind":"data"}"#;
+        let pin: PinDefinition = serde_json::from_str(json).unwrap();
+        assert_eq!(pin.kind, PinKind::Data);
+    }
+
     // ---- 默认引脚 ----
 
     #[test]
@@ -467,6 +505,7 @@ mod tests {
             pin_type: PinType::Any,
             direction: PinDirection::Output,
             required: false,
+            kind: PinKind::Exec,
             description: Some("条件为真时路由到此".to_owned()),
         };
         let json = serde_json::to_string(&original).unwrap();

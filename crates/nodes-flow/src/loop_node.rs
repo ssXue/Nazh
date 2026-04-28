@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 use nazh_core::{
     EngineError, NodeDispatch, NodeExecution, NodeOutput, NodeTrait, PinDefinition, PinDirection,
-    PinType, WorkflowVariables, into_payload_map,
+    PinKind, PinType, WorkflowVariables, into_payload_map,
 };
 use scripting::{ScriptNodeBase, default_max_operations};
 
@@ -147,6 +147,7 @@ impl NodeTrait for LoopNode {
                 pin_type: PinType::Any,
                 direction: PinDirection::Output,
                 required: false,
+                kind: PinKind::Exec,
                 description: Some(
                     "迭代每一项时触发，payload._loop 携带 phase/index/count/item".to_owned(),
                 ),
@@ -157,6 +158,7 @@ impl NodeTrait for LoopNode {
                 pin_type: PinType::Any,
                 direction: PinDirection::Output,
                 required: false,
+                kind: PinKind::Exec,
                 description: Some("迭代结束信号，payload._loop.phase = \"done\"".to_owned()),
             },
         ]
