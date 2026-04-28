@@ -591,6 +591,65 @@ async fn workflow_graph_executes_end_to_end() {
 }
 
 #[tokio::test]
+async fn subgraph_bridge_nodes_forward_payload_in_deployed_dag() {
+    let graph = match WorkflowGraph::from_json(
+        &json!({
+            "nodes": {
+                "sub-1/sg-in": {
+                    "type": "subgraphInput",
+                    "config": {}
+                },
+                "sub-1/code-1": {
+                    "type": "code",
+                    "config": {
+                        "script": "payload[\"value\"] = payload[\"value\"] + 1; payload"
+                    }
+                },
+                "sub-1/sg-out": {
+                    "type": "subgraphOutput",
+                    "config": {}
+                }
+            },
+            "edges": [
+                {
+                    "from": "sub-1/sg-in",
+                    "to": "sub-1/code-1"
+                },
+                {
+                    "from": "sub-1/code-1",
+                    "to": "sub-1/sg-out"
+                }
+            ]
+        })
+        .to_string(),
+    ) {
+        Ok(graph) => graph,
+        Err(error) => panic!("graph JSON should parse: {error}"),
+    };
+
+    let registry = standard_registry();
+    let mut deployment = match deploy_workflow(graph, shared_connection_manager(), &registry).await
+    {
+        Ok(deployment) => deployment,
+        Err(error) => panic!("workflow should deploy successfully: {error}"),
+    };
+
+    let submit_result = deployment
+        .submit(WorkflowContext::new(json!({ "value": 41 })))
+        .await;
+    assert!(submit_result.is_ok(), "workflow should accept payload");
+
+    let result = timeout(Duration::from_secs(1), deployment.next_result()).await;
+    match result {
+        Ok(Some(ctx)) => {
+            assert_eq!(ctx.payload, json!({ "value": 42 }));
+        }
+        Ok(None) => panic!("result stream closed unexpectedly"),
+        Err(elapsed) => panic!("workflow did not produce a result in time: {elapsed}"),
+    }
+}
+
+#[tokio::test]
 async fn invalid_graph_rejects_cycles() {
     let result = WorkflowGraph::from_json(
         &json!({

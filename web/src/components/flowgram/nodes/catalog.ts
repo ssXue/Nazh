@@ -35,5 +35,7 @@ export const NODE_CATEGORY_MAP: Record<
   barkPush: { category: '外部通信', description: '向 Bark 服务发送 iOS 推送通知' },
   sqlWriter: { category: '持久化', description: '将当前 payload 持久化到本地 SQLite 表' },
   debugConsole: { category: '调试工具', description: '将 payload 打印到调试控制台以供检查' },
-  subgraph: { category: '子图封装', description: '封装子拓扑为单节点，支持嵌套和参数化' },
+  subgraph: { category: '子图封装', description: '封装子拓扑为单节点并在部署前展开' },
+  subgraphInput: { category: '子图封装', description: '子图展开后的入口桥接节点' },
+  subgraphOutput: { category: '子图封装', description: '子图展开后的出口桥接节点' },
 };
