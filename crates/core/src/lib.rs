@@ -9,6 +9,7 @@
 //! `ts-rs` 由 `ts-export` feature 按需启用。详见 ADR-0017。
 
 pub mod ai;
+pub mod cache;
 pub mod context;
 pub mod data;
 pub mod error;
