@@ -31,3 +31,6 @@ Thumbs.db
 # Archived examples
 examples/flowgram.ai-main/
 examples/flowgram.ai-main.zip
+
+# Git worktrees
+.worktrees/
