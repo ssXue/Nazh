@@ -97,12 +97,11 @@ function buildBaseFlowgramWorkflowJson(graph: WorkflowGraph): FlowgramWorkflowJS
   };
 }
 
-function isFlattenedBridgeNode(node: FlowgramWorkflowJSON['nodes'][number]): boolean {
-  if (node.type !== 'subgraphInput' && node.type !== 'subgraphOutput') {
-    return false;
-  }
+/** 展平节点：ID 含 '/'，是 flattenSubgraphs 产生的前缀副本，真实节点在容器 blocks 里 */
+function isFlattenedNode(node: FlowgramWorkflowJSON['nodes'][number]): boolean {
   return node.id.includes('/');
 }
+
 
 function sanitizeEditorNodes(
   nodes: FlowgramWorkflowJSON['nodes'],
@@ -168,7 +167,7 @@ export function toFlowgramWorkflowJson(graph: WorkflowGraph): FlowgramWorkflowJS
   );
   const nodes = sanitizeEditorNodes(
     [...mergedBusinessNodes, ...editorOnlyNodes].filter(
-      (node) => !isFlattenedBridgeNode(node),
+      (node) => !isFlattenedNode(node),
     ),
   );
   const nodeIds = new Set(nodes.map((node) => node.id));
