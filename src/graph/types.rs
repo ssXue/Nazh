@@ -116,9 +116,12 @@ pub struct WorkflowDeployment {
     pub(crate) shared_resources: SharedResources,
     /// ADR-0014 引脚求值语义二分：按节点 id 索引的 [`OutputCache`] 句柄。
     ///
-    /// 仅声明 [`PinKind::Data`](nazh_core::PinKind::Data) 输出引脚的节点会有
-    /// 非空缓存槽——存量节点缓存为空（短路）。集成测试 / 未来 IPC 通过
-    /// [`output_cache`](Self::output_cache) 访问器读取拉取式槽位的最近态。
+    /// 部署期为图中**每一个**节点都构造一份 `OutputCache` 句柄；其中只有
+    /// 声明了 [`PinKind::Data`](nazh_core::PinKind::Data) 输出引脚的节点
+    /// 会预分配槽位，存量 Exec-only 节点的 `slot_ids()` 为空（读 `read(...)`
+    /// 永远返回 `None`）。这一一致性让 [`output_cache`](Self::output_cache)
+    /// 的 `None` 返回唯一地表示"节点 id 不在该工作流中"——而不是"该节点
+    /// 没有 Data 引脚"。
     pub(crate) output_caches: HashMap<String, Arc<OutputCache>>,
 }
 
@@ -312,11 +315,15 @@ impl WorkflowDeployment {
 
     /// 按节点 id 返回该节点的 [`OutputCache`] 句柄（ADR-0014 引脚求值语义二分）。
     ///
-    /// 仅声明 [`PinKind::Data`](nazh_core::PinKind::Data) 输出引脚的节点会有非空缓存槽——存量节点
-    /// 缓存为空（短路）。集成测试 / 未来 IPC 通过此入口读取拉取式槽位的
-    /// 最近态。
+    /// 部署期为图中每一个节点都构造一份 `OutputCache`；只有声明了
+    /// [`PinKind::Data`](nazh_core::PinKind::Data) 输出引脚的节点会预分配
+    /// 槽位（`cache.read(pin_id)` 才会返回 `Some(_)`），存量 Exec-only
+    /// 节点的 `slot_ids()` 为空。集成测试 / 未来 IPC 通过此入口读取
+    /// 拉取式槽位的最近态。
     ///
-    /// 返回 `None` 表示节点 id 不在该工作流中。
+    /// 返回 `None` 仅当节点 id 不在该工作流中——节点存在但无 Data 引脚时
+    /// 返回 `Some(empty_cache)` 而非 `None`，这一约定让调用方的"节点不存在"
+    /// 与"节点无 Data 引脚"两种语义保持解耦。
     #[must_use]
     pub fn output_cache(&self, node_id: &str) -> Option<&Arc<OutputCache>> {
         self.output_caches.get(node_id)
