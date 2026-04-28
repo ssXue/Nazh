@@ -11,11 +11,11 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use nazh_core::{is_pure_form, EngineError, NodeTrait, OutputCache, PinKind, Uuid};
+use nazh_core::{EngineError, NodeTrait, OutputCache, Uuid, is_pure_form};
 use serde_json::{Map, Value};
 
-use super::types::WorkflowEdge;
 use super::DEFAULT_OUTPUT_PIN_ID;
+use super::types::WorkflowEdge;
 
 /// 反向索引：每个 consumer node id → 其所有 Data 入边的元组列表。
 ///
@@ -28,6 +28,7 @@ pub(crate) struct EdgesByConsumer {
 }
 
 #[derive(Debug, Clone)]
+#[allow(clippy::struct_field_names)]
 pub(crate) struct DataInEdge {
     pub consumer_input_pin_id: String,
     pub upstream_node_id: String,
@@ -38,8 +39,7 @@ impl EdgesByConsumer {
     pub fn for_consumer(&self, consumer_node_id: &str) -> &[DataInEdge] {
         self.by_consumer
             .get(consumer_node_id)
-            .map(Vec::as_slice)
-            .unwrap_or(&[])
+            .map_or(&[], Vec::as_slice)
     }
 }
 
@@ -59,10 +59,7 @@ pub(crate) fn build_edges_by_consumer(data_edges: &[&WorkflowEdge]) -> EdgesByCo
                 .clone()
                 .unwrap_or_else(|| DEFAULT_OUTPUT_PIN_ID.to_owned()),
         };
-        by_consumer
-            .entry(edge.to.clone())
-            .or_default()
-            .push(entry);
+        by_consumer.entry(edge.to.clone()).or_default().push(entry);
     }
     EdgesByConsumer { by_consumer }
 }
@@ -122,7 +119,7 @@ fn merge_payload(exec_payload: Value, data_values: Map<String, Value>) -> Value 
     }
 }
 
-/// 从单个上游 (node_id, pin_id) 拉取一份 Data 值。
+/// 从单个上游 (`node_id`, `pin_id`) 拉取一份 Data 值。
 fn pull_one<'a>(
     upstream_node_id: &'a str,
     upstream_output_pin_id: &'a str,
@@ -130,8 +127,7 @@ fn pull_one<'a>(
     output_caches_index: &'a HashMap<String, Arc<OutputCache>>,
     edges_by_consumer: &'a EdgesByConsumer,
     trace_id: Uuid,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Value, EngineError>> + Send + 'a>>
-{
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Value, EngineError>> + Send + 'a>> {
     Box::pin(async move {
         let upstream = nodes_index.get(upstream_node_id).ok_or_else(|| {
             EngineError::invalid_graph(format!(
@@ -154,21 +150,19 @@ fn pull_one<'a>(
             // 找匹配 upstream_output_pin_id 的输出 payload
             // pure 节点 transform payload 约定为 `{ <pin_id>: value, ... }`
             for output in &result.outputs {
-                if let Value::Object(map) = &output.payload {
-                    if let Some(v) = map.get(upstream_output_pin_id) {
-                        return Ok(v.clone());
-                    }
+                if let Value::Object(map) = &output.payload
+                    && let Some(v) = map.get(upstream_output_pin_id)
+                {
+                    return Ok(v.clone());
                 }
             }
             // 兜底：若 pure 节点只有单输出且 payload 不是 `{pin_id: value}` 形态
-            result
-                .outputs
-                .first()
-                .map(|o| o.payload.clone())
-                .ok_or(EngineError::DataPinCacheEmpty {
+            result.outputs.first().map(|o| o.payload.clone()).ok_or(
+                EngineError::DataPinCacheEmpty {
                     upstream: upstream_node_id.to_owned(),
                     pin: upstream_output_pin_id.to_owned(),
-                })
+                },
+            )
         } else {
             // 非 pure：读 OutputCache
             let cache = output_caches_index.get(upstream_node_id).ok_or_else(|| {
@@ -176,13 +170,12 @@ fn pull_one<'a>(
                     "上游 Exec 节点 `{upstream_node_id}` 在 output_caches_index 缺失"
                 ))
             })?;
-            cache
-                .read(upstream_output_pin_id)
-                .map(|c| c.value)
-                .ok_or(EngineError::DataPinCacheEmpty {
+            cache.read(upstream_output_pin_id).map(|c| c.value).ok_or(
+                EngineError::DataPinCacheEmpty {
                     upstream: upstream_node_id.to_owned(),
                     pin: upstream_output_pin_id.to_owned(),
-                })
+                },
+            )
         }
     })
 }

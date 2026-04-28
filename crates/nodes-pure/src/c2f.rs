@@ -76,7 +76,9 @@ impl NodeTrait for C2fNode {
             })?;
         let fahrenheit = celsius * 9.0 / 5.0 + 32.0;
         // 单 Data 输出节点，payload 用 `{ "out": ... }` 与 input 对偶
-        Ok(NodeExecution::broadcast(serde_json::json!({ "out": fahrenheit })))
+        Ok(NodeExecution::broadcast(
+            serde_json::json!({ "out": fahrenheit }),
+        ))
     }
 }
 

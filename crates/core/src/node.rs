@@ -416,7 +416,7 @@ mod tests {
 
         #[async_trait]
         impl NodeTrait for StubNode {
-            fn id(&self) -> &str {
+            fn id(&self) -> &'static str {
                 "stub"
             }
             fn kind(&self) -> &'static str {

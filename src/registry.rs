@@ -1,6 +1,7 @@
 //! 插件集成测试：验证标准库插件注册的节点类型完整性。
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use crate::standard_registry;
     use nazh_core::NodeCapabilities;

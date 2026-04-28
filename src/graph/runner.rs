@@ -36,9 +36,9 @@ pub(crate) async fn run_node(
     output_cache: Arc<OutputCache>,
     data_output_pin_ids: HashSet<String>,
     // ADR-0014 Phase 3：拉路径所需
-    _edges_by_consumer: Arc<EdgesByConsumer>,
-    _nodes_index: Arc<HashMap<String, Arc<dyn NodeTrait>>>,
-    _output_caches_index: Arc<HashMap<String, Arc<OutputCache>>>,
+    edges_by_consumer: Arc<EdgesByConsumer>,
+    nodes_index: Arc<HashMap<String, Arc<dyn NodeTrait>>>,
+    output_caches_index: Arc<HashMap<String, Arc<OutputCache>>>,
 ) {
     let node_id = node.id().to_owned();
 
@@ -58,6 +58,26 @@ pub(crate) async fn run_node(
 
         let payload = match payload_result {
             Ok(p) => p,
+            Err(error) => {
+                emit_failure(&event_tx, &node_id, trace_id, &error);
+                continue;
+            }
+        };
+
+        // ADR-0014 Phase 3：transform 之前先把所有 Data 输入引脚的最新值拉到
+        // payload 里。pull collector 不动 Exec 路径——若节点没声明 Data 输入则
+        // edges_by_consumer.for_consumer 返回空，merge_payload 直接返回原 payload。
+        let payload = match super::pull::pull_data_inputs(
+            &node_id,
+            payload,
+            &edges_by_consumer,
+            &nodes_index,
+            &output_caches_index,
+            trace_id,
+        )
+        .await
+        {
+            Ok(merged) => merged,
             Err(error) => {
                 emit_failure(&event_tx, &node_id, trace_id, &error);
                 continue;
