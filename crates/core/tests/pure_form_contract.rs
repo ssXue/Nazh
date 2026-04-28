@@ -1,13 +1,13 @@
-//! ADR-0014 Phase 3：pure_form 跨语言契约测试。
+//! ADR-0014 Phase 3：`pure_form` 跨语言契约测试。
 //!
 //! 共享 fixture：`/tests/fixtures/pure_form_matrix.jsonc`（仓库根，与 Vitest 同源）。
 
-#![allow(clippy::unwrap_used)]
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use async_trait::async_trait;
 use nazh_core::{
-    is_pure_form, EngineError, NodeExecution, NodeTrait, PinDefinition, PinDirection, PinKind,
-    PinType,
+    EngineError, NodeExecution, NodeTrait, PinDefinition, PinDirection, PinKind, PinType,
+    is_pure_form,
 };
 use serde::Deserialize;
 use serde_json::Value;
