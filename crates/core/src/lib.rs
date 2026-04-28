@@ -56,7 +56,7 @@ pub mod export_bindings {
     use super::{
         AiCompletionRequest, AiCompletionResponse, AiGenerationParams, AiMessage, AiMessageRole,
         AiReasoningEffort, AiThinkingConfig, AiThinkingMode, AiTokenUsage, CompletedExecutionEvent,
-        ExecutionEvent, PinDefinition, PinDirection, PinType, TypedVariableSnapshot,
+        ExecutionEvent, PinDefinition, PinDirection, PinKind, PinType, TypedVariableSnapshot,
         VariableDeclaration, WorkflowContext, WorkflowNodeDefinition,
     };
     use ts_rs::{ExportError, TS};
@@ -69,6 +69,7 @@ pub mod export_bindings {
         WorkflowNodeDefinition::export()?;
         PinDirection::export()?;
         PinType::export()?;
+        PinKind::export()?;
         PinDefinition::export()?;
         AiCompletionRequest::export()?;
         AiCompletionResponse::export()?;
