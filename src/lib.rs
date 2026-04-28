@@ -50,6 +50,8 @@ pub use nodes_io::{
     TimerNodeConfig,
 };
 
+pub use nodes_pure::{C2fNode, MinutesSinceNode, PurePlugin};
+
 #[cfg(feature = "io-notify")]
 pub use nodes_io::{BarkPushNode, BarkPushNodeConfig};
 #[cfg(feature = "io-http")]
@@ -73,6 +75,7 @@ pub fn standard_registry() -> NodeRegistry {
     let mut host = PluginHost::new();
     host.load(&FlowPlugin);
     host.load(&IoPlugin);
+    host.load(&PurePlugin);
     host.into_registry()
 }
 

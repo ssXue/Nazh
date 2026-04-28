@@ -50,12 +50,12 @@ mod tests {
     }
 
     #[test]
-    fn 两个插件合并后覆盖全部_16_种节点类型() {
+    fn 两个插件合并后覆盖全部_18_种节点类型() {
         let registry = standard_registry();
         assert_eq!(
             registry.registered_types().len(),
-            16,
-            "应注册 16 种节点类型"
+            18,
+            "应注册 18 种节点类型"
         );
     }
 
@@ -101,5 +101,30 @@ mod tests {
         expect("mqttClient", NodeCapabilities::NETWORK_IO);
         expect("barkPush", NodeCapabilities::NETWORK_IO);
         expect("sqlWriter", NodeCapabilities::FILE_IO);
+    }
+
+    #[test]
+    fn pure_plugin_注册全部纯计算节点() {
+        let registry = standard_registry();
+        let types = registry.registered_types();
+
+        for expected in ["c2f", "minutesSince"] {
+            assert!(
+                types.contains(&expected),
+                "PurePlugin 缺少节点类型: {expected}"
+            );
+        }
+    }
+
+    #[test]
+    fn pure_plugin_节点带_pure_capability() {
+        let registry = standard_registry();
+        for kind in ["c2f", "minutesSince"] {
+            let caps = registry.capabilities_of(kind).expect("注册");
+            assert!(
+                caps.contains(NodeCapabilities::PURE),
+                "节点 `{kind}` 应带 PURE capability"
+            );
+        }
     }
 }
