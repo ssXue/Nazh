@@ -109,6 +109,18 @@ pub enum EngineError {
         to_type: String,
     },
 
+    /// 边两端引脚的求值语义不一致——上游 Exec / 下游 Data 或反之。
+    /// `from` / `to` 形如 `"node_id.pin_id"`；`from_kind` / `to_kind` 是引脚 `PinKind` 的字符串。
+    #[error(
+        "边 `{from}` → `{to}` 求值语义不匹配：上游 `{from_kind}`，下游 `{to_kind}`（ADR-0014：引脚二分要求 Kind 一致）"
+    )]
+    IncompatiblePinKinds {
+        from: String,
+        to: String,
+        from_kind: String,
+        to_kind: String,
+    },
+
     #[error("节点 `{node}` 不存在 {direction} 引脚 `{pin}`")]
     UnknownPin {
         node: String,
