@@ -21,7 +21,9 @@ export type NazhNodeKind =
   | 'debugConsole'
   | 'subgraph'
   | 'subgraphInput'
-  | 'subgraphOutput';
+  | 'subgraphOutput'
+  | 'c2f'
+  | 'minutesSince';
 export type NazhNodeDisplayType = NazhNodeKind;
 
 export interface FlowgramLogicBranch {
@@ -228,6 +230,9 @@ export function normalizeNodeKind(value: unknown): NazhNodeKind {
     case 'subgraph':
     case 'subgraphInput':
     case 'subgraphOutput':
+      return value;
+    case 'c2f':
+    case 'minutesSince':
       return value;
     case 'native':
     default:
@@ -570,6 +575,10 @@ export function getFallbackNodeLabel(kind: NazhNodeKind): string {
       return 'Input';
     case 'subgraphOutput':
       return 'Output';
+    case 'c2f':
+      return 'C→F';
+    case 'minutesSince':
+      return '距今分钟';
     case 'native':
     default:
       return 'Native Node';
@@ -829,17 +838,8 @@ export function normalizeNodeConfig(
     };
   }
 
-  if (nodeType === 'subgraph') {
-    return {
-      ...rawConfig,
-      parameterBindings: isRecord(rawConfig.parameterBindings)
-        ? rawConfig.parameterBindings
-        : {},
-    };
-  }
-
-  if (nodeType === 'subgraphInput' || nodeType === 'subgraphOutput') {
-    return {};
+  if (nodeType === 'c2f' || nodeType === 'minutesSince') {
+    return { ...rawConfig };
   }
 
   return {

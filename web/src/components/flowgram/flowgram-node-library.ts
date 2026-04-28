@@ -70,12 +70,15 @@ import { definition as debugConsoleDef } from './nodes/debugConsole';
 import { definition as subgraphDef, SG_IN_POS, SG_OUT_POS } from './nodes/subgraph';
 import { definition as subgraphInputDef } from './nodes/subgraphInput';
 import { definition as subgraphOutputDef } from './nodes/subgraphOutput';
+import { definition as c2fDef } from './nodes/c2f';
+import { definition as minutesSinceDef } from './nodes/minutesSince';
 
 const ALL_DEFS = [
   nativeDef, codeDef, timerDef, serialTriggerDef, modbusReadDef, mqttClientDef,
   ifDef, switchDef, tryCatchDef, loopDef,
   httpClientDef, barkPushDef, sqlWriterDef, debugConsoleDef,
   subgraphDef, subgraphInputDef, subgraphOutputDef,
+  c2fDef, minutesSinceDef,
 ];
 
 const DEF_MAP = new Map(ALL_DEFS.map((d) => [d.kind, d]));

@@ -7,6 +7,7 @@ export const NODE_CATEGORIES = [
   '持久化',
   '调试工具',
   '子图封装',
+  '纯计算',
 ] as const;
 
 export type NodeCategory = (typeof NODE_CATEGORIES)[number];
@@ -38,4 +39,6 @@ export const NODE_CATEGORY_MAP: Record<
   subgraph: { category: '子图封装', description: '封装子拓扑为单节点并在部署前展开' },
   subgraphInput: { category: '子图封装', description: '子图展开后的入口桥接节点' },
   subgraphOutput: { category: '子图封装', description: '子图展开后的出口桥接节点' },
+  c2f: { category: '纯计算', description: '摄氏转华氏（pure-form，仅 Data 引脚）' },
+  minutesSince: { category: '纯计算', description: '给定 RFC3339 时间戳返回距今分钟数（pure-form，仅 Data 引脚）' },
 };
