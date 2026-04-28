@@ -75,11 +75,13 @@ import { FlowDownloadFormat, FlowDownloadService } from '@flowgram.ai/export-plu
 import {
   configToRecord,
   getPortTooltip,
+  getNodePinSchema,
   invalidateNodePinSchema,
   refreshNodePinSchema,
   resolvePinKind,
   resolvePinTypeKind,
 } from '../lib/pin-schema-cache';
+import { isPureForm } from '../lib/pin-compat';
 import {
   type ConnectionRejection,
   checkConnection,
@@ -779,17 +781,22 @@ function FlowgramNodeCard(props: FlowgramNodeMaterialProps) {
     );
   }
 
+  const pinSchema = getNodePinSchema(props.node.id);
+  const pureForm = pinSchema
+    ? isPureForm(pinSchema.inputPins, pinSchema.outputPins)
+    : false;
+
   return (
     <WorkflowNodeRenderer
       node={props.node}
-      className={`flowgram-card flowgram-card--${nodeType} flowgram-card--display-${displayType} flowgram-card--${runtimeStatus} ${props.activated ? 'is-activated' : ''}`}
+      className={`flowgram-card flowgram-card--${nodeType} flowgram-card--display-${displayType} flowgram-card--${runtimeStatus} ${props.activated ? 'is-activated' : ''} ${pureForm ? 'flowgram-card--pure-form' : ''}`}
       portClassName="flowgram-card__port"
       portBackgroundColor="var(--panel-strong)"
       portPrimaryColor={resolveNodePortColor(displayType, props.accentHex, props.nodeCodeColor)}
       portSecondaryColor="var(--surface-elevated)"
       portErrorColor="var(--danger)"
     >
-      <div data-flow-editor-selectable="false" className="flowgram-card__body" draggable={false}>
+      <div data-flow-editor-selectable="false" className="flowgram-card__body" draggable={false} data-pure-form={pureForm ? 'true' : undefined}>
         <div className="flowgram-card__topline">
           <div className="flowgram-card__identity">
             <span className={`flowgram-card__icon flowgram-card__icon--${displayType}`}>

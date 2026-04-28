@@ -1604,3 +1604,23 @@ html[data-theme='dark'] .flowgram-floating-panel--node {
     max-height: none;
   }
 }
+
+/* ADR-0014 Phase 3：pure-form 节点视觉差异化（UE5 Blueprint Pure Node 风格）。
+ * 头部绿色 + 圆角胶囊形——一眼区分"表达式节点"与"触发链节点"。
+ * 后续 Phase 5 还会按 capability 给 Trigger / Branching 着色，本 Phase 只覆盖 Pure。 */
+.flowgram-card--pure-form {
+  border-radius: 18px !important;
+  border-color: var(--pin-float, #2fb75f) !important;
+}
+
+.flowgram-card--pure-form .flowgram-card__topline {
+  background: linear-gradient(180deg, #2fb75f 0%, #258a47 100%);
+  color: #ffffff;
+  border-radius: 14px 14px 0 0;
+  margin: -8px -8px 4px -8px;
+  padding: 4px 8px;
+}
+
+.flowgram-card--pure-form .flowgram-card__icon {
+  filter: brightness(0) invert(1);
+}
