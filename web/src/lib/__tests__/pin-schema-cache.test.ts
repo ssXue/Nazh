@@ -36,6 +36,7 @@ describe('pin-schema-cache', () => {
           pin_type: { kind: 'json' },
           direction: 'input',
           required: true,
+          kind: 'exec',
         },
       ],
       outputPins: [],
@@ -63,7 +64,7 @@ describe('pin-schema-cache', () => {
   it('相同 (nodeType, config) 第二次刷新跳过 IPC（change-detection 守卫）', async () => {
     vi.mocked(describeNodePins).mockResolvedValue({
       inputPins: [
-        { id: 'in', label: 'in', pin_type: { kind: 'json' }, direction: 'input', required: true },
+        { id: 'in', label: 'in', pin_type: { kind: 'json' }, direction: 'input', required: true, kind: 'exec' },
       ],
       outputPins: [],
     });
@@ -83,10 +84,11 @@ describe('pin-schema-cache', () => {
           pin_type: { kind: 'json' },
           direction: 'input',
           required: true,
+          kind: 'exec',
         },
       ],
       outputPins: [
-        { id: 'out', label: 'out', pin_type: { kind: 'any' }, direction: 'output', required: false },
+        { id: 'out', label: 'out', pin_type: { kind: 'any' }, direction: 'output', required: false, kind: 'exec' },
       ],
     });
     await refreshNodePinSchema('mqtt-1', 'mqttClient', { mode: 'publish' });
@@ -96,7 +98,7 @@ describe('pin-schema-cache', () => {
     // 再注入 subscribe 模式的 schema（pin 镜像翻转）
     vi.mocked(describeNodePins).mockResolvedValueOnce({
       inputPins: [
-        { id: 'in', label: 'in', pin_type: { kind: 'any' }, direction: 'input', required: true },
+        { id: 'in', label: 'in', pin_type: { kind: 'any' }, direction: 'input', required: true, kind: 'exec' },
       ],
       outputPins: [
         {
@@ -105,6 +107,7 @@ describe('pin-schema-cache', () => {
           pin_type: { kind: 'json' },
           direction: 'output',
           required: false,
+          kind: 'exec',
         },
       ],
     });
@@ -127,7 +130,7 @@ describe('pin-schema-cache', () => {
   it('查不存在的端口返回 undefined（不抛错）', async () => {
     vi.mocked(describeNodePins).mockResolvedValueOnce({
       inputPins: [
-        { id: 'in', label: 'in', pin_type: { kind: 'json' }, direction: 'input', required: true },
+        { id: 'in', label: 'in', pin_type: { kind: 'json' }, direction: 'input', required: true, kind: 'exec' },
       ],
       outputPins: [],
     });
@@ -177,6 +180,7 @@ describe('getPortTooltip', () => {
           pin_type: { kind: 'json' },
           direction: 'input',
           required: true,
+          kind: 'exec',
           description: 'JSON 行数据',
         },
       ],
@@ -200,6 +204,7 @@ describe('getPortTooltip', () => {
           pin_type: { kind: 'any' },
           direction: 'output',
           required: false,
+          kind: 'exec',
         },
       ],
     });

@@ -29,6 +29,7 @@ function pin(id: string, kind: string, direction: 'input' | 'output', extra?: { 
     pin_type: pin_type as never,
     direction,
     required: direction === 'input',
+    kind: 'exec' as const,
   };
 }
 
