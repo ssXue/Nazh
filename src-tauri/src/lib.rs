@@ -973,6 +973,9 @@ async fn deploy_workflow(
         lifecycle_guards,
         shutdown_token,
         shared_resources,
+        // ADR-0014 Phase 5 IPC 待接入：壳层届时把句柄持有于 DesktopWorkflow，
+        // 暴露 query_output_cache 命令让前端读取拉取式槽位。本期暂未消费。
+        output_caches: _,
     } = deployment.into_parts();
     let root_nodes = ingress.root_nodes().to_vec();
     let (mut event_rx, mut result_rx, result_store_ref) = streams.into_receivers();

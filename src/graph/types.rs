@@ -13,6 +13,7 @@ use crate::{
     CancellationToken, ContextRef, DataStore, EngineError, ExecutionEvent, LifecycleGuard,
     SharedResources, VariableDeclaration, WorkflowContext, WorkflowNodeDefinition,
 };
+use nazh_core::OutputCache;
 use serde::{Deserialize, Deserializer, Serialize};
 use tokio::sync::mpsc;
 #[cfg(feature = "ts-export")]
@@ -113,6 +114,12 @@ pub struct WorkflowDeployment {
     pub(crate) shutdown_token: CancellationToken,
     /// 部署时构造的共享资源句柄（含 `WorkflowVariables` 等），供 IPC 读取共享状态。
     pub(crate) shared_resources: SharedResources,
+    /// ADR-0014 引脚求值语义二分：按节点 id 索引的 [`OutputCache`] 句柄。
+    ///
+    /// 仅声明 [`PinKind::Data`](nazh_core::PinKind::Data) 输出引脚的节点会有
+    /// 非空缓存槽——存量节点缓存为空（短路）。集成测试 / 未来 IPC 通过
+    /// [`output_cache`](Self::output_cache) 访问器读取拉取式槽位的最近态。
+    pub(crate) output_caches: HashMap<String, Arc<OutputCache>>,
 }
 
 /// [`WorkflowDeployment::into_parts`] 的返回类型——按字段名访问而非位置解构，
@@ -124,6 +131,10 @@ pub struct WorkflowDeploymentParts {
     pub shutdown_token: CancellationToken,
     /// 部署时构造的共享资源句柄，随 parts 传递给壳层保存。
     pub shared_resources: SharedResources,
+    /// ADR-0014 引脚求值语义二分：按节点 id 索引的 [`OutputCache`] 句柄；
+    /// 仅声明 [`PinKind::Data`](nazh_core::PinKind::Data) 输出引脚的节点
+    /// 槽位非空。
+    pub output_caches: HashMap<String, Arc<OutputCache>>,
 }
 
 /// 拓扑分析结果（仅模块内部使用）。
@@ -299,6 +310,18 @@ impl WorkflowDeployment {
         &self.shared_resources
     }
 
+    /// 按节点 id 返回该节点的 [`OutputCache`] 句柄（ADR-0014 引脚求值语义二分）。
+    ///
+    /// 仅声明 [`PinKind::Data`](nazh_core::PinKind::Data) 输出引脚的节点会有非空缓存槽——存量节点
+    /// 缓存为空（短路）。集成测试 / 未来 IPC 通过此入口读取拉取式槽位的
+    /// 最近态。
+    ///
+    /// 返回 `None` 表示节点 id 不在该工作流中。
+    #[must_use]
+    pub fn output_cache(&self, node_id: &str) -> Option<&Arc<OutputCache>> {
+        self.output_caches.get(node_id)
+    }
+
     /// 拆分为入口、流、生命周期 guards 与撤销根 token。
     ///
     /// **注意**：丢弃返回的 guards 会立即 cancel 所有节点的 lifecycle token——
@@ -312,6 +335,7 @@ impl WorkflowDeployment {
             lifecycle_guards: self.lifecycle_guards,
             shutdown_token: self.shutdown_token,
             shared_resources: self.shared_resources,
+            output_caches: self.output_caches,
         }
     }
 
