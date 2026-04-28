@@ -277,16 +277,27 @@ impl ModbusReadNode {
 impl NodeTrait for ModbusReadNode {
     nazh_core::impl_node_meta!("modbusRead");
 
-    /// 输出引脚：单一 `Json` 端口，承载寄存器读取后并入上游 payload 的对象。
+    /// 输出引脚：
+    /// - `out`（Json/Exec）：每次执行向下游推送的寄存器读取结果。
+    /// - `latest`（Json/Data）：拉取式槽位，缓存最近一次读数；下游 PURE 节点或
+    ///   独立时钟触发的 transform 可在不重新执行 modbusRead 的情况下读到最新值
+    ///   （ADR-0014 Phase 2 引入）。
     ///
     /// 注：[`Self::input_pins`] 保留 trait 默认（单 `Any` 输入）——modbusRead
-    /// 常作为根节点或被 `timer`（输出 `Any`）触发，input 形状不重要。output
-    /// 收紧到 `Json` 让下游能感知"这是结构化数据"，被部署期校验用作类型契约。
+    /// 常作为根节点或被 `timer`（输出 `Any`）触发，input 形状不重要。
     fn output_pins(&self) -> Vec<PinDefinition> {
-        vec![PinDefinition::output(
-            PinType::Json,
-            "寄存器读取结果合并入 input payload 的 JSON 对象",
-        )]
+        vec![
+            PinDefinition::output(
+                PinType::Json,
+                "寄存器读取结果合并入 input payload 的 JSON 对象",
+            ),
+            PinDefinition::output_named_data(
+                "latest",
+                "最近读数",
+                PinType::Json,
+                "拉取式槽位：缓存最近一次寄存器读数，下游可在不触发 modbusRead 重读的前提下取最新值",
+            ),
+        ]
     }
 
     async fn transform(
@@ -376,10 +387,11 @@ impl NodeTrait for ModbusReadNode {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
     use connections::shared_connection_manager;
+    use nazh_core::PinKind;
     use serde_json::json;
 
     fn make_node() -> ModbusReadNode {
@@ -392,10 +404,24 @@ mod tests {
     fn output_pin_是_json_单端口() {
         let node = make_node();
         let pins = node.output_pins();
-        assert_eq!(pins.len(), 1, "modbusRead 只声明单个输出端口");
-        assert_eq!(pins[0].id, "out");
-        assert_eq!(pins[0].pin_type, PinType::Json);
-        assert!(!pins[0].required, "输出端口默认 required=false");
+        assert_eq!(
+            pins.len(),
+            2,
+            "modbusRead 声明两个输出端口：out (Exec) + latest (Data)"
+        );
+
+        let out_pin = pins.iter().find(|p| p.id == "out").expect("缺 out 引脚");
+        assert_eq!(out_pin.pin_type, PinType::Json);
+        assert_eq!(out_pin.kind, PinKind::Exec);
+        assert!(!out_pin.required);
+
+        let latest_pin = pins
+            .iter()
+            .find(|p| p.id == "latest")
+            .expect("缺 latest 引脚");
+        assert_eq!(latest_pin.pin_type, PinType::Json);
+        assert_eq!(latest_pin.kind, PinKind::Data);
+        assert!(!latest_pin.required, "Data 拉取式引脚 required=false");
     }
 
     #[test]
