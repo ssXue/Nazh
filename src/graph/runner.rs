@@ -8,14 +8,22 @@
 //!
 //! 节点返回的 [`nazh_core::NodeOutput::metadata`] 不进入 payload，而是通过
 //! [`ExecutionEvent::Completed`] 事件独立传递给前端，实现业务数据与执行元数据的完全分离。
+//!
+//! ## ADR-0014 Phase 1：双路径输出
+//!
+//! transform 完成后，对每条 [`NodeOutput`]，按 [`NodeDispatch`] 解析的目标 port id
+//! 与 `data_output_pin_ids` 求交集——交集中的 pin 走 Data 路径（写 [`OutputCache`]
+//! 槽位，不 push）；其余 pin 走 Exec 路径（推 MPSC）。Phase 1 不读 cache（下游消费
+//! 在 Phase 2 接入）。
 
-use std::{sync::Arc, time::Duration};
+use std::{collections::HashSet, sync::Arc, time::Duration};
 
 use tokio::sync::mpsc;
 use tracing::Instrument;
 
 use nazh_core::{
-    ContextRef, DataStore, EngineError, ExecutionEvent, NodeDispatch, NodeTrait,
+    CachedOutput, ContextRef, DataStore, EngineError, ExecutionEvent, NodeDispatch, NodeTrait,
+    OutputCache,
     event::{emit_event, emit_failure},
     guard::guarded_execute,
 };
@@ -23,7 +31,11 @@ use nazh_core::{
 use super::types::DownstreamTarget;
 
 /// 单节点的异步执行循环：接收 [`ContextRef`] → 读取数据 → 执行 → 写入输出 → 分发。
-#[allow(clippy::too_many_lines)]
+///
+/// ADR-0014 Phase 1：transform 完成后，按 dispatch 解析的目标 port id 与
+/// `data_output_pin_ids` 求交集——交集走 Data 路径（写 [`OutputCache`] 槽位），
+/// 其余走 Exec 路径（推 MPSC）。Phase 1 仅写不读，下游消费 Phase 2 接入。
+#[allow(clippy::too_many_lines, clippy::too_many_arguments)]
 pub(crate) async fn run_node(
     node: Arc<dyn NodeTrait>,
     timeout: Option<Duration>,
@@ -32,6 +44,8 @@ pub(crate) async fn run_node(
     result_tx: mpsc::Sender<ContextRef>,
     event_tx: mpsc::Sender<ExecutionEvent>,
     store: Arc<dyn DataStore>,
+    output_cache: Arc<OutputCache>,
+    data_output_pin_ids: HashSet<String>,
 ) {
     let node_id = node.id().to_owned();
 
@@ -77,13 +91,44 @@ pub(crate) async fn run_node(
                 let mut merged_metadata = serde_json::Map::new();
 
                 for node_output in output.outputs {
+                    // ADR-0014 Phase 1：先写 Data 缓存槽（不 push）
+                    if !data_output_pin_ids.is_empty() {
+                        let data_pins_to_write: Vec<&String> = match &node_output.dispatch {
+                            NodeDispatch::Broadcast => data_output_pin_ids.iter().collect(),
+                            NodeDispatch::Route(ports) => ports
+                                .iter()
+                                .filter(|p| data_output_pin_ids.contains(*p))
+                                .collect(),
+                        };
+                        for pin_id in data_pins_to_write {
+                            output_cache.write(
+                                pin_id,
+                                CachedOutput {
+                                    value: node_output.payload.clone(),
+                                    produced_at: chrono::Utc::now(),
+                                    trace_id,
+                                },
+                            );
+                        }
+                    }
+
+                    // Exec 路径：仅匹配非 Data 输出 pin 的下游 sender
                     let matching_targets = match &node_output.dispatch {
-                        NodeDispatch::Broadcast => downstream_senders.iter().collect::<Vec<_>>(),
+                        NodeDispatch::Broadcast => downstream_senders
+                            .iter()
+                            .filter(|target| {
+                                target
+                                    .source_port_id
+                                    .as_ref()
+                                    .is_none_or(|port| !data_output_pin_ids.contains(port))
+                            })
+                            .collect::<Vec<_>>(),
                         NodeDispatch::Route(port_ids) => downstream_senders
                             .iter()
                             .filter(|target| {
                                 target.source_port_id.as_ref().is_some_and(|port_id| {
-                                    port_ids.iter().any(|candidate| candidate == port_id)
+                                    !data_output_pin_ids.contains(port_id)
+                                        && port_ids.iter().any(|candidate| candidate == port_id)
                                 })
                             })
                             .collect::<Vec<_>>(),
@@ -93,9 +138,8 @@ pub(crate) async fn run_node(
                         merged_metadata.insert(key, value);
                     }
 
-                    // 将纯业务 payload 写入 DataStore
                     let consumer_count = if matching_targets.is_empty() {
-                        1 // 叶节点结果
+                        1
                     } else {
                         matching_targets.len()
                     };

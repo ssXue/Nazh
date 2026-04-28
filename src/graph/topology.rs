@@ -140,7 +140,6 @@ impl WorkflowGraph {
 /// # Errors
 ///
 /// Data 边构成环时返回 [`EngineError::InvalidGraph`].
-#[allow(dead_code)] // Task 11 在 deploy.rs 中调用
 pub(crate) fn detect_data_edge_cycle(
     data_edges: &[&super::types::WorkflowEdge],
 ) -> Result<(), crate::EngineError> {
@@ -194,13 +193,13 @@ pub(crate) fn detect_data_edge_cycle(
 ///
 /// `'a` 借用 `WorkflowEdge` 列表本身的生命周期——分类只重组引用，不克隆。
 #[derive(Debug)]
-#[allow(dead_code)] // Task 11 在 deploy.rs 中调用
 pub(crate) struct ClassifiedEdges<'a> {
+    /// Exec 边——Phase 2 起由 Runner 用于确认 Exec push 范围；Phase 1 暂未读取。
+    #[allow(dead_code)]
     pub exec_edges: Vec<&'a super::types::WorkflowEdge>,
     pub data_edges: Vec<&'a super::types::WorkflowEdge>,
 }
 
-#[allow(dead_code)] // Task 11 在 deploy.rs 中调用
 const DEFAULT_OUTPUT_PIN_ID: &str = "out";
 
 /// 按上游节点 source pin 的 [`PinKind`] 把边分类为 exec / data。
@@ -212,7 +211,6 @@ const DEFAULT_OUTPUT_PIN_ID: &str = "out";
 /// 边引用的源节点不存在、或源节点 `output_pins` 中找不到对应 pin id 时返回
 /// [`EngineError::UnknownPin`]——这种 case 也应在 `pin_validator` 提前发现，
 /// 但本函数自包含校验避免依赖前置阶段，便于单测。
-#[allow(dead_code)] // Task 11 在 deploy.rs 中调用
 pub(crate) fn classify_edges<'a>(
     edges: &'a [super::types::WorkflowEdge],
     nodes: &HashMap<String, Arc<dyn NodeTrait>>,

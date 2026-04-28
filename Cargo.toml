@@ -89,6 +89,7 @@ nodes-flow.workspace = true
 # nodes-io 的协议 features 由 facade 重新导出（ADR-0018）。workspace dep 已经
 # `default-features = false`；桌面默认通过 facade 的 io-all 元 feature 打开。
 nodes-io.workspace = true
+chrono.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true

@@ -26,21 +26,28 @@
 //!
 //! 设计决策见 ADR-0009 / ADR-0010。
 
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+    time::Duration,
+};
 
 use nazh_core::ai::AiService;
 use tokio::sync::mpsc;
 
 use super::pin_validator;
 use super::runner::run_node;
+use super::topology::{classify_edges, detect_data_edge_cycle};
 use super::types::{
-    DownstreamTarget, WorkflowDeployment, WorkflowGraph, WorkflowIngress, WorkflowStreams,
+    DataDownstreamTarget, DownstreamTarget, WorkflowDeployment, WorkflowGraph, WorkflowIngress,
+    WorkflowStreams,
 };
 use super::variables_init::build_workflow_variables;
 use crate::SharedConnectionManager;
 use nazh_core::{
     ArenaDataStore, CancellationToken, ContextRef, DataStore, EngineError, NodeHandle,
-    NodeLifecycleContext, NodeRegistry, NodeTrait, RuntimeResources, SharedResources,
+    NodeLifecycleContext, NodeRegistry, NodeTrait, OutputCache, PinKind, RuntimeResources,
+    SharedResources,
 };
 
 /// 校验、实例化并将工作流图部署为并发 Tokio 任务。
@@ -158,6 +165,62 @@ pub async fn deploy_workflow_with_ai(
     }
     pin_validator::validate_pin_compatibility(&nodes_by_id, &graph.edges)?;
 
+    // ADR-0014 Phase 1：边按上游 source pin 的 PinKind 分类，Data 子图独立环检测
+    let classified = classify_edges(&graph.edges, &nodes_by_id)?;
+    detect_data_edge_cycle(&classified.data_edges)?;
+
+    // 给每个节点准备 OutputCache：仅声明 Data 输出 pin 的节点会有非空 slots
+    let output_caches: HashMap<String, Arc<OutputCache>> = nodes_by_id
+        .iter()
+        .map(|(id, node)| {
+            let cache = OutputCache::new();
+            for pin in node.output_pins() {
+                if pin.kind == PinKind::Data {
+                    cache.prepare_slot(&pin.id);
+                }
+            }
+            (id.clone(), Arc::new(cache))
+        })
+        .collect();
+
+    // Data 边按 from 节点分组：from_node_id → Vec<DataDownstreamTarget>
+    // Phase 1 暂未消费（Phase 2 起 Runner 用此计算下游 transform 时需读取的上游 cache）
+    let mut data_targets_by_source: HashMap<String, Vec<DataDownstreamTarget>> = HashMap::new();
+    for edge in &classified.data_edges {
+        let source_pin_id = edge
+            .source_port_id
+            .clone()
+            .unwrap_or_else(|| "out".to_owned());
+        let target_pin_id = edge
+            .target_port_id
+            .clone()
+            .unwrap_or_else(|| "in".to_owned());
+        data_targets_by_source
+            .entry(edge.from.clone())
+            .or_default()
+            .push(DataDownstreamTarget {
+                target_node_id: edge.to.clone(),
+                target_pin_id,
+                source_pin_id,
+            });
+    }
+    // 借 _ binding 显式 silence "unused" warning（Phase 2 起会被消费）
+    let _ = data_targets_by_source;
+
+    // 计算每个节点的 Data 输出 pin id 集合（Runner 用来决定哪些 output 写 cache）
+    let data_output_pin_ids_by_node: HashMap<String, HashSet<String>> = nodes_by_id
+        .iter()
+        .map(|(id, node)| {
+            let pins: HashSet<String> = node
+                .output_pins()
+                .into_iter()
+                .filter(|p| p.kind == PinKind::Data)
+                .map(|p| p.id)
+                .collect();
+            (id.clone(), pins)
+        })
+        .collect();
+
     // ---- 阶段 1：on_deploy ----
     //
     // 拓扑序保证上游节点先完成 on_deploy，让下游节点 on_deploy 时上游的资源
@@ -233,6 +296,16 @@ pub async fn deploy_workflow_with_ai(
             })
             .collect::<Vec<_>>();
 
+        let data_output_pin_ids = data_output_pin_ids_by_node
+            .get(node_id)
+            .cloned()
+            .unwrap_or_default();
+        let output_cache = Arc::clone(
+            output_caches
+                .get(node_id)
+                .ok_or_else(|| EngineError::invalid_graph("阶段 2：output_cache 缺失"))?,
+        );
+
         runtime.spawn(run_node(
             node,
             node_definition.timeout_ms().map(Duration::from_millis),
@@ -241,6 +314,8 @@ pub async fn deploy_workflow_with_ai(
             result_tx.clone(),
             event_tx.clone(),
             Arc::clone(&store),
+            output_cache,
+            data_output_pin_ids,
         ));
     }
 
