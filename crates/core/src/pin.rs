@@ -272,6 +272,28 @@ impl PinDefinition {
             description: Some(description.into()),
         }
     }
+
+    /// 多输出节点的 Data 引脚工厂——`required=false`、`kind=PinKind::Data`。
+    ///
+    /// 典型用途：节点在主 Exec 输出之外暴露"可拉取的最近态"（如 `modbusRead` 的
+    /// `latest`）。下游通过 [`OutputCache`](crate::OutputCache) 槽位拉值，不阻塞
+    /// 上游 transform。`id` 与 `label` 由调用方指定（不像 `output()` 默认 `"out"`）。
+    pub fn output_named_data(
+        id: impl Into<String>,
+        label: impl Into<String>,
+        pin_type: PinType,
+        description: impl Into<String>,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            label: label.into(),
+            pin_type,
+            direction: PinDirection::Output,
+            required: false,
+            kind: PinKind::Data,
+            description: Some(description.into()),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -437,6 +459,26 @@ mod tests {
         let json = r#"{"id":"latest","label":"latest","pin_type":{"kind":"any"},"direction":"output","required":false,"kind":"data"}"#;
         let pin: PinDefinition = serde_json::from_str(json).unwrap();
         assert_eq!(pin.kind, PinKind::Data);
+    }
+
+    #[test]
+    fn output_named_data_工厂方法生成正确字段() {
+        let pin = PinDefinition::output_named_data(
+            "latest",
+            "最近读数",
+            PinType::Json,
+            "缓存最近一次读取的寄存器值",
+        );
+        assert_eq!(pin.id, "latest");
+        assert_eq!(pin.label, "最近读数");
+        assert_eq!(pin.pin_type, PinType::Json);
+        assert_eq!(pin.direction, PinDirection::Output);
+        assert!(!pin.required, "Data 输出非必需（拉取式）");
+        assert_eq!(pin.kind, PinKind::Data);
+        assert_eq!(
+            pin.description.as_deref(),
+            Some("缓存最近一次读取的寄存器值")
+        );
     }
 
     // ---- 默认引脚 ----
