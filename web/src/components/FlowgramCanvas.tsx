@@ -29,7 +29,7 @@ import {
   useState,
 } from 'react';
 import { MinimapRender } from '@flowgram.ai/minimap-plugin';
-import { SubCanvasRender, SubCanvasBackground, SubCanvasBorder } from '@flowgram.ai/free-container-plugin';
+import { SubCanvasRender } from '@flowgram.ai/free-container-plugin';
 
 import {
   AutoLayoutIcon,
@@ -616,35 +616,44 @@ function getDefaultOutputPortId(node: FlowNodeEntity | null): string | undefined
   return getLogicNodeBranchDefinitions(nodeType, rawData.config)[0]?.key;
 }
 
-/** 子图容器节点渲染——标题栏 + SubCanvasRender 内嵌画布区域 */
-function FlowgramSubgraphCard(props: FlowgramNodeMaterialProps) {
+/** 容器节点渲染——标题栏 + SubCanvasRender 内嵌画布区域 */
+const SUBCANVAS_HEADER_OFFSET = -48;
+
+function FlowgramContainerCard(props: FlowgramNodeMaterialProps) {
   const rawData = props.node.getExtInfo() as
-    | { label?: string; nodeType?: string }
+    | { label?: string; nodeType?: string; config?: { script?: string } }
     | undefined;
+  const nodeType = normalizeNodeKind(rawData?.nodeType ?? props.node.flowNodeType);
+  const displayType = normalizeFlowgramDisplayType(nodeType);
   const runtimeStatus = props.runtimeStatus ?? 'idle';
+  const containerClass = nodeType === 'loop' ? 'loop' : 'subgraph';
+  const preview = nodeType === 'loop' ? (rawData?.config?.script ?? '[payload]') : null;
 
   return (
     <WorkflowNodeRenderer
       node={props.node}
-      className={`flowgram-card flowgram-card--subgraph flowgram-card--${runtimeStatus} ${props.activated ? 'is-activated' : ''}`}
+      className={`flowgram-card flowgram-card--${containerClass} flowgram-card--${runtimeStatus} ${props.activated ? 'is-activated' : ''}`}
       portClassName="flowgram-card__port"
       portBackgroundColor="var(--panel-strong)"
-      portPrimaryColor="var(--accent)"
+      portPrimaryColor={nodeType === 'loop' ? 'color-mix(in srgb, var(--accent) 72%, var(--success) 28%)' : 'var(--accent)'}
       portSecondaryColor="var(--surface-elevated)"
       portErrorColor="var(--danger)"
     >
       <div className="flowgram-subgraph__header">
-        <strong>{rawData?.label ?? props.node.id}</strong>
+        <div className="flowgram-subgraph__header-left">
+          <span className={`flowgram-card__icon flowgram-card__icon--${displayType}`}>
+            <FlowgramNodeGlyph displayType={displayType} width={14} height={14} />
+          </span>
+          <strong>{rawData?.label ?? props.node.id}</strong>
+        </div>
         {runtimeStatus !== 'idle' ? (
           <span className={`flowgram-card__runtime flowgram-card__runtime--${runtimeStatus}`}>
             {runtimeStatus}
           </span>
         ) : null}
       </div>
-      <SubCanvasBorder style={{ borderRadius: 8 }}>
-        <SubCanvasBackground />
-      </SubCanvasBorder>
-      <SubCanvasRender />
+      {preview ? <p className="flowgram-container__preview">{preview}</p> : null}
+      <SubCanvasRender offsetY={SUBCANVAS_HEADER_OFFSET} />
     </WorkflowNodeRenderer>
   );
 }
@@ -741,27 +750,39 @@ function FlowgramNodeCard(props: FlowgramNodeMaterialProps) {
           ? '输出桥接'
         : rawData?.config?.script ?? 'Guarded script';
 
-  // 桥接节点使用极简卡片，不显示 preview / meta / branches
+  // 桥接节点：方形 icon 卡片，竖线+圆点
   if (nodeType === 'subgraphInput' || nodeType === 'subgraphOutput') {
+    const isInput = nodeType === 'subgraphInput';
     return (
       <WorkflowNodeRenderer
         node={props.node}
-        className={`flowgram-card flowgram-card--${nodeType} flowgram-card--${runtimeStatus}`}
+        className={`flowgram-card flowgram-card--bridge flowgram-card--${nodeType} flowgram-card--${runtimeStatus}`}
         portClassName="flowgram-card__port"
         portBackgroundColor="var(--panel-strong)"
         portPrimaryColor="var(--accent)"
         portSecondaryColor="var(--surface-elevated)"
         portErrorColor="var(--danger)"
       >
-        <div data-flow-editor-selectable="false" className="flowgram-card__body" draggable={false}>
-          <div className="flowgram-card__topline">
-            <div className="flowgram-card__identity">
-              <span className="flowgram-card__type">
-                {nodeType === 'subgraphInput' ? 'IN' : 'OUT'}
-              </span>
-            </div>
-          </div>
-          <strong>{rawData?.label ?? (nodeType === 'subgraphInput' ? 'Input' : 'Output')}</strong>
+        <div data-flow-editor-selectable="false" className="flowgram-bridge-icon" draggable={false}>
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 20 20"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            {isInput ? (
+              <>
+                <line x1="14" y1="4" x2="14" y2="16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                <circle cx="6" cy="10" r="3" fill="currentColor" />
+              </>
+            ) : (
+              <>
+                <line x1="6" y1="4" x2="6" y2="16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                <circle cx="14" cy="10" r="3" fill="currentColor" />
+              </>
+            )}
+          </svg>
         </div>
       </WorkflowNodeRenderer>
     );
@@ -1456,9 +1477,9 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
       const rawType = normalizeNodeKind(
         ((props.node.getExtInfo() ?? {}) as { nodeType?: string }).nodeType ?? props.node.flowNodeType,
       );
-      if (rawType === 'subgraph') {
+      if (rawType === 'subgraph' || rawType === 'loop') {
         return (
-          <FlowgramSubgraphCard
+          <FlowgramContainerCard
             {...props}
             runtimeStatus={resolveNodeRuntimeStatus(props.node.id)}
             accentHex={accentHex}

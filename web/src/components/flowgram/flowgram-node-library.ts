@@ -62,12 +62,12 @@ import { definition as mqttClientDef } from './nodes/mqttClient';
 import { definition as ifDef } from './nodes/if';
 import { definition as switchDef } from './nodes/switch';
 import { definition as tryCatchDef } from './nodes/tryCatch';
-import { definition as loopDef } from './nodes/loop';
+import { definition as loopDef, LOOP_IN_POS, LOOP_OUT_POS } from './nodes/loop';
 import { definition as httpClientDef } from './nodes/httpClient';
 import { definition as barkPushDef } from './nodes/barkPush';
 import { definition as sqlWriterDef } from './nodes/sqlWriter';
 import { definition as debugConsoleDef } from './nodes/debugConsole';
-import { definition as subgraphDef } from './nodes/subgraph';
+import { definition as subgraphDef, SG_IN_POS, SG_OUT_POS } from './nodes/subgraph';
 import { definition as subgraphInputDef } from './nodes/subgraphInput';
 import { definition as subgraphOutputDef } from './nodes/subgraphOutput';
 
@@ -116,6 +116,7 @@ function buildSubgraphPaletteJson(
       {
         id: 'sg-in',
         type: 'subgraphInput',
+        meta: { position: { x: SG_IN_POS.x, y: SG_IN_POS.y } },
         data: {
           label: 'Input',
           nodeType: 'subgraphInput',
@@ -125,8 +126,42 @@ function buildSubgraphPaletteJson(
       {
         id: 'sg-out',
         type: 'subgraphOutput',
+        meta: { position: { x: SG_OUT_POS.x, y: SG_OUT_POS.y } },
         data: {
           label: 'Output',
+          nodeType: 'subgraphOutput',
+          config: {},
+        },
+      },
+    ],
+    edges: [],
+  };
+}
+
+function buildLoopPaletteJson(
+  seed: NodeSeed,
+  connectionDefaults: FlowgramConnectionDefaults,
+): Partial<import('@flowgram.ai/free-layout-editor').WorkflowNodeJSON> {
+  const base = buildPaletteNodeJson(seed, connectionDefaults);
+  return {
+    ...base,
+    blocks: [
+      {
+        id: 'loop-iterate',
+        type: 'subgraphInput',
+        meta: { position: { x: LOOP_IN_POS.x, y: LOOP_IN_POS.y } },
+        data: {
+          label: 'Iterate',
+          nodeType: 'subgraphInput',
+          config: {},
+        },
+      },
+      {
+        id: 'loop-emit',
+        type: 'subgraphOutput',
+        meta: { position: { x: LOOP_OUT_POS.x, y: LOOP_OUT_POS.y } },
+        data: {
+          label: 'Emit',
           nodeType: 'subgraphOutput',
           config: {},
         },
@@ -142,10 +177,15 @@ export function createFlowgramNodeRegistries(
   return ALL_DEFS.map((def) => ({
     type: def.kind,
     meta: def.buildRegistryMeta(),
-    onAdd: () =>
-      def.kind === 'subgraph'
-        ? buildSubgraphPaletteJson(def.buildDefaultSeed(), connectionDefaults)
-        : buildPaletteNodeJson(def.buildDefaultSeed(), connectionDefaults),
+    onAdd: () => {
+      if (def.kind === 'subgraph') {
+        return buildSubgraphPaletteJson(def.buildDefaultSeed(), connectionDefaults);
+      }
+      if (def.kind === 'loop') {
+        return buildLoopPaletteJson(def.buildDefaultSeed(), connectionDefaults);
+      }
+      return buildPaletteNodeJson(def.buildDefaultSeed(), connectionDefaults);
+    },
   }));
 }
 

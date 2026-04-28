@@ -999,6 +999,7 @@ html[data-theme='dark'] .flowgram-floating-panel--node {
 
 .flowgram-card {
   width: 214px;
+  box-sizing: border-box;
   border-radius: 16px;
   border: 1px solid var(--panel-border);
   background: color-mix(in srgb, var(--flowgram-canvas-bg) 60%, var(--panel-strong));
@@ -1011,6 +1012,23 @@ html[data-theme='dark'] .flowgram-floating-panel--node {
   z-index: var(--z-content);
 }
 
+/* 容器节点由 FlowGram 插件控制尺寸，填满 gedit-flow-activity-node */
+.flowgram-card--subgraph,
+.flowgram-card--loop {
+  width: 100%;
+  height: 100%;
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.flowgram-card--subgraph {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--panel-border));
+}
+
+.flowgram-card--loop {
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--success) 18%, var(--panel-border));
+}
+
 .flowgram-card--if,
 .flowgram-card--tryCatch {
   width: 240px;
@@ -1018,10 +1036,6 @@ html[data-theme='dark'] .flowgram-floating-panel--node {
 
 .flowgram-card--switch {
   width: 252px;
-}
-
-.flowgram-card--loop {
-  width: 244px;
 }
 
 .flowgram-card.is-activated {
@@ -1265,6 +1279,75 @@ html[data-theme='dark'] .flowgram-floating-panel--node {
 
 .flowgram-card__port {
   box-shadow: 0 0 0 4px rgba(247, 248, 250, 0.96);
+}
+
+/* 子图容器 header */
+.flowgram-subgraph__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 14px 6px;
+  min-height: 28px;
+}
+
+.flowgram-subgraph__header-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.flowgram-container__preview {
+  padding: 0 14px 4px;
+  color: var(--muted);
+  font-size: var(--font-subheadline);
+  line-height: 1.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+/* 桥接节点：方形 icon 卡片 */
+.flowgram-card--bridge {
+  width: 48px !important;
+  height: 48px !important;
+  min-width: 48px;
+  min-height: 48px;
+  border-radius: 10px !important;
+  background: var(--panel-strong) !important;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: 1.5px solid color-mix(in srgb, var(--accent) 40%, var(--panel-border));
+}
+
+.flowgram-bridge-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  color: var(--accent-ink);
+}
+
+/* SubCanvas 内部边框暗主题适配 */
+.sub-canvas-border {
+  border-color: var(--panel-border) !important;
+  border-width: 1px !important;
+  border-radius: 8px !important;
+}
+
+.sub-canvas-border::before {
+  display: none;
+}
+
+.sub-canvas-render {
+  border-radius: 8px;
+}
+
+.sub-canvas-background {
+  background-color: color-mix(in srgb, var(--flowgram-canvas-bg) 80%, var(--panel-strong));
 }
 
 .flowgram-card--running {

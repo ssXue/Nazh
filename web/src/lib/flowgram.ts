@@ -156,8 +156,8 @@ export function toFlowgramWorkflowJson(graph: WorkflowGraph): FlowgramWorkflowJS
       ...node,
       meta: persistedNode.meta ?? node.meta,
       data: {
-        ...(isRecord(persistedNode.data) ? persistedNode.data : {}),
         ...(isRecord(node.data) ? node.data : {}),
+        ...(isRecord(persistedNode.data) ? persistedNode.data : {}),
       },
       blocks: persistedNode.blocks,
       edges: persistedNode.edges,

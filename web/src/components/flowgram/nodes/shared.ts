@@ -466,7 +466,7 @@ export function normalizeFlowgramNodeJson(
 ): FlowNodeJSON {
   const rawData = isRecord(json.data) ? (json.data as FlowgramNodeData) : {};
   const nodeType = normalizeNodeKind(rawData.nodeType ?? json.type);
-  const fallbackLabel = json.id || getFallbackNodeLabel(nodeType);
+  const fallbackLabel = getFallbackNodeLabel(nodeType);
   const rawConfig = rawData.config;
   const normalizedConfig = normalizeNodeConfig(nodeType, rawConfig);
 
@@ -592,9 +592,15 @@ export interface NodeDefinition {
   getNodeSize(): { width: number; height: number };
   buildRegistryMeta(): {
     defaultExpanded: boolean;
+    isContainer?: boolean;
     size: { width: number; height: number };
     defaultPorts?: Array<{ type: 'input' | 'output' }>;
     useDynamicPort?: boolean;
+    deleteDisable?: boolean;
+    copyDisable?: boolean;
+    padding?: (transform: unknown) => { top: number; bottom: number; left: number; right: number };
+    selectable?: (node: unknown, mousePos?: unknown) => boolean;
+    wrapperStyle?: Record<string, string>;
   };
   validate(ctx: NodeValidationContext): NodeValidation[];
 }

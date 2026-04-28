@@ -29,12 +29,14 @@ export const definition: NodeDefinition = {
   },
 
   getNodeSize() {
-    return { width: 120, height: 80 };
+    return { width: 48, height: 48 };
   },
 
   buildRegistryMeta() {
     return {
       defaultExpanded: true,
+      deleteDisable: true,
+      copyDisable: true,
       size: this.getNodeSize(),
       defaultPorts: [{ type: 'output' as const }],
     };
