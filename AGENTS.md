@@ -12,6 +12,26 @@ Stack: **Rust engine (Cargo workspace, 9 crates) + Tauri v2 desktop shell + Reac
 
 Everything runs in one process — no HTTP/gRPC server, no external broker. AI features (script generation, thinking-mode completions, workflow composition) flow through the `AiService` trait in Ring 0 (`nazh_core::ai`); the OpenAI-compatible HTTP/SSE implementation lives in the `ai` crate (ADR-0019).
 
+## ⚠️ ARCHITECTURE FREEZE（2026-04-28 起）
+
+> **当前状态**：ADR sprint + 全项目接口/数据结构/模块拆分/规范 review 进行中。
+> **Plan**：`docs/superpowers/plans/2026-04-28-architecture-review.md`（退出标准 5 项全勾才解冻）
+>
+> **阶段**：
+> - **Phase A**（Day 0..3）：ADR sprint —— ADR-0014 全 Phase（3/3b/4/5）→ Phase 6 EventBus → ADR-0015 → ADR-0016 → loop 升级容器
+> - **Phase B-D**（Day 4..8）：架构 review + 模块拆分 + 规范扫描（按 crate 切片，可并行）
+> - **Phase E**（Day 8）：findings 整合 + 解冻
+>
+> **冻结范围**：本期 plan 列出的工作之外，**不接受**：
+> - 新 ADR 立项
+> - 新增 / 修改 public trait 方法
+> - 修改 public struct 字段
+> - 新增模块或 crate
+>
+> **允许的修改**：bug 修复、文档勘误、测试补充、本期 plan 内的 sprint 与 review 工作。
+> **预计解冻**：~2026-05-08。
+> **解冻动作**：删除本段 + 更新 Project Status / 已知 tech debt（参见 plan Phase E）。
+
 ## Build & Dev Commands
 
 ```bash

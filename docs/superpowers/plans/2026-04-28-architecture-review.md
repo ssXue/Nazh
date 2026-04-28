@@ -1,0 +1,193 @@
+# 2026-04-28 架构 review + 模块拆分 + 规范扫描
+
+**Goal**：在当前所有 in-flight ADR 完成后，对 Ring 0 + Ring 1 + facade + IPC + 前端的接口、数据结构、文件规模、规范符合度做一次系统性 review。输出 (1) 修复 PR 清单 (2) 模块拆分 PR 清单 (3) 规范不符项清单。
+
+**Architecture**：不动现有 ADR 决策；仅做"接口对齐 / 文件拆分 / 规范修复"。重大设计修改若涉及 ADR 必须新立 ADR（freeze 期内不允许）。
+
+**Tech Stack**：现有 Rust workspace 9 crates + Tauri v2 + React。
+
+**关联**：`AGENTS.md` 顶部的 ARCHITECTURE FREEZE 段；解冻条件 = 本 plan 退出标准全勾。
+
+---
+
+## Phase A: ADR Sprint（Day 0..3）
+
+顺序：**ADR-0014 全 Phase → Phase 6 EventBus → ADR-0015/0016**。`loop 升级容器`独立，可任意时机插入。
+
+### ADR-0014 引脚求值语义二分
+
+- [ ] **Phase 3** PURE 节点 — `docs/superpowers/plans/2026-04-28-adr-0014-phase-3-pure-nodes.md`
+- [ ] **Phase 3b** lookup + mixed input — `docs/superpowers/plans/2026-04-28-adr-0014-phase-3b-lookup-mixed-input.md`
+- [ ] **Phase 4** cache lifecycle — `docs/superpowers/plans/2026-04-28-adr-0014-phase-4-cache-lifecycle.md`
+- [ ] **Phase 5** visual + AI — `docs/superpowers/plans/2026-04-28-adr-0014-phase-5-visual-ai.md`
+
+### Phase 6 EventBus + EdgeBackpressure + ConcurrencyPolicy（RFC-0002）
+
+- [ ] 新建 plan：`docs/superpowers/plans/2026-04-XX-rfc-0002-phase-6-eventbus.md`
+- [ ] 按 plan 实施
+
+### ADR-0015 反应式数据引脚
+
+- [ ] 新建 plan：`docs/superpowers/plans/2026-04-XX-adr-0015-reactive-data-pin.md`
+- [ ] 按 plan 实施
+
+### ADR-0016 边级可观测性
+
+- [ ] 新建 plan：`docs/superpowers/plans/2026-04-XX-adr-0016-edge-observability.md`
+- [ ] 按 plan 实施
+
+### loop 升级容器（独立）
+
+- [ ] 把 origin commit `e35cb43` 的工作带回（merge 68ab709 时丢失）
+
+### 每个 ADR 完成时同步
+
+- [ ] ADR 状态推进：提议中 → 已接受 → 已实施
+- [ ] 同步 `docs/adr/README.md` 索引行
+- [ ] 同步 `crates/*/AGENTS.md` 影响内容
+- [ ] prepend `> **Status:** merged in <SHA>` 到对应 plan 文件顶部
+
+---
+
+## Phase B: 接口与数据结构 Review（Day 4..8，按 crate 切片，可并行）
+
+每片产出独立 findings 文档：`docs/superpowers/specs/2026-05-XX-review-<topic>-findings.md`。
+
+### B1. Ring 0 接口审计（crates/core）
+
+- [ ] 对每个 public trait / struct 产出评估表：
+  - cohesion（职责是否单一）
+  - 对称性（生产端 vs 消费端形状）
+  - 可演化性（加新 variant / 字段是否破 ABI）
+  - 命名（动词时态、`is_`/`has_` 前缀、`_` 命名）
+  - 建议动作（保留 / 重命名 / 拆 / 删）
+- [ ] 已识别问题（从前期 mini-review）：
+  - [ ] `ExecutionEvent::VariableChanged` 是否拆出 `ExecutionEvent`（已识别为接口腐化）
+  - [ ] `NodeOutput.metadata: Map` vs `CompletedExecutionEvent.metadata: Option<Map>` 不对称
+  - [ ] `OutputCache` 的 `DashMap` 是否过度（部署期一次性 prepare、运行时仅读）
+  - [ ] `PinDefinition` 工厂方法数量监控（>= 6 时改 builder）
+- [ ] `AiService` trait 接口审计（独立子项）
+- [ ] `WorkflowVariables` API 审计（mutation/snapshot/declarations 三组方法是否清晰）
+
+### B2. Ring 1 横向耦合审计
+
+- [ ] 生成 mermaid 真实依赖图 vs ADR 宣称对照
+- [ ] 5 个 Ring 1 crate 间是否有重复抽象
+  - [ ] `connections` vs 各协议节点的 `connection_id` 处理
+  - [ ] `scripting` vs `nodes-flow` 的 Rhai engine 实例化路径
+  - [ ] `ai` vs `scripting` 的 `ai_complete()` 注入点
+- [ ] 每个 Ring 1 crate 的 `AGENTS.md` 是否仍准确（与代码对照）
+
+### B3. Facade 编排层审计（src/）
+
+- [ ] `src/graph/` 4 模块（`deploy` / `topology` / `pin_validator` / `runner`）职责重叠检查
+- [ ] `standard_registry()` 与各 plugin 注册路径是否清晰
+- [ ] 评估 ADR-0020（`src/graph/` 归属）触发条件是否已到
+
+### B4. IPC 边界审计
+
+- [ ] `src-tauri/src/lib.rs` 全 IPC 命令 + 事件清单（与 `AGENTS.md` 列表对照）
+- [ ] 哪些 IPC type 应该挪到 `crates/tauri-bindings/`
+- [ ] 事件 channel 命名一致性（`workflow://*`）
+- [ ] `ExecutionEvent::VariableChanged` 拆出与 IPC 事件 channel 是否对齐
+
+### B5. 前端契约审计
+
+- [ ] `web/src/generated/` ts-rs 类型与手写 `web/src/types.ts` 的边界
+- [ ] `web/src/lib/{pin-*,node-*,workflow-*}.ts` 与 Rust 真值源同步状态
+- [ ] FlowGram 适配层 `flowgram.ts` 的 fallback / hack 清单（特别是 E2E fallback 路径）
+
+---
+
+## Phase C: 模块拆分（Day 4..8，与 Phase B 并行）
+
+按"行数 + 职责重叠"优先级排序。
+
+- [ ] **行数普查**
+  - [ ] Rust：`tokei crates/ src/ src-tauri/ --files | sort -rn | head -30`
+  - [ ] TS：`find web/src -name '*.ts' -o -name '*.tsx' | xargs wc -l | sort -rn | head -30`
+  - [ ] 输出 > 500 行清单到 findings 文档
+- [ ] **`src-tauri/src/lib.rs`** 当前 2,675 行 → 按 IPC 命令域拆分
+  - 草案分组：`commands/{connections,ai,observability,runtime,project_library}.rs` + `events.rs`
+  - `lib.rs` 只做 register + setup
+  - 目标：`lib.rs` < 500 行
+  - 同 PR 更新 `AGENTS.md` IPC surface 段
+- [ ] **其他 > 500 行文件按 review 输出清单逐个评估**
+  - 每个文件单独决策：拆 / 保留 / 改架构
+- [ ] **拆分原则**
+  - 不破坏 public API
+  - 拆分前后 `cargo test --workspace` 通过率不变
+  - 同 PR 更新对应 crate `AGENTS.md` 模块表
+
+---
+
+## Phase D: 规范扫描（Day 4..8，与 Phase B 并行；可全自动化）
+
+对照 `AGENTS.md` "Critical Coding Constraints" + "Design Principles" 全仓 grep + 人工复核。
+
+- [ ] **`.unwrap()` / `.expect()` 出现位置**（test 模块除外）
+  - 命令：`rg '\.(unwrap|expect)\(' crates/ src/ src-tauri/ -t rust -n | rg -v 'tests?\.rs|#\[cfg\(test\)\]'`
+  - 每个命中判定：真违规 → 修；test helper → 加 `#[allow]`；初始化路径 → 评估
+- [ ] **`unsafe` 出现位置**
+  - 命令：`rg 'unsafe\s+(fn|impl|\{)' crates/ src/ src-tauri/ -t rust -n`
+  - 期望：0 命中
+- [ ] **节点 `transform` 内 `DataStore` 读写检测**
+  - 命令：`rg 'DataStore|store\.(read|write)' crates/nodes-* -t rust -n`
+  - 期望：0 命中（节点不应碰 store，由 Runner 负责）
+- [ ] **节点是否把 metadata 塞 payload**
+  - 人工 review：每个节点 `transform` 返回路径上 payload 字段是否含 `metadata`-语义键
+- [ ] **Rhai 节点 max_operations**
+  - 命令：`rg 'max_operations|set_max_operations' crates/ -t rust`
+  - 检查：默认 ≥ 50k 是否仍生效；是否有节点 override 到更大值或关闭限制
+- [ ] **panic isolation**
+  - 所有 `NodeTrait::transform` 调用走 `catch_unwind + timeout` 包装（Runner 路径）
+  - `NodeHandle::emit`（触发器路径）是否同样隔离
+- [ ] **节点直接访问硬件检测**
+  - 命令：`rg 'tokio_modbus::|rumqttc::|reqwest::|tokio_serial::' --files-without-match crates/connections/ crates/nodes-io/`
+  - 在 `nodes-io` / `connections` 之外不应出现
+- [ ] **WorkflowNodeDefinition pattern 扩散**
+  - 列出所有"应是稳定 type"的 public struct，检查是否仍是 pub 字段
+- [ ] **CI 三件套**
+  - [ ] `cargo clippy --workspace --all-targets -- -D warnings` 0 warning
+  - [ ] `cargo fmt --all -- --check` 通过
+  - [ ] `cargo deny check` 通过
+
+---
+
+## Phase E: 整合与 PR 清单（Day 8）
+
+- [ ] 写 `docs/superpowers/specs/2026-05-XX-architecture-review-findings.md`
+  - 按 P0（必修）/ P1（应修）/ P2（可选）排序所有发现
+  - 每条标注：来源 phase / 影响面 / 建议 PR 范围
+- [ ] 派生出修复 PR 列表（不要求 review 期内 merge，列出即可）
+- [ ] 一次性补 22 个历史 plan 的 `Status` 标记（已 merged 的写 `> **Status:** merged in <SHA>`；deferred 的写明状态）
+- [ ] 更新 `AGENTS.md`
+  - [ ] 删除 freeze 段
+  - [ ] 同步 Project Status / 已知 tech debt
+  - [ ] 同步 ADR Execution Order 状态
+- [ ] 同步 memory 文件（如必要）
+- [ ] 关闭本 plan：prepend `> **Status:** completed YYYY-MM-DD`
+
+---
+
+## 退出标准（解冻条件）
+
+全部 5 项勾完即解冻：
+
+- [ ] Phase A 全勾（所有 in-flight ADR 完成 + 同步状态）
+- [ ] Phase B 全勾（每片产出 findings 文档）
+- [ ] Phase C 全勾（行数普查 + `lib.rs` 拆分完成；其他文件已决策）
+- [ ] Phase D 全勾（规范扫描 0 违规，或全部入 P0/P1 清单）
+- [ ] Phase E 全勾（findings 整合 + 历史 plan Status 补全 + AGENTS.md freeze 段删除）
+
+**findings PR 不阻塞解冻**——按正常 PR 流程后续 merge。
+
+---
+
+## 不在 review 范围
+
+- 重新设计已落地 ADR（如 PinKind 是否在 pin/edge 上）
+- ADR-0014 后续 Phase 的范围扩张
+- 新功能开发
+- UI/UX 改造
+- 工具链迁移（构建系统、依赖大版本升级）
