@@ -129,6 +129,67 @@ impl WorkflowGraph {
     }
 }
 
+/// 在 Data 边构成的子图上做环检测（ADR-0014 Phase 1）。
+///
+/// Data 边不参与主拓扑（避免 Data 拉取关系污染 Exec 触发顺序），但**仍可能
+/// 形成依赖环**——A 的 Data 输出依赖 B 的最新值、B 的 Data 输出又依赖 A 的最新值。
+/// 此种环让 Phase 2/3 的"下游 transform 前拉上游缓存"陷入无定义循环依赖。
+///
+/// 算法：在 Data 边构成的图上跑 Kahn——若不能消化所有节点，存在环。
+///
+/// # Errors
+///
+/// Data 边构成环时返回 [`EngineError::InvalidGraph`].
+#[allow(dead_code)] // Task 11 在 deploy.rs 中调用
+pub(crate) fn detect_data_edge_cycle(
+    data_edges: &[&super::types::WorkflowEdge],
+) -> Result<(), crate::EngineError> {
+    if data_edges.is_empty() {
+        return Ok(());
+    }
+
+    // 构造 Data 子图：仅含 data_edges 涉及的节点
+    let mut incoming: HashMap<String, usize> = HashMap::new();
+    let mut downstream: HashMap<String, Vec<String>> = HashMap::new();
+    for edge in data_edges {
+        incoming.entry(edge.from.clone()).or_insert(0);
+        *incoming.entry(edge.to.clone()).or_insert(0) += 1;
+        downstream
+            .entry(edge.from.clone())
+            .or_default()
+            .push(edge.to.clone());
+    }
+
+    let total_nodes = incoming.len();
+    let mut queue: VecDeque<String> = incoming
+        .iter()
+        .filter(|(_, count)| **count == 0)
+        .map(|(id, _)| id.clone())
+        .collect();
+    let mut consumed = 0_usize;
+
+    while let Some(node_id) = queue.pop_front() {
+        consumed += 1;
+        if let Some(neighbors) = downstream.get(&node_id) {
+            for neighbor in neighbors {
+                if let Some(count) = incoming.get_mut(neighbor) {
+                    *count -= 1;
+                    if *count == 0 {
+                        queue.push_back(neighbor.clone());
+                    }
+                }
+            }
+        }
+    }
+
+    if consumed != total_nodes {
+        return Err(crate::EngineError::invalid_graph(
+            "Data 边构成环（ADR-0014）：下游 transform 时无法确定缓存读取顺序",
+        ));
+    }
+    Ok(())
+}
+
 /// 边按 [`PinKind`] 分类的结果（ADR-0014 Phase 1）。
 ///
 /// `'a` 借用 `WorkflowEdge` 列表本身的生命周期——分类只重组引用，不克隆。
@@ -342,5 +403,73 @@ mod tests {
         let edges = vec![edge("a", "b", Some("ghost"))];
         let err = classify_edges(&edges, &nodes).unwrap_err();
         assert!(matches!(err, nazh_core::EngineError::UnknownPin { .. }));
+    }
+
+    #[test]
+    fn detect_data_edge_cycle_无_data_边时通过() {
+        let mut nodes: HashMap<String, Arc<dyn NodeTrait>> = HashMap::new();
+        nodes.insert(
+            "a".to_owned(),
+            make_node(
+                "a",
+                vec![PinDefinition::default_input()],
+                vec![PinDefinition::default_output()],
+            ),
+        );
+        nodes.insert(
+            "b".to_owned(),
+            make_node(
+                "b",
+                vec![PinDefinition::default_input()],
+                vec![PinDefinition::default_output()],
+            ),
+        );
+        let edges = vec![edge("a", "b", None)];
+        let classified = classify_edges(&edges, &nodes).unwrap();
+        detect_data_edge_cycle(&classified.data_edges).unwrap();
+    }
+
+    #[test]
+    fn detect_data_edge_cycle_data_边形成环时报错() {
+        // a 的 Data 输出 → b 的 Data 输入；b 的 Data 输出 → a 的 Data 输入
+        // 构成 Data 边的环
+        let mut nodes: HashMap<String, Arc<dyn NodeTrait>> = HashMap::new();
+        nodes.insert(
+            "a".to_owned(),
+            make_node(
+                "a",
+                vec![pin("in", PinDirection::Input, PinKind::Data)],
+                vec![pin("out", PinDirection::Output, PinKind::Data)],
+            ),
+        );
+        nodes.insert(
+            "b".to_owned(),
+            make_node(
+                "b",
+                vec![pin("in", PinDirection::Input, PinKind::Data)],
+                vec![pin("out", PinDirection::Output, PinKind::Data)],
+            ),
+        );
+        let edges = vec![edge("a", "b", Some("out")), edge("b", "a", Some("out"))];
+        let classified = classify_edges(&edges, &nodes).unwrap();
+        let err = detect_data_edge_cycle(&classified.data_edges).unwrap_err();
+        assert!(matches!(err, crate::EngineError::InvalidGraph(_)));
+    }
+
+    #[test]
+    fn detect_data_edge_cycle_data_边自环报错() {
+        let mut nodes: HashMap<String, Arc<dyn NodeTrait>> = HashMap::new();
+        nodes.insert(
+            "a".to_owned(),
+            make_node(
+                "a",
+                vec![pin("in", PinDirection::Input, PinKind::Data)],
+                vec![pin("out", PinDirection::Output, PinKind::Data)],
+            ),
+        );
+        let edges = vec![edge("a", "a", Some("out"))];
+        let classified = classify_edges(&edges, &nodes).unwrap();
+        let err = detect_data_edge_cycle(&classified.data_edges).unwrap_err();
+        assert!(matches!(err, crate::EngineError::InvalidGraph(_)));
     }
 }
