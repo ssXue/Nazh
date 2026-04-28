@@ -41,8 +41,8 @@ pub use pipeline::{PipelineHandle, PipelineStage, StageFuture, build_linear_pipe
 
 pub use nodes_flow::{
     CodeNode, CodeNodeAiConfig, CodeNodeConfig, FlowPlugin, IfNode, IfNodeConfig, LoopNode,
-    LoopNodeConfig, PassthroughNode, SwitchBranchConfig, SwitchNode, SwitchNodeConfig,
-    TryCatchNode, TryCatchNodeConfig,
+    LoopNodeConfig, SwitchBranchConfig, SwitchNode, SwitchNodeConfig, TryCatchNode,
+    TryCatchNodeConfig,
 };
 
 pub use nodes_io::{

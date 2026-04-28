@@ -2,13 +2,13 @@
 
 > **Ring**: Ring 1
 > **对外 crate 名**: `nodes-flow`
-> **职责**: 工作流的流程控制类节点 — `if` / `switch` / `loop` / `tryCatch` / `code`，以及子图展开后的桥接节点
+> **职责**: 工作流的流程控制类节点 — `if` / `switch` / `loop` / `tryCatch` / `code`
 >
 > 根 `AGENTS.md` 的约束对本 crate 同样适用。
 
 ## 这个 crate 做什么
 
-本 crate 实现 5 个基于脚本的流程控制节点 + 2 个子图桥接节点，组成 `FlowPlugin` 插件：
+本 crate 实现 5 个基于脚本的流程控制节点，组成 `FlowPlugin` 插件：
 
 | 节点 | 作用 | Dispatch |
 |------|------|----------|
@@ -17,11 +17,8 @@
 | `loop` | 循环展开 | 每个元素产出一条 `Route(["body"])`，末尾 `Route(["done"])` |
 | `tryCatch` | 异常捕获 | `Route(["try"])` / `Route(["catch"])` |
 | `code` | 任意 Rhai 脚本 | `Broadcast` |
-| `subgraphInput` | 子图展开后的入口桥接节点 | `Broadcast` |
-| `subgraphOutput` | 子图展开后的出口桥接节点 | `Broadcast` |
 
 每个节点都嵌入 `scripting::ScriptNodeBase`，组合式复用脚本执行。
-`subgraphInput` / `subgraphOutput` 复用 `PassthroughNode`，只透传 payload，不运行脚本。
 
 **`code` 节点的 AI 能力**：`code` 节点在 `AiGenerationParams` 配置下可调用 `ai_complete()`
 生成脚本内容，或把 AI 的回答作为 payload 的一部分——这是 Nazh "AI 作为一等公民"设计的入口之一。
@@ -35,11 +32,10 @@ crates/nodes-flow/src/
 ├── switch_node.rs    # SwitchNode + SwitchNodeConfig + SwitchBranchConfig
 ├── loop_node.rs      # LoopNode + LoopNodeConfig
 ├── try_catch.rs      # TryCatchNode + TryCatchNodeConfig
-├── code_node.rs      # CodeNode + CodeNodeConfig + CodeNodeAiConfig
-└── passthrough.rs    # PassthroughNode（subgraphInput / subgraphOutput 共用）
+└── code_node.rs      # CodeNode + CodeNodeConfig + CodeNodeAiConfig
 ```
 
-Plugin 注册入口：`FlowPlugin::register(&mut NodeRegistry)`，在 `lib.rs:29` 集中声明 7 个节点类型的工厂 + 能力标签。
+Plugin 注册入口：`FlowPlugin::register(&mut NodeRegistry)`，在 `lib.rs:28` 集中声明 5 个节点类型的工厂 + 能力标签。
 
 ## 内部约定
 
@@ -52,8 +48,6 @@ Plugin 注册入口：`FlowPlugin::register(&mut NodeRegistry)`，在 `lib.rs:29
 | `loop` | `BRANCHING \| MULTI_OUTPUT` | 一次产出多条（每个元素一条 + done） |
 | `tryCatch` | `BRANCHING` | 成功/失败分支 |
 | `code` | `empty()` | 用户脚本可能含任意副作用（AI 调用、Rhai 自定义函数等）——无法静态保证 PURE |
-| `subgraphInput` | `PURE` | 子图入口桥接节点只原样透传 JSON payload |
-| `subgraphOutput` | `PURE` | 子图出口桥接节点只原样透传 JSON payload |
 
 这张表是 crate 专属契约，由 facade crate 的 `src/registry.rs::标准注册表节点能力标签与_adr_0011_契约一致` 单测守住。改这张表**必须同时改测试**，否则 CI 会挂。
 
@@ -66,8 +60,6 @@ Plugin 注册入口：`FlowPlugin::register(&mut NodeRegistry)`，在 `lib.rs:29
 | `switch` | `in: Any`（默认） | **动态**：每个 `branches[i].key` 一个 `Any` 输出 + `default_branch`（去重） |
 | `loop` | `in: Any`（默认） | `body: Any` / `done: Any` |
 | `tryCatch` | `in: Any`（默认） | `try: Any` / `catch: Any` |
-| `subgraphInput` | `in: Json` | `out: Json` |
-| `subgraphOutput` | `in: Json` | `out: Json` |
 
 **Phase 1 输入端均为默认 `Any`**——脚本节点天然吃任何 payload，没有理由收紧。输出端的具名 pin 与 `transform` 路径上 `NodeDispatch::Route([id])` 的字符串严格一致；改 pin id 必须同步改 transform，反之亦然。
 
@@ -79,7 +71,6 @@ Plugin 注册入口：`FlowPlugin::register(&mut NodeRegistry)`，在 `lib.rs:29
 2. **脚本执行遵循 `scripting` crate 的约定**（`max_operations`、payload 变量名、Scope 单次使用）。
 3. **不借用连接、不做 I/O**。`code` 节点可以通过 `ai_complete()` 发 AI 请求，但走的是 Ring 0 的 `nazh_core::ai::AiService` trait（具体实现由壳层注入）；本 crate 不直接用 `reqwest` / `rusqlite` / 其他协议，**也不依赖 `ai` crate**（ADR-0019）。
 4. **分支端口名固定**：`if` 用 `"true"` / `"false"`，`tryCatch` 用 `"try"` / `"catch"`，`loop` 用 `"body"` / `"done"`，`switch` 用配置里声明的分支名。改端口名是前端画布的 breaking change。
-5. **子图桥接节点只服务部署后的扁平 DAG**。`subgraph` 容器本身不进入 Rust Runner；前端 `flattenSubgraphs()` 会把容器改写成 `<subgraph-id>/...` 前缀节点，并把外部边接到 `subgraphInput` / `subgraphOutput`。
 
 ## 依赖约束
 
@@ -115,7 +106,6 @@ cargo test -p nazh-engine --test workflow   # 集成测试，覆盖分支+循环
 - **ADR-0002** Rhai 脚本引擎（本 crate 的全部节点都依赖）
 - **ADR-0008** 元数据通道（节点输出遵循此约定）
 - **ADR-0011** 节点能力标签（能力分配见上表）
-- **ADR-0010** Pin 声明系统（Phase 1：4 个分支节点已声明具体 output pin；子图桥接节点声明 `Json` 输入/输出，详见引脚声明表）
-- **ADR-0013** 子图与宏系统 — 子图容器部署前展平为 `subgraphInput` / `subgraphOutput` 桥接节点
+- **ADR-0010** Pin 声明系统（Phase 1：4 个分支节点已声明具体 output pin；输入端仍是默认 `Any`，详见引脚声明表）
 - **ADR-0012** 工作流变量 — **已实施 Phase 1**（2026-04-27），5 节点工厂从 SharedResources 取 `Arc<WorkflowVariables>` 并注入 Rhai
 - **ADR-0019** AI 能力依赖反转 — 本 crate 已脱离 `ai` 依赖（2026-04-26）

@@ -224,9 +224,6 @@ export function normalizeNodeKind(value: unknown): NazhNodeKind {
     case 'switch':
     case 'tryCatch':
     case 'loop':
-    case 'subgraph':
-    case 'subgraphInput':
-    case 'subgraphOutput':
       return value;
     case 'subgraph':
     case 'subgraphInput':
@@ -830,19 +827,6 @@ export function normalizeNodeConfig(
       script: typeof rawConfig.script === 'string' ? rawConfig.script : 'payload',
       ...(ai ? { ai } : {}),
     };
-  }
-
-  if (nodeType === 'subgraph') {
-    return {
-      ...rawConfig,
-      parameterBindings: isRecord(rawConfig.parameterBindings)
-        ? rawConfig.parameterBindings
-        : {},
-    };
-  }
-
-  if (nodeType === 'subgraphInput' || nodeType === 'subgraphOutput') {
-    return {};
   }
 
   return {

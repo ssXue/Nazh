@@ -48,7 +48,7 @@ export interface SelectedNodeDraft {
   sqlTable: string;
   debugLabel: string;
   debugPretty: boolean;
-  parameterBindings: Record<string, unknown>;
+  parameterBindings: Record<string, string | number | boolean>;
 }
 
 export interface NodeValidation {

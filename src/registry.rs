@@ -83,8 +83,6 @@ mod tests {
             "loop",
             NodeCapabilities::BRANCHING | NodeCapabilities::MULTI_OUTPUT,
         );
-        expect("subgraphInput", NodeCapabilities::PURE);
-        expect("subgraphOutput", NodeCapabilities::PURE);
 
         // 子图桥接（ADR-0013）
         expect("subgraphInput", NodeCapabilities::empty());

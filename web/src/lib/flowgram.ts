@@ -49,19 +49,6 @@ function isFlattenedNode(node: FlowgramWorkflowJSON['nodes'][number]): boolean {
   return node.id.includes(SUBGRAPH_ID_SEPARATOR);
 }
 
-const MAX_SUBGRAPH_DEPTH = 8;
-
-interface FlatGraph {
-  nodes: FlowgramWorkflowJSON['nodes'];
-  edges: FlowgramWorkflowJSON['edges'];
-}
-
-interface BridgeNodes {
-  inputNodes: FlowgramWorkflowJSON['nodes'];
-  outputNodes: FlowgramWorkflowJSON['nodes'];
-}
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -72,19 +59,6 @@ function hasOwnKey<T extends object>(value: T, key: string): boolean {
 
 function isBusinessNodeType(type: unknown): boolean {
   return typeof type === 'string' && FLOWGRAM_BUSINESS_NODE_TYPES.has(type);
-}
-
-function nodeTypeOf(node: FlowgramWorkflowJSON['nodes'][number]): unknown {
-  if (typeof node.type === 'string') {
-    return node.type;
-  }
-
-  const rawData = isRecord(node.data) ? node.data : {};
-  return rawData.nodeType;
-}
-
-function isSubgraphNode(node: FlowgramWorkflowJSON['nodes'][number]): boolean {
-  return nodeTypeOf(node) === 'subgraph';
 }
 
 function isBusinessNode(node: FlowgramWorkflowJSON['nodes'][number]): boolean {
@@ -98,169 +72,6 @@ function isBusinessNode(node: FlowgramWorkflowJSON['nodes'][number]): boolean {
 
 function buildEdgeKey(edge: FlowgramWorkflowJSON['edges'][number]): string {
   return `${edge.sourceNodeID}:${String(edge.sourcePortID ?? '')}->${edge.targetNodeID}:${String(edge.targetPortID ?? '')}`;
-}
-
-function applyParameterBindings(
-  value: unknown,
-  params: Record<string, string | number | boolean>,
-): unknown {
-  if (typeof value === 'string') {
-    return value.replace(/\{\{(\w+)\}\}/g, (match, key: string) => {
-      if (hasOwnKey(params, key)) {
-        return String(params[key]);
-      }
-      return match;
-    });
-  }
-
-  if (Array.isArray(value)) {
-    return value.map((item) => applyParameterBindings(item, params));
-  }
-
-  if (isRecord(value)) {
-    const nextValue: Record<string, unknown> = {};
-    for (const [key, item] of Object.entries(value)) {
-      nextValue[key] = applyParameterBindings(item, params);
-    }
-    return nextValue;
-  }
-
-  return value;
-}
-
-function normalizeParameterBindings(value: unknown): Record<string, string | number | boolean> {
-  const params: Record<string, string | number | boolean> = {};
-
-  if (!isRecord(value)) {
-    return params;
-  }
-
-  for (const [key, item] of Object.entries(value)) {
-    if (typeof item === 'string' || typeof item === 'number' || typeof item === 'boolean') {
-      params[key] = item;
-    }
-  }
-
-  return params;
-}
-
-function getSubgraphParameterBindings(
-  node: FlowgramWorkflowJSON['nodes'][number],
-): Record<string, string | number | boolean> {
-  const rawData = isRecord(node.data) ? node.data : {};
-  const config = isRecord(rawData.config) ? rawData.config : {};
-
-  return {
-    ...normalizeParameterBindings(rawData.parameterBindings),
-    ...normalizeParameterBindings(config.parameterBindings),
-  };
-}
-
-function findBridgeNodes(blocks: FlowgramWorkflowJSON['nodes']): BridgeNodes {
-  const inputNodes = blocks.filter((node) => nodeTypeOf(node) === 'subgraphInput');
-  const outputNodes = blocks.filter((node) => nodeTypeOf(node) === 'subgraphOutput');
-  return { inputNodes, outputNodes };
-}
-
-export function flattenSubgraphs(
-  flowgramGraph: FlowgramWorkflowJSON,
-  depth = 0,
-  ancestorIds: Set<string> = new Set(),
-): FlatGraph {
-  if (depth > MAX_SUBGRAPH_DEPTH) {
-    throw new Error(`子图嵌套超过 ${MAX_SUBGRAPH_DEPTH} 层上限`);
-  }
-
-  const flatNodes: FlowgramWorkflowJSON['nodes'] = [];
-  const flatEdges: FlowgramWorkflowJSON['edges'] = [];
-  const flatNodeIds = new Set<string>();
-  const bridgeByContainerId = new Map<
-    string,
-    {
-      inputNodeIds: string[];
-      outputNodeIds: string[];
-    }
-  >();
-
-  for (const node of flowgramGraph.nodes) {
-    if (!isSubgraphNode(node)) {
-      flatNodes.push(node);
-      flatNodeIds.add(node.id);
-      continue;
-    }
-
-    if (ancestorIds.has(node.id)) {
-      throw new Error(`子图循环引用：${node.id}`);
-    }
-
-    const innerGraph: FlowgramWorkflowJSON = {
-      nodes: node.blocks ?? [],
-      edges: node.edges ?? [],
-    };
-    const nextAncestorIds = new Set(ancestorIds);
-    nextAncestorIds.add(node.id);
-    const inner = flattenSubgraphs(innerGraph, depth + 1, nextAncestorIds);
-    const { inputNodes, outputNodes } = findBridgeNodes(innerGraph.nodes);
-    const params = getSubgraphParameterBindings(node);
-    const hasParams = Object.keys(params).length > 0;
-
-    bridgeByContainerId.set(node.id, {
-      inputNodeIds: inputNodes.map((inputNode) => `${node.id}/${inputNode.id}`),
-      outputNodeIds: outputNodes.map((outputNode) => `${node.id}/${outputNode.id}`),
-    });
-
-    for (const innerNode of inner.nodes) {
-      const prefixedNode = {
-        ...innerNode,
-        id: `${node.id}/${innerNode.id}`,
-        data: hasParams ? applyParameterBindings(innerNode.data, params) : innerNode.data,
-      };
-      flatNodes.push(prefixedNode);
-      flatNodeIds.add(prefixedNode.id);
-    }
-
-    for (const innerEdge of inner.edges) {
-      flatEdges.push({
-        ...innerEdge,
-        sourceNodeID: `${node.id}/${innerEdge.sourceNodeID}`,
-        targetNodeID: `${node.id}/${innerEdge.targetNodeID}`,
-      });
-    }
-  }
-
-  for (const edge of flowgramGraph.edges) {
-    let sourceNodeID = edge.sourceNodeID;
-    let targetNodeID = edge.targetNodeID;
-    let sourcePortID = edge.sourcePortID;
-    let targetPortID = edge.targetPortID;
-
-    const sourceBridge = bridgeByContainerId.get(sourceNodeID);
-    if (sourceBridge && sourceBridge.outputNodeIds.length > 0) {
-      sourceNodeID = sourceBridge.outputNodeIds[0] ?? sourceNodeID;
-      sourcePortID = undefined;
-    }
-
-    const targetBridge = bridgeByContainerId.get(targetNodeID);
-    if (targetBridge && targetBridge.inputNodeIds.length > 0) {
-      targetNodeID = targetBridge.inputNodeIds[0] ?? targetNodeID;
-      targetPortID = undefined;
-    }
-
-    if (flatNodeIds.has(sourceNodeID) && flatNodeIds.has(targetNodeID)) {
-      flatEdges.push({
-        ...edge,
-        sourceNodeID,
-        targetNodeID,
-        sourcePortID,
-        targetPortID,
-      });
-    }
-  }
-
-  return {
-    nodes: flatNodes,
-    edges: flatEdges,
-  };
 }
 
 function buildBaseFlowgramWorkflowJson(graph: WorkflowGraph): FlowgramWorkflowJSON {
@@ -596,8 +407,8 @@ export function toNazhWorkflowGraph(
   flowgramGraph: FlowgramWorkflowJSON,
   previousGraph: WorkflowGraph,
 ): WorkflowGraph {
-  const flatGraph = flattenSubgraphs(flowgramGraph);
-  const businessNodes = flatGraph.nodes.filter(isBusinessNode);
+  const flat = flattenSubgraphs(flowgramGraph);
+  const businessNodes = flat.nodes.filter(isBusinessNode);
   const businessNodeIds = new Set(businessNodes.map((node) => node.id));
   const nodes = businessNodes.reduce<Record<string, WorkflowNodeDefinition>>((acc, node) => {
     const previousNode = previousGraph.nodes[node.id];
@@ -644,7 +455,7 @@ export function toNazhWorkflowGraph(
     editor_graph: flowgramGraph,
     nodes,
     variables: previousGraph.variables,
-    edges: flatGraph.edges
+    edges: flat.edges
       .filter(
         (edge) => businessNodeIds.has(edge.sourceNodeID) && businessNodeIds.has(edge.targetNodeID),
       )

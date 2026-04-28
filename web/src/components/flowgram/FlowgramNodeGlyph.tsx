@@ -70,12 +70,6 @@ export function getFlowgramDisplayLabel(displayType: NazhNodeDisplayType): strin
       return 'SQL';
     case 'debugConsole':
       return 'Debug';
-    case 'subgraph':
-      return 'Subgraph';
-    case 'subgraphInput':
-      return 'Input';
-    case 'subgraphOutput':
-      return 'Output';
     case 'code':
       return 'Code';
     case 'native':
@@ -116,11 +110,6 @@ export function FlowgramNodeGlyph({
       return <SqlWriterNodeIcon {...props} />;
     case 'debugConsole':
       return <DebugConsoleNodeIcon {...props} />;
-    case 'subgraph':
-      return <SwitchNodeIcon {...props} />;
-    case 'subgraphInput':
-    case 'subgraphOutput':
-      return <NativeNodeIcon {...props} />;
     case 'code':
       return <ScriptNodeIcon {...props} />;
     case 'native':

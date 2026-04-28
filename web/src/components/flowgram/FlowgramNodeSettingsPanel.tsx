@@ -145,7 +145,13 @@ function readNodeDraft(node: FlowNodeEntity): SelectedNodeDraft {
     sqlTable: readString(config.table, 'workflow_logs'),
     debugLabel: readString(config.label),
     debugPretty: readBoolean(config.pretty, true),
-    parameterBindings: isRecord(config.parameterBindings) ? config.parameterBindings : {},
+    parameterBindings: (() => {
+      const raw = config.parameterBindings;
+      if (typeof raw === 'object' && raw !== null && !Array.isArray(raw)) {
+        return raw as Record<string, string | number | boolean>;
+      }
+      return {};
+    })(),
   };
 }
 
