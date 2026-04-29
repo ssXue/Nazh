@@ -78,8 +78,8 @@ fn rust_实现与合约_fixture_一致() {
 fn fixture_覆盖_pin_kind_全部变体两两组合() {
     let fixture = load_fixture();
 
-    // PinKind 是封闭枚举，仅 Exec / Data 两个变体——矩阵应穷尽 2×2 笛卡儿积。
-    let variants = [PinKind::Exec, PinKind::Data];
+    // PinKind 是封闭枚举，含 Exec / Data / Reactive 三个变体——矩阵应穷尽 3×3 笛卡儿积。
+    let variants = [PinKind::Exec, PinKind::Data, PinKind::Reactive];
     for from in variants {
         for to in variants {
             assert!(

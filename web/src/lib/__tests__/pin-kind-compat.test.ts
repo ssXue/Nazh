@@ -41,7 +41,7 @@ describe('PinKind 兼容矩阵合约（与 Rust 端共享 fixture）', () => {
   );
 
   it('fixture 穷尽 PinKind × PinKind 笛卡儿积', () => {
-    const variants: PinKind[] = ['exec', 'data'];
+    const variants: PinKind[] = ['exec', 'data', 'reactive'];
     for (const from of variants) {
       for (const to of variants) {
         expect(

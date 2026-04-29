@@ -349,11 +349,11 @@ pub fn is_pure_form(node: &dyn NodeTrait) -> bool {
     let no_exec_input = node
         .input_pins()
         .iter()
-        .all(|p| p.kind != crate::PinKind::Exec);
+        .all(|p| p.kind != crate::PinKind::Exec && p.kind != crate::PinKind::Reactive);
     let no_exec_output = node
         .output_pins()
         .iter()
-        .all(|p| p.kind != crate::PinKind::Exec);
+        .all(|p| p.kind != crate::PinKind::Exec && p.kind != crate::PinKind::Reactive);
     no_exec_input && no_exec_output
 }
 

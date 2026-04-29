@@ -55,6 +55,7 @@ fn pin(kind_str: &str, dir: PinDirection) -> PinDefinition {
     let kind = match kind_str {
         "exec" => PinKind::Exec,
         "data" => PinKind::Data,
+        "reactive" => PinKind::Reactive,
         other => panic!("未知 pin kind: {other}"),
     };
     PinDefinition {
@@ -91,7 +92,7 @@ fn fixture_穷尽_4_配对() {
         .collect::<Vec<_>>()
         .join("\n");
     let cases: Vec<Case> = serde_json::from_str(&stripped).expect("解析 fixture");
-    assert_eq!(cases.len(), 4, "fixture 必须穷尽 4 配对");
+    assert_eq!(cases.len(), 7, "fixture 必须穷尽 7 配对");
 
     for case in cases {
         let stub = Stub {

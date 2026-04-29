@@ -1,28 +1,43 @@
-// PinKind 兼容矩阵的权威合约（ADR-0014）。
+// PinKind 兼容矩阵的权威合约（ADR-0014 / ADR-0015）。
 //
 // Rust: crates/core/src/pin.rs `PinKind::is_compatible_with`
 // TS:   web/src/lib/pin-compat.ts `isKindCompatible`（Phase 2 Task 5 接入）
 //
-// 设计前提（ADR-0014 设计文档 §五）：
-//   引脚必须 Kind 完全一致——Exec ↔ Exec、Data ↔ Data。
-//   跨 Kind 是部署期与连接期硬错误。
+// 兼容矩阵（ADR-0015 Phase 1）：
+//   - 同种互连：Exec↔Exec、Data↔Data、Reactive↔Reactive
+//   - Reactive 输出 → 可连 Exec / Data / Reactive 输入
+//   - Exec / Data 输出 → 不可连 Reactive 输入
+//   - Exec ↔ Data 互不兼容（ADR-0014 保持不变）
 //
 // 修改本文件时同步检查上述两份实现，且必须跑：
 //   cargo test -p nazh-core --test pin_kind_contract
 //   npm --prefix web run test pin-kind-compat
 //
 // 序列化形态：PinKind 是 #[serde(rename_all = "lowercase")] 的简单枚举：
-//   "exec"  -> PinKind::Exec
-//   "data"  -> PinKind::Data
+//   "exec"     -> PinKind::Exec
+//   "data"     -> PinKind::Data
+//   "reactive" -> PinKind::Reactive
 //
 // 覆盖纪律：每个 PinKind 变体需补 N 条配对——至少自反兼容 + 与所有其他变体
-// 不兼容（互相）。本矩阵当前 4 条已穷尽 2×2 笛卡儿积。
+// 不兼容（互相）。本矩阵当前 9 条穷尽 3×3 笛卡儿积。
 
 {
   "pairs": [
-    { "from": "exec", "to": "exec", "compatible": true  },
-    { "from": "data", "to": "data", "compatible": true  },
-    { "from": "exec", "to": "data", "compatible": false },
-    { "from": "data", "to": "exec", "compatible": false }
+    // 同种互连
+    { "from": "exec",     "to": "exec",     "compatible": true  },
+    { "from": "data",     "to": "data",     "compatible": true  },
+    { "from": "reactive", "to": "reactive", "compatible": true  },
+
+    // Reactive 输出 → 可连 Exec / Data 输入（Reactive 是 Exec+Data 超集）
+    { "from": "reactive", "to": "exec",     "compatible": true  },
+    { "from": "reactive", "to": "data",     "compatible": true  },
+
+    // Exec / Data 输出 → 不可连 Reactive 输入
+    { "from": "exec",     "to": "reactive", "compatible": false },
+    { "from": "data",     "to": "reactive", "compatible": false },
+
+    // Exec ↔ Data 互不兼容（ADR-0014）
+    { "from": "exec",     "to": "data",     "compatible": false },
+    { "from": "data",     "to": "exec",     "compatible": false }
   ]
 }

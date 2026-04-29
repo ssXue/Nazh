@@ -1,10 +1,15 @@
-// ADR-0014 Phase 3：pure-form 判定真值表，Rust + Vitest 共享。
+// ADR-0014 Phase 3 + ADR-0015 Phase 1：pure-form 判定真值表，Rust + Vitest 共享。
 //
-// 4 配对穷尽：
+// Reactive 引脚参与触发链（行为是 Exec+Data 并集），因此排除出 pure-form。
+//
+// 配对穷尽：
 //   - allDataAllSides    → pure-form ✓ (典型 c2f / minutesSince / lookup)
 //   - mixedExecInput     → ✗ (有 Exec input，参与触发链)
 //   - mixedExecOutput    → ✗ (有 Exec output，参与触发链)
 //   - emptyInputAllData  → pure-form ✓ (无输入只有 Data 输出，如设备表常量)
+//   - reactiveInput      → ✗ (Reactive 参与触发链，等同 Exec)
+//   - reactiveOutput     → ✗ (Reactive 参与触发链，等同 Exec)
+//   - allDataWithReactive→ ✗ (Reactive 使节点非 pure-form)
 //
 // 任一方与本 fixture 漂移 → CI 红。
 [
@@ -31,5 +36,23 @@
     "input_pins": [],
     "output_pins": [{"kind": "data"}],
     "expected_pure_form": true
+  },
+  {
+    "name": "reactiveInput",
+    "input_pins": [{"kind": "reactive"}],
+    "output_pins": [{"kind": "data"}],
+    "expected_pure_form": false
+  },
+  {
+    "name": "reactiveOutput",
+    "input_pins": [{"kind": "data"}],
+    "output_pins": [{"kind": "reactive"}],
+    "expected_pure_form": false
+  },
+  {
+    "name": "allDataWithReactive",
+    "input_pins": [{"kind": "data"}],
+    "output_pins": [{"kind": "data"}, {"kind": "reactive"}],
+    "expected_pure_form": false
   }
 ]

@@ -49,21 +49,29 @@ export function isCompatibleWith(from: PinType, to: PinType): boolean {
 /**
  * 判断"上游引脚 Kind `from` → 下游引脚 Kind `to`"是否可连。
  *
- * ADR-0014 求值语义二分：引脚 Kind 必须完全一致——Exec ↔ Exec、Data ↔ Data，
- * 跨 Kind 一律拒绝。理由见 docs/superpowers/specs/2026-04-28-pin-kind-exec-data-design.md。
+ * 兼容矩阵（ADR-0015 Phase 1）：
+ * - 同种互连：Exec↔Exec、Data↔Data、Reactive↔Reactive
+ * - Reactive 输出 → 可连 Exec / Data / Reactive 输入（订阅式驱动纯推 / 纯拉下游）
+ * - Exec / Data 输出 → 不可连 Reactive 输入
+ * - Exec ↔ Data 互不兼容（ADR-0014 保持不变）
  *
  * 必须与 Rust 端 `PinKind::is_compatible_with`（在 crates/core/src/pin.rs）严格
  * 一致——由 tests/fixtures/pin_kind_matrix.jsonc 合约保证（前后端共享 fixture）。
  */
 export function isKindCompatible(from: PinKind, to: PinKind): boolean {
-  return from === to;
+  if (from === to) return true;
+  // Reactive 输出可连 Exec / Data 输入（Reactive 是 Exec+Data 超集）
+  if (from === 'reactive' && (to === 'exec' || to === 'data')) return true;
+  return false;
 }
 
 /**
- * 判定节点是否为 pure-form（无 Exec 引脚）。
+ * 判定节点是否为 pure-form（无 Exec / Reactive 引脚）。
  *
- * 与 Rust `nazh_core::is_pure_form` 同语义——任一端有 `kind: 'exec'` 引脚即非
- * pure-form。空输入 / 空输出 + 全 Data 仍算 pure-form（典型如"设备表"常量节点）。
+ * Reactive 引脚参与触发链（行为是 Exec+Data 并集），因此排除出 pure-form。
+ * 与 Rust `nazh_core::is_pure_form` 同语义——任一端有 `kind: 'exec'` 或
+ * `kind: 'reactive'` 引脚即非 pure-form。空输入 / 空输出 + 全 Data 仍算
+ * pure-form（典型如"设备表"常量节点）。
  *
  * 跨语言契约 fixture：`tests/fixtures/pure_form_matrix.jsonc`（仓库根）。
  */
@@ -71,7 +79,11 @@ export function isPureForm(
   inputPins: ReadonlyArray<{ kind?: string }>,
   outputPins: ReadonlyArray<{ kind?: string }>,
 ): boolean {
-  const noExecIn = inputPins.every((p) => (p.kind ?? 'exec') !== 'exec');
-  const noExecOut = outputPins.every((p) => (p.kind ?? 'exec') !== 'exec');
-  return noExecIn && noExecOut;
+  const hasExecIn = inputPins.some(
+    (p) => { const k = p.kind ?? 'exec'; return k === 'exec' || k === 'reactive'; },
+  );
+  const hasExecOut = outputPins.some(
+    (p) => { const k = p.kind ?? 'exec'; return k === 'exec' || k === 'reactive'; },
+  );
+  return !hasExecIn && !hasExecOut;
 }
