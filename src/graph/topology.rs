@@ -129,28 +129,35 @@ impl WorkflowGraph {
     }
 }
 
-/// 在 Data 边构成的子图上做环检测（ADR-0014 Phase 1）。
+/// 在 Data 边和 Reactive 边构成的子图上做环检测（ADR-0014 Phase 1 + ADR-0015 Phase 1）。
 ///
-/// Data 边不参与主拓扑（避免 Data 拉取关系污染 Exec 触发顺序），但**仍可能
-/// 形成依赖环**——A 的 Data 输出依赖 B 的最新值、B 的 Data 输出又依赖 A 的最新值。
-/// 此种环让 Phase 2/3 的"下游 transform 前拉上游缓存"陷入无定义循环依赖。
+/// Data / Reactive 边不参与主拓扑（避免拉取关系污染 Exec 触发顺序），但**仍可能
+/// 形成依赖环**——A 的 Data/Reactive 输出依赖 B 的最新值、B 的 Data/Reactive 输出
+/// 又依赖 A 的最新值。此种环让 Phase 2/3 的"下游 transform 前拉上游缓存"陷入
+/// 无定义循环依赖。
 ///
-/// 算法：在 Data 边构成的图上跑 Kahn——若不能消化所有节点，存在环。
+/// 算法：在 Data + Reactive 边构成的图上跑 Kahn——若不能消化所有节点，存在环。
 ///
 /// # Errors
 ///
-/// Data 边构成环时返回 [`EngineError::InvalidGraph`].
-pub(crate) fn detect_data_edge_cycle(
-    data_edges: &[&super::types::WorkflowEdge],
+/// Data 或 Reactive 边构成环时返回 [`EngineError::InvalidGraph`].
+pub(crate) fn detect_non_exec_edge_cycle(
+    classified: &ClassifiedEdges<'_>,
 ) -> Result<(), crate::EngineError> {
-    if data_edges.is_empty() {
+    let combined: Vec<&&super::types::WorkflowEdge> = classified
+        .data_edges
+        .iter()
+        .chain(classified.reactive_edges.iter())
+        .collect();
+
+    if combined.is_empty() {
         return Ok(());
     }
 
-    // 构造 Data 子图：仅含 data_edges 涉及的节点
+    // 构造非 Exec 子图：仅含 data_edges + reactive_edges 涉及的节点
     let mut incoming: HashMap<String, usize> = HashMap::new();
     let mut downstream: HashMap<String, Vec<String>> = HashMap::new();
-    for edge in data_edges {
+    for edge in &combined {
         incoming.entry(edge.from.clone()).or_insert(0);
         *incoming.entry(edge.to.clone()).or_insert(0) += 1;
         downstream
@@ -183,7 +190,7 @@ pub(crate) fn detect_data_edge_cycle(
 
     if consumed != total_nodes {
         return Err(crate::EngineError::invalid_graph(
-            "Data 边构成环（ADR-0014）：下游 transform 时无法确定缓存读取顺序",
+            "Data 或 Reactive 边构成环（ADR-0014 / ADR-0015）：下游 transform 时无法确定缓存读取顺序",
         ));
     }
     Ok(())
@@ -198,11 +205,13 @@ pub(crate) struct ClassifiedEdges<'a> {
     #[allow(dead_code)]
     pub exec_edges: Vec<&'a super::types::WorkflowEdge>,
     pub data_edges: Vec<&'a super::types::WorkflowEdge>,
+    /// ADR-0015 Phase 1：Reactive 边——值变化时自动唤醒下游。
+    pub reactive_edges: Vec<&'a super::types::WorkflowEdge>,
 }
 
 use super::DEFAULT_OUTPUT_PIN_ID;
 
-/// 按上游节点 source pin 的 [`PinKind`] 把边分类为 exec / data。
+/// 按上游节点 source pin 的 [`PinKind`] 把边分类为 exec / data / reactive。
 ///
 /// 参数 `nodes` 必须包含图中所有节点（阶段 0.5 实例化后）。
 ///
@@ -217,6 +226,7 @@ pub(crate) fn classify_edges<'a>(
 ) -> Result<ClassifiedEdges<'a>, crate::EngineError> {
     let mut exec_edges = Vec::new();
     let mut data_edges = Vec::new();
+    let mut reactive_edges = Vec::new();
 
     for edge in edges {
         let from_node = nodes.get(&edge.from).ok_or_else(|| {
@@ -240,16 +250,16 @@ pub(crate) fn classify_edges<'a>(
             })?;
 
         match from_pin.kind {
+            PinKind::Exec => exec_edges.push(edge),
             PinKind::Data => data_edges.push(edge),
-            // Reactive 行为是 Data + Exec 的并集，暂时归入 exec_edges；
-            // Task 3 会将 reactive_edges 拆为独立字段。
-            PinKind::Exec | PinKind::Reactive => exec_edges.push(edge),
+            PinKind::Reactive => reactive_edges.push(edge),
         }
     }
 
     Ok(ClassifiedEdges {
         exec_edges,
         data_edges,
+        reactive_edges,
     })
 }
 
@@ -411,7 +421,35 @@ mod tests {
     }
 
     #[test]
-    fn detect_data_edge_cycle_无_data_边时通过() {
+    fn classify_edges_把_reactive_pin_出边归为_reactive() {
+        let mut nodes: HashMap<String, Arc<dyn NodeTrait>> = HashMap::new();
+        nodes.insert(
+            "a".to_owned(),
+            make_node(
+                "a",
+                vec![pin("in", PinDirection::Input, PinKind::Exec)],
+                vec![pin("latest", PinDirection::Output, PinKind::Reactive)],
+            ),
+        );
+        nodes.insert(
+            "b".to_owned(),
+            make_node(
+                "b",
+                vec![pin("reactive_in", PinDirection::Input, PinKind::Reactive)],
+                vec![PinDefinition::default_output()],
+            ),
+        );
+
+        let edges = vec![edge("a", "b", Some("latest"))];
+        let classified = classify_edges(&edges, &nodes).unwrap();
+        assert_eq!(classified.exec_edges.len(), 0);
+        assert_eq!(classified.data_edges.len(), 0);
+        assert_eq!(classified.reactive_edges.len(), 1);
+        assert_eq!(classified.reactive_edges[0].from, "a");
+    }
+
+    #[test]
+    fn detect_non_exec_edge_cycle_无_data_边时通过() {
         let mut nodes: HashMap<String, Arc<dyn NodeTrait>> = HashMap::new();
         nodes.insert(
             "a".to_owned(),
@@ -431,11 +469,11 @@ mod tests {
         );
         let edges = vec![edge("a", "b", None)];
         let classified = classify_edges(&edges, &nodes).unwrap();
-        detect_data_edge_cycle(&classified.data_edges).unwrap();
+        detect_non_exec_edge_cycle(&classified).unwrap();
     }
 
     #[test]
-    fn detect_data_edge_cycle_data_边形成环时报错() {
+    fn detect_non_exec_edge_cycle_data_边形成环时报错() {
         // a 的 Data 输出 → b 的 Data 输入；b 的 Data 输出 → a 的 Data 输入
         // 构成 Data 边的环
         let mut nodes: HashMap<String, Arc<dyn NodeTrait>> = HashMap::new();
@@ -457,12 +495,12 @@ mod tests {
         );
         let edges = vec![edge("a", "b", Some("out")), edge("b", "a", Some("out"))];
         let classified = classify_edges(&edges, &nodes).unwrap();
-        let err = detect_data_edge_cycle(&classified.data_edges).unwrap_err();
+        let err = detect_non_exec_edge_cycle(&classified).unwrap_err();
         assert!(matches!(err, crate::EngineError::InvalidGraph(_)));
     }
 
     #[test]
-    fn detect_data_edge_cycle_data_边自环报错() {
+    fn detect_non_exec_edge_cycle_data_边自环报错() {
         let mut nodes: HashMap<String, Arc<dyn NodeTrait>> = HashMap::new();
         nodes.insert(
             "a".to_owned(),
@@ -474,7 +512,61 @@ mod tests {
         );
         let edges = vec![edge("a", "a", Some("out"))];
         let classified = classify_edges(&edges, &nodes).unwrap();
-        let err = detect_data_edge_cycle(&classified.data_edges).unwrap_err();
+        let err = detect_non_exec_edge_cycle(&classified).unwrap_err();
+        assert!(matches!(err, crate::EngineError::InvalidGraph(_)));
+    }
+
+    #[test]
+    fn detect_non_exec_edge_cycle_reactive_边形成环时报错() {
+        // a 的 Reactive 输出 → b 的 Reactive 输入；b 的 Reactive 输出 → a 的 Reactive 输入
+        // 构成 Reactive 边的环
+        let mut nodes: HashMap<String, Arc<dyn NodeTrait>> = HashMap::new();
+        nodes.insert(
+            "a".to_owned(),
+            make_node(
+                "a",
+                vec![pin("reactive_in", PinDirection::Input, PinKind::Reactive)],
+                vec![pin("latest", PinDirection::Output, PinKind::Reactive)],
+            ),
+        );
+        nodes.insert(
+            "b".to_owned(),
+            make_node(
+                "b",
+                vec![pin("reactive_in", PinDirection::Input, PinKind::Reactive)],
+                vec![pin("latest", PinDirection::Output, PinKind::Reactive)],
+            ),
+        );
+        let edges = vec![edge("a", "b", Some("latest")), edge("b", "a", Some("latest"))];
+        let classified = classify_edges(&edges, &nodes).unwrap();
+        let err = detect_non_exec_edge_cycle(&classified).unwrap_err();
+        assert!(matches!(err, crate::EngineError::InvalidGraph(_)));
+    }
+
+    #[test]
+    fn detect_non_exec_edge_cycle_data_reactive_混合环报错() {
+        // a 的 Data 输出 → b 的 Reactive 输入；b 的 Reactive 输出 → a 的 Data 输入
+        // Data + Reactive 混合构成跨类型环
+        let mut nodes: HashMap<String, Arc<dyn NodeTrait>> = HashMap::new();
+        nodes.insert(
+            "a".to_owned(),
+            make_node(
+                "a",
+                vec![pin("data_in", PinDirection::Input, PinKind::Data)],
+                vec![pin("data_out", PinDirection::Output, PinKind::Data)],
+            ),
+        );
+        nodes.insert(
+            "b".to_owned(),
+            make_node(
+                "b",
+                vec![pin("reactive_in", PinDirection::Input, PinKind::Reactive)],
+                vec![pin("latest", PinDirection::Output, PinKind::Reactive)],
+            ),
+        );
+        let edges = vec![edge("a", "b", Some("data_out")), edge("b", "a", Some("latest"))];
+        let classified = classify_edges(&edges, &nodes).unwrap();
+        let err = detect_non_exec_edge_cycle(&classified).unwrap_err();
         assert!(matches!(err, crate::EngineError::InvalidGraph(_)));
     }
 }

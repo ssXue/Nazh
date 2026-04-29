@@ -37,7 +37,7 @@ use tokio::sync::mpsc;
 
 use super::pin_validator;
 use super::runner::run_node;
-use super::topology::{classify_edges, detect_data_edge_cycle};
+use super::topology::{classify_edges, detect_non_exec_edge_cycle};
 use super::types::{
     DownstreamTarget, WorkflowDeployment, WorkflowGraph, WorkflowIngress, WorkflowStreams,
 };
@@ -164,9 +164,10 @@ pub async fn deploy_workflow_with_ai(
     }
     pin_validator::validate_pin_compatibility(&nodes_by_id, &graph.edges)?;
 
-    // ADR-0014 Phase 1：边按上游 source pin 的 PinKind 分类，Data 子图独立环检测
+    // ADR-0014 Phase 1 + ADR-0015 Phase 1：边按上游 source pin 的 PinKind 分类，
+    // Data + Reactive 子图独立环检测
     let classified = classify_edges(&graph.edges, &nodes_by_id)?;
-    detect_data_edge_cycle(&classified.data_edges)?;
+    detect_non_exec_edge_cycle(&classified)?;
 
     // ADR-0014 Phase 3：构造 Data 入边反向索引（每个 consumer → 其 Data 入边列表）
     let edges_by_consumer = Arc::new(super::pull::build_edges_by_consumer(&classified.data_edges));
