@@ -150,14 +150,16 @@ pub(crate) fn validate_pin_compatibility(
         }
     }
 
-    // 4. ADR-0014 Phase 3b：Data 输入引脚 id 不得为 "in"
+    // 4. ADR-0014 Phase 3b / ADR-0015：Data / Reactive 输入引脚 id 不得为 "in"
     for (node_id, index) in &indexes {
         for (pin_id, pin) in &index.inputs {
-            if pin.kind == PinKind::Data && pin_id.as_str() == DEFAULT_INPUT_PIN_ID {
+            if matches!(pin.kind, PinKind::Data | PinKind::Reactive)
+                && pin_id.as_str() == DEFAULT_INPUT_PIN_ID
+            {
                 return Err(EngineError::ReservedPinId {
                     node: node_id.to_string(),
                     pin: pin_id.clone(),
-                    reason: "Data 输入 pin id 不得为 \"in\"——保留给混合输入 payload 合并的 Exec 主输入键".to_owned(),
+                    reason: "Data / Reactive 输入 pin id 不得为 \"in\"——保留给混合输入 payload 合并的 Exec 主输入键".to_owned(),
                 });
             }
         }
