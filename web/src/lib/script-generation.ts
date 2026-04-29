@@ -16,6 +16,8 @@ export interface NodePinSummary {
   /** 形如 `"json"` / `"array<bool>"` / `"custom(modbus-register)"`。 */
   typeLabel: string;
   required: boolean;
+  /** PinKind：'exec'（控制流）或 'data'（数据拉取）。默认 'exec'。 */
+  kind?: 'exec' | 'data';
 }
 
 export interface NodeContextInfo {
@@ -47,6 +49,7 @@ function summarizePins(pins: PinDefinition[] | undefined): NodePinSummary[] | un
     id: pin.id,
     typeLabel: formatPinType(pin.pin_type),
     required: pin.required,
+    kind: (pin.kind as 'exec' | 'data' | undefined) ?? 'exec',
   }));
 }
 
@@ -98,6 +101,7 @@ const SYSTEM_PROMPT = `你是工业边缘计算工作流的脚本编写助手。
 - 优先使用 payload["field"] 这种字段访问方式，保持脚本简洁
 - 节点信息中的"输入端口"声明了 payload 的预期形态（如 in: json (required) 表示 payload 是 JSON 对象）；"输出端口"声明了脚本结果应当符合的形态——尽量按声明类型生成代码
 - Pin 类型语义：'json' 端口期望 payload 是 JSON 对象 / 数组；'any' 端口任意值都可；'bool'/'integer'/'float'/'string' 期望对应原生类型；'array<T>' 期望同质数组；'custom(name)' 是协议特定类型，按节点语义决定字段
+- Pin 求值语义：'exec' 引脚是控制流（被上游推）；'data' 引脚是数据流（按需从上游缓存拉取最新值）。Data 输入引脚的值在脚本运行前已被 Runner 自动拉取并合并到 payload 中，脚本无需手动处理拉取逻辑。Data 输出引脚的值会自动写入缓存供其他节点按需读取。
 
 示例：
 payload["normalized"] = true;
@@ -107,7 +111,10 @@ payload`;
 function formatPinSummary(pins: NodePinSummary[] | undefined): string {
   if (!pins || pins.length === 0) return '';
   return pins
-    .map((pin) => `${pin.id}: ${pin.typeLabel}${pin.required ? ' (required)' : ''}`)
+    .map((pin) => {
+      const kind = pin.kind === 'data' ? 'data' : 'exec';
+      return `${pin.id}: ${kind}/${pin.typeLabel}${pin.required ? ' (required)' : ''}`;
+    })
     .join(', ');
 }
 

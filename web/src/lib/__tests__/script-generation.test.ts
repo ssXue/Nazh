@@ -55,15 +55,15 @@ describe('buildScriptGenerationPrompt', () => {
         nodeId: 'cur',
         nodeType: 'code',
         label: '数据清洗',
-        inputPins: [{ id: 'in', typeLabel: 'json', required: true }],
-        outputPins: [{ id: 'out', typeLabel: 'any', required: false }],
+        inputPins: [{ id: 'in', typeLabel: 'json', required: true, kind: 'exec' }],
+        outputPins: [{ id: 'out', typeLabel: 'any', required: false, kind: 'exec' }],
       },
       upstream: [
         {
           nodeId: 'modbus',
           nodeType: 'modbusRead',
           label: '寄存器',
-          outputPins: [{ id: 'out', typeLabel: 'json', required: false }],
+          outputPins: [{ id: 'out', typeLabel: 'json', required: false, kind: 'data' }],
         },
       ],
       downstream: [
@@ -71,19 +71,19 @@ describe('buildScriptGenerationPrompt', () => {
           nodeId: 'sql',
           nodeType: 'sqlWriter',
           label: '入库',
-          inputPins: [{ id: 'in', typeLabel: 'json', required: true }],
+          inputPins: [{ id: 'in', typeLabel: 'json', required: true, kind: 'data' }],
         },
       ],
     };
     const messages = buildScriptGenerationPrompt('转换数据', context);
     const userText = messages[1].content;
     // 当前节点 pin（与上下游同样 inline 形态：端口：输入 [...] 输出 [...]）
-    expect(userText).toContain('端口：输入 [in: json (required)] 输出 [out: any]');
+    expect(userText).toContain('端口：输入 [in: exec/json (required)] 输出 [out: exec/any]');
     // 上游 / 下游 pin 内联展示
     expect(userText).toContain('类型: modbusRead）');
-    expect(userText).toContain('out: json');
+    expect(userText).toContain('out: data/json');
     expect(userText).toContain('类型: sqlWriter）');
-    expect(userText).toContain('in: json (required)');
+    expect(userText).toContain('in: data/json (required)');
   });
 
   it('缺失 pin schema 时不输出端口信息（graceful degradation）', () => {
@@ -95,6 +95,46 @@ describe('buildScriptGenerationPrompt', () => {
     const messages = buildScriptGenerationPrompt('需求', context);
     const userText = messages[1].content;
     expect(userText).not.toContain('端口：');
+  });
+
+  it('系统 prompt 含 PinKind 语义', () => {
+    const messages = buildScriptGenerationPrompt('test', {
+      current: {
+        nodeId: 'code1',
+        nodeType: 'code',
+        label: '脚本节点',
+        inputPins: [{ id: 'in', typeLabel: 'json', required: true, kind: 'exec' }],
+        outputPins: [{ id: 'out', typeLabel: 'json', required: true, kind: 'exec' }],
+      },
+      upstream: [],
+      downstream: [],
+    });
+    const system = messages[0].content;
+    expect(system).toContain('求值语义');
+    expect(system).toContain('exec');
+    expect(system).toContain('data');
+  });
+
+  it('pin 描述含 PinKind 标记', () => {
+    const messages = buildScriptGenerationPrompt('test', {
+      current: {
+        nodeId: 'code1',
+        nodeType: 'code',
+        label: '脚本节点',
+        inputPins: [
+          { id: 'in', typeLabel: 'json', required: true, kind: 'exec' },
+          { id: 'sensor', typeLabel: 'float', required: false, kind: 'data' },
+        ],
+        outputPins: [
+          { id: 'out', typeLabel: 'json', required: true, kind: 'exec' },
+        ],
+      },
+      upstream: [],
+      downstream: [],
+    });
+    const user = messages[1].content;
+    expect(user).toContain('exec/json');
+    expect(user).toContain('data/float');
   });
 });
 
