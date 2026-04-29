@@ -236,6 +236,9 @@ pub(crate) async fn run_node(
                 emit_failure(&event_tx, &node_id, trace_id, &error);
             }
         }
+
+        // ADR-0014 Phase 5：trace 完成后清理 PureMemo（释放内存）
+        pure_memo.clear_trace(trace_id);
     }
 }
 
