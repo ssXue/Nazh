@@ -23,7 +23,8 @@ export type NazhNodeKind =
   | 'subgraphInput'
   | 'subgraphOutput'
   | 'c2f'
-  | 'minutesSince';
+  | 'minutesSince'
+  | 'lookup';
 export type NazhNodeDisplayType = NazhNodeKind;
 
 export interface FlowgramLogicBranch {

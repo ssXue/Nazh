@@ -58,6 +58,7 @@ import { HttpClientNodeSettings } from './nodes/httpClient/settings';
 import { BarkPushNodeSettings } from './nodes/barkPush/settings';
 import { SqlWriterNodeSettings } from './nodes/sqlWriter/settings';
 import { DebugConsoleNodeSettings } from './nodes/debugConsole/settings';
+import { LookupNodeSettings } from './nodes/lookup/settings';
 import { SubgraphNodeSettings } from './nodes/subgraph/settings';
 
 export interface FlowgramNodeSettingsPanelProps {
@@ -153,6 +154,17 @@ function readNodeDraft(node: FlowNodeEntity): SelectedNodeDraft {
       }
       return {};
     })(),
+    lookupTable: (() => {
+      const raw = config.table;
+      if (typeof raw === 'object' && raw !== null && !Array.isArray(raw)) {
+        return raw as Record<string, unknown>;
+      }
+      return {};
+    })(),
+    lookupDefault: (() => {
+      const raw = config.default;
+      return raw === null || raw === undefined ? '' : JSON.stringify(raw);
+    })(),
   };
 }
 
@@ -203,6 +215,12 @@ function buildNodeConfig(draft: SelectedNodeDraft, currentConfig: NodeConfigMap)
     return { ...currentConfig, parameterBindings: draft.parameterBindings };
   }
 
+  if (draft.nodeType === 'lookup') {
+    const defaultVal = draft.lookupDefault.trim() === '' ? null
+      : (() => { try { return JSON.parse(draft.lookupDefault); } catch { return draft.lookupDefault; } })();
+    return { ...currentConfig, table: draft.lookupTable, default: defaultVal };
+  }
+
   if (supportsScriptAi(draft.nodeType)) {
     const { ai: _ai, ...restConfig } = currentConfig;
     return { ...restConfig, script: draft.script };
@@ -245,6 +263,7 @@ const NODE_SETTINGS_MAP: Record<string, React.FC<NodeSettingsProps>> = {
   barkPush: BarkPushNodeSettings,
   sqlWriter: SqlWriterNodeSettings,
   debugConsole: DebugConsoleNodeSettings,
+  lookup: LookupNodeSettings,
   subgraph: SubgraphNodeSettings,
 };
 

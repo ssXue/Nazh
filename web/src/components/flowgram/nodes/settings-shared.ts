@@ -49,6 +49,8 @@ export interface SelectedNodeDraft {
   debugLabel: string;
   debugPretty: boolean;
   parameterBindings: Record<string, string | number | boolean>;
+  lookupTable: Record<string, unknown>;
+  lookupDefault: string;
 }
 
 export interface NodeValidation {

@@ -15,7 +15,7 @@
 
 mod deploy;
 mod pin_validator;
-pub(crate) mod pull;
+pub mod pull;
 mod runner;
 mod topology;
 pub(crate) mod types;

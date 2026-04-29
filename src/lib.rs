@@ -15,12 +15,15 @@
 //! | Ring 1 | `scripting` | Rhai 脚本引擎基座 |
 //! | Ring 1 | `nodes-flow` | 流程控制节点（if/switch/loop/tryCatch/code） |
 //! | Ring 1 | `nodes-io` | I/O 节点（native/timer/serial/modbus/http/mqtt/bark/sql/debug） |
-//! | Ring 1 | `nodes-pure` | 纯计算节点（c2f/minutesSince） |
+//! | Ring 1 | `nodes-pure` | 纯计算节点（c2f/minutesSince/lookup） |
 //! | Ring 1 | `ai` | OpenAI-compatible `AiService` 实现 |
 //! | Facade | `nazh-engine`（本 crate） | 组装 Ring 0 + Ring 1，DAG 部署编排 |
 //! | IPC | `tauri-bindings` | Tauri 命令请求/响应类型 + ts-rs 导出汇总 |
 
 pub mod graph;
+
+#[doc(hidden)]
+pub use crate::graph::pull::merge_payload as __test_only_merge_payload;
 mod registry;
 
 pub use nazh_core::{
@@ -52,7 +55,7 @@ pub use nodes_io::{
     TimerNodeConfig,
 };
 
-pub use nodes_pure::{C2fNode, MinutesSinceNode, PurePlugin};
+pub use nodes_pure::{C2fNode, LookupNode, LookupNodeConfig, MinutesSinceNode, PurePlugin};
 
 #[cfg(feature = "io-notify")]
 pub use nodes_io::{BarkPushNode, BarkPushNodeConfig};

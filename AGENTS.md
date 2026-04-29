@@ -89,7 +89,7 @@ crates/
   scripting/         # Ring 1 — Rhai engine base (with AI-aware ai_complete() helper)
   nodes-flow/        # Ring 1 — if / switch / loop / tryCatch / code (Rhai script)
   nodes-io/          # Ring 1 — timer / serial / native / modbus / http / mqtt / bark / sql / debugConsole
-  nodes-pure/        # Ring 1 — c2f / minutesSince pure-form Data 引脚节点（ADR-0014 Phase 3）
+  nodes-pure/        # Ring 1 — c2f / minutesSince / lookup pure-form Data 引脚节点（ADR-0014 Phase 3/3b）
   ai/                # Ring 1 — OpenAI-compatible client (streaming, thinking-mode) + 壳层配置型；AiService trait 在 Ring 0（ADR-0019）
   tauri-bindings/    # IPC — Tauri 命令请求/响应类型 + ts-rs 导出汇总（ADR-0017）
 src/                 # Root facade crate `nazh-engine` — DAG orchestration + `standard_registry()`
@@ -459,7 +459,7 @@ Located in `docs/superpowers/plans/` and `docs/superpowers/specs/`. These are **
 > 5. ✅ **ADR-0012** 工作流变量 — Phase 1+2 已实施（2026-04-27）；Phase 3 候选项已分类，见上文"ADR-0012 Phase 3 候选"小节
 > 6. ✅ **ADR-0013** 子图与宏（依赖 0010）— 子图核心已实施；loop 容器恢复已并入当前 `main`
 > 7. **Phase 6 (RFC-0002)** EventBus + EdgeBackpressure + ConcurrencyPolicy — 与 Pin 系统可并行
-> 8. ✅ **ADR-0014** Pin 求值语义二分 — **Phase 1 + Phase 2 + Phase 3 已实施**（2026-04-28）；Phase 3b/4/5 各自独立 plan，仍未实施
+> 8. ✅ **ADR-0014** Pin 求值语义二分 — **Phase 1 + Phase 2 + Phase 3 + Phase 3b 已实施**（2026-04-29）；Phase 4/5 各自独立 plan，仍未实施
 > 9. **ADR-0015 / ADR-0016** 反应式数据引脚 + 边级可观测性 — polish 阶段
 > 10. 真实协议驱动扩展（OPC-UA、Kafka 消费者等）
 > 11. AI 能力扩展（embeddings、vision，未来 ADR）

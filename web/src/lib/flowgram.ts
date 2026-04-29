@@ -31,7 +31,7 @@ const SUBGRAPH_OUTPUT_TYPE = 'subgraphOutput';
  * 用户手动给节点起 id 时不应包含 `/`，否则会被误判为展平副本。 */
 const SUBGRAPH_ID_SEPARATOR = '/';
 
-const FLOWGRAM_BUSINESS_NODE_TYPES = new Set(
+const FLOWGRAM_BUSINESS_NODE_TYPES = new Set<string>(
   getAllNodeDefinitions()
     .map((definition) => definition.kind)
     .filter((kind) => kind !== SUBGRAPH_CONTAINER_TYPE),

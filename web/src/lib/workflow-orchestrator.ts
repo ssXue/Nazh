@@ -59,6 +59,9 @@ const ALLOWED_NODE_KINDS: NazhNodeKind[] = [
   'barkPush',
   'sqlWriter',
   'debugConsole',
+  'c2f',
+  'minutesSince',
+  'lookup',
 ];
 
 const NODE_GUIDE_TEXT = `可用节点类型与建议：

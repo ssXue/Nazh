@@ -51,12 +51,12 @@ mod tests {
     }
 
     #[test]
-    fn 两个插件合并后覆盖全部_18_种节点类型() {
+    fn 两个插件合并后覆盖全部_19_种节点类型() {
         let registry = standard_registry();
         assert_eq!(
             registry.registered_types().len(),
-            18,
-            "应注册 18 种节点类型"
+            19,
+            "应注册 19 种节点类型"
         );
     }
 
@@ -109,7 +109,7 @@ mod tests {
         let registry = standard_registry();
         let types = registry.registered_types();
 
-        for expected in ["c2f", "minutesSince"] {
+        for expected in ["c2f", "minutesSince", "lookup"] {
             assert!(
                 types.contains(&expected),
                 "PurePlugin 缺少节点类型: {expected}"
@@ -129,6 +129,11 @@ mod tests {
             registry.capabilities_of("minutesSince"),
             Some(NodeCapabilities::empty()),
             "minutesSince 读取系统时钟，不能声明 PURE"
+        );
+        assert_eq!(
+            registry.capabilities_of("lookup"),
+            Some(NodeCapabilities::PURE),
+            "lookup 同输入必得同输出，应声明 PURE"
         );
     }
 }

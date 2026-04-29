@@ -11,8 +11,10 @@
 use nazh_core::{NodeCapabilities, NodeRegistry, Plugin, PluginManifest};
 
 mod c2f;
+mod lookup;
 mod minutes_since;
 pub use c2f::C2fNode;
+pub use lookup::{LookupNode, LookupNodeConfig};
 pub use minutes_since::MinutesSinceNode;
 
 pub struct PurePlugin;
@@ -28,6 +30,13 @@ impl Plugin for PurePlugin {
     fn register(&self, registry: &mut NodeRegistry) {
         registry.register_with_capabilities("c2f", NodeCapabilities::PURE, |def, _res| {
             Ok(std::sync::Arc::new(C2fNode::new(def.id().to_owned())))
+        });
+        registry.register_with_capabilities("lookup", NodeCapabilities::PURE, |def, _res| {
+            let config: LookupNodeConfig = def.parse_config()?;
+            Ok(std::sync::Arc::new(LookupNode::new(
+                def.id().to_owned(),
+                config,
+            )))
         });
         registry.register_with_capabilities(
             "minutesSince",

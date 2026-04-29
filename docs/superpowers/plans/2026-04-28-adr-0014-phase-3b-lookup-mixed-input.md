@@ -1,4 +1,4 @@
-> **Status:** deferred as Phase A backlog (not implemented as of 2026-04-29)
+> **Status:** merged — ADR-0014 Phase 3b implemented
 
 # ADR-0014 Phase 3b 实施计划：`lookup` 节点 + 混合输入 payload 合并语义补完
 

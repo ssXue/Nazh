@@ -107,7 +107,7 @@ pub(crate) async fn pull_data_inputs(
     Ok(merge_payload(exec_payload, data_values))
 }
 
-fn merge_payload(exec_payload: Value, data_values: Map<String, Value>) -> Value {
+pub fn merge_payload(exec_payload: Value, data_values: Map<String, Value>) -> Value {
     match exec_payload {
         Value::Object(mut map) => {
             for (k, v) in data_values {

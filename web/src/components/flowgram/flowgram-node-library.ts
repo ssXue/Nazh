@@ -72,6 +72,7 @@ import { definition as subgraphDef, SG_IN_POS, SG_OUT_POS } from './nodes/subgra
 import { definition as subgraphInputDef } from './nodes/subgraphInput';
 import { definition as subgraphOutputDef } from './nodes/subgraphOutput';
 import { definition as c2fDef } from './nodes/c2f';
+import { definition as lookupDef } from './nodes/lookup';
 import { definition as minutesSinceDef } from './nodes/minutesSince';
 
 const ALL_DEFS = [
@@ -79,7 +80,7 @@ const ALL_DEFS = [
   ifDef, switchDef, tryCatchDef, loopDef,
   httpClientDef, barkPushDef, sqlWriterDef, debugConsoleDef,
   subgraphDef, subgraphInputDef, subgraphOutputDef,
-  c2fDef, minutesSinceDef,
+  c2fDef, minutesSinceDef, lookupDef,
 ];
 
 const DEF_MAP = new Map(ALL_DEFS.map((d) => [d.kind, d]));
@@ -248,6 +249,7 @@ export function getFlowgramPaletteSections(): FlowgramPaletteSection[] {
       items: [
         { key: 'blank-c2f', title: 'C→F 转换', description: c2fDef.catalog.description, badge: 'C→F', seed: c2fDef.buildDefaultSeed() },
         { key: 'blank-minutes-since', title: '距今分钟', description: minutesSinceDef.catalog.description, badge: '分钟', seed: minutesSinceDef.buildDefaultSeed() },
+        { key: 'blank-lookup', title: '表查找', description: lookupDef.catalog.description, badge: '查找', seed: lookupDef.buildDefaultSeed() },
       ],
     },
     {

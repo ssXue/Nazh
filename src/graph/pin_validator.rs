@@ -15,7 +15,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use nazh_core::{EngineError, NodeTrait, PinDefinition, PinDirection};
+use nazh_core::{EngineError, NodeTrait, PinDefinition, PinDirection, PinKind};
 
 use super::types::WorkflowEdge;
 use super::{DEFAULT_INPUT_PIN_ID, DEFAULT_OUTPUT_PIN_ID};
@@ -147,6 +147,19 @@ pub(crate) fn validate_pin_compatibility(
             return Err(EngineError::invalid_graph(format!(
                 "节点 `{node_id}` 的必需输入引脚 `{pin_id}` 没有任何上游入边"
             )));
+        }
+    }
+
+    // 4. ADR-0014 Phase 3b：Data 输入引脚 id 不得为 "in"
+    for (node_id, index) in &indexes {
+        for (pin_id, pin) in &index.inputs {
+            if pin.kind == PinKind::Data && pin_id.as_str() == DEFAULT_INPUT_PIN_ID {
+                return Err(EngineError::ReservedPinId {
+                    node: node_id.to_string(),
+                    pin: pin_id.clone(),
+                    reason: "Data 输入 pin id 不得为 \"in\"——保留给混合输入 payload 合并的 Exec 主输入键".to_owned(),
+                });
+            }
         }
     }
 
@@ -498,7 +511,7 @@ mod tests {
             node(
                 "b",
                 vec![pin_with_kind(
-                    "in",
+                    "data_in",
                     PinDirection::Input,
                     PinType::Any,
                     false,
@@ -507,7 +520,31 @@ mod tests {
                 vec![PinDefinition::default_output()],
             ),
         ]);
-        let edges = vec![edge("a", "b", None, None)];
+        let edges = vec![edge("a", "b", Some("out"), Some("data_in"))];
         validate_pin_compatibility(&nodes, &edges).unwrap();
+    }
+
+    #[test]
+    fn data_输入_pin_id_为_in_时拒绝部署() {
+        let nodes = HashMap::from([node(
+            "bad",
+            vec![pin_with_kind(
+                "in",
+                PinDirection::Input,
+                PinType::Any,
+                false,
+                PinKind::Data,
+            )],
+            vec![PinDefinition::default_output()],
+        )]);
+        let err = validate_pin_compatibility(&nodes, &[]).unwrap_err();
+        match err {
+            EngineError::ReservedPinId { node, pin, reason } => {
+                assert_eq!(node, "bad");
+                assert_eq!(pin, "in");
+                assert!(reason.contains("保留"));
+            }
+            other => panic!("应报 ReservedPinId，实际：{other:?}"),
+        }
     }
 }

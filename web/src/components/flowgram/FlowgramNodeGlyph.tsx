@@ -38,7 +38,8 @@ export function normalizeFlowgramDisplayType(value: unknown): NazhNodeDisplayTyp
     value === 'subgraphInput' ||
     value === 'subgraphOutput' ||
     value === 'c2f' ||
-    value === 'minutesSince'
+    value === 'minutesSince' ||
+    value === 'lookup'
   ) {
     return value;
   }
@@ -82,6 +83,8 @@ export function getFlowgramDisplayLabel(displayType: NazhNodeDisplayType): strin
       return 'C→F';
     case 'minutesSince':
       return '分钟';
+    case 'lookup':
+      return '查找';
     case 'code':
       return 'Code';
     case 'native':
@@ -127,6 +130,7 @@ export function FlowgramNodeGlyph({
       return <NativeNodeIcon {...props} />;
     case 'c2f':
     case 'minutesSince':
+    case 'lookup':
       return <NativeNodeIcon {...props} />;
   }
 }

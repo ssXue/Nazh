@@ -12,6 +12,7 @@ Data 输入拉取时即时求值（不进 Tokio task spawn 列表）。
 |-----------|------|------|------------|
 | `c2f` | `value: Float` (Data) | `out: Float` (Data) | `PURE` |
 | `minutesSince` | `since: String` (Data, RFC3339) | `out: Integer` (Data) | 空（读取系统时钟，非确定性） |
+| `lookup` | `key: Any` (Data) | `out: Any` (Data) | `PURE` |
 
 ## 内部约定
 

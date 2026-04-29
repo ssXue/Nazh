@@ -1,0 +1,46 @@
+// ADR-0014 Phase 3b：混合输入节点 payload 合并 6 case 合约。
+//
+// 合并规则：
+// - exec 是 Object → data 值以 pin_id 为键插入；键冲突时 data 覆盖 exec
+// - exec 是非 Object → 重写为 {"in": exec, ...data 键}
+// - 未声明 Data 输入时 merged === exec
+//
+// Rust + TS 各自消费同一份 fixture，CI 红线为漂移。
+[
+  {
+    "name": "纯 Exec 触发无 Data 输入",
+    "exec_payload": {"value": 25.0},
+    "data_values": {},
+    "merged": {"value": 25.0}
+  },
+  {
+    "name": "Object Exec + 单 Data 输入键不冲突",
+    "exec_payload": {"trace": "abc", "value": 25.0},
+    "data_values": {"temp_f": 77.0},
+    "merged": {"trace": "abc", "value": 25.0, "temp_f": 77.0}
+  },
+  {
+    "name": "Object Exec + Data 键冲突，Data 覆盖",
+    "exec_payload": {"value": 25.0, "label": "from-exec"},
+    "data_values": {"label": "from-data"},
+    "merged": {"value": 25.0, "label": "from-data"}
+  },
+  {
+    "name": "标量 Exec + Data → 包装为 in 键",
+    "exec_payload": 42,
+    "data_values": {"ext": "ext-val"},
+    "merged": {"in": 42, "ext": "ext-val"}
+  },
+  {
+    "name": "数组 Exec + Data → 包装为 in 键",
+    "exec_payload": [1, 2, 3],
+    "data_values": {"ext": "ext-val"},
+    "merged": {"in": [1, 2, 3], "ext": "ext-val"}
+  },
+  {
+    "name": "多个 Data 输入合并",
+    "exec_payload": {"trace": "abc"},
+    "data_values": {"a": 1, "b": "hi", "c": [1, 2]},
+    "merged": {"trace": "abc", "a": 1, "b": "hi", "c": [1, 2]}
+  }
+]
