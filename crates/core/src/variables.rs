@@ -25,7 +25,7 @@ use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tokio::sync::{watch, OnceCell};
+use tokio::sync::{OnceCell, watch};
 #[cfg(feature = "ts-export")]
 use ts_rs::TS;
 
@@ -166,19 +166,16 @@ impl WorkflowVariables {
                     json_value_label(&declaration.initial),
                 ));
             }
-            inner.insert(
-                name.clone(),
-                {
-                    let (watch_tx, _) = watch::channel(None);
-                    TypedVariable {
-                        value: declaration.initial.clone(),
-                        variable_type: declaration.variable_type.clone(),
-                        updated_at: Utc::now(),
-                        updated_by: None,
-                        watch_tx,
-                    }
-                },
-            );
+            inner.insert(name.clone(), {
+                let (watch_tx, _) = watch::channel(None);
+                TypedVariable {
+                    value: declaration.initial.clone(),
+                    variable_type: declaration.variable_type.clone(),
+                    updated_at: Utc::now(),
+                    updated_by: None,
+                    watch_tx,
+                }
+            });
         }
         Ok(Self {
             inner,
@@ -796,10 +793,7 @@ mod tests {
         vars.set("x", Value::from(42_i64), None).unwrap();
 
         let result = timeout(Duration::from_millis(50), rx.changed()).await;
-        assert!(
-            result.is_err(),
-            "值未变化时 watch 不应通知"
-        );
+        assert!(result.is_err(), "值未变化时 watch 不应通知");
     }
 
     #[tokio::test]
