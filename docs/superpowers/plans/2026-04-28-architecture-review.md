@@ -31,8 +31,8 @@
 
 - [x] 设计 spec：`docs/superpowers/specs/2026-04-30-adr-0015-reactive-data-pin-design.md`（watch channel 方案，修订 ADR 原文 broadcast 设计）
 - [x] Phase 1 plan + 实施：`docs/superpowers/plans/2026-04-30-adr-0015-phase1-reactive-edge.md`（merged in 9019b90）
-- [ ] Phase 2 实施（变量 Reactive + IPC）
-- [ ] Phase 3 实施（前端 UI）
+- [x] Phase 2 实施（变量 Reactive + IPC）：`docs/superpowers/plans/2026-04-30-adr-0015-phase2-3-ipc-frontend.md`（merged in 9a838b1）
+- [x] Phase 3 实施（前端 UI）：同上 plan
 
 ### ADR-0016 边级可观测性
 
