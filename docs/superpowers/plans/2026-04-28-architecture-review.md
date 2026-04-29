@@ -25,8 +25,7 @@
 
 ### Phase 6 EventBus + EdgeBackpressure + ConcurrencyPolicy（RFC-0002）
 
-- [ ] 新建 plan：`docs/superpowers/plans/2026-04-XX-rfc-0002-phase-6-eventbus.md`
-- [ ] 按 plan 实施
+- [x] RFC-0002 Phase 6 已完成（方案修订）。EventBus broadcast 已否决（Lagged 语义冲突），ConcurrencyPolicy / EdgeBackpressure 推迟（无实际场景）。实际修复：`emit_event` 改 `try_send` + 错误日志。详见 `docs/rfcs/0002-分层内核与插件架构.md` Phase 6 段。无需单独 plan。
 
 ### ADR-0015 反应式数据引脚
 
