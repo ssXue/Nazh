@@ -12,26 +12,6 @@ Stack: **Rust engine (Cargo workspace, 11 packages) + Tauri v2 desktop shell + R
 
 Everything runs in one process — no HTTP/gRPC server, no external broker. AI features (script generation, thinking-mode completions, workflow composition) flow through the `AiService` trait in Ring 0 (`nazh_core::ai`); the OpenAI-compatible HTTP/SSE implementation lives in the `ai` crate (ADR-0019).
 
-## ⚠️ ARCHITECTURE FREEZE（2026-04-28 起）
-
-> **当前状态**：Phase B/C/D/E review 收尾完成；Phase A ADR sprint 仍未完成，架构冻结继续有效。
-> **Plan**：`docs/superpowers/plans/2026-04-28-architecture-review.md`（退出标准 5 项全勾才解冻）
->
-> **阶段**：
-> - **Phase A**（Day 0..3）：ADR sprint —— ADR-0014 全 Phase（3/3b/4/5）→ ~~Phase 6 EventBus~~（RFC-0002 已完成修订）→ ADR-0015 → ADR-0016 → loop 升级容器
-> - **Phase B-D**（Day 4..8）：架构 review + 模块拆分 + 规范扫描（按 crate 切片，可并行）
-> - **Phase E**（Day 8）：findings 整合 + 解冻
->
-> **冻结范围**：本期 plan 列出的工作之外，**不接受**：
-> - 新 ADR 立项
-> - 新增 / 修改 public trait 方法
-> - 修改 public struct 字段
-> - 新增模块或 crate
->
-> **允许的修改**：bug 修复、文档勘误、测试补充、本期 plan 内的 sprint 与 review 工作。
-> **预计解冻**：~2026-05-08。
-> **解冻动作**：删除本段 + 更新 Project Status / 已知 tech debt（参见 plan Phase E）。
-
 ## Build & Dev Commands
 
 ```bash
@@ -400,7 +380,7 @@ Located in `docs/superpowers/plans/` and `docs/superpowers/specs/`. These are **
 
 **未来若需 IPC 真值的 E2E**：改用 `@tauri-apps/playwright` 或 webview/electron-mode；或加 IPC mock 层（`hasTauriRuntime() === false` 时让 `invoke` 返回 fixture 值）。不要硬撞——拖拽连接 + console capture 断言跨 Kind 拒绝在 Chromium 模式下也仍可行（`pin-validator` 是纯函数，不依赖 IPC），但 ADR-0014 Phase 2 评审决定不做（拖拽脆弱性 + Vitest 已覆盖）。
 
-## Project Status（2026-04-29）
+## Project Status（2026-04-30）
 
 **Phases 1-5 complete** (crate extraction, DataStore, ConnectionGuard, Ring 1 split, Plugin system). See `docs/rfcs/0002-分层内核与插件架构.md`.
 

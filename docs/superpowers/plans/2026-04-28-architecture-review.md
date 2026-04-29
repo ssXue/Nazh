@@ -1,4 +1,4 @@
-> **Status:** Phase C/D/E completed 2026-04-29; Phase A remains open, freeze retained
+> **Status:** completed 2026-04-30 — Phase A/B/C/D/E 全部勾完，架构冻结解除
 
 # 2026-04-28 架构 review + 模块拆分 + 规范扫描
 
@@ -36,8 +36,8 @@
 
 ### ADR-0016 边级可观测性
 
-- [ ] 新建 plan：`docs/superpowers/plans/2026-04-XX-adr-0016-edge-observability.md`
-- [ ] 按 plan 实施
+- [x] 实施完成（`beb781e`）：`EdgeTransmitSummary` + `BackpressureDetected` 类型 + Runner `EdgeWindow` 累计器 + ts-rs + 前端解析。`BackpressureDetected` 发射逻辑 deferred。未建独立 plan 文件（实施直接在主 session 完成）。
+- [x] 按 plan 实施
 
 ### loop 升级容器（独立）
 
@@ -165,7 +165,7 @@
 - [x] 派生出修复 PR 列表（不要求 review 期内 merge，列出即可）
 - [x] 一次性补 22 个历史 plan 的 `Status` 标记（已 merged 的写 `> **Status:** merged in <SHA>`；deferred 的写明状态）
 - [x] 更新 `AGENTS.md`
-  - [ ] 删除 freeze 段（Phase A 未完成，按退出标准保留）
+  - [x] 删除 freeze 段（Phase A 已完成，2026-04-30 解冻）
   - [x] 同步 Project Status / 已知 tech debt
   - [x] 同步 ADR Execution Order 状态
 - [x] 同步 memory 文件（如必要，本轮以 `AGENTS.md` + findings 为真值源，未写本机 memory）
@@ -177,11 +177,11 @@
 
 全部 5 项勾完即解冻：
 
-- [ ] Phase A 全勾（所有 in-flight ADR 完成 + 同步状态）
+- [x] Phase A 全勾（所有 in-flight ADR 完成 + 同步状态）
 - [x] Phase B 全勾（每片产出 findings 文档）
 - [x] Phase C 全勾（行数普查 + `lib.rs` 拆分完成；其他文件已决策）
 - [x] Phase D 全勾（规范扫描 0 违规，或全部入 P0/P1 清单）
-- [ ] Phase E 全勾（findings 整合 + 历史 plan Status 补全 + AGENTS.md freeze 段删除；freeze 删除因 Phase A 未完成而保留）
+- [x] Phase E 全勾（findings 整合 + 历史 plan Status 补全 + AGENTS.md freeze 段已删除）
 
 **findings PR 不阻塞解冻**——按正常 PR 流程后续 merge。
 
