@@ -8,7 +8,9 @@ use std::{
     time::Duration,
 };
 
-use nazh_engine::{WorkflowContext, WorkflowIngress};
+use std::collections::HashMap;
+
+use nazh_engine::{OutputCache, WorkflowContext, WorkflowIngress};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::mpsc;
@@ -442,6 +444,8 @@ pub(crate) struct DesktopWorkflow {
     pub(crate) shared_resources: nazh_engine::SharedResources,
     /// 事件/结果转发任务。
     pub(crate) runtime_tasks: Vec<tauri::async_runtime::JoinHandle<()>>,
+    /// ADR-0014 引脚求值语义二分：按节点 id 索引的 OutputCache 句柄。
+    pub(crate) output_caches: HashMap<String, Arc<OutputCache>>,
 }
 
 impl DesktopWorkflow {
@@ -481,6 +485,12 @@ impl DesktopWorkflow {
             manual_lane: self.dispatch_router.manual_snapshot(),
             trigger_lane: self.dispatch_router.trigger_snapshot(),
         }
+    }
+
+    /// 返回指定节点的 OutputCache 句柄（ADR-0015 Phase 2 IPC）。
+    #[must_use]
+    pub(crate) fn output_cache(&self, node_id: &str) -> Option<Arc<OutputCache>> {
+        self.output_caches.get(node_id).map(Arc::clone)
     }
 }
 

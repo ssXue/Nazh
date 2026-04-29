@@ -104,6 +104,7 @@ pub fn run() {
             commands::runtime::list_runtime_workflows,
             commands::runtime::set_active_runtime_workflow,
             commands::runtime::list_dead_letters,
+            commands::runtime::subscribe_reactive_pin,
             commands::observability::query_observability,
             commands::connections::load_connection_definitions,
             commands::connections::save_connection_definitions,

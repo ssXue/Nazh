@@ -7,6 +7,56 @@ use crate::{
     workspace::resolve_project_workspace_dir,
 };
 
+/// 订阅指定工作流节点的 Reactive 输出引脚值变更（ADR-0015 Phase 2）。
+///
+/// 后台启动 watch task：OutputCache slot 值变化时通过
+/// `workflow://reactive-update/{workflow_id}/{node_id}/{pin_id}` 推送到前端。
+#[tauri::command]
+pub(crate) async fn subscribe_reactive_pin(
+    state: State<'_, DesktopState>,
+    app: tauri::AppHandle,
+    workflow_id: String,
+    node_id: String,
+    pin_id: String,
+) -> Result<(), String> {
+    let cache = {
+        let workflows = state.workflows.lock().await;
+        let deployment = workflows
+            .get(&workflow_id)
+            .ok_or_else(|| format!("工作流 `{workflow_id}` 未部署"))?;
+        deployment
+            .output_cache(&node_id)
+            .ok_or_else(|| format!("节点 `{node_id}` 无 OutputCache"))?
+    };
+
+    let rx = cache
+        .subscribe(&pin_id)
+        .ok_or_else(|| format!("引脚 `{pin_id}` 无缓存槽位"))?;
+
+    let event_channel = format!(
+        "workflow://reactive-update/{workflow_id}/{node_id}/{pin_id}"
+    );
+
+    tokio::spawn(async move {
+        let mut rx = rx;
+        while rx.changed().await.is_ok() {
+            let snapshot = rx.borrow().clone();
+            if let Some(cached) = snapshot {
+                let payload = tauri_bindings::ReactiveUpdatePayload {
+                    workflow_id: workflow_id.clone(),
+                    node_id: node_id.clone(),
+                    pin_id: pin_id.clone(),
+                    value: cached.value,
+                    updated_at: cached.produced_at.to_rfc3339(),
+                };
+                let _ = app.emit(&event_channel, payload);
+            }
+        }
+    });
+
+    Ok(())
+}
+
 #[tauri::command]
 pub(crate) async fn list_runtime_workflows(
     state: State<'_, DesktopState>,
