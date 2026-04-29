@@ -57,9 +57,9 @@ impl fmt::Display for PinDirection {
 ///   这是 Nazh 1.0 的默认语义；所有现有节点不显式声明时走这条路径。
 /// - [`Data`](Self::Data)：上游完成 transform → 写入输出缓存槽（不 push）；
 ///   下游被自己的 `Exec` 边触发时在 transform 前从缓存槽拉取（Phase 2 起）。
-/// - [`Reactive`](Self::Reactive)：订阅式推送语义。上游写缓存 **+** 推 ContextRef
+/// - [`Reactive`](Self::Reactive)：订阅式推送语义。上游写缓存 **+** 推 `ContextRef`
 ///   到下游——值变化时自动唤醒下游。行为是 Data + Exec 的并集。下游收到
-///   ContextRef 后照常 `pull_data_inputs` 读最新缓存值（ADR-0015 Phase 1）。
+///   `ContextRef` 后照常 `pull_data_inputs` 读最新缓存值（ADR-0015 Phase 1）。
 ///
 /// **兼容矩阵**（[`is_compatible_with`](Self::is_compatible_with)）：
 /// - 同种之间互相兼容（Exec↔Exec、Data↔Data、Reactive↔Reactive）
@@ -75,8 +75,8 @@ pub enum PinKind {
     Exec,
     /// 拉语义。上游写缓存、下游被自己的 Exec 边触发时读缓存。
     Data,
-    /// 订阅式推送语义。上游写缓存 **+** 推 ContextRef 到下游——值变化时自动唤醒下游。
-    /// 行为是 Data + Exec 的并集。下游收到 ContextRef 后照常 pull_data_inputs 读最新缓存值。
+    /// 订阅式推送语义。上游写缓存 **+** 推 `ContextRef` 到下游——值变化时自动唤醒下游。
+    /// 行为是 Data + Exec 的并集。下游收到 `ContextRef` 后照常 `pull_data_inputs` 读最新缓存值。
     Reactive,
 }
 
@@ -103,10 +103,10 @@ impl PinKind {
         match (self, other) {
             (Self::Exec, Self::Exec)
             | (Self::Data, Self::Data)
-            | (Self::Reactive, Self::Reactive) => true,
-            (Self::Reactive, Self::Exec) | (Self::Reactive, Self::Data) => true,
-            (Self::Exec, Self::Reactive) | (Self::Data, Self::Reactive) => false,
-            (Self::Exec, Self::Data) | (Self::Data, Self::Exec) => false,
+            | (Self::Reactive, Self::Reactive | Self::Exec | Self::Data) => true,
+            (Self::Exec | Self::Data, Self::Reactive)
+            | (Self::Exec, Self::Data)
+            | (Self::Data, Self::Exec) => false,
         }
     }
 }

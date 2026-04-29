@@ -57,14 +57,24 @@ impl OutputCache {
     }
 
     /// 写入指定 pin 的最新值并自动通知所有 Receiver。
-    pub fn write(&self, pin_id: &str, output: CachedOutput) {
+    /// 返回 `true` 表示值与旧值不同（新写入或值变化）；`false` 表示值未变（覆盖写）。
+    pub fn write(&self, pin_id: &str, output: CachedOutput) -> bool {
         if let Some(slot) = self.slots.get(pin_id) {
+            let changed = slot
+                .rx
+                .borrow()
+                .as_ref()
+                .is_none_or(|old| old.value != output.value);
             let _ = slot.tx.send(Some(output));
+            changed
+        } else {
+            false
         }
     }
 
     /// 便利方法：用当前时间戳构造 [`CachedOutput`] 并写入指定 pin。
-    pub fn write_now(&self, pin_id: &str, value: Value, trace_id: Uuid) {
+    /// 返回值语义同 [`write`](Self::write)。
+    pub fn write_now(&self, pin_id: &str, value: Value, trace_id: Uuid) -> bool {
         self.write(
             pin_id,
             CachedOutput {
@@ -72,7 +82,7 @@ impl OutputCache {
                 produced_at: Utc::now(),
                 trace_id,
             },
-        );
+        )
     }
 
     /// 读取指定 pin 的最新缓存值。`ttl_ms` 给出且值已过期时返回 `None`。

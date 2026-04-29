@@ -240,11 +240,10 @@ pub(crate) fn classify_edges<'a>(
             })?;
 
         match from_pin.kind {
-            PinKind::Exec => exec_edges.push(edge),
             PinKind::Data => data_edges.push(edge),
             // Reactive 行为是 Data + Exec 的并集，暂时归入 exec_edges；
             // Task 3 会将 reactive_edges 拆为独立字段。
-            PinKind::Reactive => exec_edges.push(edge),
+            PinKind::Exec | PinKind::Reactive => exec_edges.push(edge),
         }
     }
 
