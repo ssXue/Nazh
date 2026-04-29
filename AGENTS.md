@@ -420,7 +420,8 @@ Located in `docs/superpowers/plans/` and `docs/superpowers/specs/`. These are **
 - ADR-0012 (工作流变量) — **已实施 Phase 1+2**（Phase 1: 2026-04-27 / Phase 2: 2026-04-27，`crates/core/src/variables.rs` + Rhai `vars.get/set/cas` + `ExecutionEvent::VariableChanged` write-on-change 事件广播 + IPC `set_workflow_variable` 写命令 + 前端 `RuntimeVariablesPanel` + `workflow://variable-changed` 事件通道）
 - ADR-0014（执行边与数据边分离 → 重命名为「引脚求值语义二分」）— **已实施 Phase 1 + Phase 2 + Phase 3 + Phase 3b + Phase 4 + Phase 5**（2026-04-30）。Phase 5：节点头部 capability 自动着色 + CSS 变量化 + AI prompt PinKind + watch channel 替代 Notify + PureMemo trace 清理。Phase 6 EventBus（RFC-0002）已完成修订（否决 broadcast，改为 try_send 修复）。ADR-0015 / ADR-0016 仍待实施。
 - ADR-0013（子图与宏系统）— **已实施 子图核心**（2026-04-28，merge 68ab709 时丢失的 ADR-0013 改动恢复完成）。前端 `subgraph` 容器 + `subgraphInput` / `subgraphOutput` 桥接 + 设置面板 + AI 编排器扩展全部就位；`web/src/lib/flowgram.ts` 的 `flattenSubgraphs` 完整实现（递归展平 + 参数替换 `{{name}}` + 8 层深度上限 + 循环引用检测）；Rust `crates/nodes-flow/src/passthrough.rs` 已注册（`mod passthrough` + `subgraphInput` / `subgraphOutput` 通过 `NodeCapabilities::empty()` 在 `FlowPlugin::register` 内注册）；`tests/workflow.rs` `passthrough_nodes_forward_payload` 集成测试通过；`vitest.config.ts` 新增 `setupFiles: ['./vitest.setup.ts']` polyfill `navigator` 让 FlowGram SDK 在 node 环境正常 import；顺手修了 pre-existing 的 `flowgram-shortcuts.test.ts` 失败。loop 升级为容器（origin commit `e35cb43`）的工作未带回，留作后续 polish。
-- ADR-0015 / ADR-0016 / ADR-0020 — **proposed**, awaiting review. See `docs/adr/README.md` for the index.
+- ADR-0015（反应式数据引脚）— **Phase 1 已实施**（2026-04-30，PinKind::Reactive + Runner 三分支 dispatch + 集成测试 + ts-rs 导出）。Phase 2（变量 Reactive + IPC）/ Phase 3（前端 UI）待实施。设计 spec：`docs/superpowers/specs/2026-04-30-adr-0015-reactive-data-pin-design.md`。
+- ADR-0016 / ADR-0020 — **proposed**, awaiting review. See `docs/adr/README.md` for the index.
 
 **Immediate known tech debt:**
 - **Architecture review 派生 P1**（2026-04-29）：变量控制事件从 `ExecutionEvent` 拆出；`src/graph/` 触发 ADR-0020 重评；runtime / dead-letter / scoped event 等 IPC 类型迁入 `tauri-bindings`；Rhai `max_operations` 增加统一 clamp；前端大文件拆分。详见 `docs/superpowers/specs/2026-04-29-architecture-review-findings.md`。
@@ -460,7 +461,8 @@ Located in `docs/superpowers/plans/` and `docs/superpowers/specs/`. These are **
 > 6. ✅ **ADR-0013** 子图与宏（依赖 0010）— 子图核心已实施；loop 容器恢复已并入当前 `main`
 > 7. ✅ **Phase 6 (RFC-0002)** EventBus + EdgeBackpressure + ConcurrencyPolicy — **已完成修订**（2026-04-16）。EventBus broadcast 否决，ConcurrencyPolicy/EdgeBackpressure 推迟；实际修复：`emit_event` 改 `try_send` + 错误日志。详见 RFC-0002 Phase 6 段。
 > 8. ✅ **ADR-0014** Pin 求值语义二分 — **Phase 1 + Phase 2 + Phase 3 + Phase 3b + Phase 4 + Phase 5 已实施**（2026-04-30）。Phase 5：capability 着色 + PinKind prompt + watch channel + PureMemo trace 清理。Phase 6 EventBus / ADR-0015 / ADR-0016 仍待实施。
-> 9. **ADR-0015 / ADR-0016** 反应式数据引脚 + 边级可观测性 — polish 阶段
+> 9. ✅ **ADR-0015** 反应式数据引脚 — **Phase 1 已实施**（2026-04-30，PinKind::Reactive + Runner dispatch + 测试 + ts-rs）。Phase 2/3 待实施。
+> **ADR-0016** 边级可观测性 — 待实施
 > 10. 真实协议驱动扩展（OPC-UA、Kafka 消费者等）
 > 11. AI 能力扩展（embeddings、vision，未来 ADR）
 
