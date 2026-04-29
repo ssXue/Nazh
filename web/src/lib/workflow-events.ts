@@ -203,3 +203,34 @@ export function reduceRuntimeState(
       return nextState;
   }
 }
+
+/** Reactive 引脚值变更事件（ADR-0015 Phase 2，独立事件 channel workflow://reactive-update/*）。 */
+export interface ReactiveUpdateEvent {
+  workflowId: string;
+  nodeId: string;
+  pinId: string;
+  value: unknown;
+  updatedAt: string;
+}
+
+/** 从 Tauri 事件 payload 解析 ReactiveUpdate。 */
+export function parseReactiveUpdate(payload: unknown): ReactiveUpdateEvent | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const p = payload as Record<string, unknown>;
+  if (
+    typeof p.workflowId === 'string' &&
+    typeof p.nodeId === 'string' &&
+    typeof p.pinId === 'string' &&
+    'value' in p &&
+    typeof p.updatedAt === 'string'
+  ) {
+    return {
+      workflowId: p.workflowId,
+      nodeId: p.nodeId,
+      pinId: p.pinId,
+      value: p.value,
+      updatedAt: p.updatedAt,
+    };
+  }
+  return null;
+}
