@@ -33,9 +33,7 @@ pub(crate) async fn subscribe_reactive_pin(
         .subscribe(&pin_id)
         .ok_or_else(|| format!("引脚 `{pin_id}` 无缓存槽位"))?;
 
-    let event_channel = format!(
-        "workflow://reactive-update/{workflow_id}/{node_id}/{pin_id}"
-    );
+    let event_channel = format!("workflow://reactive-update/{workflow_id}/{node_id}/{pin_id}");
 
     tokio::spawn(async move {
         let mut rx = rx;
