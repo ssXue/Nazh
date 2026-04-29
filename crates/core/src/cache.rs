@@ -51,10 +51,8 @@ impl OutputCache {
     pub fn prepare_slot(&self, pin_id: &str) {
         if !self.slots.contains_key(pin_id) {
             let (tx, rx) = watch::channel(None);
-            self.slots.insert(
-                pin_id.to_owned(),
-                Arc::new(Slot { tx, rx }),
-            );
+            self.slots
+                .insert(pin_id.to_owned(), Arc::new(Slot { tx, rx }));
         }
     }
 

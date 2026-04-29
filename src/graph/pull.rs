@@ -14,10 +14,11 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::time::Duration;
 
+use chrono::Utc;
 use dashmap::DashMap;
 use nazh_core::{
-    EngineError, EmptyPolicy, NodeTrait, OutputCache, Uuid,
-    guard::guarded_execute, is_pure_form, DEFAULT_BLOCK_TIMEOUT_MS,
+    DEFAULT_BLOCK_TIMEOUT_MS, EmptyPolicy, EngineError, NodeTrait, OutputCache, Uuid,
+    guard::guarded_execute, is_pure_form,
 };
 use serde_json::{Map, Value};
 use tracing::Instrument;
@@ -56,8 +57,8 @@ impl EdgesByConsumer {
 /// Key = `(node_id, trace_id, input_hash)`；Value = transform 产出的 payload。
 /// fan-out 场景下同一 pure 节点被多个下游重复拉取时，第二次起直接命中缓存。
 ///
-/// Phase 4 不做主动清理——每 trace 条目数有界（= pure 节点数 × 唯一 `input_hash` 数），
-/// 且 key 含 `trace_id` 不会冲突。Phase 5 可加 trace 完成后清理。
+/// Trace 完成后由 Runner 调用 [`clear_trace`](Self::clear_trace) 清理对应条目，
+/// 防止内存随 trace 数无限增长。
 #[derive(Debug, Default)]
 pub(crate) struct PureMemo {
     inner: Arc<DashMap<(String, Uuid, u64), Value>>,
@@ -77,6 +78,14 @@ impl PureMemo {
     pub fn insert(&self, node_id: &str, trace_id: Uuid, input_hash: u64, payload: Value) {
         self.inner
             .insert((node_id.to_owned(), trace_id, input_hash), payload);
+    }
+
+    /// 清理指定 trace 的所有 memo 条目。
+    /// 由 Runner 在 Exec 节点完成一个 trace 后调用。
+    /// 幂等——不存在的 key 被 `DashMap` 静默跳过。
+    #[allow(dead_code)]
+    pub fn clear_trace(&self, trace_id: Uuid) {
+        self.inner.retain(|key, _| key.1 != trace_id);
     }
 }
 
@@ -131,19 +140,16 @@ pub(crate) async fn pull_data_inputs(
 
     // 构建 consumer 输入引脚 id → PinDefinition 查找表，用于读取 empty_policy / ttl
     let consumer_pins = consumer_node.input_pins();
-    let consumer_pin_map: HashMap<&str, _> = consumer_pins
-        .iter()
-        .map(|p| (p.id.as_str(), p))
-        .collect();
+    let consumer_pin_map: HashMap<&str, _> =
+        consumer_pins.iter().map(|p| (p.id.as_str(), p)).collect();
 
     let mut data_values: Map<String, Value> = Map::new();
     for entry in entries {
-        let (empty_policy, block_timeout_ms, ttl_ms) = match consumer_pin_map
-            .get(entry.consumer_input_pin_id.as_str())
-        {
-            Some(pin) => (pin.empty_policy.clone(), pin.block_timeout_ms, pin.ttl_ms),
-            None => (EmptyPolicy::default(), None, None),
-        };
+        let (empty_policy, block_timeout_ms, ttl_ms) =
+            match consumer_pin_map.get(entry.consumer_input_pin_id.as_str()) {
+                Some(pin) => (pin.empty_policy.clone(), pin.block_timeout_ms, pin.ttl_ms),
+                None => (EmptyPolicy::default(), None, None),
+            };
 
         let upstream_value = pull_one(
             &entry.upstream_node_id,
@@ -186,7 +192,11 @@ pub fn merge_payload(exec_payload: Value, data_values: Map<String, Value>) -> Va
 /// Phase 4 扩展：
 /// - 纯函数上游：先查 [`PureMemo`]，命中直接返回；未命中则递归求值 + 存 memo
 /// - Exec 上游：读 [`OutputCache`]，空/过期时按 [`EmptyPolicy`] 分支
-#[allow(clippy::too_many_arguments, clippy::too_many_lines, clippy::ignored_unit_patterns)]
+#[allow(
+    clippy::too_many_arguments,
+    clippy::too_many_lines,
+    clippy::ignored_unit_patterns
+)]
 fn pull_one<'a>(
     upstream_node_id: &'a str,
     upstream_output_pin_id: &'a str,
@@ -252,12 +262,7 @@ fn pull_one<'a>(
 
             // 存 memo
             if let Some(first_output) = result.outputs.first() {
-                pure_memo.insert(
-                    upstream_node_id,
-                    trace_id,
-                    ih,
-                    first_output.payload.clone(),
-                );
+                pure_memo.insert(upstream_node_id, trace_id, ih, first_output.payload.clone());
             }
 
             // 找匹配 upstream_output_pin_id 的输出 payload
@@ -291,28 +296,58 @@ fn pull_one<'a>(
             // 缓存空 / 过期 → 按 empty_policy 兜底
             match empty_policy {
                 EmptyPolicy::BlockUntilReady => {
-                    let notify = cache.notify_handle(upstream_output_pin_id).ok_or(
+                    let mut rx = cache.subscribe(upstream_output_pin_id).ok_or(
                         EngineError::DataPinCacheEmpty {
                             upstream: upstream_node_id.to_owned(),
                             pin: upstream_output_pin_id.to_owned(),
                         },
                     )?;
                     let timeout_ms = block_timeout_ms.unwrap_or(DEFAULT_BLOCK_TIMEOUT_MS);
-                    // select! 并发注册 waiter 和超时。
-                    // 存在极小竞态窗口（write 发生在首次 read 和 notified 注册之间），
-                    // timeout 分支做最后一次 cache read 兜底。Phase 5 可换 watch channel 根除。
+                    // watch: 先检查当前值
+                    if let Some(cached) = rx.borrow().clone() {
+                        let age = Utc::now()
+                            .signed_duration_since(cached.produced_at)
+                            .num_milliseconds();
+                        if ttl_ms.is_none_or(|ttl| age.unsigned_abs() <= ttl) {
+                            return Ok(cached.value);
+                        }
+                    }
+                    // 等变更
                     let result = tokio::select! {
-                        _ = notify.notified() => {
-                            cache
-                                .read(upstream_output_pin_id, ttl_ms)
-                                .map(|c| c.value)
-                                .ok_or_else(|| EngineError::DataPinCacheEmpty {
+                        res = rx.changed() => {
+                            match res {
+                                Ok(()) => {
+                                    let snapshot = rx.borrow().clone();
+                                    match snapshot {
+                                        Some(cached) => {
+                                            if let Some(ttl) = ttl_ms {
+                                                let age = Utc::now()
+                                                    .signed_duration_since(cached.produced_at)
+                                                    .num_milliseconds();
+                                                if age.unsigned_abs() > ttl {
+                                                    return Err(EngineError::DataPinPullTimeout {
+                                                        upstream: upstream_node_id.to_owned(),
+                                                        pin: upstream_output_pin_id.to_owned(),
+                                                        timeout_ms,
+                                                    });
+                                                }
+                                            }
+                                            Ok(cached.value)
+                                        }
+                                        None => Err(EngineError::DataPinCacheEmpty {
+                                            upstream: upstream_node_id.to_owned(),
+                                            pin: upstream_output_pin_id.to_owned(),
+                                        }),
+                                    }
+                                }
+                                Err(_) => Err(EngineError::DataPinCacheEmpty {
                                     upstream: upstream_node_id.to_owned(),
                                     pin: upstream_output_pin_id.to_owned(),
-                                })
+                                }),
+                            }
                         }
                         _ = tokio::time::sleep(Duration::from_millis(timeout_ms)) => {
-                            // 超时前最后读一次——可能 write 已发生但通知丢失
+                            // 超时前最后读一次
                             cache
                                 .read(upstream_output_pin_id, ttl_ms)
                                 .map(|c| c.value)
@@ -431,11 +466,23 @@ mod tests {
 
     #[async_trait::async_trait]
     impl NodeTrait for StubExecNode {
-        fn id(&self) -> &str { &self.id }
-        fn kind(&self) -> &'static str { "stubExec" }
-        fn input_pins(&self) -> Vec<PinDefinition> { self.input_pins.clone() }
-        fn output_pins(&self) -> Vec<PinDefinition> { vec![PinDefinition::default_output()] }
-        async fn transform(&self, _trace_id: Uuid, payload: Value) -> Result<NodeExecution, EngineError> {
+        fn id(&self) -> &str {
+            &self.id
+        }
+        fn kind(&self) -> &'static str {
+            "stubExec"
+        }
+        fn input_pins(&self) -> Vec<PinDefinition> {
+            self.input_pins.clone()
+        }
+        fn output_pins(&self) -> Vec<PinDefinition> {
+            vec![PinDefinition::default_output()]
+        }
+        async fn transform(
+            &self,
+            _trace_id: Uuid,
+            payload: Value,
+        ) -> Result<NodeExecution, EngineError> {
             Ok(NodeExecution::broadcast(payload))
         }
     }
@@ -455,7 +502,8 @@ mod tests {
         let upstream_cache = Arc::new(OutputCache::new());
         upstream_cache.prepare_slot("latest");
 
-        let consumer = Arc::new(StubExecNode::with_data_input(empty_policy, ttl_ms)) as Arc<dyn NodeTrait>;
+        let consumer =
+            Arc::new(StubExecNode::with_data_input(empty_policy, ttl_ms)) as Arc<dyn NodeTrait>;
 
         let mut nodes = HashMap::new();
         nodes.insert("upstream".to_owned(), consumer.clone());
@@ -625,8 +673,12 @@ mod tests {
 
     #[async_trait::async_trait]
     impl NodeTrait for CountingPureNode {
-        fn id(&self) -> &str { &self.id }
-        fn kind(&self) -> &'static str { "countingPure" }
+        fn id(&self) -> &str {
+            &self.id
+        }
+        fn kind(&self) -> &'static str {
+            "countingPure"
+        }
         fn input_pins(&self) -> Vec<PinDefinition> {
             vec![PinDefinition {
                 id: "in".to_owned(),
@@ -655,8 +707,13 @@ mod tests {
                 ttl_ms: None,
             }]
         }
-        async fn transform(&self, _trace_id: Uuid, _payload: Value) -> Result<NodeExecution, EngineError> {
-            self.call_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        async fn transform(
+            &self,
+            _trace_id: Uuid,
+            _payload: Value,
+        ) -> Result<NodeExecution, EngineError> {
+            self.call_count
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             Ok(NodeExecution::broadcast(json!({"out": 42})))
         }
     }
@@ -729,7 +786,11 @@ mod tests {
 
         assert_eq!(result["a"], json!(42));
         assert_eq!(result["b"], json!(42));
-        assert_eq!(pure_node.call_count(), 1, "fan-out 下 pure 节点应只 transform 一次");
+        assert_eq!(
+            pure_node.call_count(),
+            1,
+            "fan-out 下 pure 节点应只 transform 一次"
+        );
     }
 
     #[test]
@@ -746,5 +807,24 @@ mod tests {
         // 不同 trace 不命中
         let other_trace = Uuid::new_v4();
         assert!(memo.get("node", other_trace, 123).is_none());
+    }
+
+    #[test]
+    fn clear_trace_只清目标_trace() {
+        let memo = PureMemo::new();
+        let t1 = Uuid::new_v4();
+        let t2 = Uuid::new_v4();
+
+        memo.insert("node", t1, 1, json!(1));
+        memo.insert("node", t2, 2, json!(2));
+        memo.insert("other", t1, 3, json!(3));
+
+        memo.clear_trace(t1);
+
+        // t1 的条目被清
+        assert!(memo.get("node", t1, 1).is_none());
+        assert!(memo.get("other", t1, 3).is_none());
+        // t2 的条目保留
+        assert_eq!(memo.get("node", t2, 2).unwrap(), json!(2));
     }
 }

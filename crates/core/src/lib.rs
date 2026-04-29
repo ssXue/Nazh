@@ -39,7 +39,9 @@ pub use node::{
     NodeCapabilities, NodeDispatch, NodeExecution, NodeOutput, NodeTrait, into_payload_map,
     is_pure_form,
 };
-pub use pin::{EmptyPolicy, PinDefinition, PinDirection, PinKind, PinType, DEFAULT_BLOCK_TIMEOUT_MS};
+pub use pin::{
+    DEFAULT_BLOCK_TIMEOUT_MS, EmptyPolicy, PinDefinition, PinDirection, PinKind, PinType,
+};
 pub use plugin::{
     NodeRegistry, Plugin, PluginHost, PluginManifest, RuntimeResources, SharedResources,
     WorkflowNodeDefinition,

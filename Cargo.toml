@@ -82,6 +82,7 @@ path = "examples/phase1_demo.rs"
 
 [dependencies]
 nazh-core.workspace = true
+chrono.workspace = true
 dashmap.workspace = true
 ai.workspace = true
 pipeline.workspace = true
