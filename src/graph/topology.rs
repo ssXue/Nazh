@@ -257,7 +257,9 @@ mod tests {
     use super::*;
     use crate::graph::types::WorkflowEdge;
     use async_trait::async_trait;
-    use nazh_core::{NodeExecution, NodeTrait, PinDefinition, PinDirection, PinKind, PinType};
+    use nazh_core::{
+        EmptyPolicy, NodeExecution, NodeTrait, PinDefinition, PinDirection, PinKind, PinType,
+    };
     use serde_json::Value;
     use std::sync::Arc;
     use uuid::Uuid;
@@ -301,6 +303,9 @@ mod tests {
             required: false,
             kind,
             description: None,
+            empty_policy: EmptyPolicy::default(),
+            block_timeout_ms: None,
+            ttl_ms: None,
         }
     }
 

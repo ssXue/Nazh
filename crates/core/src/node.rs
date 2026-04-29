@@ -405,7 +405,7 @@ mod tests {
 
     mod is_pure_form_tests {
         use super::*;
-        use crate::{PinDefinition, PinDirection, PinKind, PinType};
+        use crate::{EmptyPolicy, PinDefinition, PinDirection, PinKind, PinType};
         use async_trait::async_trait;
         use serde_json::Value;
 
@@ -446,6 +446,9 @@ mod tests {
                 required: false,
                 kind: PinKind::Data,
                 description: None,
+                empty_policy: EmptyPolicy::default(),
+                block_timeout_ms: None,
+                ttl_ms: None,
             }
         }
 
@@ -458,6 +461,9 @@ mod tests {
                 required: matches!(dir, PinDirection::Input),
                 kind: PinKind::Exec,
                 description: None,
+                empty_policy: EmptyPolicy::default(),
+                block_timeout_ms: None,
+                ttl_ms: None,
             }
         }
 

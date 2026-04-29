@@ -7,7 +7,8 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use nazh_core::{
-    EngineError, NodeExecution, NodeTrait, PinDefinition, PinDirection, PinKind, PinType,
+    EmptyPolicy, EngineError, NodeExecution, NodeTrait, PinDefinition, PinDirection, PinKind,
+    PinType,
 };
 use serde_json::Value;
 use uuid::Uuid;
@@ -30,6 +31,9 @@ impl MinutesSinceNode {
             required: true,
             kind: PinKind::Data,
             description: Some("RFC3339 格式时间戳（如 `2026-04-28T08:00:00Z`）".to_owned()),
+            empty_policy: EmptyPolicy::default(),
+            block_timeout_ms: None,
+            ttl_ms: None,
         }
     }
 
@@ -42,6 +46,9 @@ impl MinutesSinceNode {
             required: false,
             kind: PinKind::Data,
             description: Some("`Utc::now() - since` 的分钟数（向下取整）".to_owned()),
+            empty_policy: EmptyPolicy::default(),
+            block_timeout_ms: None,
+            ttl_ms: None,
         }
     }
 }

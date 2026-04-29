@@ -1,0 +1,41 @@
+// ADR-0014 Phase 4：EmptyPolicy 序列化与 PinDefinition 解析行为矩阵，Rust + Vitest 共享。
+//
+// 4 case 覆盖：
+//   - block_until_ready  → 默认策略，序列化为 {"kind":"block_until_ready"}
+//   - default_value      → 携带值，序列化为 {"kind":"default_value","value":<v>}
+//   - skip               → 返回 null，序列化为 {"kind":"skip"}
+//   - with_ttl           → TTL 字段与 empty_policy 组合
+//
+// 任一方与本 fixture 漂移 → CI 红。
+[
+  {
+    "name": "block_until_ready_default",
+    "policy": {"kind": "block_until_ready"},
+    "expected_serialized": {"kind": "block_until_ready"},
+    "is_default": true
+  },
+  {
+    "name": "default_value_number",
+    "policy": {"kind": "default_value", "value": 0},
+    "expected_serialized": {"kind": "default_value", "value": 0},
+    "is_default": false
+  },
+  {
+    "name": "default_value_string",
+    "policy": {"kind": "default_value", "value": "N/A"},
+    "expected_serialized": {"kind": "default_value", "value": "N/A"},
+    "is_default": false
+  },
+  {
+    "name": "default_value_object",
+    "policy": {"kind": "default_value", "value": {"temperature": -999}},
+    "expected_serialized": {"kind": "default_value", "value": {"temperature": -999}},
+    "is_default": false
+  },
+  {
+    "name": "skip",
+    "policy": {"kind": "skip"},
+    "expected_serialized": {"kind": "skip"},
+    "is_default": false
+  }
+]

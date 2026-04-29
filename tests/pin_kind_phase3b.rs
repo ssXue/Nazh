@@ -19,8 +19,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use nazh_core::{
-    EngineError, NodeCapabilities, NodeExecution, NodeTrait, PinDefinition, PinDirection, PinKind,
-    PinType,
+    EmptyPolicy, EngineError, NodeCapabilities, NodeExecution, NodeTrait, PinDefinition,
+    PinDirection, PinKind, PinType,
 };
 use nazh_engine::{
     WorkflowContext, WorkflowGraph, deploy_workflow, shared_connection_manager, standard_registry,
@@ -59,6 +59,9 @@ impl NodeTrait for KeyEmitterNode {
                 required: false,
                 kind: PinKind::Data,
                 description: Some("测试用：写入 Data 缓存的常量 key".to_owned()),
+                empty_policy: EmptyPolicy::default(),
+                block_timeout_ms: None,
+                ttl_ms: None,
             },
         ]
     }
@@ -93,6 +96,9 @@ impl NodeTrait for MixedFormatterNode {
                 required: false,
                 kind: PinKind::Data,
                 description: None,
+                empty_policy: EmptyPolicy::default(),
+                block_timeout_ms: None,
+                ttl_ms: None,
             },
         ]
     }

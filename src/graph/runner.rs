@@ -20,7 +20,7 @@ use nazh_core::{
     guard::guarded_execute,
 };
 
-use super::pull::EdgesByConsumer;
+use super::pull::{EdgesByConsumer, PureMemo};
 use super::types::DownstreamTarget;
 
 /// 单节点的异步执行循环：接收 [`ContextRef`] → 读取数据 → 执行 → 写入输出 → 分发。
@@ -40,6 +40,8 @@ pub(crate) async fn run_node(
     nodes_index: Arc<HashMap<String, Arc<dyn NodeTrait>>>,
     output_caches_index: Arc<HashMap<String, Arc<OutputCache>>>,
     node_timeouts_index: Arc<HashMap<String, Option<Duration>>>,
+    // ADR-0014 Phase 4：Pure memo
+    pure_memo: Arc<PureMemo>,
 ) {
     let node_id = node.id().to_owned();
 
@@ -70,11 +72,13 @@ pub(crate) async fn run_node(
         // edges_by_consumer.for_consumer 返回空，merge_payload 直接返回原 payload。
         let payload = match super::pull::pull_data_inputs(
             &node_id,
+            node.as_ref(),
             payload,
             &edges_by_consumer,
             &nodes_index,
             &output_caches_index,
             &node_timeouts_index,
+            &pure_memo,
             trace_id,
         )
         .await

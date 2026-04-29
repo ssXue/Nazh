@@ -6,8 +6,8 @@
 
 use async_trait::async_trait;
 use nazh_core::{
-    EngineError, NodeExecution, NodeTrait, PinDefinition, PinDirection, PinKind, PinType,
-    is_pure_form,
+    EmptyPolicy, EngineError, NodeExecution, NodeTrait, PinDefinition, PinDirection, PinKind,
+    PinType, is_pure_form,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -65,6 +65,9 @@ fn pin(kind_str: &str, dir: PinDirection) -> PinDefinition {
         required: matches!(dir, PinDirection::Input) && matches!(kind, PinKind::Exec),
         kind,
         description: None,
+        empty_policy: EmptyPolicy::default(),
+        block_timeout_ms: None,
+        ttl_ms: None,
     }
 }
 

@@ -8,7 +8,8 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use nazh_core::{
-    EngineError, NodeExecution, NodeTrait, PinDefinition, PinDirection, PinKind, PinType,
+    EmptyPolicy, EngineError, NodeExecution, NodeTrait, PinDefinition, PinDirection, PinKind,
+    PinType,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -43,6 +44,9 @@ impl LookupNode {
             required: true,
             kind: PinKind::Data,
             description: Some("标量值（Bool/Integer/Float/String）".to_owned()),
+            empty_policy: EmptyPolicy::default(),
+            block_timeout_ms: None,
+            ttl_ms: None,
         }
     }
 
@@ -55,6 +59,9 @@ impl LookupNode {
             required: false,
             kind: PinKind::Data,
             description: Some("命中的 value，或 default（若配置）".to_owned()),
+            empty_policy: EmptyPolicy::default(),
+            block_timeout_ms: None,
+            ttl_ms: None,
         }
     }
 

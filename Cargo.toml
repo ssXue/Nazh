@@ -82,6 +82,7 @@ path = "examples/phase1_demo.rs"
 
 [dependencies]
 nazh-core.workspace = true
+dashmap.workspace = true
 ai.workspace = true
 pipeline.workspace = true
 connections.workspace = true
@@ -124,6 +125,7 @@ io-notify = ["nodes-io/io-notify"]
 
 [dev-dependencies]
 async-trait.workspace = true
+chrono.workspace = true
 rusqlite.workspace = true
 uuid.workspace = true
 

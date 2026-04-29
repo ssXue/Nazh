@@ -175,7 +175,8 @@ mod tests {
 
     use async_trait::async_trait;
     use nazh_core::{
-        EngineError, NodeExecution, NodeTrait, PinDefinition, PinDirection, PinKind, PinType,
+        EmptyPolicy, EngineError, NodeExecution, NodeTrait, PinDefinition, PinDirection, PinKind,
+        PinType,
     };
     use serde_json::Value;
     use uuid::Uuid;
@@ -219,6 +220,9 @@ mod tests {
             required,
             kind: PinKind::Exec,
             description: None,
+            empty_policy: EmptyPolicy::default(),
+            block_timeout_ms: None,
+            ttl_ms: None,
         }
     }
 
@@ -237,6 +241,9 @@ mod tests {
             required,
             kind,
             description: None,
+            empty_policy: EmptyPolicy::default(),
+            block_timeout_ms: None,
+            ttl_ms: None,
         }
     }
 

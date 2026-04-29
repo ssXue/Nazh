@@ -13,8 +13,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use nazh_core::{
-    EngineError, NodeCapabilities, NodeExecution, NodeTrait, PinDefinition, PinDirection, PinKind,
-    PinType,
+    EmptyPolicy, EngineError, NodeCapabilities, NodeExecution, NodeTrait, PinDefinition,
+    PinDirection, PinKind, PinType,
 };
 use nazh_engine::{
     WorkflowContext, WorkflowGraph, deploy_workflow, shared_connection_manager, standard_registry,
@@ -90,6 +90,9 @@ impl NodeTrait for AssertingSinkNode {
                 required: false,
                 kind: PinKind::Data,
                 description: None,
+                empty_policy: EmptyPolicy::default(),
+                block_timeout_ms: None,
+                ttl_ms: None,
             },
         ]
     }
@@ -130,6 +133,9 @@ impl NodeTrait for JsonDataSinkNode {
                 required: false,
                 kind: PinKind::Data,
                 description: None,
+                empty_policy: EmptyPolicy::default(),
+                block_timeout_ms: None,
+                ttl_ms: None,
             },
         ]
     }
@@ -167,6 +173,9 @@ impl NodeTrait for PanickingPureNode {
             required: true,
             kind: PinKind::Data,
             description: None,
+            empty_policy: EmptyPolicy::default(),
+            block_timeout_ms: None,
+            ttl_ms: None,
         }]
     }
     fn output_pins(&self) -> Vec<PinDefinition> {
@@ -178,6 +187,9 @@ impl NodeTrait for PanickingPureNode {
             required: false,
             kind: PinKind::Data,
             description: None,
+            empty_policy: EmptyPolicy::default(),
+            block_timeout_ms: None,
+            ttl_ms: None,
         }]
     }
     async fn transform(

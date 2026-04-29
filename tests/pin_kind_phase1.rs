@@ -13,9 +13,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use nazh_core::PinKind;
 use nazh_engine::{
-    CompletedExecutionEvent, EngineError, ExecutionEvent, NodeCapabilities, NodeExecution,
-    NodeRegistry, NodeTrait, PinDefinition, PinDirection, PinType, WorkflowContext, WorkflowGraph,
-    deploy_workflow, shared_connection_manager,
+    CompletedExecutionEvent, EmptyPolicy, EngineError, ExecutionEvent, NodeCapabilities,
+    NodeExecution, NodeRegistry, NodeTrait, PinDefinition, PinDirection, PinType, WorkflowContext,
+    WorkflowGraph, deploy_workflow, shared_connection_manager,
 };
 use serde_json::{Value, json};
 use uuid::Uuid;
@@ -47,6 +47,9 @@ impl NodeTrait for DualOutputStub {
                 required: false,
                 kind: PinKind::Data,
                 description: None,
+                empty_policy: EmptyPolicy::default(),
+                block_timeout_ms: None,
+                ttl_ms: None,
             },
         ]
     }

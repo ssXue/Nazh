@@ -13,8 +13,8 @@ use uuid::Uuid;
 use std::sync::Arc;
 
 use nazh_core::{
-    EngineError, NodeDispatch, NodeExecution, NodeOutput, NodeTrait, PinDefinition, PinDirection,
-    PinKind, PinType, WorkflowVariables, into_payload_map,
+    EmptyPolicy, EngineError, NodeDispatch, NodeExecution, NodeOutput, NodeTrait, PinDefinition,
+    PinDirection, PinKind, PinType, WorkflowVariables, into_payload_map,
 };
 use scripting::{ScriptNodeBase, default_max_operations};
 
@@ -151,6 +151,9 @@ impl NodeTrait for LoopNode {
                 description: Some(
                     "迭代每一项时触发，payload._loop 携带 phase/index/count/item".to_owned(),
                 ),
+                empty_policy: EmptyPolicy::default(),
+                block_timeout_ms: None,
+                ttl_ms: None,
             },
             PinDefinition {
                 id: "done".to_owned(),
@@ -160,6 +163,9 @@ impl NodeTrait for LoopNode {
                 required: false,
                 kind: PinKind::Exec,
                 description: Some("迭代结束信号，payload._loop.phase = \"done\"".to_owned()),
+                empty_policy: EmptyPolicy::default(),
+                block_timeout_ms: None,
+                ttl_ms: None,
             },
         ]
     }

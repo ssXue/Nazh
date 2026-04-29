@@ -174,6 +174,25 @@ impl PinType {
     }
 }
 
+/// Data 输入引脚在缓存槽空 / 过期时的兜底策略（ADR-0014 Phase 4）。
+///
+/// 仅对 `kind: PinKind::Data` 输入引脚有意义。默认 `BlockUntilReady`。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum EmptyPolicy {
+    /// 阻塞等待上游写值。超时由 `block_timeout_ms` 控制。
+    #[default]
+    BlockUntilReady,
+    /// 立即返回声明的默认值。
+    DefaultValue(serde_json::Value),
+    /// 立即返回 `Value::Null`，节点作者显式处理。
+    Skip,
+}
+
+/// `BlockUntilReady` 默认超时（毫秒）。Phase 4 决策：5 秒。
+pub const DEFAULT_BLOCK_TIMEOUT_MS: u64 = 5_000;
+
 /// 节点引脚声明。
 ///
 /// `id` 是该节点上的稳定标识（部署后不可变）；运行时 [`NodeDispatch::Route`]
@@ -200,6 +219,19 @@ pub struct PinDefinition {
     #[serde(default)]
     #[cfg_attr(feature = "ts-export", ts(optional))]
     pub description: Option<String>,
+    /// Data 输入引脚在缓存槽空 / 过期时的兜底策略（ADR-0014 Phase 4）。
+    /// Exec 引脚此字段被忽略。
+    #[serde(default)]
+    pub empty_policy: EmptyPolicy,
+    /// [`EmptyPolicy::BlockUntilReady`] 模式下的等待超时毫秒数。
+    /// `None` 取 [`DEFAULT_BLOCK_TIMEOUT_MS`]。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub block_timeout_ms: Option<u64>,
+    /// 缓存值 TTL 毫秒；`None` 永久。`Some(n)` 时 `produced_at + n` 后视为过期。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub ttl_ms: Option<u64>,
 }
 
 impl PinDefinition {
@@ -223,6 +255,9 @@ impl PinDefinition {
             required: true,
             kind: PinKind::Exec,
             description: None,
+            empty_policy: EmptyPolicy::default(),
+            block_timeout_ms: None,
+            ttl_ms: None,
         }
     }
 
@@ -240,6 +275,9 @@ impl PinDefinition {
             required: false,
             kind: PinKind::Exec,
             description: None,
+            empty_policy: EmptyPolicy::default(),
+            block_timeout_ms: None,
+            ttl_ms: None,
         }
     }
 
@@ -257,6 +295,9 @@ impl PinDefinition {
             required: true,
             kind: PinKind::Exec,
             description: Some(description.into()),
+            empty_policy: EmptyPolicy::default(),
+            block_timeout_ms: None,
+            ttl_ms: None,
         }
     }
 
@@ -270,6 +311,9 @@ impl PinDefinition {
             required: false,
             kind: PinKind::Exec,
             description: Some(description.into()),
+            empty_policy: EmptyPolicy::default(),
+            block_timeout_ms: None,
+            ttl_ms: None,
         }
     }
 
@@ -292,6 +336,9 @@ impl PinDefinition {
             required: false,
             kind: PinKind::Data,
             description: Some(description.into()),
+            empty_policy: EmptyPolicy::default(),
+            block_timeout_ms: None,
+            ttl_ms: None,
         }
     }
 }
@@ -549,9 +596,41 @@ mod tests {
             required: false,
             kind: PinKind::Exec,
             description: Some("条件为真时路由到此".to_owned()),
+            empty_policy: EmptyPolicy::default(),
+            block_timeout_ms: None,
+            ttl_ms: None,
         };
         let json = serde_json::to_string(&original).unwrap();
         let restored: PinDefinition = serde_json::from_str(&json).unwrap();
         assert_eq!(original, restored);
+    }
+
+    // ---- EmptyPolicy（ADR-0014 Phase 4）----
+
+    #[test]
+    fn empty_policy_默认是_block_until_ready() {
+        assert_eq!(EmptyPolicy::default(), EmptyPolicy::BlockUntilReady);
+    }
+
+    #[test]
+    fn empty_policy_默认值序列化为_block_until_ready() {
+        let v = serde_json::to_value(EmptyPolicy::default()).unwrap();
+        assert_eq!(v, serde_json::json!({"kind": "block_until_ready"}));
+    }
+
+    #[test]
+    fn empty_policy_default_value_序列化携带_value() {
+        let p = EmptyPolicy::DefaultValue(serde_json::json!(42));
+        let v = serde_json::to_value(&p).unwrap();
+        assert_eq!(v, serde_json::json!({"kind": "default_value", "value": 42}));
+    }
+
+    #[test]
+    fn pin_definition_缺_empty_policy_反序列化为默认() {
+        let json = r#"{"id":"x","label":"x","pin_type":{"kind":"any"},"direction":"input","required":true,"kind":"data"}"#;
+        let pin: PinDefinition = serde_json::from_str(json).unwrap();
+        assert_eq!(pin.empty_policy, EmptyPolicy::BlockUntilReady);
+        assert!(pin.block_timeout_ms.is_none());
+        assert!(pin.ttl_ms.is_none());
     }
 }

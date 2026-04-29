@@ -252,6 +252,8 @@ pub async fn deploy_workflow_with_ai(
             .map(|(id, def)| (id.clone(), def.timeout_ms().map(Duration::from_millis)))
             .collect(),
     );
+    // ADR-0014 Phase 4：Pure memo 全局共享实例
+    let pure_memo: Arc<super::pull::PureMemo> = Arc::new(super::pull::PureMemo::new());
 
     for node_id in &topology.deployment_order {
         let Some(node) = nodes_index.get(node_id).cloned() else {
@@ -318,6 +320,8 @@ pub async fn deploy_workflow_with_ai(
             Arc::clone(&nodes_index),
             Arc::clone(&output_caches_index),
             Arc::clone(&node_timeouts_index),
+            // ADR-0014 Phase 4 Pure memo
+            Arc::clone(&pure_memo),
         ));
     }
 

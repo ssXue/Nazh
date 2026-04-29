@@ -165,6 +165,14 @@ pub enum EngineError {
     #[error("上游节点 `{upstream}` 的 Data 输出引脚 `{pin}` 缓存为空（尚未执行）")]
     DataPinCacheEmpty { upstream: String, pin: String },
 
+    /// ADR-0014 Phase 4：`BlockUntilReady` 等上游写槽位超时。
+    #[error("拉取上游 `{upstream}` 引脚 `{pin}` 超时（{timeout_ms} ms）——上游可能未执行")]
+    DataPinPullTimeout {
+        upstream: String,
+        pin: String,
+        timeout_ms: u64,
+    },
+
     /// ADR-0014 Phase 3b：Data 输入引脚使用了保留的 pin id。
     /// `"in"` 是混合输入节点 payload 合并约定中 Exec 主输入的固定键，
     /// Data 输入若也用 `"in"` 会覆盖 Exec payload，违反节点作者契约。
