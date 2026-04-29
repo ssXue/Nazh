@@ -9,12 +9,12 @@ use async_trait::async_trait;
 use nazh_engine::{
     AiCompletionRequest, AiCompletionResponse, AiError, AiMessageRole, AiService, CodeNode,
     CodeNodeConfig, ConnectionDefinition, ConnectionManager, DebugConsoleNode,
-    DebugConsoleNodeConfig, EngineError, HttpClientNode, HttpClientNodeConfig, ModbusReadNode,
-    ModbusReadNodeConfig, MqttClientNode, MqttClientNodeConfig, MqttMode, NodeCapabilities,
-    NodeDispatch, NodeExecution, NodeRegistry, NodeTrait, PinDefinition, PinType,
-    SerialTriggerNode, SerialTriggerNodeConfig, SqlWriterNode, SqlWriterNodeConfig, StreamChunk,
-    TimerNode, TimerNodeConfig, WorkflowContext, WorkflowGraph, deploy_workflow,
-    deploy_workflow_with_ai, shared_connection_manager, standard_registry,
+    DebugConsoleNodeConfig, EmptyPolicy, EngineError, HttpClientNode, HttpClientNodeConfig,
+    ModbusReadNode, ModbusReadNodeConfig, MqttClientNode, MqttClientNodeConfig, MqttMode,
+    NodeCapabilities, NodeDispatch, NodeExecution, NodeRegistry, NodeTrait, PinDefinition,
+    PinDirection, PinKind, PinType, SerialTriggerNode, SerialTriggerNodeConfig, SqlWriterNode,
+    SqlWriterNodeConfig, StreamChunk, TimerNode, TimerNodeConfig, WorkflowContext, WorkflowGraph,
+    deploy_workflow, deploy_workflow_with_ai, shared_connection_manager, standard_registry,
 };
 use serde_json::json;
 use tokio::time::timeout;
@@ -1872,4 +1872,248 @@ async fn passthrough_nodes_forward_payload() {
         Ok(None) => panic!("result stream 意外关闭"),
         Err(elapsed) => panic!("workflow 未在超时内产出结果: {elapsed}"),
     }
+}
+
+// ========== ADR-0015 Phase 1：Reactive 边集成测试 ==========
+
+/// 测试用 Reactive 节点：input/output pin 可指定 PinKind。
+struct ReactiveTestNode {
+    id: String,
+    input_pin: PinType,
+    input_kind: PinKind,
+    output_pin: PinType,
+    output_kind: PinKind,
+}
+
+#[async_trait]
+impl NodeTrait for ReactiveTestNode {
+    fn id(&self) -> &str {
+        &self.id
+    }
+    fn kind(&self) -> &'static str {
+        "reactiveTest"
+    }
+    fn input_pins(&self) -> Vec<PinDefinition> {
+        // Data / Reactive 输入 pin id 不得为 "in"（ReservedPinId 校验），
+        // 使用 "reactive_in" 避开保留 id。
+        if matches!(self.input_kind, PinKind::Data | PinKind::Reactive) {
+            vec![PinDefinition {
+                id: "reactive_in".to_owned(),
+                label: "reactive_in".to_owned(),
+                pin_type: self.input_pin.clone(),
+                direction: PinDirection::Input,
+                required: true,
+                kind: self.input_kind,
+                description: None,
+                empty_policy: EmptyPolicy::default(),
+                block_timeout_ms: None,
+                ttl_ms: None,
+            }]
+        } else {
+            vec![PinDefinition {
+                pin_type: self.input_pin.clone(),
+                ..PinDefinition::default_input()
+            }]
+        }
+    }
+    fn output_pins(&self) -> Vec<PinDefinition> {
+        vec![PinDefinition {
+            pin_type: self.output_pin.clone(),
+            kind: self.output_kind,
+            ..PinDefinition::default_output()
+        }]
+    }
+    async fn transform(
+        &self,
+        _trace_id: Uuid,
+        payload: serde_json::Value,
+    ) -> Result<NodeExecution, EngineError> {
+        Ok(NodeExecution::broadcast(payload))
+    }
+}
+
+#[tokio::test]
+async fn reactive_edge_pushes_downstream_on_write() {
+    let mut registry = NodeRegistry::new();
+
+    // Src: 默认 Exec pins
+    registry.register_with_capabilities("execSrc", NodeCapabilities::empty(), |def, _res| {
+        Ok(Arc::new(ReactiveTestNode {
+            id: def.id().to_owned(),
+            input_pin: PinType::Any,
+            input_kind: PinKind::Exec,
+            output_pin: PinType::Any,
+            output_kind: PinKind::Exec,
+        }) as Arc<dyn NodeTrait>)
+    });
+
+    // Producer: Exec input, Reactive output
+    registry.register_with_capabilities(
+        "reactiveProducer",
+        NodeCapabilities::empty(),
+        |def, _res| {
+            Ok(Arc::new(ReactiveTestNode {
+                id: def.id().to_owned(),
+                input_pin: PinType::Any,
+                input_kind: PinKind::Exec,
+                output_pin: PinType::Any,
+                output_kind: PinKind::Reactive,
+            }) as Arc<dyn NodeTrait>)
+        },
+    );
+
+    // Consumer: Reactive input, Exec output（叶节点）
+    registry.register_with_capabilities(
+        "reactiveConsumer",
+        NodeCapabilities::empty(),
+        |def, _res| {
+            Ok(Arc::new(ReactiveTestNode {
+                id: def.id().to_owned(),
+                input_pin: PinType::Any,
+                input_kind: PinKind::Reactive,
+                output_pin: PinType::Any,
+                output_kind: PinKind::Exec,
+            }) as Arc<dyn NodeTrait>)
+        },
+    );
+
+    let graph = match WorkflowGraph::from_json(
+        &json!({
+            "nodes": {
+                "src": { "type": "execSrc", "config": {} },
+                "producer": { "type": "reactiveProducer", "config": {} },
+                "consumer": { "type": "reactiveConsumer", "config": {} },
+            },
+            "edges": [
+                { "from": "src", "to": "producer" },
+                { "from": "producer", "to": "consumer", "target_port_id": "reactive_in" },
+            ],
+        })
+        .to_string(),
+    ) {
+        Ok(g) => g,
+        Err(error) => panic!("graph 应可解析: {error}"),
+    };
+
+    let mut deployment = match deploy_workflow(graph, shared_connection_manager(), &registry).await
+    {
+        Ok(d) => d,
+        Err(error) => panic!("Reactive DAG 应部署成功: {error}"),
+    };
+
+    // 提交数据 → src → producer → Reactive 推送 → consumer
+    deployment
+        .submit(WorkflowContext::new(json!({ "value": 42 })))
+        .await
+        .expect("submit 应成功");
+
+    // consumer 是叶节点，结果应通过 next_result 到达
+    let result = timeout(Duration::from_secs(2), deployment.next_result()).await;
+    match result {
+        Ok(Some(ctx)) => {
+            // consumer 被唤醒——Reactive 边推送了 ContextRef
+            assert_eq!(ctx.payload["value"], json!(42));
+        }
+        Ok(None) => panic!("consumer 应有输出（Reactive 边应推送 ContextRef）"),
+        Err(_) => panic!("超时：consumer 未被 Reactive 边唤醒（2s）"),
+    }
+}
+
+#[tokio::test]
+async fn deploy_拒绝_exec_输出连_reactive_输入() {
+    let mut registry = NodeRegistry::new();
+    registry.register_with_capabilities("execOnly", NodeCapabilities::empty(), |def, _res| {
+        Ok(Arc::new(ReactiveTestNode {
+            id: def.id().to_owned(),
+            input_pin: PinType::Any,
+            input_kind: PinKind::Exec,
+            output_pin: PinType::Any,
+            output_kind: PinKind::Exec,
+        }) as Arc<dyn NodeTrait>)
+    });
+    registry.register_with_capabilities("reactiveSink", NodeCapabilities::empty(), |def, _res| {
+        Ok(Arc::new(ReactiveTestNode {
+            id: def.id().to_owned(),
+            input_pin: PinType::Any,
+            input_kind: PinKind::Reactive,
+            output_pin: PinType::Any,
+            output_kind: PinKind::Exec,
+        }) as Arc<dyn NodeTrait>)
+    });
+
+    let graph = match WorkflowGraph::from_json(
+        &json!({
+            "nodes": {
+                "src": { "type": "execOnly", "config": {} },
+                "sink": { "type": "reactiveSink", "config": {} },
+            },
+            "edges": [{ "from": "src", "to": "sink", "target_port_id": "reactive_in" }],
+        })
+        .to_string(),
+    ) {
+        Ok(g) => g,
+        Err(error) => panic!("graph 应可解析: {error}"),
+    };
+
+    let result = deploy_workflow(graph, shared_connection_manager(), &registry).await;
+    match result {
+        Ok(_) => panic!("Exec→Reactive 边应被 pin_validator 拒绝"),
+        Err(EngineError::IncompatiblePinKinds {
+            from,
+            to,
+            from_kind,
+            to_kind,
+        }) => {
+            assert_eq!(from, "src.out");
+            assert_eq!(to, "sink.reactive_in");
+            assert_eq!(from_kind, PinKind::Exec);
+            assert_eq!(to_kind, PinKind::Reactive);
+        }
+        Err(e) => panic!("应报 IncompatiblePinKinds，实际: {e}"),
+    }
+}
+
+#[tokio::test]
+async fn reactive_输出连_data_输入_部署通过() {
+    let mut registry = NodeRegistry::new();
+    registry.register_with_capabilities("reactiveSrc", NodeCapabilities::empty(), |def, _res| {
+        Ok(Arc::new(ReactiveTestNode {
+            id: def.id().to_owned(),
+            input_pin: PinType::Any,
+            input_kind: PinKind::Exec,
+            output_pin: PinType::Any,
+            output_kind: PinKind::Reactive,
+        }) as Arc<dyn NodeTrait>)
+    });
+    registry.register_with_capabilities("dataConsumer", NodeCapabilities::empty(), |def, _res| {
+        Ok(Arc::new(ReactiveTestNode {
+            id: def.id().to_owned(),
+            input_pin: PinType::Any,
+            input_kind: PinKind::Data,
+            output_pin: PinType::Any,
+            output_kind: PinKind::Exec,
+        }) as Arc<dyn NodeTrait>)
+    });
+
+    let graph = match WorkflowGraph::from_json(
+        &json!({
+            "nodes": {
+                "src": { "type": "reactiveSrc", "config": {} },
+                "sink": { "type": "dataConsumer", "config": {} },
+            },
+            "edges": [{ "from": "src", "to": "sink", "target_port_id": "reactive_in" }],
+        })
+        .to_string(),
+    ) {
+        Ok(g) => g,
+        Err(error) => panic!("graph 应可解析: {error}"),
+    };
+
+    let result = deploy_workflow(graph, shared_connection_manager(), &registry).await;
+    // Reactive→Data 应被接受（Reactive 输出兼容 Data 输入）
+    assert!(
+        result.is_ok(),
+        "Reactive→Data 边应被接受，实际: {:?}",
+        result.err()
+    );
 }
