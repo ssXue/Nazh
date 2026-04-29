@@ -83,7 +83,6 @@ impl PureMemo {
     /// 清理指定 trace 的所有 memo 条目。
     /// 由 Runner 在 Exec 节点完成一个 trace 后调用。
     /// 幂等——不存在的 key 被 `DashMap` 静默跳过。
-    #[allow(dead_code)]
     pub fn clear_trace(&self, trace_id: Uuid) {
         self.inner.retain(|key, _| key.1 != trace_id);
     }

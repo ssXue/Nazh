@@ -91,7 +91,7 @@ import {
 import { hasTauriRuntime, saveFlowgramExportFile } from '../lib/tauri';
 import { refreshCapabilitiesCache } from '../lib/node-capabilities-cache';
 import { getCachedCapabilities } from '../lib/node-capabilities-cache';
-import { hasCapability, NODE_CAPABILITY_FLAGS } from '../lib/node-capabilities';
+import { hasCapability } from '../lib/node-capabilities';
 import type {
   AiGenerationParams,
   AiProviderView,
