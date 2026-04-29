@@ -47,3 +47,6 @@ export type { VariableDeclaration } from './VariableDeclaration';
 export type { SetWorkflowVariableRequest } from './SetWorkflowVariableRequest';
 export type { SetWorkflowVariableResponse } from './SetWorkflowVariableResponse';
 export type { VariableChangedPayload } from './VariableChangedPayload';
+export type { EdgeTransmitSummary } from './EdgeTransmitSummary';
+export type { BackpressureDetected } from './BackpressureDetected';
+export type { BackpressurePolicy } from './BackpressurePolicy';

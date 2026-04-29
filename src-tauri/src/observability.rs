@@ -358,6 +358,18 @@ impl ObservabilityStore {
                     now,
                 )));
             }
+            // ADR-0016：边级观测事件不持久化到可观测性日志——
+            // 它们通过 workflow://node-status 实时流向前端。
+            ExecutionEvent::EdgeTransmitSummary(_) | ExecutionEvent::BackpressureDetected(_) => {
+                return Ok(self.build_entry(ObservabilityEntryDraft::execution(
+                    "info",
+                    "edge_event_skip",
+                    "edge".to_owned(),
+                    "边级事件不持久化（实时流转发）".to_owned(),
+                    String::new(),
+                    now,
+                )));
+            }
         };
 
         if clear_span {

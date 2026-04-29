@@ -5,16 +5,23 @@
 
 import type {
   AppErrorRecord,
+  EdgeTransmitSummary,
+  BackpressureDetected,
   ExecutionEvent,
   RuntimeLogEntry,
   WorkflowRuntimeState,
 } from '../types';
 
 export interface ParsedWorkflowEvent {
-  kind: 'started' | 'completed' | 'failed' | 'output' | 'finished';
+  kind: 'started' | 'completed' | 'failed' | 'output' | 'finished'
+    | 'edge-transmit-summary' | 'backpressure-detected';
   nodeId: string;
   traceId: string;
   error?: string;
+  /** ADR-0016：边传输汇总载荷（kind = 'edge-transmit-summary'）。 */
+  edgeTransmitSummary?: EdgeTransmitSummary;
+  /** ADR-0016：背压告警载荷（kind = 'backpressure-detected'）。 */
+  backpressureDetected?: BackpressureDetected;
 }
 
 export const EMPTY_RUNTIME_STATE: WorkflowRuntimeState = {
@@ -146,6 +153,25 @@ export function parseWorkflowEventPayload(payload: unknown): ParsedWorkflowEvent
     };
   }
 
+  // ADR-0016：边级观测事件——纯可观测数据，不影响运行时状态机。
+  if ('EdgeTransmitSummary' in event) {
+    return {
+      kind: 'edge-transmit-summary',
+      nodeId: event.EdgeTransmitSummary.from_node,
+      traceId: '',
+      edgeTransmitSummary: event.EdgeTransmitSummary,
+    };
+  }
+
+  if ('BackpressureDetected' in event) {
+    return {
+      kind: 'backpressure-detected',
+      nodeId: event.BackpressureDetected.at_node,
+      traceId: '',
+      backpressureDetected: event.BackpressureDetected,
+    };
+  }
+
   return null;
 }
 
@@ -201,6 +227,10 @@ export function reduceRuntimeState(
       nextState.failedNodeIds = baseState.failedNodeIds;
       nextState.outputNodeIds = baseState.outputNodeIds;
       return nextState;
+    // ADR-0016：边级观测事件不影响运行时状态机——透传。
+    case 'edge-transmit-summary':
+    case 'backpressure-detected':
+      return baseState;
   }
 }
 

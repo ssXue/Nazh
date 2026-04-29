@@ -31,6 +31,9 @@ export type {
   UndeployResponse,
   WorkflowContext,
   WorkflowEdge,
+  EdgeTransmitSummary,
+  BackpressureDetected,
+  BackpressurePolicy,
 } from './generated';
 
 export type { WorkflowContext as WorkflowResult } from './generated';
@@ -149,7 +152,7 @@ export interface WorkflowLogicBranch {
 
 export interface WorkflowRuntimeState {
   traceId: string | null;
-  lastEventType: 'started' | 'completed' | 'failed' | 'output' | 'finished' | null;
+  lastEventType: 'started' | 'completed' | 'failed' | 'output' | 'finished' | 'edge-transmit-summary' | 'backpressure-detected' | null;
   lastNodeId: string | null;
   lastError: string | null;
   lastUpdatedAt: number | null;

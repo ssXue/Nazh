@@ -13,7 +13,7 @@ use crate::{
     CancellationToken, ContextRef, DataStore, EngineError, ExecutionEvent, LifecycleGuard,
     SharedResources, VariableDeclaration, WorkflowContext, WorkflowNodeDefinition,
 };
-use nazh_core::OutputCache;
+use nazh_core::{OutputCache, PinKind};
 use serde::{Deserialize, Deserializer, Serialize};
 use tokio::sync::mpsc;
 #[cfg(feature = "ts-export")]
@@ -150,10 +150,19 @@ pub(crate) struct WorkflowTopology {
 }
 
 /// 下游目标通道（仅模块内部使用）。
+///
+/// `edge_kind` 为上游 source pin 的 [`PinKind`]，由 deploy 阶段从
+/// [`ClassifiedEdges`](super::topology::ClassifiedEdges) 查询填充（ADR-0016）。
 #[derive(Clone)]
 pub(crate) struct DownstreamTarget {
     pub(crate) source_port_id: Option<String>,
     pub(crate) sender: mpsc::Sender<ContextRef>,
+    /// ADR-0016：下游节点 id。
+    pub(crate) target_node_id: String,
+    /// ADR-0016：下游入端 pin id。
+    pub(crate) target_port_id: Option<String>,
+    /// ADR-0016：边类型（= 上游 source pin 的 `PinKind`）。
+    pub(crate) edge_kind: PinKind,
 }
 
 impl WorkflowIngress {

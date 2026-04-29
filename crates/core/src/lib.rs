@@ -32,6 +32,7 @@ pub use data::{ArenaDataStore, DataId, DataStore};
 pub use error::EngineError;
 pub use event::CompletedExecutionEvent;
 pub use event::ExecutionEvent;
+pub use event::{BackpressureDetected, BackpressurePolicy, EdgeTransmitSummary};
 pub use lifecycle::{
     LifecycleGuard, NodeHandle, NodeLifecycleContext, blocking_sleep_or_cancel, sleep_or_cancel,
 };
@@ -60,9 +61,10 @@ pub use variables::{
 pub mod export_bindings {
     use super::{
         AiCompletionRequest, AiCompletionResponse, AiGenerationParams, AiMessage, AiMessageRole,
-        AiReasoningEffort, AiThinkingConfig, AiThinkingMode, AiTokenUsage, CompletedExecutionEvent,
-        ExecutionEvent, PinDefinition, PinDirection, PinKind, PinType, TypedVariableSnapshot,
-        VariableDeclaration, WorkflowContext, WorkflowNodeDefinition,
+        AiReasoningEffort, AiThinkingConfig, AiThinkingMode, AiTokenUsage, BackpressureDetected,
+        BackpressurePolicy, CompletedExecutionEvent, EdgeTransmitSummary, ExecutionEvent,
+        PinDefinition, PinDirection, PinKind, PinType, TypedVariableSnapshot, VariableDeclaration,
+        WorkflowContext, WorkflowNodeDefinition,
     };
     use ts_rs::{ExportError, TS};
 
@@ -70,6 +72,9 @@ pub mod export_bindings {
     pub fn export_all() -> Result<(), ExportError> {
         CompletedExecutionEvent::export()?;
         ExecutionEvent::export()?;
+        EdgeTransmitSummary::export()?;
+        BackpressureDetected::export()?;
+        BackpressurePolicy::export()?;
         WorkflowContext::export()?;
         WorkflowNodeDefinition::export()?;
         PinDirection::export()?;

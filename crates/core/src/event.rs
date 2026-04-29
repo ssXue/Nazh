@@ -13,6 +13,8 @@ use tokio::sync::mpsc;
 use ts_rs::TS;
 use uuid::Uuid;
 
+use crate::pin::PinKind;
+
 use crate::error::EngineError;
 
 /// 统一的执行生命周期事件。
@@ -52,6 +54,10 @@ pub enum ExecutionEvent {
         #[cfg_attr(feature = "ts-export", ts(optional))]
         updated_by: Option<String>,
     },
+    /// 边传输汇总（ADR-0016，默认 100ms 窗口）。
+    EdgeTransmitSummary(EdgeTransmitSummary),
+    /// 背压告警（ADR-0016，下游 channel 接近容量上限）。
+    BackpressureDetected(BackpressureDetected),
 }
 
 /// 阶段/节点执行完成事件的详细载荷。
@@ -64,6 +70,55 @@ pub struct CompletedExecutionEvent {
     /// 无元数据时为 `None`，序列化时省略该字段。
     #[cfg_attr(feature = "ts-export", ts(optional))]
     pub metadata: Option<Map<String, Value>>,
+}
+
+/// 边传输汇总事件（ADR-0016）。
+///
+/// Runner 在每次向下游 channel 发送数据后累计窗口内统计，每 100ms 刷新一条汇总。
+/// 前端用 `from_node + from_pin → to_node + to_pin` 标识一条边，
+/// 叠加到画布线条上实现热力图。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub struct EdgeTransmitSummary {
+    pub from_node: String,
+    pub from_pin: String,
+    pub to_node: String,
+    pub to_pin: String,
+    pub edge_kind: PinKind,
+    pub transmit_count: usize,
+    pub max_queue_depth: usize,
+    pub window_started_at: String,
+    pub window_ended_at: String,
+}
+
+/// 背压告警事件（ADR-0016）。
+///
+/// 下游 channel 深度接近容量上限时发出。
+/// 发射逻辑暂未实施（类型就位，`#[allow(dead_code)]` 抑制警告）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub struct BackpressureDetected {
+    pub at_node: String,
+    pub incoming_pin: String,
+    pub channel_capacity: usize,
+    pub channel_depth: usize,
+    pub policy: BackpressurePolicy,
+    pub dropped_since_last_report: u64,
+    pub detected_at: String,
+}
+
+/// 背压处理策略（ADR-0016）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub enum BackpressurePolicy {
+    Block,
+    DropNewest,
+    DropOldest,
+    Sample,
+    Overflow,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -98,6 +153,8 @@ enum ExecutionEventSerde {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         updated_by: Option<String>,
     },
+    EdgeTransmitSummary(EdgeTransmitSummary),
+    BackpressureDetected(BackpressureDetected),
 }
 
 impl From<&ExecutionEvent> for ExecutionEventSerde {
@@ -141,6 +198,12 @@ impl From<&ExecutionEvent> for ExecutionEventSerde {
                 updated_at: updated_at.clone(),
                 updated_by: updated_by.clone(),
             },
+            ExecutionEvent::EdgeTransmitSummary(summary) => {
+                Self::EdgeTransmitSummary(summary.clone())
+            }
+            ExecutionEvent::BackpressureDetected(detected) => {
+                Self::BackpressureDetected(detected.clone())
+            }
         }
     }
 }
@@ -182,6 +245,10 @@ impl From<ExecutionEventSerde> for ExecutionEvent {
                 updated_at,
                 updated_by,
             },
+            ExecutionEventSerde::EdgeTransmitSummary(summary) => Self::EdgeTransmitSummary(summary),
+            ExecutionEventSerde::BackpressureDetected(detected) => {
+                Self::BackpressureDetected(detected)
+            }
         }
     }
 }
@@ -409,5 +476,59 @@ mod variable_changed_tests {
             }
             other => panic!("expected VariableChanged, got {other:?}"),
         }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod edge_event_tests {
+    use super::*;
+
+    #[test]
+    fn edge_transmit_summary_往返序列化() {
+        let summary = EdgeTransmitSummary {
+            from_node: "timer-1".to_owned(),
+            from_pin: "out".to_owned(),
+            to_node: "debug-1".to_owned(),
+            to_pin: "in".to_owned(),
+            edge_kind: PinKind::Exec,
+            transmit_count: 5,
+            max_queue_depth: 3,
+            window_started_at: "2026-04-30T10:00:00+00:00".to_owned(),
+            window_ended_at: "2026-04-30T10:00:00.100+00:00".to_owned(),
+        };
+        let event = ExecutionEvent::EdgeTransmitSummary(summary.clone());
+        let json = serde_json::to_string(&event).unwrap();
+        let restored: ExecutionEvent = serde_json::from_str(&json).unwrap();
+        assert_eq!(event, restored);
+    }
+
+    #[test]
+    fn backpressure_detected_往返序列化() {
+        let detected = BackpressureDetected {
+            at_node: "debug-1".to_owned(),
+            incoming_pin: "in".to_owned(),
+            channel_capacity: 16,
+            channel_depth: 14,
+            policy: BackpressurePolicy::Block,
+            dropped_since_last_report: 0,
+            detected_at: "2026-04-30T10:00:01+00:00".to_owned(),
+        };
+        let event = ExecutionEvent::BackpressureDetected(detected);
+        let json = serde_json::to_string(&event).unwrap();
+        let restored: ExecutionEvent = serde_json::from_str(&json).unwrap();
+        assert_eq!(event, restored);
+    }
+
+    #[test]
+    fn backpressure_policy_序列化为_camel_case() {
+        assert_eq!(
+            serde_json::to_string(&BackpressurePolicy::DropNewest).unwrap(),
+            "\"dropNewest\""
+        );
+        assert_eq!(
+            serde_json::to_string(&BackpressurePolicy::DropOldest).unwrap(),
+            "\"dropOldest\""
+        );
     }
 }

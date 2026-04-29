@@ -408,7 +408,7 @@ Located in `docs/superpowers/plans/` and `docs/superpowers/specs/`. These are **
 - `docs/superpowers/plans/2026-04-28-architecture-review.md` 的 Phase B/C/D/E 已完成本轮收尾，整合 findings 见 `docs/superpowers/specs/2026-04-29-architecture-review-findings.md`。
 - `src-tauri/src/lib.rs` 已按 IPC 命令域拆到 `src-tauri/src/commands/*`，`lib.rs` 只保留 setup + handler 注册（132 行）。
 - 规范扫描结论：生产代码 `.unwrap()` / `.expect()` 0 命中、`unsafe` 0 命中、节点不直接读写 `DataStore`；`native` 节点 payload 键从 `_native_message` 修正为 `native_message`。
-- **未解冻**：Phase A 仍未完成（ADR-0015、ADR-0016），freeze 段保留。Phase 6 EventBus（RFC-0002）已完成修订，不再阻塞。ADR-0014 Phase 5 已实施（2026-04-30）。`loop` 容器恢复已在当前 `main` 包含（可追溯到 `e35cb43`），不再计入解冻差异。
+- **未解冻**：Phase A 仍未完成（ADR-0016 发射逻辑待完善），freeze 段保留。Phase 6 EventBus（RFC-0002）已完成修订，不再阻塞。ADR-0014 Phase 5 已实施（2026-04-30）。`loop` 容器恢复已在当前 `main` 包含（可追溯到 `e35cb43`），不再计入解冻差异。
 
 **Current batch of ADRs** (2026-04-17 to 2026-04-29):
 - ADR-0008 (metadata separation) — **accepted / landed**
@@ -419,13 +419,15 @@ Located in `docs/superpowers/plans/` and `docs/superpowers/specs/`. These are **
 - ADR-0019 (AI 能力依赖反转) — **已实施**（2026-04-26，`AiService` trait + 请求/响应类型上移到 `crates/core/src/ai.rs`；`ai` crate 改为纯实现 + 配置型；`scripting` / `nodes-flow` 不再依赖 `ai`）
 - ADR-0018 (`nodes-io` 按协议 feature 门控) — **已实施**（2026-04-26，`io-sql/io-http/io-mqtt/io-modbus/io-serial/io-notify` + 元 feature `io-all`；facade 转传；`debug/native/timer/template` 永远启用）
 - ADR-0012 (工作流变量) — **已实施 Phase 1+2**（Phase 1: 2026-04-27 / Phase 2: 2026-04-27，`crates/core/src/variables.rs` + Rhai `vars.get/set/cas` + `ExecutionEvent::VariableChanged` write-on-change 事件广播 + IPC `set_workflow_variable` 写命令 + 前端 `RuntimeVariablesPanel` + `workflow://variable-changed` 事件通道）
-- ADR-0014（执行边与数据边分离 → 重命名为「引脚求值语义二分」）— **已实施 Phase 1 + Phase 2 + Phase 3 + Phase 3b + Phase 4 + Phase 5**（2026-04-30）。Phase 5：节点头部 capability 自动着色 + CSS 变量化 + AI prompt PinKind + watch channel 替代 Notify + PureMemo trace 清理。Phase 6 EventBus（RFC-0002）已完成修订（否决 broadcast，改为 try_send 修复）。ADR-0015 / ADR-0016 仍待实施。
+- ADR-0014（执行边与数据边分离 → 重命名为「引脚求值语义二分」）— **已实施 Phase 1 + Phase 2 + Phase 3 + Phase 3b + Phase 4 + Phase 5**（2026-04-30）。Phase 5：节点头部 capability 自动着色 + CSS 变量化 + AI prompt PinKind + watch channel 替代 Notify + PureMemo trace 清理。Phase 6 EventBus（RFC-0002）已完成修订（否决 broadcast，改为 try_send 修复）。ADR-0015 已实施。
 - ADR-0013（子图与宏系统）— **已实施 子图核心**（2026-04-28，merge 68ab709 时丢失的 ADR-0013 改动恢复完成）。前端 `subgraph` 容器 + `subgraphInput` / `subgraphOutput` 桥接 + 设置面板 + AI 编排器扩展全部就位；`web/src/lib/flowgram.ts` 的 `flattenSubgraphs` 完整实现（递归展平 + 参数替换 `{{name}}` + 8 层深度上限 + 循环引用检测）；Rust `crates/nodes-flow/src/passthrough.rs` 已注册（`mod passthrough` + `subgraphInput` / `subgraphOutput` 通过 `NodeCapabilities::empty()` 在 `FlowPlugin::register` 内注册）；`tests/workflow.rs` `passthrough_nodes_forward_payload` 集成测试通过；`vitest.config.ts` 新增 `setupFiles: ['./vitest.setup.ts']` polyfill `navigator` 让 FlowGram SDK 在 node 环境正常 import；顺手修了 pre-existing 的 `flowgram-shortcuts.test.ts` 失败。loop 升级为容器（origin commit `e35cb43`）的工作未带回，留作后续 polish。
 - ADR-0015（反应式数据引脚）— **Phase 1+2+3 已实施**（2026-04-30）。Phase 1: PinKind::Reactive + Runner 三分支 dispatch + 集成测试。Phase 2: WorkflowVariables watch channel + `subscribe_reactive_pin` IPC + `ReactiveUpdatePayload` ts-rs。Phase 3: 前端 isKindCompatible 三分支 + Reactive 端口 CSS + reactive-update 事件解析 + 合约 fixtures 扩展。设计 spec：`docs/superpowers/specs/2026-04-30-adr-0015-reactive-data-pin-design.md`。
-- ADR-0016 / ADR-0020 — **proposed**, awaiting review. See `docs/adr/README.md` for the index.
+- ADR-0016（边级可观测性）— **已接受，部分实施**（2026-04-30）。`EdgeTransmitSummary` 类型 + Runner `EdgeWindow` 累计器 + 每执行周期 flush + ts-rs 导出 + 前端解析。`BackpressureDetected` 类型就位，发射逻辑 deferred。
+- ADR-0020 — **proposed**, awaiting review. See `docs/adr/README.md` for the index.
 
 **Immediate known tech debt:**
 - **Architecture review 派生 P1**（2026-04-29）：变量控制事件从 `ExecutionEvent` 拆出；`src/graph/` 触发 ADR-0020 重评；runtime / dead-letter / scoped event 等 IPC 类型迁入 `tauri-bindings`；Rhai `max_operations` 增加统一 clamp；前端大文件拆分。详见 `docs/superpowers/specs/2026-04-29-architecture-review-findings.md`。
+- **ADR-0016 deferred items**（2026-04-30）：`BackpressureDetected` 发射逻辑；`payload_bytes` 统计（需序列化测量）；`received_at` 精确测量（需 instrument 接收端）；100ms 定时窗口 flush（当前每执行周期 flush）；`queue_depth` 精确值（需共享 channel 状态）；前端边热力图 UI。
 - ~~**ADR-0013 子图实施 deployment 断链**（2026-04-28 发现）~~ **已偿还（2026-04-28）**。merge 68ab709 解决冲突时丢失的 ADR-0013 改动重写恢复——`flattenSubgraphs` + Rust `mod passthrough` 注册 + `FlowgramCanvas` 容器/桥接渲染 + 设置面板全部到位，三件套全绿。**ADR-0014 Phase 3 PURE 节点 plan 现可推进**（PinKind ↔ 子图的 4 处交叉点 memo 仍待 phase 3 立项时具体规划）。
 - ~~MQTT subscriber / Timer / Serial root lifecycle is owned by the Tauri shell.~~ **已偿还（2026-04-26，ADR-0009 已实施）**。三类触发器节点现自持 `on_deploy` + `LifecycleGuard`；壳层不再监督触发器任务。**语义变化**：触发器节点走 `NodeHandle::emit` 而非 `dispatch_router` 的 trigger lane，失去 backpressure / DLQ / retry / metrics 防御能力，等 ADR-0014 / ADR-0016 引擎级背压能力补回。
 - ~~IPC response types in `crates/core/` contradict Ring 0 purity. ADR-0017 plans to extract `crates/tauri-bindings/`.~~ **已偿还（2026-04-24，ADR-0017 已实施）**
@@ -461,9 +463,9 @@ Located in `docs/superpowers/plans/` and `docs/superpowers/specs/`. These are **
 > 5. ✅ **ADR-0012** 工作流变量 — Phase 1+2 已实施（2026-04-27）；Phase 3 候选项已分类，见上文"ADR-0012 Phase 3 候选"小节
 > 6. ✅ **ADR-0013** 子图与宏（依赖 0010）— 子图核心已实施；loop 容器恢复已并入当前 `main`
 > 7. ✅ **Phase 6 (RFC-0002)** EventBus + EdgeBackpressure + ConcurrencyPolicy — **已完成修订**（2026-04-16）。EventBus broadcast 否决，ConcurrencyPolicy/EdgeBackpressure 推迟；实际修复：`emit_event` 改 `try_send` + 错误日志。详见 RFC-0002 Phase 6 段。
-> 8. ✅ **ADR-0014** Pin 求值语义二分 — **Phase 1 + Phase 2 + Phase 3 + Phase 3b + Phase 4 + Phase 5 已实施**（2026-04-30）。Phase 5：capability 着色 + PinKind prompt + watch channel + PureMemo trace 清理。Phase 6 EventBus / ADR-0015 / ADR-0016 仍待实施。
+> 8. ✅ **ADR-0014** Pin 求值语义二分 — **Phase 1 + Phase 2 + Phase 3 + Phase 3b + Phase 4 + Phase 5 已实施**（2026-04-30）。Phase 5：capability 着色 + PinKind prompt + watch channel + PureMemo trace 清理。Phase 6 EventBus 已完成修订。
 > 9. ✅ **ADR-0015** 反应式数据引脚 — **Phase 1+2+3 已实施**（2026-04-30）。全部完成。
-> **ADR-0016** 边级可观测性 — 待实施
+> 9b. ✅ **ADR-0016** 边级可观测性 — **已接受，部分实施**（2026-04-30）。`EdgeTransmitSummary` 已发射；`BackpressureDetected` 发射 deferred。
 > 10. 真实协议驱动扩展（OPC-UA、Kafka 消费者等）
 > 11. AI 能力扩展（embeddings、vision，未来 ADR）
 

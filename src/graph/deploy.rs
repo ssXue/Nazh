@@ -268,6 +268,31 @@ pub async fn deploy_workflow_with_ai(
     // ADR-0014 Phase 4：Pure memo 全局共享实例
     let pure_memo: Arc<super::pull::PureMemo> = Arc::new(super::pull::PureMemo::new());
 
+    // ADR-0016：边 → PinKind 查找表，供 DownstreamTarget 填充 edge_kind。
+    // Key = (from_node, source_port_id)，Value = PinKind。
+    let edge_kind_lookup: HashMap<(String, Option<String>), PinKind> = graph
+        .edges
+        .iter()
+        .map(|edge| {
+            let from_node = nodes_by_id.get(&edge.from).ok_or_else(|| {
+                EngineError::invalid_graph(format!(
+                    "edge_kind_lookup：源节点 `{}` 不存在",
+                    edge.from
+                ))
+            })?;
+            let port_id = edge
+                .source_port_id
+                .as_deref()
+                .unwrap_or(super::DEFAULT_OUTPUT_PIN_ID);
+            let kind = from_node
+                .output_pins()
+                .into_iter()
+                .find(|p| p.id == port_id)
+                .map_or(PinKind::Exec, |p| p.kind);
+            Ok(((edge.from.clone(), edge.source_port_id.clone()), kind))
+        })
+        .collect::<Result<HashMap<_, _>, EngineError>>()?;
+
     for node_id in &topology.deployment_order {
         let Some(node) = nodes_index.get(node_id).cloned() else {
             return Err(EngineError::invalid_graph(format!(
@@ -298,13 +323,19 @@ pub async fn deploy_workflow_with_ai(
             .into_iter()
             .flat_map(|edges| edges.iter())
             .filter_map(|edge| {
-                senders
-                    .get(&edge.to)
-                    .cloned()
-                    .map(|sender| DownstreamTarget {
+                senders.get(&edge.to).cloned().map(|sender| {
+                    let edge_kind = edge_kind_lookup
+                        .get(&(edge.from.clone(), edge.source_port_id.clone()))
+                        .copied()
+                        .unwrap_or(PinKind::Exec);
+                    DownstreamTarget {
                         source_port_id: edge.source_port_id.clone(),
                         sender,
-                    })
+                        target_node_id: edge.to.clone(),
+                        target_port_id: edge.target_port_id.clone(),
+                        edge_kind,
+                    }
+                })
             })
             .collect::<Vec<_>>();
 

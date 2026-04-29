@@ -13,19 +13,94 @@
 //! [`NodeOutput::metadata`](nazh_core::NodeOutput::metadata) 不进入 payload，
 //! 而是通过 [`ExecutionEvent::Completed`] 事件独立传递给前端。
 
-use std::{collections::HashMap, collections::HashSet, sync::Arc, time::Duration};
+use std::{collections::HashMap, collections::HashSet, sync::Arc, time::Duration, time::Instant};
 
 use tokio::sync::mpsc;
 use tracing::Instrument;
 
 use nazh_core::{
-    ContextRef, DataStore, EngineError, ExecutionEvent, NodeDispatch, NodeTrait, OutputCache,
+    ContextRef, DataStore, EdgeTransmitSummary, EngineError, ExecutionEvent, NodeDispatch,
+    NodeTrait, OutputCache, PinKind,
     event::{emit_event, emit_failure},
     guard::guarded_execute,
 };
 
 use super::pull::{EdgesByConsumer, PureMemo};
 use super::types::DownstreamTarget;
+
+/// ADR-0016：单条边的传输累计窗口。
+///
+/// 每次 `record()` 累加一次传输统计；窗口满（≥100ms）时 `flush()` 发出
+/// [`EdgeTransmitSummary`] 事件并重置计数。
+struct EdgeWindow {
+    from_pin: String,
+    to_node: String,
+    to_pin: String,
+    edge_kind: PinKind,
+    transmit_count: usize,
+    max_queue_depth: usize,
+    window_start: Instant,
+}
+
+impl EdgeWindow {
+    fn new(from_pin: String, to_node: String, to_pin: String, edge_kind: PinKind) -> Self {
+        Self {
+            from_pin,
+            to_node,
+            to_pin,
+            edge_kind,
+            transmit_count: 0,
+            max_queue_depth: 0,
+            window_start: Instant::now(),
+        }
+    }
+
+    fn record(&mut self, queue_depth: usize) {
+        self.transmit_count += 1;
+        self.max_queue_depth = self.max_queue_depth.max(queue_depth);
+    }
+
+    /// 若窗口已满（≥100ms）或有数据待发，构造并发出 [`EdgeTransmitSummary`]，
+    /// 然后重置计数。无数据时不发事件。
+    fn flush(&mut self, from_node: &str, event_tx: &mpsc::Sender<ExecutionEvent>) {
+        if self.transmit_count == 0 {
+            return;
+        }
+        let now = Instant::now();
+        emit_event(
+            event_tx,
+            ExecutionEvent::EdgeTransmitSummary(EdgeTransmitSummary {
+                from_node: from_node.to_owned(),
+                from_pin: self.from_pin.clone(),
+                to_node: self.to_node.clone(),
+                to_pin: self.to_pin.clone(),
+                edge_kind: self.edge_kind,
+                transmit_count: self.transmit_count,
+                max_queue_depth: self.max_queue_depth,
+                window_started_at: format_instant(self.window_start),
+                window_ended_at: format_instant(now),
+            }),
+        );
+        self.transmit_count = 0;
+        self.max_queue_depth = 0;
+        self.window_start = now;
+    }
+}
+
+/// 将 [`Instant`] 格式化为 RFC3339 字符串。
+///
+/// [`Instant`] 是单调时钟，无绝对时间语义；此处以"进程启动后偏移"近似。
+/// 未来若需精确绝对时间，可传入外部 `now: DateTime<Utc>`。
+fn format_instant(instant: Instant) -> String {
+    let offset = instant.elapsed();
+    // 近似：以当前系统时间减去偏移量作为该 instant 的绝对时间。
+    let now = chrono::Utc::now();
+    let absolute = now - chrono::Duration::from_std(offset).unwrap_or_default();
+    absolute.to_rfc3339()
+}
+
+/// 边窗口 key：`(from_pin, to_node, to_pin)`。
+type EdgeKey = (String, String, String);
 
 /// 单节点的异步执行循环：接收 [`ContextRef`] → 读取数据 → 执行 → 写入输出 → 分发。
 #[allow(clippy::too_many_lines, clippy::too_many_arguments)]
@@ -50,6 +125,33 @@ pub(crate) async fn run_node(
     reactive_output_pin_ids: HashSet<String>,
 ) {
     let node_id = node.id().to_owned();
+
+    // ADR-0016：初始化边传输累计窗口。
+    let mut edge_windows: HashMap<EdgeKey, EdgeWindow> = downstream_senders
+        .iter()
+        .map(|target| {
+            let from_pin = target
+                .source_port_id
+                .clone()
+                .unwrap_or_else(|| "out".to_owned());
+            let to_pin = target
+                .target_port_id
+                .clone()
+                .unwrap_or_else(|| "in".to_owned());
+            let key = (
+                from_pin.clone(),
+                target.target_node_id.clone(),
+                to_pin.clone(),
+            );
+            let window = EdgeWindow::new(
+                from_pin,
+                target.target_node_id.clone(),
+                to_pin,
+                target.edge_kind,
+            );
+            (key, window)
+        })
+        .collect();
 
     while let Some(ctx_ref) = input_rx.recv().await {
         let trace_id = ctx_ref.trace_id;
@@ -201,6 +303,20 @@ pub(crate) async fn run_node(
                                 });
                                 break;
                             }
+                            // ADR-0016：记录边传输统计。
+                            let from_pin = target.source_port_id.as_deref().unwrap_or("out");
+                            let to_pin = target.target_port_id.as_deref().unwrap_or("in");
+                            let key = (
+                                from_pin.to_owned(),
+                                target.target_node_id.clone(),
+                                to_pin.to_owned(),
+                            );
+                            if let Some(window) = edge_windows.get_mut(&key) {
+                                // TODO(ADR-0016)：queue_depth 目前记录 0。
+                                // 精确测量需要 instrument 接收端（Receiver::len()），
+                                // 改为共享 channel 状态或由下游反馈。
+                                window.record(0);
+                            }
                         }
                         if let Some(error) = downstream_error {
                             Err(error)
@@ -253,6 +369,18 @@ pub(crate) async fn run_node(
 
         // ADR-0014 Phase 5：trace 完成后清理 PureMemo（释放内存）
         pure_memo.clear_trace(trace_id);
+
+        // ADR-0016：刷新有数据的边传输窗口。
+        // 当前策略：每个执行周期末尾 flush 所有有数据的窗口。
+        // 未来可在高频场景下改回 100ms 窗口定时 flush。
+        for window in edge_windows.values_mut() {
+            window.flush(&node_id, &event_tx);
+        }
+    }
+
+    // ADR-0016：循环退出时 flush 剩余窗口（理论上为空，保底）。
+    for window in edge_windows.values_mut() {
+        window.flush(&node_id, &event_tx);
     }
 }
 

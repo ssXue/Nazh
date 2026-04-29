@@ -2120,3 +2120,68 @@ async fn reactive_输出连_data_输入_部署通过() {
         result.err()
     );
 }
+
+/// ADR-0016：边传输汇总事件在 dispatch 后被发出。
+#[tokio::test]
+async fn edge_transmit_summary_emitted_on_dispatch() {
+    let registry = standard_registry();
+    let graph = match WorkflowGraph::from_json(
+        &json!({
+            "nodes": {
+                "source": {
+                    "type": "debugConsole",
+                    "config": { "label": "src" }
+                },
+                "sink": {
+                    "type": "debugConsole",
+                    "config": { "label": "sink" }
+                }
+            },
+            "edges": [{ "from": "source", "to": "sink" }]
+        })
+        .to_string(),
+    ) {
+        Ok(g) => g,
+        Err(error) => panic!("graph 应可解析: {error}"),
+    };
+
+    let mut deployment = match deploy_workflow(graph, shared_connection_manager(), &registry).await
+    {
+        Ok(d) => d,
+        Err(error) => panic!("workflow 应部署成功: {error}"),
+    };
+
+    match deployment
+        .submit(WorkflowContext::new(json!({ "value": 42 })))
+        .await
+    {
+        Ok(()) => {}
+        Err(error) => panic!("dispatch 应成功: {error}"),
+    }
+
+    // 收集事件直到收到 EdgeTransmitSummary 或超时。
+    let deadline = Duration::from_secs(2);
+    let start = std::time::Instant::now();
+    let mut found_summary = false;
+
+    while start.elapsed() < deadline {
+        let event_result = timeout(Duration::from_millis(200), deployment.next_event()).await;
+        match event_result {
+            Ok(Some(nazh_engine::ExecutionEvent::EdgeTransmitSummary(summary))) => {
+                assert_eq!(summary.from_node, "source");
+                assert_eq!(summary.to_node, "sink");
+                assert!(summary.transmit_count >= 1, "transmit_count 应 ≥ 1");
+                assert_eq!(summary.edge_kind, PinKind::Exec);
+                found_summary = true;
+                break;
+            }
+            Ok(Some(_)) => {}
+            Ok(None) | Err(_) => break,
+        }
+    }
+
+    // 手动 flush 剩余窗口——drop deployment 触发 run_node 退出。
+    drop(deployment);
+
+    assert!(found_summary, "应在事件流中收到 EdgeTransmitSummary");
+}
