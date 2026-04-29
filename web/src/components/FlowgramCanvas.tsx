@@ -89,6 +89,7 @@ import {
   formatRejection,
 } from '../lib/pin-validator';
 import { hasTauriRuntime, saveFlowgramExportFile } from '../lib/tauri';
+import { refreshCapabilitiesCache } from '../lib/node-capabilities-cache';
 import type {
   AiGenerationParams,
   AiProviderView,
@@ -1767,6 +1768,7 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
   );
 
   useEffect(() => {
+    void refreshCapabilitiesCache();
     return () => {
       if (syncTimerRef.current !== null) {
         window.clearTimeout(syncTimerRef.current);
