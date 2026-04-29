@@ -1344,6 +1344,12 @@ html[data-theme='dark'] .flowgram-card--loop .sub-canvas-border::before {
   border: 2px solid var(--accent-cool, #6366f1);
 }
 
+/* ADR-0015：Reactive 端口——渐变填充区分于 Data 的空心和 Exec 的默认 */
+.flowgram-card__branch-port[data-port-pin-kind='reactive'] {
+  background: linear-gradient(135deg, var(--accent-cool, #6366f1), #a855f7);
+  border: 2px solid var(--accent-cool, #6366f1);
+}
+
 .flowgram-card__meta {
   display: flex;
   flex-direction: column;
