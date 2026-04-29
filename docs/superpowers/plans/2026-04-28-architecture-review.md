@@ -55,47 +55,47 @@
 
 ### B1. Ring 0 接口审计（crates/core）
 
-- [ ] 对每个 public trait / struct 产出评估表：
+- [x] 对每个 public trait / struct 产出评估表：
   - cohesion（职责是否单一）
   - 对称性（生产端 vs 消费端形状）
   - 可演化性（加新 variant / 字段是否破 ABI）
   - 命名（动词时态、`is_`/`has_` 前缀、`_` 命名）
   - 建议动作（保留 / 重命名 / 拆 / 删）
-- [ ] 已识别问题（从前期 mini-review）：
-  - [ ] `ExecutionEvent::VariableChanged` 是否拆出 `ExecutionEvent`（已识别为接口腐化）
-  - [ ] `NodeOutput.metadata: Map` vs `CompletedExecutionEvent.metadata: Option<Map>` 不对称
-  - [ ] `OutputCache` 的 `DashMap` 是否过度（部署期一次性 prepare、运行时仅读）
-  - [ ] `PinDefinition` 工厂方法数量监控（>= 6 时改 builder）
-- [ ] `AiService` trait 接口审计（独立子项）
-- [ ] `WorkflowVariables` API 审计（mutation/snapshot/declarations 三组方法是否清晰）
+- [x] 已识别问题（从前期 mini-review）：
+  - [x] `ExecutionEvent::VariableChanged` 是否拆出 `ExecutionEvent`（已识别为接口腐化）
+  - [x] `NodeOutput.metadata: Map` vs `CompletedExecutionEvent.metadata: Option<Map>` 不对称
+  - [x] `OutputCache` 的 `DashMap` 是否过度（部署期一次性 prepare、运行时仅读）
+  - [x] `PinDefinition` 工厂方法数量监控（>= 6 时改 builder）
+- [x] `AiService` trait 接口审计（独立子项）
+- [x] `WorkflowVariables` API 审计（mutation/snapshot/declarations 三组方法是否清晰）
 
 ### B2. Ring 1 横向耦合审计
 
-- [ ] 生成 mermaid 真实依赖图 vs ADR 宣称对照
-- [ ] 5 个 Ring 1 crate 间是否有重复抽象
-  - [ ] `connections` vs 各协议节点的 `connection_id` 处理
-  - [ ] `scripting` vs `nodes-flow` 的 Rhai engine 实例化路径
-  - [ ] `ai` vs `scripting` 的 `ai_complete()` 注入点
-- [ ] 每个 Ring 1 crate 的 `AGENTS.md` 是否仍准确（与代码对照）
+- [x] 生成 mermaid 真实依赖图 vs ADR 宣称对照
+- [x] 5 个 Ring 1 crate 间是否有重复抽象
+  - [x] `connections` vs 各协议节点的 `connection_id` 处理
+  - [x] `scripting` vs `nodes-flow` 的 Rhai engine 实例化路径
+  - [x] `ai` vs `scripting` 的 `ai_complete()` 注入点
+- [x] 每个 Ring 1 crate 的 `AGENTS.md` 是否仍准确（与代码对照）
 
 ### B3. Facade 编排层审计（src/）
 
-- [ ] `src/graph/` 4 模块（`deploy` / `topology` / `pin_validator` / `runner`）职责重叠检查
-- [ ] `standard_registry()` 与各 plugin 注册路径是否清晰
-- [ ] 评估 ADR-0020（`src/graph/` 归属）触发条件是否已到
+- [x] `src/graph/` 4 模块（`deploy` / `topology` / `pin_validator` / `runner`）职责重叠检查
+- [x] `standard_registry()` 与各 plugin 注册路径是否清晰
+- [x] 评估 ADR-0020（`src/graph/` 归属）触发条件是否已到
 
 ### B4. IPC 边界审计
 
-- [ ] `src-tauri/src/lib.rs` 全 IPC 命令 + 事件清单（与 `AGENTS.md` 列表对照）
-- [ ] 哪些 IPC type 应该挪到 `crates/tauri-bindings/`
-- [ ] 事件 channel 命名一致性（`workflow://*`）
-- [ ] `ExecutionEvent::VariableChanged` 拆出与 IPC 事件 channel 是否对齐
+- [x] `src-tauri/src/lib.rs` 全 IPC 命令 + 事件清单（与 `AGENTS.md` 列表对照）
+- [x] 哪些 IPC type 应该挪到 `crates/tauri-bindings/`
+- [x] 事件 channel 命名一致性（`workflow://*`）
+- [x] `ExecutionEvent::VariableChanged` 拆出与 IPC 事件 channel 是否对齐
 
 ### B5. 前端契约审计
 
-- [ ] `web/src/generated/` ts-rs 类型与手写 `web/src/types.ts` 的边界
-- [ ] `web/src/lib/{pin-*,node-*,workflow-*}.ts` 与 Rust 真值源同步状态
-- [ ] FlowGram 适配层 `flowgram.ts` 的 fallback / hack 清单（特别是 E2E fallback 路径）
+- [x] `web/src/generated/` ts-rs 类型与手写 `web/src/types.ts` 的边界
+- [x] `web/src/lib/{pin-*,node-*,workflow-*}.ts` 与 Rust 真值源同步状态
+- [x] FlowGram 适配层 `flowgram.ts` 的 fallback / hack 清单（特别是 E2E fallback 路径）
 
 ---
 
@@ -175,7 +175,7 @@
 全部 5 项勾完即解冻：
 
 - [ ] Phase A 全勾（所有 in-flight ADR 完成 + 同步状态）
-- [ ] Phase B 全勾（每片产出 findings 文档）
+- [x] Phase B 全勾（每片产出 findings 文档）
 - [ ] Phase C 全勾（行数普查 + `lib.rs` 拆分完成；其他文件已决策）
 - [ ] Phase D 全勾（规范扫描 0 违规，或全部入 P0/P1 清单）
 - [ ] Phase E 全勾（findings 整合 + 历史 plan Status 补全 + AGENTS.md freeze 段删除）
