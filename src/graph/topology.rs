@@ -200,6 +200,7 @@ pub(crate) fn detect_non_exec_edge_cycle(
 ///
 /// `'a` 借用 `WorkflowEdge` 列表本身的生命周期——分类只重组引用，不克隆。
 #[derive(Debug)]
+#[allow(clippy::struct_field_names)]
 pub(crate) struct ClassifiedEdges<'a> {
     /// Exec 边——Phase 2 起由 Runner 用于确认 Exec push 范围；Phase 1 暂未读取。
     #[allow(dead_code)]

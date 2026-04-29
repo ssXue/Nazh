@@ -4,8 +4,12 @@
 //! 从 [`DataStore`] 读取数据，调用节点的 [`transform`](nazh_core::NodeTrait::transform)
 //! 方法，将输出写回 `DataStore`，并将新的 [`ContextRef`] 分发到下游或结果流。
 //!
-//! 输出走双路径（ADR-0014）：dispatch 解析后的目标 port id 若属于节点的 Data 输出
-//! 引脚集合，写 [`OutputCache`] 槽位；其余走 Exec MPSC 推送。节点返回的
+//! 输出走三分支路径（ADR-0014 + ADR-0015）：
+//! - **Data 引脚**：仅写 [`OutputCache`] 槽位，不推 ContextRef（下游拉取）。
+//! - **Reactive 引脚**：写 [`OutputCache`] 槽位 **+** 推 ContextRef（Data + Exec 并集）。
+//! - **Exec 引脚**：仅推 ContextRef，不写缓存。
+//!
+//! 节点返回的
 //! [`NodeOutput::metadata`](nazh_core::NodeOutput::metadata) 不进入 payload，
 //! 而是通过 [`ExecutionEvent::Completed`] 事件独立传递给前端。
 
@@ -42,6 +46,8 @@ pub(crate) async fn run_node(
     node_timeouts_index: Arc<HashMap<String, Option<Duration>>>,
     // ADR-0014 Phase 4：Pure memo
     pure_memo: Arc<PureMemo>,
+    // ADR-0015 Phase 1：Reactive 边三分支 dispatch
+    reactive_output_pin_ids: HashSet<String>,
 ) {
     let node_id = node.id().to_owned();
 
@@ -110,17 +116,23 @@ pub(crate) async fn run_node(
                 let mut merged_metadata = serde_json::Map::new();
 
                 for node_output in output.outputs {
-                    // 先写 Data 缓存槽（不 push）。当前生产 14 类节点
-                    // data_output_pin_ids 永远空——is_empty 短路保证零额外工作。
-                    if !data_output_pin_ids.is_empty() {
-                        let data_pins_to_write: Vec<&String> = match &node_output.dispatch {
-                            NodeDispatch::Broadcast => data_output_pin_ids.iter().collect(),
+                    // Data + Reactive 缓存写（不 push）。Reactive = Data（写缓存）+ Exec（推 ContextRef），
+                    // 缓存写在统一路径完成（ADR-0015 Phase 1）。
+                    if !data_output_pin_ids.is_empty() || !reactive_output_pin_ids.is_empty() {
+                        let cache_pins_to_write: Vec<&String> = match &node_output.dispatch {
+                            NodeDispatch::Broadcast => data_output_pin_ids
+                                .iter()
+                                .chain(reactive_output_pin_ids.iter())
+                                .collect(),
                             NodeDispatch::Route(ports) => ports
                                 .iter()
-                                .filter(|p| data_output_pin_ids.contains(*p))
+                                .filter(|p| {
+                                    data_output_pin_ids.contains(*p)
+                                        || reactive_output_pin_ids.contains(*p)
+                                })
                                 .collect(),
                         };
-                        for pin_id in data_pins_to_write {
+                        for pin_id in cache_pins_to_write {
                             let _ = output_cache.write_now(
                                 pin_id,
                                 data_cache_value_for_pin(pin_id, &node_output.payload),
@@ -129,7 +141,9 @@ pub(crate) async fn run_node(
                         }
                     }
 
-                    // Exec 路径：仅匹配非 Data 输出 pin 的下游 sender
+                    // Exec + Reactive 路径：仅排除纯 Data 输出 pin 的下游 sender。
+                    // Reactive 源 pin 不在 data_output_pin_ids 中，自然通过过滤器——
+                    // 获得 ContextRef 推送（ADR-0015 Phase 1 三分支语义）。
                     let matching_targets = match &node_output.dispatch {
                         NodeDispatch::Broadcast => downstream_senders
                             .iter()

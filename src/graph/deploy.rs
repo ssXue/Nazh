@@ -172,22 +172,34 @@ pub async fn deploy_workflow_with_ai(
     // ADR-0014 Phase 3：构造 Data 入边反向索引（每个 consumer → 其 Data 入边列表）
     let edges_by_consumer = Arc::new(super::pull::build_edges_by_consumer(&classified.data_edges));
 
-    // 单次遍历给每节点同时构造 OutputCache（slots 预分配）与 data_output_pin_ids 集合
+    // 单次遍历给每节点同时构造 OutputCache（slots 预分配）、data_output_pin_ids 与
+    // reactive_output_pin_ids 集合（ADR-0015 Phase 1：Reactive 引脚同样需要缓存槽）
     let mut output_caches: HashMap<String, Arc<OutputCache>> =
         HashMap::with_capacity(nodes_by_id.len());
     let mut data_output_pin_ids_by_node: HashMap<String, HashSet<String>> =
         HashMap::with_capacity(nodes_by_id.len());
+    let mut reactive_output_pin_ids_by_node: HashMap<String, HashSet<String>> =
+        HashMap::with_capacity(nodes_by_id.len());
     for (id, node) in &nodes_by_id {
         let cache = OutputCache::new();
-        let mut pin_ids = HashSet::new();
+        let mut data_pin_ids = HashSet::new();
+        let mut reactive_pin_ids = HashSet::new();
         for pin in node.output_pins() {
-            if pin.kind == PinKind::Data {
-                cache.prepare_slot(&pin.id);
-                pin_ids.insert(pin.id);
+            match pin.kind {
+                PinKind::Data => {
+                    cache.prepare_slot(&pin.id);
+                    data_pin_ids.insert(pin.id);
+                }
+                PinKind::Reactive => {
+                    cache.prepare_slot(&pin.id);
+                    reactive_pin_ids.insert(pin.id);
+                }
+                PinKind::Exec => {}
             }
         }
         output_caches.insert(id.clone(), Arc::new(cache));
-        data_output_pin_ids_by_node.insert(id.clone(), pin_ids);
+        data_output_pin_ids_by_node.insert(id.clone(), data_pin_ids);
+        reactive_output_pin_ids_by_node.insert(id.clone(), reactive_pin_ids);
     }
 
     // ---- 阶段 1：on_deploy ----
@@ -300,6 +312,10 @@ pub async fn deploy_workflow_with_ai(
             .get(node_id)
             .cloned()
             .unwrap_or_default();
+        let reactive_output_pin_ids = reactive_output_pin_ids_by_node
+            .get(node_id)
+            .cloned()
+            .unwrap_or_default();
         let output_cache = Arc::clone(
             output_caches
                 .get(node_id)
@@ -323,6 +339,8 @@ pub async fn deploy_workflow_with_ai(
             Arc::clone(&node_timeouts_index),
             // ADR-0014 Phase 4 Pure memo
             Arc::clone(&pure_memo),
+            // ADR-0015 Phase 1：Reactive 边三分支 dispatch
+            reactive_output_pin_ids,
         ));
     }
 
