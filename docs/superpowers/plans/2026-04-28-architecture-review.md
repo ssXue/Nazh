@@ -20,8 +20,8 @@
 
 - [x] **Phase 3** PURE 节点 — `docs/superpowers/plans/2026-04-28-adr-0014-phase-3-pure-nodes.md`（merged in f1f23a2）
 - [x] **Phase 3b** lookup + mixed input — `docs/superpowers/plans/2026-04-28-adr-0014-phase-3b-lookup-mixed-input.md`
-- [ ] **Phase 4** cache lifecycle — `docs/superpowers/plans/2026-04-28-adr-0014-phase-4-cache-lifecycle.md`
-- [ ] **Phase 5** visual + AI — `docs/superpowers/plans/2026-04-28-adr-0014-phase-5-visual-ai.md`
+- [x] **Phase 4** cache lifecycle — `docs/superpowers/plans/2026-04-28-adr-0014-phase-4-cache-lifecycle.md`
+- [x] **Phase 5** visual + AI — `docs/superpowers/plans/2026-04-30-adr-0014-phase5-visual-ai.md`
 
 ### Phase 6 EventBus + EdgeBackpressure + ConcurrencyPolicy（RFC-0002）
 
@@ -44,10 +44,10 @@
 
 ### 每个 ADR 完成时同步
 
-- [ ] ADR 状态推进：提议中 → 已接受 → 已实施
-- [ ] 同步 `docs/adr/README.md` 索引行
-- [ ] 同步 `crates/*/AGENTS.md` 影响内容
-- [ ] prepend `> **Status:** merged in <SHA>` 到对应 plan 文件顶部
+- [x] ADR 状态推进：提议中 → 已接受 → 已实施
+- [x] 同步 `docs/adr/README.md` 索引行
+- [x] 同步 `crates/*/AGENTS.md` 影响内容
+- [x] prepend `> **Status:** merged in <SHA>` 到对应 plan 文件顶部
 
 ---
 

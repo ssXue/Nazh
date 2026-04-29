@@ -1,4 +1,4 @@
-> **Status:** deferred as Phase A backlog (not implemented as of 2026-04-29)
+> **Status:** merged in 9db4035
 
 # ADR-0014 Phase 4 实施计划：缓存生命周期与策略 + 用例 4 旁路 fan-out
 
