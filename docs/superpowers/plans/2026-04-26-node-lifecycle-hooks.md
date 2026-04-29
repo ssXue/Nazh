@@ -1,3 +1,5 @@
+> **Status:** merged in bc386e9
+
 # ADR-0009 节点生命周期钩子实施计划
 
 > **Status:** ✅ 已合入 main（2026-04-26，merged in c699431；后续微调 1e219d6 / e6d37c3）

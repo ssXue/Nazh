@@ -1,5 +1,6 @@
 // toNazhWorkflowGraph 单元测试
 import { describe, expect, it } from 'vitest';
+import { getAllNodeDefinitions } from '../../components/flowgram/flowgram-node-library';
 import { toFlowgramWorkflowJson, toNazhWorkflowGraph } from '../flowgram';
 import type { WorkflowGraph } from '../../types';
 
@@ -53,6 +54,28 @@ describe('toNazhWorkflowGraph', () => {
     const result = toNazhWorkflowGraph(flowgramJson, graph);
     expect(result.nodes['a']?.type).toBe('native');
     expect(result.nodes['b']?.type).toBe('code');
+  });
+
+  it('所有可执行节点定义都会保存回 Nazh 图', () => {
+    const executableKinds = getAllNodeDefinitions()
+      .map((definition) => definition.kind)
+      .filter((kind) => kind !== 'subgraph');
+    const graph: WorkflowGraph = {
+      nodes: Object.fromEntries(
+        executableKinds.map((kind, index) => [
+          `${kind}_${index}`,
+          { type: kind, config: {} },
+        ]),
+      ),
+      edges: [],
+    } as WorkflowGraph;
+
+    const flowgramJson = toFlowgramWorkflowJson(graph);
+    const result = toNazhWorkflowGraph(flowgramJson, graph);
+
+    for (const [id, node] of Object.entries(graph.nodes)) {
+      expect(result.nodes[id]?.type).toBe(node.type);
+    }
   });
 
   it('保存 Code Node 时会保留为统一的 code 类型', () => {

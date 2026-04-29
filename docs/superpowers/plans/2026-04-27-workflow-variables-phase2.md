@@ -1,3 +1,5 @@
+> **Status:** merged in 2d01400
+
 # ADR-0012 工作流变量 Phase 2 Implementation Plan
 
 > **Status:** ✅ 全部 commit 已合入 main（2026-04-27）

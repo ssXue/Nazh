@@ -47,7 +47,7 @@ impl NativeNode {
         let mut payload_map = into_payload_map(payload);
 
         if let Some(message) = &self.config.message {
-            payload_map.insert("_native_message".to_owned(), Value::String(message.clone()));
+            payload_map.insert("native_message".to_owned(), Value::String(message.clone()));
         }
 
         for (key, value) in &self.config.inject {

@@ -1,3 +1,5 @@
+> **Status:** merged in 5e1330d
+
 # Cargo Clippy Workspace 修复计划
 
 > **Status:** 已完成（2026-04-26 对账 / 验证）

@@ -1,3 +1,5 @@
+> **Status:** deferred as Phase A backlog (not implemented as of 2026-04-29)
+
 # ADR-0014 Phase 4 实施计划：缓存生命周期与策略 + 用例 4 旁路 fan-out
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

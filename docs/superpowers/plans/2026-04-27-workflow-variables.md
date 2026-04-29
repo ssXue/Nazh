@@ -1,3 +1,5 @@
+> **Status:** merged in c4e942e
+
 # ADR-0012 工作流变量 Phase 1 Implementation Plan
 
 > **Status:** ✅ 全部 9 commit 已合入 main（2026-04-27）

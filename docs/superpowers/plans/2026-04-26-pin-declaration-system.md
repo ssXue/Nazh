@@ -1,3 +1,5 @@
+> **Status:** merged in 2b383ae
+
 # ADR-0010 Pin 声明系统实施计划（Phase 1）
 
 > **Status:** ✅ Phase 1 已合入 main（2026-04-26）

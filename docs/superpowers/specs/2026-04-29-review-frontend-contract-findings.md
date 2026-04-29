@@ -8,7 +8,7 @@
 
 | ID | 优先级 | 位置 | 发现 | 建议动作 |
 |----|--------|------|------|----------|
-| B5-FE-01 | P0 | `web/src/lib/flowgram.ts:31` | `FLOWGRAM_BUSINESS_NODE_TYPES` 漏掉 `mqttClient`、`c2f`、`minutesSince`。这些节点已在 FlowGram node library / catalog 中存在，但 `toNazhWorkflowGraph()` 会把不在白名单里的节点过滤掉，导致保存/部署 AST 丢节点。 | 立即修复：白名单改为从 `NODE_DEFINITIONS` / `NazhNodeKind` 单一来源生成，或至少补齐三种节点并加回归测试。 |
+| B5-FE-01 | P0（已修复） | `web/src/lib/flowgram.ts:31` | `FLOWGRAM_BUSINESS_NODE_TYPES` 漏掉 `mqttClient`、`c2f`、`minutesSince`。这些节点已在 FlowGram node library / catalog 中存在，但 `toNazhWorkflowGraph()` 会把不在白名单里的节点过滤掉，导致保存/部署 AST 丢节点。 | 本轮 Phase E 已修复：白名单改为从 `getAllNodeDefinitions()` 派生，并补 `flowgram-to-nazh` 回归测试。 |
 | B5-FE-02 | P1 | `web/src/types.ts:8` | `types.ts` 没有 re-export `SetWorkflowVariable*` / `SnapshotWorkflowVariables*` / `VariableChangedPayload` 等新 generated 类型，`workflow-variables.ts` 直接从 `../generated` 引用。当前可工作，但“generated → types.ts → app”边界不一致。 | 统一规则：跨 IPC 消费默认从 `types.ts` 取；generated 仅在类型扩展文件内部使用。 |
 | B5-FE-03 | P2 | `web/src/generated/index.ts:2` | generated index 注释仍写 `cargo test --workspace --lib export_bindings`，与 root AGENTS 当前命令 `cargo test -p tauri-bindings --features ts-export export_bindings` 不一致。 | 下次生成或手工修正生成模板/后处理注释。 |
 | B5-FE-04 | P2 | `web/src/lib/pin-schema-cache.ts:24` | `describe_node_pins` IPC 失败时 fallback `Any/Any` + `Exec/Exec` 是有意 UX 降级；但在浏览器 E2E 模式下会长期走 fallback，不能断言后端真实 pin。 | 保留；在 E2E 新用例中继续只断 wiring presence，不断后端真值。 |

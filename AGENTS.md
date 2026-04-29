@@ -8,13 +8,13 @@ It is read by both humans and AI agents (Claude Code, OpenCode, Cursor, etc.). `
 
 Nazh is an industrial-edge workflow orchestration engine with AI as a first-class capability. It connects device ingestion, data transformation, scripted logic, AI-assisted authoring, and a desktop operations UI into a single local runtime.
 
-Stack: **Rust engine (Cargo workspace, 9 crates) + Tauri v2 desktop shell + React 18 / FlowGram.AI canvas**.
+Stack: **Rust engine (Cargo workspace, 11 packages) + Tauri v2 desktop shell + React 18 / FlowGram.AI canvas**.
 
 Everything runs in one process — no HTTP/gRPC server, no external broker. AI features (script generation, thinking-mode completions, workflow composition) flow through the `AiService` trait in Ring 0 (`nazh_core::ai`); the OpenAI-compatible HTTP/SSE implementation lives in the `ai` crate (ADR-0019).
 
 ## ⚠️ ARCHITECTURE FREEZE（2026-04-28 起）
 
-> **当前状态**：ADR sprint + 全项目接口/数据结构/模块拆分/规范 review 进行中。
+> **当前状态**：Phase B/C/D/E review 收尾完成；Phase A ADR sprint 仍未完成，架构冻结继续有效。
 > **Plan**：`docs/superpowers/plans/2026-04-28-architecture-review.md`（退出标准 5 项全勾才解冻）
 >
 > **阶段**：
@@ -74,8 +74,8 @@ cargo deny check
 
 ### Three-Layer Stack
 
-1. **Rust Engine** — Cargo workspace rooted at `/` with 9 crates (see below). Public facade is the `nazh-engine` library crate at `src/lib.rs`.
-2. **Tauri Shell** (`src-tauri/`) — Desktop app binary `nazh-desktop`. Exposes IPC commands to the frontend, bridges engine events to the UI, manages shell-side concerns (observability store, project library files, MQTT/Timer/Serial trigger supervisors).
+1. **Rust Engine** — Cargo workspace rooted at `/` with 11 packages (see below). Public facade is the `nazh-engine` library crate at `src/lib.rs`.
+2. **Tauri Shell** (`src-tauri/`) — Desktop app binary `nazh-desktop`. Exposes IPC commands to the frontend, bridges engine events to the UI, manages shell-side concerns (observability store, project library files, AI config, runtime dispatch queues, deployment session files).
 3. **React Frontend** (`web/`) — Vite + React 18 + TypeScript + FlowGram.AI. Communicates **exclusively** via Tauri `invoke` / `Window::emit` — no HTTP or gRPC.
 
 ### Cargo Workspace Layout (Ring 0 / Ring 1)
@@ -89,6 +89,7 @@ crates/
   scripting/         # Ring 1 — Rhai engine base (with AI-aware ai_complete() helper)
   nodes-flow/        # Ring 1 — if / switch / loop / tryCatch / code (Rhai script)
   nodes-io/          # Ring 1 — timer / serial / native / modbus / http / mqtt / bark / sql / debugConsole
+  nodes-pure/        # Ring 1 — c2f / minutesSince pure-form Data 引脚节点（ADR-0014 Phase 3）
   ai/                # Ring 1 — OpenAI-compatible client (streaming, thinking-mode) + 壳层配置型；AiService trait 在 Ring 0（ADR-0019）
   tauri-bindings/    # IPC — Tauri 命令请求/响应类型 + ts-rs 导出汇总（ADR-0017）
 src/                 # Root facade crate `nazh-engine` — DAG orchestration + `standard_registry()`
@@ -136,11 +137,20 @@ IPC boundary types are defined once in Rust and auto-generated to TypeScript via
 - `tsc` errors if Rust types change without regenerating — run `cargo test -p tauri-bindings --features ts-export export_bindings` after any Rust type change.
 - IPC response types (`DeployResponse`, `DispatchResponse`, `UndeployResponse`, `NodeTypeEntry`, `ListNodeTypesResponse`) live in `crates/tauri-bindings/src/lib.rs`（since ADR-0017 已实施）。该 crate 还提供 `list_node_types_response(&NodeRegistry)` 与统一的 `export_all()` ts-rs 入口。`ts-rs` 在各 crate 中通过 `ts-export` feature 门控；只需启用 `tauri-bindings` 的 `ts-export` feature 即可经依赖传递触发全工作区导出。
 
-### Tauri IPC Surface (`src-tauri/src/lib.rs`)
+### Tauri IPC Surface (`src-tauri/src/lib.rs` + `src-tauri/src/commands/`)
 
-~24 commands covering: workflow lifecycle (`deploy_workflow`, `dispatch_payload`, `undeploy_workflow`, `list_runtime_workflows`, `set_active_runtime_workflow`, `list_dead_letters`, `list_node_types`), connections (`list_connections`, `load/save_connection_definitions`), serial (`list_serial_ports`, `test_serial_connection`), AI (`list_ai_providers`, `save_ai_provider`, `delete_ai_provider`, `test_ai_provider`, `copilotComplete`), observability (`query_observability`), workflow variables (`snapshot_workflow_variables` — snapshot 读, ADR-0012 Phase 1; `set_workflow_variable` — 类型化写入, ADR-0012 Phase 2), deployment persistence, project library.
+30 commands covering:
+- workflow lifecycle/runtime: `deploy_workflow`, `dispatch_payload`, `undeploy_workflow`, `list_runtime_workflows`, `set_active_runtime_workflow`, `list_dead_letters`
+- node / pin catalog: `list_node_types`, `describe_node_pins`
+- workflow variables: `snapshot_workflow_variables`, `set_workflow_variable`
+- connections: `list_connections`, `load_connection_definitions`, `save_connection_definitions`
+- observability: `query_observability`
+- deployment session files: `load_deployment_session_file`, `load_deployment_session_state_file`, `list_deployment_sessions_file`, `save_deployment_session_file`, `set_deployment_session_active_project_file`, `remove_deployment_session_file`, `clear_deployment_session_file`
+- serial: `list_serial_ports`, `test_serial_connection`
+- project library/export: `load_project_board_files`, `save_project_board_files`, `save_flowgram_export_file`
+- AI: `load_ai_config`, `save_ai_config`, `test_ai_provider`, `copilot_complete`, `copilot_complete_stream`
 
-Event channels: `workflow://node-status`, `workflow://result`, `workflow://deployed`, `workflow://undeployed`, `workflow://runtime-focus`, `workflow://variable-changed`（ADR-0012 Phase 2，write-on-change 变量变更广播）. Runtime result/status events are scoped payloads with `workflow_id`.
+Event channels: `workflow://node-status`, `workflow://result`, `workflow://deployed`, `workflow://undeployed`, `workflow://runtime-focus`, `workflow://variable-changed`（ADR-0012 Phase 2，write-on-change 变量变更广播） and dynamic `copilot://stream/{stream_id}`. Runtime result/status events are scoped payloads with `workflow_id`.
 
 ## Critical Coding Constraints
 
@@ -389,11 +399,17 @@ Located in `docs/superpowers/plans/` and `docs/superpowers/specs/`. These are **
 
 **未来若需 IPC 真值的 E2E**：改用 `@tauri-apps/playwright` 或 webview/electron-mode；或加 IPC mock 层（`hasTauriRuntime() === false` 时让 `invoke` 返回 fixture 值）。不要硬撞——拖拽连接 + console capture 断言跨 Kind 拒绝在 Chromium 模式下也仍可行（`pin-validator` 是纯函数，不依赖 IPC），但 ADR-0014 Phase 2 评审决定不做（拖拽脆弱性 + Vitest 已覆盖）。
 
-## Project Status
+## Project Status（2026-04-29）
 
 **Phases 1-5 complete** (crate extraction, DataStore, ConnectionGuard, Ring 1 split, Plugin system). See `docs/rfcs/0002-分层内核与插件架构.md`.
 
-**Current batch of ADRs** (2026-04-17 to 2026-04-26):
+**Architecture review batch**（2026-04-29）：
+- `docs/superpowers/plans/2026-04-28-architecture-review.md` 的 Phase B/C/D/E 已完成本轮收尾，整合 findings 见 `docs/superpowers/specs/2026-04-29-architecture-review-findings.md`。
+- `src-tauri/src/lib.rs` 已按 IPC 命令域拆到 `src-tauri/src/commands/*`，`lib.rs` 只保留 setup + handler 注册（132 行）。
+- 规范扫描结论：生产代码 `.unwrap()` / `.expect()` 0 命中、`unsafe` 0 命中、节点不直接读写 `DataStore`；`native` 节点 payload 键从 `_native_message` 修正为 `native_message`。
+- **未解冻**：Phase A 仍未完成（ADR-0014 Phase 3b/4/5、Phase 6 EventBus、ADR-0015、ADR-0016），freeze 段保留。`loop` 容器恢复已在当前 `main` 包含（可追溯到 `e35cb43`），不再计入解冻差异。
+
+**Current batch of ADRs** (2026-04-17 to 2026-04-29):
 - ADR-0008 (metadata separation) — **accepted / landed**
 - ADR-0017 (IPC + ts-rs 迁出 Ring 0) — **已实施**（2026-04-24，见 `crates/tauri-bindings/`）
 - ADR-0011 (节点能力标签 `NodeCapabilities`) — **已实施**（2026-04-24，位图落在 `crates/core/src/node.rs`，前端常量表 `web/src/lib/node-capabilities.ts`）
@@ -402,13 +418,14 @@ Located in `docs/superpowers/plans/` and `docs/superpowers/specs/`. These are **
 - ADR-0019 (AI 能力依赖反转) — **已实施**（2026-04-26，`AiService` trait + 请求/响应类型上移到 `crates/core/src/ai.rs`；`ai` crate 改为纯实现 + 配置型；`scripting` / `nodes-flow` 不再依赖 `ai`）
 - ADR-0018 (`nodes-io` 按协议 feature 门控) — **已实施**（2026-04-26，`io-sql/io-http/io-mqtt/io-modbus/io-serial/io-notify` + 元 feature `io-all`；facade 转传；`debug/native/timer/template` 永远启用）
 - ADR-0012 (工作流变量) — **已实施 Phase 1+2**（Phase 1: 2026-04-27 / Phase 2: 2026-04-27，`crates/core/src/variables.rs` + Rhai `vars.get/set/cas` + `ExecutionEvent::VariableChanged` write-on-change 事件广播 + IPC `set_workflow_variable` 写命令 + 前端 `RuntimeVariablesPanel` + `workflow://variable-changed` 事件通道）
-- ADR-0014（执行边与数据边分离 → 重命名为「引脚求值语义二分」）— **已实施 Phase 1 + Phase 2 + Phase 3**（2026-04-28）。Phase 3：UE5 风格 Pure 节点首发——`c2f` + `minutesSince` 在新 crate `crates/nodes-pure/` 落地，`is_pure_form` 自动推导，部署期跳过 Tokio task spawn，Runner 首次激活 pull 路径（`src/graph/pull.rs` 含递归求值 pure-form 上游 + 读 OutputCache 非 pure-form 上游），前端 `isPureForm` + 绿头圆角视觉。跨语言 fixture `pure_form_matrix.jsonc` 4 配对穷尽。集成测试覆盖 source→c2f→sink 三段拉链。Phase 3 plan `docs/superpowers/plans/2026-04-28-adr-0014-phase-3-pure-nodes.md`
+- ADR-0014（执行边与数据边分离 → 重命名为「引脚求值语义二分」）— **已实施 Phase 1 + Phase 2 + Phase 3**（2026-04-28）。Phase 3：UE5 风格 Pure 节点首发——`c2f` + `minutesSince` 在新 crate `crates/nodes-pure/` 落地，`is_pure_form` 自动推导，部署期跳过 Tokio task spawn，Runner 首次激活 pull 路径（`src/graph/pull.rs` 含递归求值 pure-form 上游 + 读 OutputCache 非 pure-form 上游），前端 `isPureForm` + 绿头圆角视觉。跨语言 fixture `pure_form_matrix.jsonc` 4 配对穷尽。集成测试覆盖 source→c2f→sink 三段拉链。Phase 3b/4/5 仍在 Phase A backlog，见对应 plan。
 - ADR-0013（子图与宏系统）— **已实施 子图核心**（2026-04-28，merge 68ab709 时丢失的 ADR-0013 改动恢复完成）。前端 `subgraph` 容器 + `subgraphInput` / `subgraphOutput` 桥接 + 设置面板 + AI 编排器扩展全部就位；`web/src/lib/flowgram.ts` 的 `flattenSubgraphs` 完整实现（递归展平 + 参数替换 `{{name}}` + 8 层深度上限 + 循环引用检测）；Rust `crates/nodes-flow/src/passthrough.rs` 已注册（`mod passthrough` + `subgraphInput` / `subgraphOutput` 通过 `NodeCapabilities::empty()` 在 `FlowPlugin::register` 内注册）；`tests/workflow.rs` `passthrough_nodes_forward_payload` 集成测试通过；`vitest.config.ts` 新增 `setupFiles: ['./vitest.setup.ts']` polyfill `navigator` 让 FlowGram SDK 在 node 环境正常 import；顺手修了 pre-existing 的 `flowgram-shortcuts.test.ts` 失败。loop 升级为容器（origin commit `e35cb43`）的工作未带回，留作后续 polish。
 - ADR-0015 / ADR-0016 / ADR-0020 — **proposed**, awaiting review. See `docs/adr/README.md` for the index.
 
 **Immediate known tech debt:**
+- **Architecture review 派生 P1**（2026-04-29）：变量控制事件从 `ExecutionEvent` 拆出；`src/graph/` 触发 ADR-0020 重评；runtime / dead-letter / scoped event 等 IPC 类型迁入 `tauri-bindings`；Rhai `max_operations` 增加统一 clamp；前端大文件拆分。详见 `docs/superpowers/specs/2026-04-29-architecture-review-findings.md`。
 - ~~**ADR-0013 子图实施 deployment 断链**（2026-04-28 发现）~~ **已偿还（2026-04-28）**。merge 68ab709 解决冲突时丢失的 ADR-0013 改动重写恢复——`flattenSubgraphs` + Rust `mod passthrough` 注册 + `FlowgramCanvas` 容器/桥接渲染 + 设置面板全部到位，三件套全绿。**ADR-0014 Phase 3 PURE 节点 plan 现可推进**（PinKind ↔ 子图的 4 处交叉点 memo 仍待 phase 3 立项时具体规划）。
-- ~~MQTT subscriber / Timer / Serial root lifecycle is owned by the Tauri shell.~~ **已偿还（2026-04-26，ADR-0009 已实施）**。三类触发器节点现自持 `on_deploy` + `LifecycleGuard`；壳层 `src-tauri/src/lib.rs` 由 3609 行降至 2498 行（约 -31%）。**语义变化**：触发器节点走 `NodeHandle::emit` 而非 `dispatch_router` 的 trigger lane，失去 backpressure / DLQ / retry / metrics 防御能力，等 ADR-0014 / ADR-0016 引擎级背压能力补回。
+- ~~MQTT subscriber / Timer / Serial root lifecycle is owned by the Tauri shell.~~ **已偿还（2026-04-26，ADR-0009 已实施）**。三类触发器节点现自持 `on_deploy` + `LifecycleGuard`；壳层不再监督触发器任务。**语义变化**：触发器节点走 `NodeHandle::emit` 而非 `dispatch_router` 的 trigger lane，失去 backpressure / DLQ / retry / metrics 防御能力，等 ADR-0014 / ADR-0016 引擎级背压能力补回。
 - ~~IPC response types in `crates/core/` contradict Ring 0 purity. ADR-0017 plans to extract `crates/tauri-bindings/`.~~ **已偿还（2026-04-24，ADR-0017 已实施）**
 - ~~`cargo clippy --workspace --all-targets -- -D warnings` 在 `src-tauri` 与 observability 上失败~~ **已偿还（2026-04-26，见 `docs/superpowers/plans/2026-04-25-cargo-clippy-workspace-fixes.md`）**。`crates/nodes-io/src/http_client.rs` / `bark_push.rs` 的 `too_many_lines` 现以 `#[allow]` 抑制（同上）。
 
@@ -440,12 +457,12 @@ Located in `docs/superpowers/plans/` and `docs/superpowers/specs/`. These are **
 > 3. ✅ **ADR-0010** Pin 声明系统 — **Phase 1 + Phase 2 + Phase 3 + Phase 4 部分已实施**（Phase 1: Ring 0 类型 + 部署期校验器 + 4 分支节点；Phase 3: 4 协议节点 input/output 收紧到 `Json`（保守方案，不引入 `Custom`）+ 兼容矩阵合约 fixture 前后端共享；Phase 2: IPC `describe_node_pins` + 前端 pin-compat/cache/validator 三件套 + FlowGram `canAddLine` 接入连接期校验 + branch ports 按 PinType 着色；Phase 4: pin tooltip + AI prompt 携带 pin schema。协议节点端口着色 / `Custom` 类型 + row-formatter 节点 deferred）
 > 4. ✅ **ADR-0018 / ADR-0019**（独立支线，**已实施**，2026-04-26）— `nodes-io` 协议 feature 门控 + AI 依赖反转。`nazh-core::ai` 现为 trait + 类型源头；`nodes-io` 协议 dep 全部 optional
 > 5. ✅ **ADR-0012** 工作流变量 — Phase 1+2 已实施（2026-04-27）；Phase 3 候选项已分类，见上文"ADR-0012 Phase 3 候选"小节
-> 6. **ADR-0013** 子图与宏（依赖 0010）
+> 6. ✅ **ADR-0013** 子图与宏（依赖 0010）— 子图核心已实施；loop 容器恢复已并入当前 `main`
 > 7. **Phase 6 (RFC-0002)** EventBus + EdgeBackpressure + ConcurrencyPolicy — 与 Pin 系统可并行
-> 8. ✅ **ADR-0014** Pin 求值语义二分 — **Phase 1 + Phase 2 + Phase 3 已实施**（2026-04-28）；Phase 4-5 各自独立 plan
+> 8. ✅ **ADR-0014** Pin 求值语义二分 — **Phase 1 + Phase 2 + Phase 3 已实施**（2026-04-28）；Phase 3b/4/5 各自独立 plan，仍未实施
 > 9. **ADR-0015 / ADR-0016** 反应式数据引脚 + 边级可观测性 — polish 阶段
 > 10. 真实协议驱动扩展（OPC-UA、Kafka 消费者等）
 > 11. AI 能力扩展（embeddings、vision，未来 ADR）
 
 **评估性 ADR**：
-- ADR-0020 `src/graph/` 编排层归属 — 当前不实施，待触发条件出现（见 ADR 正文）。
+- ADR-0020 `src/graph/` 编排层归属 — Phase B 已确认触发 1500 行重评条件；解冻后新 ADR/PR 决定是否拆 `crates/graph`。

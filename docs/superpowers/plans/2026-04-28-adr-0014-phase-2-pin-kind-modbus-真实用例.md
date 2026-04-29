@@ -1,3 +1,5 @@
+> **Status:** merged in 1b62327
+
 # ADR-0014 Phase 2 实施计划：第一个真实 Data 引脚（modbusRead `latest`）
 
 > **Status:** merged 2026-04-28（11 个 commit `a799469`..`4419f65`，详见 `docs/adr/0014-执行边与数据边分离.md` 实施进度 Phase 2 章节）。所有 9 个 task 落地，含 1 处 reviewer 文档收紧补丁（`f1771a6`）+ 1 处 test rename 跟进（`1d815b8`）。

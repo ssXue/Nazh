@@ -1,3 +1,5 @@
+> **Status:** merged in e5884d8
+
 # 前端测试体系 + App.tsx 重构实施计划
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

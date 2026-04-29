@@ -1,3 +1,5 @@
+> **Status:** deferred as Phase A backlog (not implemented as of 2026-04-29)
+
 # ADR-0014 Phase 3b 实施计划：`lookup` 节点 + 混合输入 payload 合并语义补完
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

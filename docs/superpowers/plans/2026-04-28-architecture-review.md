@@ -1,3 +1,5 @@
+> **Status:** Phase C/D/E completed 2026-04-29; Phase A remains open, freeze retained
+
 # 2026-04-28 架构 review + 模块拆分 + 规范扫描
 
 **Goal**：在当前所有 in-flight ADR 完成后，对 Ring 0 + Ring 1 + facade + IPC + 前端的接口、数据结构、文件规模、规范符合度做一次系统性 review。输出 (1) 修复 PR 清单 (2) 模块拆分 PR 清单 (3) 规范不符项清单。
@@ -38,7 +40,7 @@
 
 ### loop 升级容器（独立）
 
-- [ ] 把 origin commit `e35cb43` 的工作带回（merge 68ab709 时丢失）
+- [x] 把 origin commit `e35cb43` 的工作带回（merge 68ab709 时丢失；当前 `main` 已包含）
 
 ### 每个 ADR 完成时同步
 
@@ -103,18 +105,18 @@
 
 按"行数 + 职责重叠"优先级排序。
 
-- [ ] **行数普查**
-  - [ ] Rust：`tokei crates/ src/ src-tauri/ --files | sort -rn | head -30`
-  - [ ] TS：`find web/src -name '*.ts' -o -name '*.tsx' | xargs wc -l | sort -rn | head -30`
-  - [ ] 输出 > 500 行清单到 findings 文档
-- [ ] **`src-tauri/src/lib.rs`** 当前 2,675 行 → 按 IPC 命令域拆分
+- [x] **行数普查**
+  - [x] Rust：`tokei` 当前环境不可用，改用 `find crates src src-tauri/src -path '*/target/*' -prune -o -name '*.rs' -type f -print0 | xargs -0 wc -l | sort -rn | head -30`
+  - [x] TS：`find web/src -type f \( -name '*.ts' -o -name '*.tsx' \) -print0 | xargs -0 wc -l | sort -rn | head -30`
+  - [x] 输出 > 500 行清单到 findings 文档
+- [x] **`src-tauri/src/lib.rs`** 当前 2,675 行 → 按 IPC 命令域拆分
   - 草案分组：`commands/{connections,ai,observability,runtime,project_library}.rs` + `events.rs`
   - `lib.rs` 只做 register + setup
   - 目标：`lib.rs` < 500 行
   - 同 PR 更新 `AGENTS.md` IPC surface 段
-- [ ] **其他 > 500 行文件按 review 输出清单逐个评估**
+- [x] **其他 > 500 行文件按 review 输出清单逐个评估**
   - 每个文件单独决策：拆 / 保留 / 改架构
-- [ ] **拆分原则**
+- [x] **拆分原则**
   - 不破坏 public API
   - 拆分前后 `cargo test --workspace` 通过率不变
   - 同 PR 更新对应 crate `AGENTS.md` 模块表
@@ -125,48 +127,48 @@
 
 对照 `AGENTS.md` "Critical Coding Constraints" + "Design Principles" 全仓 grep + 人工复核。
 
-- [ ] **`.unwrap()` / `.expect()` 出现位置**（test 模块除外）
+- [x] **`.unwrap()` / `.expect()` 出现位置**（test 模块除外）
   - 命令：`rg '\.(unwrap|expect)\(' crates/ src/ src-tauri/ -t rust -n | rg -v 'tests?\.rs|#\[cfg\(test\)\]'`
   - 每个命中判定：真违规 → 修；test helper → 加 `#[allow]`；初始化路径 → 评估
-- [ ] **`unsafe` 出现位置**
+- [x] **`unsafe` 出现位置**
   - 命令：`rg 'unsafe\s+(fn|impl|\{)' crates/ src/ src-tauri/ -t rust -n`
   - 期望：0 命中
-- [ ] **节点 `transform` 内 `DataStore` 读写检测**
+- [x] **节点 `transform` 内 `DataStore` 读写检测**
   - 命令：`rg 'DataStore|store\.(read|write)' crates/nodes-* -t rust -n`
   - 期望：0 命中（节点不应碰 store，由 Runner 负责）
-- [ ] **节点是否把 metadata 塞 payload**
+- [x] **节点是否把 metadata 塞 payload**
   - 人工 review：每个节点 `transform` 返回路径上 payload 字段是否含 `metadata`-语义键
-- [ ] **Rhai 节点 max_operations**
+- [x] **Rhai 节点 max_operations**
   - 命令：`rg 'max_operations|set_max_operations' crates/ -t rust`
   - 检查：默认 ≥ 50k 是否仍生效；是否有节点 override 到更大值或关闭限制
-- [ ] **panic isolation**
+- [x] **panic isolation**
   - 所有 `NodeTrait::transform` 调用走 `catch_unwind + timeout` 包装（Runner 路径）
   - `NodeHandle::emit`（触发器路径）是否同样隔离
-- [ ] **节点直接访问硬件检测**
+- [x] **节点直接访问硬件检测**
   - 命令：`rg 'tokio_modbus::|rumqttc::|reqwest::|tokio_serial::' --files-without-match crates/connections/ crates/nodes-io/`
   - 在 `nodes-io` / `connections` 之外不应出现
-- [ ] **WorkflowNodeDefinition pattern 扩散**
+- [x] **WorkflowNodeDefinition pattern 扩散**
   - 列出所有"应是稳定 type"的 public struct，检查是否仍是 pub 字段
-- [ ] **CI 三件套**
-  - [ ] `cargo clippy --workspace --all-targets -- -D warnings` 0 warning
-  - [ ] `cargo fmt --all -- --check` 通过
-  - [ ] `cargo deny check` 通过
+- [x] **CI 三件套**
+  - [x] `cargo clippy --workspace --all-targets -- -D warnings` 0 warning
+  - [x] `cargo fmt --all -- --check` 通过
+  - [x] `cargo deny check` 通过（仅既有 license/duplicate warnings，exit 0）
 
 ---
 
 ## Phase E: 整合与 PR 清单（Day 8）
 
-- [ ] 写 `docs/superpowers/specs/2026-05-XX-architecture-review-findings.md`
+- [x] 写 `docs/superpowers/specs/2026-05-XX-architecture-review-findings.md`
   - 按 P0（必修）/ P1（应修）/ P2（可选）排序所有发现
   - 每条标注：来源 phase / 影响面 / 建议 PR 范围
-- [ ] 派生出修复 PR 列表（不要求 review 期内 merge，列出即可）
-- [ ] 一次性补 22 个历史 plan 的 `Status` 标记（已 merged 的写 `> **Status:** merged in <SHA>`；deferred 的写明状态）
-- [ ] 更新 `AGENTS.md`
-  - [ ] 删除 freeze 段
-  - [ ] 同步 Project Status / 已知 tech debt
-  - [ ] 同步 ADR Execution Order 状态
-- [ ] 同步 memory 文件（如必要）
-- [ ] 关闭本 plan：prepend `> **Status:** completed YYYY-MM-DD`
+- [x] 派生出修复 PR 列表（不要求 review 期内 merge，列出即可）
+- [x] 一次性补 22 个历史 plan 的 `Status` 标记（已 merged 的写 `> **Status:** merged in <SHA>`；deferred 的写明状态）
+- [x] 更新 `AGENTS.md`
+  - [ ] 删除 freeze 段（Phase A 未完成，按退出标准保留）
+  - [x] 同步 Project Status / 已知 tech debt
+  - [x] 同步 ADR Execution Order 状态
+- [x] 同步 memory 文件（如必要，本轮以 `AGENTS.md` + findings 为真值源，未写本机 memory）
+- [x] 关闭本 plan：prepend `> **Status:** completed YYYY-MM-DD`
 
 ---
 
@@ -176,9 +178,9 @@
 
 - [ ] Phase A 全勾（所有 in-flight ADR 完成 + 同步状态）
 - [x] Phase B 全勾（每片产出 findings 文档）
-- [ ] Phase C 全勾（行数普查 + `lib.rs` 拆分完成；其他文件已决策）
-- [ ] Phase D 全勾（规范扫描 0 违规，或全部入 P0/P1 清单）
-- [ ] Phase E 全勾（findings 整合 + 历史 plan Status 补全 + AGENTS.md freeze 段删除）
+- [x] Phase C 全勾（行数普查 + `lib.rs` 拆分完成；其他文件已决策）
+- [x] Phase D 全勾（规范扫描 0 违规，或全部入 P0/P1 清单）
+- [ ] Phase E 全勾（findings 整合 + 历史 plan Status 补全 + AGENTS.md freeze 段删除；freeze 删除因 Phase A 未完成而保留）
 
 **findings PR 不阻塞解冻**——按正常 PR 流程后续 merge。
 

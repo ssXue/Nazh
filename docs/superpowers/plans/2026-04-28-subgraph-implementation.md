@@ -1,3 +1,5 @@
+> **Status:** merged in 92acc6b
+
 # ADR-0013 子图节点实施 Plan
 
 > **Status:** 子图核心 2026-04-28 实施；origin commits 3c04016..7b5ae43 → merge 68ab709 解决冲突时丢失部分文件 → 同日重写恢复（详见 AGENTS.md ADR-0013 entry）。三件套全绿。loop 升级为容器（origin commit `e35cb43`）未带回，后续 polish。

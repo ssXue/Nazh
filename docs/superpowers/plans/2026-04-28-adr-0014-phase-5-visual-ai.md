@@ -1,3 +1,5 @@
+> **Status:** deferred as Phase A backlog (not implemented as of 2026-04-29)
+
 # ADR-0014 Phase 5 实施计划：视觉打磨 + AI prompt PinKind 感知
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

@@ -572,7 +572,7 @@ async fn workflow_graph_executes_end_to_end() {
             assert_eq!(
                 ctx.payload,
                 json!({
-                    "_native_message": "ingest",
+                    "native_message": "ingest",
                     "line": "A01",
                     "value": 42
                 })
@@ -1866,7 +1866,7 @@ async fn passthrough_nodes_forward_payload() {
     let result = timeout(Duration::from_secs(1), deployment.next_result()).await;
     match result {
         Ok(Some(ctx)) => {
-            assert_eq!(ctx.payload["_native_message"], json!("test-passthrough"));
+            assert_eq!(ctx.payload["native_message"], json!("test-passthrough"));
             assert_eq!(ctx.payload["value"], json!(42));
         }
         Ok(None) => panic!("result stream 意外关闭"),

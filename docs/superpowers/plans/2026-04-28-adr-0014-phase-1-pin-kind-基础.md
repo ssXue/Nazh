@@ -1,3 +1,5 @@
+> **Status:** merged in 7d0b6e0
+
 # ADR-0014 Phase 1：引脚二分基础设施 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
