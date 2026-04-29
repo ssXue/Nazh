@@ -1876,7 +1876,7 @@ async fn passthrough_nodes_forward_payload() {
 
 // ========== ADR-0015 Phase 1：Reactive 边集成测试 ==========
 
-/// 测试用 Reactive 节点：input/output pin 可指定 PinKind。
+/// 测试用 Reactive 节点：input/output pin 可指定 [`PinKind`]。
 struct ReactiveTestNode {
     id: String,
     input_pin: PinType,
@@ -2002,10 +2002,13 @@ async fn reactive_edge_pushes_downstream_on_write() {
     };
 
     // 提交数据 → src → producer → Reactive 推送 → consumer
-    deployment
+    match deployment
         .submit(WorkflowContext::new(json!({ "value": 42 })))
         .await
-        .expect("submit 应成功");
+    {
+        Ok(()) => {}
+        Err(e) => panic!("submit 应成功: {e}"),
+    }
 
     // consumer 是叶节点，结果应通过 next_result 到达
     let result = timeout(Duration::from_secs(2), deployment.next_result()).await;
@@ -2015,7 +2018,7 @@ async fn reactive_edge_pushes_downstream_on_write() {
             assert_eq!(ctx.payload["value"], json!(42));
         }
         Ok(None) => panic!("consumer 应有输出（Reactive 边应推送 ContextRef）"),
-        Err(_) => panic!("超时：consumer 未被 Reactive 边唤醒（2s）"),
+        Err(elapsed) => panic!("超时：consumer 未被 Reactive 边唤醒（2s）: {elapsed}"),
     }
 }
 

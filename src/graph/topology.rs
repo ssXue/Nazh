@@ -538,7 +538,10 @@ mod tests {
                 vec![pin("latest", PinDirection::Output, PinKind::Reactive)],
             ),
         );
-        let edges = vec![edge("a", "b", Some("latest")), edge("b", "a", Some("latest"))];
+        let edges = vec![
+            edge("a", "b", Some("latest")),
+            edge("b", "a", Some("latest")),
+        ];
         let classified = classify_edges(&edges, &nodes).unwrap();
         let err = detect_non_exec_edge_cycle(&classified).unwrap_err();
         assert!(matches!(err, crate::EngineError::InvalidGraph(_)));
@@ -565,7 +568,10 @@ mod tests {
                 vec![pin("latest", PinDirection::Output, PinKind::Reactive)],
             ),
         );
-        let edges = vec![edge("a", "b", Some("data_out")), edge("b", "a", Some("latest"))];
+        let edges = vec![
+            edge("a", "b", Some("data_out")),
+            edge("b", "a", Some("latest")),
+        ];
         let classified = classify_edges(&edges, &nodes).unwrap();
         let err = detect_non_exec_edge_cycle(&classified).unwrap_err();
         assert!(matches!(err, crate::EngineError::InvalidGraph(_)));
