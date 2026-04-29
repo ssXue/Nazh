@@ -25,7 +25,7 @@ use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tokio::sync::OnceCell;
+use tokio::sync::{watch, OnceCell};
 #[cfg(feature = "ts-export")]
 use ts_rs::TS;
 
@@ -46,12 +46,44 @@ pub struct VariableDeclaration {
 ///
 /// 内部表示——通过 [`WorkflowVariables::get`] / [`WorkflowVariables::snapshot`]
 /// 拷贝出来。不持有 `Arc<DashMap>` 引用。
-#[derive(Debug, Clone)]
 pub struct TypedVariable {
     pub value: Value,
     pub variable_type: PinType,
     pub updated_at: DateTime<Utc>,
     pub updated_by: Option<String>,
+    /// 变更通知 channel。`set()` / `compare_and_swap()` 写入时发送 `(timestamp, value)`。
+    watch_tx: watch::Sender<Option<(DateTime<Utc>, Value)>>,
+}
+
+impl std::fmt::Debug for TypedVariable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TypedVariable")
+            .field("value", &self.value)
+            .field("variable_type", &self.variable_type)
+            .field("updated_at", &self.updated_at)
+            .field("updated_by", &self.updated_by)
+            .finish_non_exhaustive()
+    }
+}
+
+impl Clone for TypedVariable {
+    fn clone(&self) -> Self {
+        Self {
+            value: self.value.clone(),
+            variable_type: self.variable_type.clone(),
+            updated_at: self.updated_at,
+            updated_by: self.updated_by.clone(),
+            watch_tx: self.watch_tx.clone(),
+        }
+    }
+}
+
+impl TypedVariable {
+    /// 返回当前值的 watch receiver。`changed().await` 在值变更时唤醒。
+    #[allow(clippy::type_complexity)]
+    pub fn subscribe(&self) -> watch::Receiver<Option<(DateTime<Utc>, Value)>> {
+        self.watch_tx.subscribe()
+    }
 }
 
 /// IPC 序列化版变量快照（`updated_at` 用 RFC3339 字符串，避免前端处理时区差异）。
@@ -136,11 +168,15 @@ impl WorkflowVariables {
             }
             inner.insert(
                 name.clone(),
-                TypedVariable {
-                    value: declaration.initial.clone(),
-                    variable_type: declaration.variable_type.clone(),
-                    updated_at: Utc::now(),
-                    updated_by: None,
+                {
+                    let (watch_tx, _) = watch::channel(None);
+                    TypedVariable {
+                        value: declaration.initial.clone(),
+                        variable_type: declaration.variable_type.clone(),
+                        updated_at: Utc::now(),
+                        updated_by: None,
+                        watch_tx,
+                    }
                 },
             );
         }
@@ -162,6 +198,16 @@ impl WorkflowVariables {
         self.inner
             .get(name)
             .map(|entry| entry.value().value.clone())
+    }
+
+    /// 订阅指定变量的变更通知。返回的 [`watch::Receiver`] 在 `set()` /
+    /// `compare_and_swap()` 写入新值时唤醒。
+    ///
+    /// 变量不存在时返回 `None`。
+    #[must_use]
+    #[allow(clippy::type_complexity)]
+    pub fn subscribe(&self, name: &str) -> Option<watch::Receiver<Option<(DateTime<Utc>, Value)>>> {
+        self.inner.get(name).map(|entry| entry.value().subscribe())
     }
 
     /// 注入事件通道。仅可调用一次；重复调用通过 `tracing::warn!` 报告并忽略。
@@ -255,6 +301,12 @@ impl WorkflowVariables {
         } else {
             None
         };
+        // watch channel 通知：在持有 entry 借用时发送，确保顺序一致性
+        if value_changed {
+            let _ = entry
+                .watch_tx
+                .send(Some((entry.updated_at, entry.value.clone())));
+        }
         drop(entry);
 
         self.try_emit_changed(name, event_payload);
@@ -308,6 +360,12 @@ impl WorkflowVariables {
         } else {
             None
         };
+        // watch channel 通知：在持有 entry 借用时发送，确保顺序一致性
+        if value_changed {
+            let _ = entry
+                .watch_tx
+                .send(Some((entry.updated_at, entry.value.clone())));
+        }
         drop(entry);
 
         self.try_emit_changed(name, event_payload);
@@ -694,5 +752,109 @@ mod tests {
             result.is_err(),
             "退化情形 (new == expected == current) 不应发事件，但收到：{result:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn watch_channel_在_set_值变化时通知() {
+        let mut decls = HashMap::new();
+        decls.insert(
+            "x".to_owned(),
+            VariableDeclaration {
+                variable_type: PinType::Integer,
+                initial: Value::from(0_i64),
+            },
+        );
+        let vars = WorkflowVariables::from_declarations(&decls).unwrap();
+
+        let mut rx = vars.subscribe("x").expect("变量已声明");
+
+        vars.set("x", Value::from(1_i64), Some("node-A")).unwrap();
+
+        rx.changed().await.expect("watch 应收到变更通知");
+        let borrowed = rx.borrow();
+        let snapshot = borrowed.as_ref().expect("值应为 Some");
+        assert_eq!(snapshot.1, Value::from(1_i64));
+    }
+
+    #[tokio::test]
+    async fn watch_channel_在_set_值未变化时不通知() {
+        use tokio::time::{Duration, timeout};
+
+        let mut decls = HashMap::new();
+        decls.insert(
+            "x".to_owned(),
+            VariableDeclaration {
+                variable_type: PinType::Integer,
+                initial: Value::from(42_i64),
+            },
+        );
+        let vars = WorkflowVariables::from_declarations(&decls).unwrap();
+
+        let mut rx = vars.subscribe("x").expect("变量已声明");
+
+        // 写入与初值相同的值
+        vars.set("x", Value::from(42_i64), None).unwrap();
+
+        let result = timeout(Duration::from_millis(50), rx.changed()).await;
+        assert!(
+            result.is_err(),
+            "值未变化时 watch 不应通知"
+        );
+    }
+
+    #[tokio::test]
+    async fn watch_channel_在_cas_成功且值变化时通知() {
+        let mut decls = HashMap::new();
+        decls.insert(
+            "c".to_owned(),
+            VariableDeclaration {
+                variable_type: PinType::Integer,
+                initial: Value::from(0_i64),
+            },
+        );
+        let vars = WorkflowVariables::from_declarations(&decls).unwrap();
+
+        let mut rx = vars.subscribe("c").expect("变量已声明");
+
+        let ok = vars
+            .compare_and_swap("c", &Value::from(0_i64), Value::from(1_i64), None)
+            .unwrap();
+        assert!(ok);
+
+        rx.changed().await.expect("watch 应收到变更通知");
+        let borrowed = rx.borrow();
+        let snapshot = borrowed.as_ref().expect("值应为 Some");
+        assert_eq!(snapshot.1, Value::from(1_i64));
+    }
+
+    #[tokio::test]
+    async fn watch_channel_不存在变量时_subscribe_返回_none() {
+        let vars = WorkflowVariables::empty();
+        assert!(vars.subscribe("nonexistent").is_none());
+    }
+
+    #[tokio::test]
+    async fn watch_channel_多个订阅者同时收到通知() {
+        let mut decls = HashMap::new();
+        decls.insert(
+            "x".to_owned(),
+            VariableDeclaration {
+                variable_type: PinType::Integer,
+                initial: Value::from(0_i64),
+            },
+        );
+        let vars = WorkflowVariables::from_declarations(&decls).unwrap();
+
+        let mut rx1 = vars.subscribe("x").unwrap();
+        let mut rx2 = vars.subscribe("x").unwrap();
+
+        vars.set("x", Value::from(99_i64), None).unwrap();
+
+        rx1.changed().await.unwrap();
+        rx2.changed().await.unwrap();
+        let b1 = rx1.borrow();
+        let b2 = rx2.borrow();
+        assert_eq!(b1.as_ref().unwrap().1, Value::from(99_i64));
+        assert_eq!(b2.as_ref().unwrap().1, Value::from(99_i64));
     }
 }
