@@ -1,19 +1,19 @@
 //! ADR-0014 引脚二分：节点输出缓存槽。
 //!
 //! 每个声明 [`PinKind::Data`](crate::PinKind::Data) 输出引脚的节点持有一份
-//! [`OutputCache`]，每个 Data 输出引脚对应一个 [`ArcSwap`] 槽位。Runner 在
-//! 节点 transform 完成后写槽位；下游通过 Data 边消费时（Phase 2 起）读槽位。
+//! [`OutputCache`]，每个 Data 输出引脚对应一个 [`tokio::sync::watch`] 槽位。
+//! Runner 在节点 transform 完成后写槽位；下游通过 Data 边消费时（Phase 2 起）
+//! 读槽位。
 //!
-//! Phase 4 扩展：每个槽位关联 [`tokio::sync::Notify`]，支持 `BlockUntilReady`
-//! 等待；`read` 加 `ttl_ms` 过期检查。
+//! Phase 5 重构：`ArcSwap` + `Notify` 替换为 `watch` channel，单一原语同时
+//! 提供值存储和变更通知。`read` 加 `ttl_ms` 过期检查不变。
 
 use std::sync::Arc;
 
-use arc_swap::ArcSwap;
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use serde_json::Value;
-use tokio::sync::Notify;
+use tokio::sync::watch;
 use uuid::Uuid;
 
 /// 单个 Data 输出引脚的缓存值快照。
@@ -29,13 +29,14 @@ pub struct CachedOutput {
 
 #[derive(Debug)]
 struct Slot {
-    value: ArcSwap<Option<CachedOutput>>,
-    notify: Arc<Notify>,
+    tx: watch::Sender<Option<CachedOutput>>,
+    rx: watch::Receiver<Option<CachedOutput>>,
 }
 
 /// 单节点持有的输出缓存——一个 Data 输出引脚对应一个槽位。
 ///
-/// Phase 4 扩展：每个槽位携带 [`Notify`]，写入时唤醒等待者。
+/// Phase 5 重构：每个槽位是一个 `watch` channel，写入时自动通知所有
+/// [`subscribe`](Self::subscribe) 持有的 Receiver。
 #[derive(Debug, Default)]
 pub struct OutputCache {
     slots: DashMap<String, Arc<Slot>>,
@@ -49,21 +50,18 @@ impl OutputCache {
     /// 部署期为指定 pin id 预分配槽位；同一 pin 多次预分配是幂等的。
     pub fn prepare_slot(&self, pin_id: &str) {
         if !self.slots.contains_key(pin_id) {
+            let (tx, rx) = watch::channel(None);
             self.slots.insert(
                 pin_id.to_owned(),
-                Arc::new(Slot {
-                    value: ArcSwap::from_pointee(None),
-                    notify: Arc::new(Notify::new()),
-                }),
+                Arc::new(Slot { tx, rx }),
             );
         }
     }
 
-    /// 写入指定 pin 的最新值并唤醒等待者。
+    /// 写入指定 pin 的最新值并自动通知所有 Receiver。
     pub fn write(&self, pin_id: &str, output: CachedOutput) {
         if let Some(slot) = self.slots.get(pin_id) {
-            slot.value.store(Arc::new(Some(output)));
-            slot.notify.notify_waiters();
+            let _ = slot.tx.send(Some(output));
         }
     }
 
@@ -82,8 +80,7 @@ impl OutputCache {
     /// 读取指定 pin 的最新缓存值。`ttl_ms` 给出且值已过期时返回 `None`。
     pub fn read(&self, pin_id: &str, ttl_ms: Option<u64>) -> Option<CachedOutput> {
         let slot = self.slots.get(pin_id)?;
-        let snapshot = slot.value.load_full();
-        let cached = (*snapshot).clone()?;
+        let cached = slot.rx.borrow().clone()?;
         if let Some(ttl) = ttl_ms {
             let age = Utc::now()
                 .signed_duration_since(cached.produced_at)
@@ -95,9 +92,10 @@ impl OutputCache {
         Some(cached)
     }
 
-    /// 拿到槽位的 Notify 句柄——pull collector 在 `BlockUntilReady` 下 `notified().await`。
-    pub fn notify_handle(&self, pin_id: &str) -> Option<Arc<Notify>> {
-        self.slots.get(pin_id).map(|slot| Arc::clone(&slot.notify))
+    /// 拿到 slot 的 watch Receiver clone——pull collector 在 `BlockUntilReady` 下
+    /// `changed().await` 等新值。
+    pub fn subscribe(&self, pin_id: &str) -> Option<watch::Receiver<Option<CachedOutput>>> {
+        self.slots.get(pin_id).map(|slot| slot.rx.clone())
     }
 
     /// 已分配槽位的 pin id 列表，主要供测试 / 调试。
@@ -206,11 +204,11 @@ mod tests {
     async fn write_唤醒等待者() {
         let cache = Arc::new(OutputCache::new());
         cache.prepare_slot("latest");
-        let notify = cache.notify_handle("latest").unwrap();
+        let mut rx = cache.subscribe("latest").unwrap();
 
         let cache2 = Arc::clone(&cache);
         let waiter = tokio::spawn(async move {
-            notify.notified().await;
+            rx.changed().await.unwrap();
             cache2.read("latest", None)
         });
 
