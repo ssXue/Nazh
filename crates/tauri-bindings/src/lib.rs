@@ -151,6 +151,18 @@ pub struct VariableChangedPayload {
     pub updated_by: Option<String>,
 }
 
+/// Reactive 引脚值变更推送载荷（ADR-0015 Phase 2 IPC）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ReactiveUpdatePayload {
+    pub workflow_id: String,
+    pub node_id: String,
+    pub pin_id: String,
+    pub value: serde_json::Value,
+    pub updated_at: String,
+}
+
 /// 将 [`nazh_core::ExecutionEvent::VariableChanged`] 消耗式转换为 [`VariableChangedPayload`]。
 ///
 /// drain loop 中用 `matches!` 提前判断 variant 后调用——消耗 owned event 避免 clone。
