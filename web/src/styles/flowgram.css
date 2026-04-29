@@ -1645,3 +1645,20 @@ html[data-theme='dark'] .flowgram-card--loop .sub-canvas-border::before {
 .flowgram-card--pure-form .flowgram-card__icon {
   filter: brightness(0) invert(1);
 }
+
+/* ADR-0014 Phase 5：按 capability 自动着色（Trigger / Branching / Default）。
+ * Pure 节点优先级最高——已由 .flowgram-card--pure-form 覆盖，此处不重复。 */
+.flowgram-card[data-node-capability="trigger"] .flowgram-card__topline {
+  background: linear-gradient(180deg, var(--node-header-trigger) 0%, color-mix(in srgb, var(--node-header-trigger) 75%, black) 100%);
+  color: #ffffff;
+}
+
+.flowgram-card[data-node-capability="branching"] .flowgram-card__topline {
+  background: linear-gradient(180deg, var(--node-header-branching) 0%, color-mix(in srgb, var(--node-header-branching) 75%, black) 100%);
+  color: #ffffff;
+}
+
+.flowgram-card[data-node-capability="default"] .flowgram-card__topline {
+  background: linear-gradient(180deg, var(--node-header-default) 0%, color-mix(in srgb, var(--node-header-default) 75%, black) 100%);
+  color: #ffffff;
+}
