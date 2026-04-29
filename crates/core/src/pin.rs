@@ -57,9 +57,15 @@ impl fmt::Display for PinDirection {
 ///   这是 Nazh 1.0 的默认语义；所有现有节点不显式声明时走这条路径。
 /// - [`Data`](Self::Data)：上游完成 transform → 写入输出缓存槽（不 push）；
 ///   下游被自己的 `Exec` 边触发时在 transform 前从缓存槽拉取（Phase 2 起）。
+/// - [`Reactive`](Self::Reactive)：订阅式推送语义。上游写缓存 **+** 推 ContextRef
+///   到下游——值变化时自动唤醒下游。行为是 Data + Exec 的并集。下游收到
+///   ContextRef 后照常 `pull_data_inputs` 读最新缓存值（ADR-0015 Phase 1）。
 ///
-/// **设计前提**：引脚对引脚必须 `PinKind` 一致——`Exec` 只能连 `Exec`、`Data` 只能连 `Data`。
-/// 部署期 [`pin_validator`](crate::PinDefinition) 拒绝跨 Kind 连接。
+/// **兼容矩阵**（[`is_compatible_with`](Self::is_compatible_with)）：
+/// - 同种之间互相兼容（Exec↔Exec、Data↔Data、Reactive↔Reactive）
+/// - Reactive 输出 → 可连 Exec / Data / Reactive 输入
+/// - Exec / Data 输出 → 不可连 Reactive 输入
+/// - Exec ↔ Data 互不兼容
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
 #[serde(rename_all = "lowercase")]
@@ -69,6 +75,9 @@ pub enum PinKind {
     Exec,
     /// 拉语义。上游写缓存、下游被自己的 Exec 边触发时读缓存。
     Data,
+    /// 订阅式推送语义。上游写缓存 **+** 推 ContextRef 到下游——值变化时自动唤醒下游。
+    /// 行为是 Data + Exec 的并集。下游收到 ContextRef 后照常 pull_data_inputs 读最新缓存值。
+    Reactive,
 }
 
 impl fmt::Display for PinKind {
@@ -76,16 +85,29 @@ impl fmt::Display for PinKind {
         f.write_str(match self {
             Self::Exec => "exec",
             Self::Data => "data",
+            Self::Reactive => "reactive",
         })
     }
 }
 
 impl PinKind {
     /// 判断"上游引脚 self → 下游引脚 other"在求值语义维度上是否兼容。
-    /// 规则：必须严格相等——Exec ↔ Exec、Data ↔ Data。
+    ///
+    /// 兼容矩阵（ADR-0015 Phase 1）：
+    /// - 同种互连：Exec↔Exec、Data↔Data、Reactive↔Reactive
+    /// - Reactive 输出 → 可连 Exec / Data / Reactive 输入（订阅式驱动纯推 / 纯拉下游）
+    /// - Exec / Data 输出 → 不可连 Reactive 输入（Reactive 输入期待缓存 + 推送，纯推/纯拉不满足）
+    /// - Exec ↔ Data 互不兼容（ADR-0014 保持不变）
     #[must_use]
     pub fn is_compatible_with(self, other: Self) -> bool {
-        self == other
+        match (self, other) {
+            (Self::Exec, Self::Exec)
+            | (Self::Data, Self::Data)
+            | (Self::Reactive, Self::Reactive) => true,
+            (Self::Reactive, Self::Exec) | (Self::Reactive, Self::Data) => true,
+            (Self::Exec, Self::Reactive) | (Self::Data, Self::Reactive) => false,
+            (Self::Exec, Self::Data) | (Self::Data, Self::Exec) => false,
+        }
     }
 }
 
@@ -359,22 +381,40 @@ mod tests {
     fn pin_kind_序列化为小写字符串() {
         assert_eq!(serde_json::to_string(&PinKind::Exec).unwrap(), "\"exec\"");
         assert_eq!(serde_json::to_string(&PinKind::Data).unwrap(), "\"data\"");
+        assert_eq!(
+            serde_json::to_string(&PinKind::Reactive).unwrap(),
+            "\"reactive\""
+        );
     }
 
     #[test]
     fn pin_kind_反序列化从小写字符串() {
         let exec: PinKind = serde_json::from_str("\"exec\"").unwrap();
         let data: PinKind = serde_json::from_str("\"data\"").unwrap();
+        let reactive: PinKind = serde_json::from_str("\"reactive\"").unwrap();
         assert_eq!(exec, PinKind::Exec);
         assert_eq!(data, PinKind::Data);
+        assert_eq!(reactive, PinKind::Reactive);
     }
 
     #[test]
-    fn pin_kind_兼容性必须严格相等() {
+    fn pin_kind_兼容矩阵() {
+        // 同种互连
         assert!(PinKind::Exec.is_compatible_with(PinKind::Exec));
         assert!(PinKind::Data.is_compatible_with(PinKind::Data));
+        assert!(PinKind::Reactive.is_compatible_with(PinKind::Reactive));
+
+        // Exec ↔ Data 互不兼容（ADR-0014 保持不变）
         assert!(!PinKind::Exec.is_compatible_with(PinKind::Data));
         assert!(!PinKind::Data.is_compatible_with(PinKind::Exec));
+
+        // Reactive 输出 → 可连 Exec / Data / Reactive 输入
+        assert!(PinKind::Reactive.is_compatible_with(PinKind::Exec));
+        assert!(PinKind::Reactive.is_compatible_with(PinKind::Data));
+
+        // Exec / Data 输出 → 不可连 Reactive 输入
+        assert!(!PinKind::Exec.is_compatible_with(PinKind::Reactive));
+        assert!(!PinKind::Data.is_compatible_with(PinKind::Reactive));
     }
 
     // ---- 兼容矩阵 ----
