@@ -90,6 +90,8 @@ import {
 } from '../lib/pin-validator';
 import { hasTauriRuntime, saveFlowgramExportFile } from '../lib/tauri';
 import { refreshCapabilitiesCache } from '../lib/node-capabilities-cache';
+import { getCachedCapabilities } from '../lib/node-capabilities-cache';
+import { hasCapability, NODE_CAPABILITY_FLAGS } from '../lib/node-capabilities';
 import type {
   AiGenerationParams,
   AiProviderView,
@@ -799,6 +801,18 @@ function FlowgramNodeCard(props: FlowgramNodeMaterialProps) {
     ? isPureForm(pinSchema.inputPins, pinSchema.outputPins)
     : false;
 
+  const capabilityBits = getCachedCapabilities(nodeType);
+  let nodeCapability: string;
+  if (pureForm) {
+    nodeCapability = 'pure'; // pure 优先级最高，但 CSS 已由 --pure-form 覆盖，此处仅做标记
+  } else if (capabilityBits !== undefined && hasCapability(capabilityBits, 'TRIGGER')) {
+    nodeCapability = 'trigger';
+  } else if (capabilityBits !== undefined && hasCapability(capabilityBits, 'BRANCHING')) {
+    nodeCapability = 'branching';
+  } else {
+    nodeCapability = 'default';
+  }
+
   return (
     <WorkflowNodeRenderer
       node={props.node}
@@ -809,7 +823,7 @@ function FlowgramNodeCard(props: FlowgramNodeMaterialProps) {
       portSecondaryColor="var(--surface-elevated)"
       portErrorColor="var(--danger)"
     >
-      <div data-flow-editor-selectable="false" className="flowgram-card__body" draggable={false} data-pure-form={pureForm ? 'true' : undefined}>
+      <div data-flow-editor-selectable="false" className="flowgram-card__body" draggable={false} data-pure-form={pureForm ? 'true' : undefined} data-node-capability={pureForm ? undefined : nodeCapability}>
         <div className="flowgram-card__topline">
           <div className="flowgram-card__identity">
             <span className={`flowgram-card__icon flowgram-card__icon--${displayType}`}>
