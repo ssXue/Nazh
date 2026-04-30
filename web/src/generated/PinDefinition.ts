@@ -12,45 +12,45 @@ import type { PinType } from "./PinType";
  *
  * [`NodeDispatch::Route`]: crate::NodeDispatch::Route
  */
-export type PinDefinition = { 
+export type PinDefinition = {
 /**
  * 引脚稳定标识（如 `"in"` / `"true"` / `"body"` / `"high"`）。
  */
-id: string, 
+id: string,
 /**
  * 前端展示名；可与 `id` 不同（例如分支节点的中文标签）。
  */
-label: string, 
+label: string,
 /**
  * 引脚承载的数据形状。
  */
-pin_type: PinType, 
+pin_type: PinType,
 /**
  * 引脚方向。
  */
-direction: PinDirection, 
+direction: PinDirection,
 /**
  * **输入引脚**：是否必须有上游边指向。**输出引脚**：是否每次执行必触发。
  */
-required: boolean, 
+required: boolean,
 /**
  * 求值语义（ADR-0014 引脚二分）。未声明默认 [`PinKind::Exec`]，向后兼容现有节点。
  */
-kind: PinKind, 
+kind: PinKind,
 /**
  * 给前端 / AI 的描述文本。
  */
-description?: string, 
+description?: string,
 /**
  * Data 输入引脚在缓存槽空 / 过期时的兜底策略（ADR-0014 Phase 4）。
  * Exec 引脚此字段被忽略。
  */
-empty_policy: EmptyPolicy, 
+empty_policy: EmptyPolicy,
 /**
  * [`EmptyPolicy::BlockUntilReady`] 模式下的等待超时毫秒数。
  * `None` 取 [`DEFAULT_BLOCK_TIMEOUT_MS`]。
  */
-block_timeout_ms?: bigint, 
+block_timeout_ms?: bigint,
 /**
  * 缓存值 TTL 毫秒；`None` 永久。`Some(n)` 时 `produced_at + n` 后视为过期。
  */

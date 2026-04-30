@@ -286,7 +286,7 @@ function FlowgramNodeSettingsPanel({
   const [aiThinkingPreview, setAiThinkingPreview] = useState<string | null>(null);
 
   const closePanel = useCallback(() => {
-    panelManager.close(FLOWGRAM_NODE_SETTINGS_PANEL_KEY, 'right');
+    panelManager.close(FLOWGRAM_NODE_SETTINGS_PANEL_KEY);
   }, [panelManager]);
 
   useEffect(() => {
@@ -722,5 +722,6 @@ function FlowgramNodeSettingsPanel({
 
 export const flowgramNodeSettingsPanelFactory: PanelFactory<FlowgramNodeSettingsPanelProps> = {
   key: FLOWGRAM_NODE_SETTINGS_PANEL_KEY,
+  defaultSize: 360,
   render: (props) => <FlowgramNodeSettingsPanel key={props.nodeId} {...props} />,
 };

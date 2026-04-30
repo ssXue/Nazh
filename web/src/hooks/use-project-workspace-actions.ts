@@ -25,7 +25,7 @@ interface UseProjectWorkspaceActionsOptions {
   activeProject: ProjectRecord | null;
   clearActiveBoard: () => void;
   engine: UseWorkflowEngineResult;
-  flowgramCanvasRef: RefObject<BoardWorkspaceHandle>;
+  flowgramCanvasRef: RefObject<BoardWorkspaceHandle | null>;
   openBoard: (boardId: string) => void;
   projectLibrary: UseProjectLibraryResult;
   setSidebarCollapsed: React.Dispatch<React.SetStateAction<boolean>>;

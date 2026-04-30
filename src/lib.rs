@@ -88,11 +88,13 @@ pub fn standard_registry() -> NodeRegistry {
 #[cfg(feature = "ts-export")]
 pub mod export_bindings {
     use crate::graph::{WorkflowEdge, WorkflowGraph};
-    use ts_rs::{ExportError, TS};
+    use ts_rs::{Config, ExportError, TS};
 
     pub fn export_all() -> Result<(), ExportError> {
-        WorkflowEdge::export()?;
-        WorkflowGraph::export()?;
+        let cfg = Config::from_env();
+
+        WorkflowEdge::export(&cfg)?;
+        WorkflowGraph::export(&cfg)?;
         Ok(())
     }
 }

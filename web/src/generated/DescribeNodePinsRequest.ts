@@ -12,11 +12,11 @@ import type { JsonValue } from "./serde_json/JsonValue";
  * 成功）。无效 config 会返回错误，前端缓存写 fallback `Any/Any`，
  * 部署期校验作为 backstop 兜底。
  */
-export type DescribeNodePinsRequest = { 
+export type DescribeNodePinsRequest = {
 /**
  * 节点类型主名称（如 `"modbusRead"` / `"switch"` / `"mqttClient"`）。
  */
-nodeType: string, 
+nodeType: string,
 /**
  * 节点 config（与 `WorkflowNodeDefinition::config` 同 schema）。
  */

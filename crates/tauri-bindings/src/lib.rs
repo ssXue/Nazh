@@ -13,7 +13,7 @@ use nazh_core::{NodeRegistry, PinDefinition, TypedVariableSnapshot};
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "ts-export")]
-use ts_rs::TS;
+use ts_rs::{Config, TS};
 
 /// 工作流部署成功后的响应。
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -240,18 +240,57 @@ pub fn export_all() -> Result<(), ts_rs::ExportError> {
     ai::export_bindings::export_all()?;
     nazh_engine::export_bindings::export_all()?;
 
-    DeployResponse::export()?;
-    DispatchResponse::export()?;
-    UndeployResponse::export()?;
-    NodeTypeEntry::export()?;
-    ListNodeTypesResponse::export()?;
-    DescribeNodePinsRequest::export()?;
-    DescribeNodePinsResponse::export()?;
-    SnapshotWorkflowVariablesRequest::export()?;
-    SnapshotWorkflowVariablesResponse::export()?;
-    SetWorkflowVariableRequest::export()?;
-    SetWorkflowVariableResponse::export()?;
-    VariableChangedPayload::export()?;
+    let cfg = Config::from_env();
+
+    DeployResponse::export(&cfg)?;
+    DispatchResponse::export(&cfg)?;
+    UndeployResponse::export(&cfg)?;
+    NodeTypeEntry::export(&cfg)?;
+    ListNodeTypesResponse::export(&cfg)?;
+    DescribeNodePinsRequest::export(&cfg)?;
+    DescribeNodePinsResponse::export(&cfg)?;
+    SnapshotWorkflowVariablesRequest::export(&cfg)?;
+    SnapshotWorkflowVariablesResponse::export(&cfg)?;
+    SetWorkflowVariableRequest::export(&cfg)?;
+    SetWorkflowVariableResponse::export(&cfg)?;
+    VariableChangedPayload::export(&cfg)?;
+
+    trim_typescript_trailing_whitespace(cfg.out_dir())?;
+    Ok(())
+}
+
+#[cfg(feature = "ts-export")]
+fn trim_typescript_trailing_whitespace(dir: &std::path::Path) -> Result<(), ts_rs::ExportError> {
+    if !dir.exists() {
+        return Ok(());
+    }
+
+    for entry in std::fs::read_dir(dir)? {
+        let path = entry?.path();
+        if path.is_dir() {
+            trim_typescript_trailing_whitespace(&path)?;
+            continue;
+        }
+
+        if path.extension().and_then(|value| value.to_str()) != Some("ts") {
+            continue;
+        }
+
+        let source = std::fs::read_to_string(&path)?;
+        let mut trimmed = source
+            .lines()
+            .map(str::trim_end)
+            .collect::<Vec<_>>()
+            .join("\n");
+        if source.ends_with('\n') {
+            trimmed.push('\n');
+        }
+
+        if trimmed != source {
+            std::fs::write(path, trimmed)?;
+        }
+    }
+
     Ok(())
 }
 

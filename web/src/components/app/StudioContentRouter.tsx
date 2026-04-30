@@ -50,7 +50,7 @@ interface StudioContentRouterProps {
   connectionUsageById: Map<string, { nodeIds: string[]; projectNames: string[] }>;
   currentBoardDeployInfo: DeployResponse | null;
   engine: UseWorkflowEngineResult;
-  flowgramCanvasRef: RefObject<BoardWorkspaceHandle>;
+  flowgramCanvasRef: RefObject<BoardWorkspaceHandle | null>;
   graph: WorkflowGraph | null;
   graphConnectionCount: number;
   graphEdgeCount: number;

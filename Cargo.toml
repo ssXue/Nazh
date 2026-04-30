@@ -40,20 +40,20 @@ chrono = { version = "0.4", features = ["clock", "serde"] }
 dashmap = "6"
 futures-util = "0.3"
 fastrand = "2"
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "json"] }
 rhai = { version = "1", features = ["serde", "sync"] }
-rusqlite = { version = "0.33", features = ["bundled"] }
+rusqlite = { version = "0.39", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-thiserror = "1"
+thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
-tokio-modbus = { version = "0.15", default-features = false, features = ["tcp"] }
+tokio-modbus = { version = "0.17", default-features = false, features = ["tcp"] }
 tokio-util = { version = "0.7", default-features = false }
 rumqttc = { version = "0.25.1", default-features = false, features = ["use-native-tls"] }
 serialport = "4"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-ts-rs = { version = "10", features = ["serde-compat", "serde-json-impl", "chrono-impl", "uuid-impl"] }
+ts-rs = { version = "12", features = ["serde-compat", "serde-json-impl", "chrono-impl", "uuid-impl"] }
 url = "2"
 uuid = { version = "1", features = ["serde", "v4"] }
 

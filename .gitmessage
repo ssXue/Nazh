@@ -1,0 +1,11 @@
+<type>(<scope>): <subject>
+
+# type: feat|fix|refactor|perf|test|docs|build|ci|chore|style|revert
+# scope: optional, English identifier such as core, graph, tauri, web, docs, ci
+# subject: 中文优先，保留必要英文术语，不加句号，尽量不超过 72 个字符
+#
+# body: optional，用中文说明为什么改、怎么改、风险是什么
+#
+# footer: optional
+# BREAKING CHANGE: describe migration when needed
+# Signed-off-by: Your Name <you@example.com>

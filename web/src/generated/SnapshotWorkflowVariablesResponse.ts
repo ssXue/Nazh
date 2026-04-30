@@ -7,4 +7,4 @@ import type { TypedVariableSnapshot } from "./TypedVariableSnapshot";
  * `updated_at` 字段为 RFC3339 字符串，避免前端时区差。
  * 空表表示部署已声明但无变量；若部署不存在，命令侧返回错误（而非空表）以避免歧义。
  */
-export type SnapshotWorkflowVariablesResponse = { variables: { [key in string]?: TypedVariableSnapshot }, };
+export type SnapshotWorkflowVariablesResponse = { variables: { [key in string]: TypedVariableSnapshot }, };

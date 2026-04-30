@@ -288,13 +288,15 @@ pub mod export_bindings {
     use super::{
         ConnectionDefinition, ConnectionHealthSnapshot, ConnectionHealthState, ConnectionRecord,
     };
-    use ts_rs::{ExportError, TS};
+    use ts_rs::{Config, ExportError, TS};
 
     pub fn export_all() -> Result<(), ExportError> {
-        ConnectionDefinition::export()?;
-        ConnectionHealthSnapshot::export()?;
-        ConnectionHealthState::export()?;
-        ConnectionRecord::export()?;
+        let cfg = Config::from_env();
+
+        ConnectionDefinition::export(&cfg)?;
+        ConnectionHealthSnapshot::export(&cfg)?;
+        ConnectionHealthState::export(&cfg)?;
+        ConnectionRecord::export(&cfg)?;
         Ok(())
     }
 }

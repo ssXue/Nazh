@@ -3,11 +3,28 @@
   "build": {
     "dockerfile": "Dockerfile"
   },
-  "postCreateCommand": "npm --prefix web install && cargo fetch",
+  "workspaceFolder": "/workspace/${localWorkspaceFolderBasename}",
+  "postCreateCommand": "git config --global --add safe.directory ${containerWorkspaceFolder} && npm --prefix web ci && cargo fetch --locked && node --version && rustc --version && cargo-deny --version",
+  "forwardPorts": [
+    1420
+  ],
+  "portsAttributes": {
+    "1420": {
+      "label": "Vite / Tauri dev server",
+      "onAutoForward": "notify"
+    }
+  },
+  "mounts": [
+    "source=nazh-cargo-registry,target=/root/.cargo/registry,type=volume",
+    "source=nazh-cargo-git,target=/root/.cargo/git,type=volume",
+    "source=nazh-target,target=${containerWorkspaceFolder}/target,type=volume",
+    "source=nazh-web-node-modules,target=${containerWorkspaceFolder}/web/node_modules,type=volume"
+  ],
   "customizations": {
     "vscode": {
       "settings": {
         "editor.formatOnSave": true,
+        "terminal.integrated.defaultProfile.linux": "zsh",
         "rust-analyzer.check.command": "clippy",
         "[rust]": {
           "editor.defaultFormatter": "rust-lang.rust-analyzer"
@@ -17,6 +34,9 @@
         },
         "[typescriptreact]": {
           "editor.defaultFormatter": "esbenp.prettier-vscode"
+        },
+        "[json]": {
+          "editor.defaultFormatter": "esbenp.prettier-vscode"
         }
       },
       "extensions": [
@@ -25,7 +45,9 @@
         "dbaeumer.vscode-eslint",
         "esbenp.prettier-vscode",
         "EditorConfig.EditorConfig",
-        "fill-labs.dependi"
+        "fill-labs.dependi",
+        "GitHub.vscode-pull-request-github",
+        "eamodio.gitlens"
       ]
     }
   }

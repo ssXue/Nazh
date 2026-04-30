@@ -16,7 +16,7 @@ Everything runs in one process — no HTTP/gRPC server, no external broker. AI f
 
 ```bash
 # Install frontend dependencies
-npm --prefix web install
+npm --prefix web ci
 
 # Start desktop dev mode (Tauri auto-launches Vite on port 1420)
 cd src-tauri && ../web/node_modules/.bin/tauri dev --no-watch
@@ -388,7 +388,7 @@ Located in `docs/superpowers/plans/` and `docs/superpowers/specs/`. These are **
 - `docs/superpowers/plans/2026-04-28-architecture-review.md` 的 Phase B/C/D/E 已完成本轮收尾，整合 findings 见 `docs/superpowers/specs/2026-04-29-architecture-review-findings.md`。
 - `src-tauri/src/lib.rs` 已按 IPC 命令域拆到 `src-tauri/src/commands/*`，`lib.rs` 只保留 setup + handler 注册（132 行）。
 - 规范扫描结论：生产代码 `.unwrap()` / `.expect()` 0 命中、`unsafe` 0 命中、节点不直接读写 `DataStore`；`native` 节点 payload 键从 `_native_message` 修正为 `native_message`。
-- **未解冻**：Phase A 仍未完成（ADR-0016 发射逻辑待完善），freeze 段保留。Phase 6 EventBus（RFC-0002）已完成修订，不再阻塞。ADR-0014 Phase 5 已实施（2026-04-30）。`loop` 容器恢复已在当前 `main` 包含（可追溯到 `e35cb43`），不再计入解冻差异。
+- **已解冻**：`docs/superpowers/plans/2026-04-28-architecture-review.md` 的 Phase A/B/C/D/E 全部完成（2026-04-30）；原 ARCHITECTURE FREEZE 段已删除。ADR-0016 仍有 deferred items，但不再阻塞常规 PR 流程。
 
 **Current batch of ADRs** (2026-04-17 to 2026-04-29):
 - ADR-0008 (metadata separation) — **accepted / landed**

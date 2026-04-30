@@ -4,9 +4,9 @@ import type { JsonValue } from "./serde_json/JsonValue";
 /**
  * 阶段/节点执行完成事件的详细载荷。
  */
-export type CompletedExecutionEvent = { stage: string, trace_id: string, 
+export type CompletedExecutionEvent = { stage: string, trace_id: string,
 /**
  * 节点执行元数据（协议参数、连接信息等），与业务 payload 完全分离。
  * 无元数据时为 `None`，序列化时省略该字段。
  */
-metadata?: { [key in string]?: JsonValue }, };
+metadata?: { [key in string]: JsonValue }, };

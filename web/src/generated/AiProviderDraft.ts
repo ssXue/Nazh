@@ -3,4 +3,4 @@
 /**
  * 测试连接时使用的草稿输入。
  */
-export type AiProviderDraft = { id?: string, name: string, baseUrl: string, apiKey?: string, defaultModel: string, extraHeaders: { [key in string]?: string }, enabled: boolean, };
+export type AiProviderDraft = { id?: string, name: string, baseUrl: string, apiKey?: string, defaultModel: string, extraHeaders: { [key in string]: string }, enabled: boolean, };

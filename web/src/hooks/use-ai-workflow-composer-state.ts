@@ -23,7 +23,7 @@ interface UseAiWorkflowComposerStateOptions {
   appendAppError: (scope: 'workflow' | 'command' | 'frontend' | 'runtime', title: string, detail?: string | null) => void;
   appendRuntimeLog: (source: string, level: 'info' | 'success' | 'warn' | 'error', message: string, detail?: string | null) => void;
   createProject: (name?: string, description?: string) => ProjectRecord;
-  flowgramCanvasRef: RefObject<BoardWorkspaceHandle>;
+  flowgramCanvasRef: RefObject<BoardWorkspaceHandle | null>;
   openBoard: (boardId: string) => void;
   projectCount: number;
   resetWorkspaceRuntime: (nextMessage: string) => void;

@@ -75,7 +75,7 @@ function FlowgramRuntimePanel() {
   const [runtimeErrors, setRuntimeErrors] = useState<string[]>([]);
 
   const closePanel = useCallback(() => {
-    panelManager.close(FLOWGRAM_RUNTIME_PANEL_KEY, 'bottom');
+    panelManager.close(FLOWGRAM_RUNTIME_PANEL_KEY);
   }, [panelManager]);
 
   const cancelTask = useCallback(async () => {
@@ -308,5 +308,6 @@ function FlowgramRuntimePanel() {
 
 export const flowgramRuntimePanelFactory: PanelFactory<Record<string, never>> = {
   key: FLOWGRAM_RUNTIME_PANEL_KEY,
+  defaultSize: 320,
   render: () => <FlowgramRuntimePanel />,
 };

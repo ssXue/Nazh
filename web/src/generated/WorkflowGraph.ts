@@ -7,11 +7,11 @@ import type { WorkflowNodeDefinition } from "./WorkflowNodeDefinition";
 /**
  * 从前端 AST 反序列化得到的顶层工作流定义。
  */
-export type WorkflowGraph = { name?: string, connections: Array<ConnectionDefinition>, nodes: { [key in string]?: WorkflowNodeDefinition }, edges: Array<WorkflowEdge>, 
+export type WorkflowGraph = { name?: string, connections: Array<ConnectionDefinition>, nodes: { [key in string]: WorkflowNodeDefinition }, edges: Array<WorkflowEdge>,
 /**
  * ADR-0012：工作流级共享变量声明（`name → { type, initial }`）。
  * 旧图 JSON 中无此字段时反序列化为 `None`（`#[serde(default)]` 兜底）；
  * 引擎部署期 `build_workflow_variables(graph.variables.as_ref())` 透明处理 `None`，
  * 旧图无变量声明时正常部署、不报错。
  */
-variables?: { [key in string]?: VariableDeclaration }, };
+variables?: { [key in string]: VariableDeclaration }, };

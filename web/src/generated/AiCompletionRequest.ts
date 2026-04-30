@@ -5,23 +5,23 @@ import type { AiMessage } from "./AiMessage";
 /**
  * Chat completion 请求。
  */
-export type AiCompletionRequest = { 
+export type AiCompletionRequest = {
 /**
  * 使用哪个提供商。
  */
-providerId: string, 
+providerId: string,
 /**
  * 覆盖默认模型。
  */
-model?: string, 
+model?: string,
 /**
  * 消息列表。
  */
-messages: Array<AiMessage>, 
+messages: Array<AiMessage>,
 /**
  * 生成参数。
  */
-params: AiGenerationParams, 
+params: AiGenerationParams,
 /**
  * 超时毫秒（None 使用默认 30s）。
  */

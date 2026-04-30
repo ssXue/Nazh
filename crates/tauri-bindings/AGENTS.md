@@ -35,7 +35,7 @@ crates/tauri-bindings/src/
 
 1. **这里只放「跨进程类型」**。如果某类型只是 Rust 内部用（不会序列化发给前端），放回对应业务 crate，不要堆在本 crate。
 2. **所有对外类型都有 `#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]`**。加新类型时不漏 attribute；漏了 `export_all()` 不会导出，前端拿不到。
-3. **`export_all()` 是 single source of truth**。所有要导出的类型（包括依赖 crate 的）都要在此函数里点名调用 `::export()?`；若只加了 `derive(TS)` 忘了加到此函数，CI 的 `git diff --exit-code -- web/src/generated/` 会挂。
+3. **`export_all()` 是 single source of truth**。所有要导出的类型（包括依赖 crate 的）都要在此函数里点名调用 `::export(&cfg)?`；`cfg` 来自 `ts_rs::Config::from_env()`，以便遵守 CI/本地设置的导出目录。若只加了 `derive(TS)` 忘了加到此函数，CI 的 `git diff --exit-code -- web/src/generated/` 会挂。
 4. **camelCase 序列化**：所有 struct 用 `#[serde(rename_all = "camelCase")]` 对齐前端命名。
 5. **`NodeTypeEntry.capabilities` 是 `u32` 位图**。ts 类型为 `number`，前端 `web/src/lib/node-capabilities.ts` 解位。
 6. **`Option` 字段标 `#[cfg_attr(feature = "ts-export", ts(optional))]`**，让前端的 `undefined` 而不是 `null` 成为约定。

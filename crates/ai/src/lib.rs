@@ -22,17 +22,19 @@ pub mod export_bindings {
         AiProviderView, AiSecretInput,
     };
     use crate::types::AiTestResult;
-    use ts_rs::{ExportError, TS};
+    use ts_rs::{Config, ExportError, TS};
 
     pub fn export_all() -> Result<(), ExportError> {
-        AiAgentSettings::export()?;
-        AiConfigView::export()?;
-        AiConfigUpdate::export()?;
-        AiProviderView::export()?;
-        AiProviderUpsert::export()?;
-        AiProviderDraft::export()?;
-        AiSecretInput::export()?;
-        AiTestResult::export()?;
+        let cfg = Config::from_env();
+
+        AiAgentSettings::export(&cfg)?;
+        AiConfigView::export(&cfg)?;
+        AiConfigUpdate::export(&cfg)?;
+        AiProviderView::export(&cfg)?;
+        AiProviderUpsert::export(&cfg)?;
+        AiProviderDraft::export(&cfg)?;
+        AiSecretInput::export(&cfg)?;
+        AiTestResult::export(&cfg)?;
         Ok(())
     }
 }

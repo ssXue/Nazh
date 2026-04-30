@@ -66,32 +66,34 @@ pub mod export_bindings {
         PinDefinition, PinDirection, PinKind, PinType, TypedVariableSnapshot, VariableDeclaration,
         WorkflowContext, WorkflowNodeDefinition,
     };
-    use ts_rs::{ExportError, TS};
+    use ts_rs::{Config, ExportError, TS};
 
     /// 导出本 crate 的所有 ts-rs 类型到 `web/src/generated/`。
     pub fn export_all() -> Result<(), ExportError> {
-        CompletedExecutionEvent::export()?;
-        ExecutionEvent::export()?;
-        EdgeTransmitSummary::export()?;
-        BackpressureDetected::export()?;
-        BackpressurePolicy::export()?;
-        WorkflowContext::export()?;
-        WorkflowNodeDefinition::export()?;
-        PinDirection::export()?;
-        PinType::export()?;
-        PinKind::export()?;
-        PinDefinition::export()?;
-        AiCompletionRequest::export()?;
-        AiCompletionResponse::export()?;
-        AiMessage::export()?;
-        AiMessageRole::export()?;
-        AiTokenUsage::export()?;
-        AiGenerationParams::export()?;
-        AiThinkingConfig::export()?;
-        AiThinkingMode::export()?;
-        AiReasoningEffort::export()?;
-        TypedVariableSnapshot::export()?;
-        VariableDeclaration::export()?;
+        let cfg = Config::from_env();
+
+        CompletedExecutionEvent::export(&cfg)?;
+        ExecutionEvent::export(&cfg)?;
+        EdgeTransmitSummary::export(&cfg)?;
+        BackpressureDetected::export(&cfg)?;
+        BackpressurePolicy::export(&cfg)?;
+        WorkflowContext::export(&cfg)?;
+        WorkflowNodeDefinition::export(&cfg)?;
+        PinDirection::export(&cfg)?;
+        PinType::export(&cfg)?;
+        PinKind::export(&cfg)?;
+        PinDefinition::export(&cfg)?;
+        AiCompletionRequest::export(&cfg)?;
+        AiCompletionResponse::export(&cfg)?;
+        AiMessage::export(&cfg)?;
+        AiMessageRole::export(&cfg)?;
+        AiTokenUsage::export(&cfg)?;
+        AiGenerationParams::export(&cfg)?;
+        AiThinkingConfig::export(&cfg)?;
+        AiThinkingMode::export(&cfg)?;
+        AiReasoningEffort::export(&cfg)?;
+        TypedVariableSnapshot::export(&cfg)?;
+        VariableDeclaration::export(&cfg)?;
         Ok(())
     }
 }

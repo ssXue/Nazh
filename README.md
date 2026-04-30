@@ -138,19 +138,51 @@ nazh-desktop
 ### 源码编译
 
 ```bash
-npm --prefix web install
-cd src-tauri && ../web/node_modules/.bin/tauri dev
+npm --prefix web ci
+cd src-tauri && ../web/node_modules/.bin/tauri dev --no-watch
 ```
 
-要求：Rust 1.94+、Node.js 20+
+要求：Rust 1.94+、Node.js 24 LTS+。
+
+### Dev Container
+
+推荐使用 `.devcontainer/` 作为统一开发环境。宿主机只需要 Git、Docker/OrbStack/Docker Desktop，以及支持 Dev Container 的编辑器或 AI agent；Rust、Node、Tauri Linux 依赖和 `cargo-deny` 都在容器内安装。
+
+Dev Container 当前基线：
+
+- `ubuntu:26.04`
+- Node 24 LTS
+- Rust stable + `rustfmt` / `clippy`
+- `cargo-deny 0.19.4`
+- Vite/Tauri dev server 端口：`1420`
+
+首次打开容器后会自动执行：
+
+```bash
+npm --prefix web ci
+cargo fetch --locked
+```
 
 ## 项目结构
 
-```
+```text
 crates/          # Rust 引擎库与 IPC bindings（9 crates）
 src/             # DAG 编排与标准注册表
 src-tauri/       # Tauri 桌面壳（workspace package）
 web/             # React + FlowGram.AI 前端
 tests/           # 集成测试
-docs/            # 架构决策记录（ADR）与 RFC
+docs/            # ADR / RFC / specs / plans / conventions / templates
 ```
+
+## 项目文档
+
+- `AGENTS.md`：项目级真值源，包含架构不变量、编码约束、文档触发规则和测试约定
+- `CONTRIBUTING.md`：贡献流程、PR 要求、review 重点
+- `SECURITY.md`：安全漏洞报告流程
+- `docs/conventions.md`：长期协作约定、生成物、Dev Container 和安全边界
+- `docs/git.md`：Git 工作流、commit message 和 DCO 规范
+- `docs/adr/`：架构决策记录
+- `docs/rfcs/`：较大设计空间和分阶段演进
+- `docs/superpowers/specs/`：功能或子系统设计文档
+- `docs/superpowers/plans/`：可执行实施计划
+- `docs/templates/`：局部 `AGENTS.md` 等可复制模板

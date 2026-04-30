@@ -4,4 +4,4 @@ import type { AiSecretInput } from "./AiSecretInput";
 /**
  * 前端保存配置时的提供商输入。
  */
-export type AiProviderUpsert = { id: string, name: string, baseUrl: string, defaultModel: string, extraHeaders: { [key in string]?: string }, enabled: boolean, apiKey: AiSecretInput, };
+export type AiProviderUpsert = { id: string, name: string, baseUrl: string, defaultModel: string, extraHeaders: { [key in string]: string }, enabled: boolean, apiKey: AiSecretInput, };

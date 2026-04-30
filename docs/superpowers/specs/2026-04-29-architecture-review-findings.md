@@ -1,7 +1,7 @@
 # 2026-04-29 架构 review 总 findings
 
 **范围**：整合 Phase B 的 5 份切片审计、Phase C 模块拆分与行数普查、Phase D 规范扫描结果。  
-**结论**：Phase C/D/E 已完成本轮收尾；`src-tauri/src/lib.rs` 已从 2675 行拆到 132 行，前端 FlowGram 保存时丢 `mqttClient` / pure-form 节点的 P0 已修复。解冻条件尚未满足，因为 Phase A 的 ADR-0014 Phase 3b/4/5、Phase 6 EventBus、ADR-0015、ADR-0016 仍未完成。重新校对确认：`loop` 容器恢复已在当前 `main` 可追溯到 `e35cb43`，不再计入解冻差异。
+**结论（2026-04-30 校准）**：Phase A/B/C/D/E 已完成，架构冻结已解除；`src-tauri/src/lib.rs` 已从 2675 行拆到 132 行，前端 FlowGram 保存时丢 `mqttClient` / pure-form 节点的 P0 已修复。ADR-0016 的 `BackpressureDetected` 发射逻辑等 deferred items 仍是后续技术债，但不再阻塞常规 PR 流程。
 
 ## Phase C：行数与拆分结果
 
@@ -87,7 +87,7 @@
 | C-01 | Phase C | `src-tauri/src/runtime.rs` / `commands/workflow.rs` 仍 >500 行。 | 二次拆 `runtime/{policy,dead_letter,dispatch}` 与 workflow deploy helpers。 |
 | C-02 | Phase C | 前端大文件集中在画布 / project / orchestrator。 | 按域拆组件与 hook，先补测试保护。 |
 | D-01 | Phase D | Rhai `max_operations` 没有统一 clamp。 | 在 config normalize / deploy validation 加下限与上限，补测试。 |
-| E-01 | Phase E | Phase A 未完成，不能删除 freeze。 | 完成 ADR-0014 Phase 3b/4/5、Phase 6、ADR-0015/0016 后再解冻。 |
+| E-01 | Phase E | 已偿还：Phase A/B/C/D/E 全部完成，架构冻结已解除。 | 后续只跟踪 ADR-0016 deferred items，不再阻塞常规 PR。 |
 
 ### P2
 
@@ -110,11 +110,11 @@
 5. `fix(scripting): clamp Rhai max_operations 并补部署期校验`
 6. `refactor(src-tauri): 二次拆 runtime.rs 与 workflow command helpers`
 7. `refactor(web): 拆 FlowgramCanvas / workflow-orchestrator / tauri IPC wrapper`
-8. `feat(adr-0014): Phase 3b lookup + mixed input`
-9. `feat(adr-0014): Phase 4 cache lifecycle`
-10. `feat(adr-0014): Phase 5 visual + AI prompt`
-11. `feat(rfc-0002): Phase 6 EventBus + EdgeBackpressure`
-12. `feat(adr-0015/0016): reactive data pin + edge observability`
+8. ~~`feat(adr-0014): Phase 3b lookup + mixed input`~~ 已完成。
+9. ~~`feat(adr-0014): Phase 4 cache lifecycle`~~ 已完成。
+10. ~~`feat(adr-0014): Phase 5 visual + AI prompt`~~ 已完成。
+11. ~~`feat(rfc-0002): Phase 6 EventBus + EdgeBackpressure`~~ 已完成修订；EventBus broadcast / EdgeBackpressure deferred。
+12. ~~`feat(adr-0015/0016): reactive data pin + edge observability`~~ 已完成主体；ADR-0016 deferred items 继续跟踪。
 
 ## 验证
 
@@ -126,4 +126,4 @@
 
 ## 解冻状态
 
-本轮不删除 `AGENTS.md` freeze 段。退出标准 5 项中，Phase B/C/D/E 已完成或形成明确后续 PR；Phase A 仍未完成，因此架构冻结继续有效。
+`docs/superpowers/plans/2026-04-28-architecture-review.md` 的退出标准 5 项已全勾，`AGENTS.md` freeze 段已删除，架构冻结于 2026-04-30 解除。本文档剩余 P1/P2 条目按正常 PR 流程推进。

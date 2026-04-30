@@ -3,4 +3,4 @@
 /**
  * 前端可见的提供商配置视图。
  */
-export type AiProviderView = { id: string, name: string, baseUrl: string, defaultModel: string, extraHeaders: { [key in string]?: string }, enabled: boolean, hasApiKey: boolean, };
+export type AiProviderView = { id: string, name: string, baseUrl: string, defaultModel: string, extraHeaders: { [key in string]: string }, enabled: boolean, hasApiKey: boolean, };

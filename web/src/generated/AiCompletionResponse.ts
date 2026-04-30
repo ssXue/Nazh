@@ -4,15 +4,15 @@ import type { AiTokenUsage } from "./AiTokenUsage";
 /**
  * Chat completion 响应。
  */
-export type AiCompletionResponse = { 
+export type AiCompletionResponse = {
 /**
  * 模型返回的文本内容。
  */
-content: string, 
+content: string,
 /**
  * 本次消耗的 token 数。
  */
-usage?: AiTokenUsage, 
+usage?: AiTokenUsage,
 /**
  * 使用的模型名。
  */

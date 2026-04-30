@@ -1593,7 +1593,7 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
         }
 
         if (ctx.playground.config.readonly) {
-          panelManager.close(FLOWGRAM_NODE_SETTINGS_PANEL_KEY, 'right');
+          panelManager.close(FLOWGRAM_NODE_SETTINGS_PANEL_KEY);
           return;
         }
 
@@ -1610,7 +1610,7 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
           return;
         }
 
-        panelManager.close(FLOWGRAM_NODE_SETTINGS_PANEL_KEY, 'right');
+        panelManager.close(FLOWGRAM_NODE_SETTINGS_PANEL_KEY);
       } catch (error) {
         reportFlowgramError('FlowGram 选择状态同步失败', error);
         return;

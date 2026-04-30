@@ -3,7 +3,7 @@
 /**
  * `snapshot_workflow_variables` 命令的请求。
  */
-export type SnapshotWorkflowVariablesRequest = { 
+export type SnapshotWorkflowVariablesRequest = {
 /**
  * 要查询的工作流 ID。
  */
