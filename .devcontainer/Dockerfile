@@ -2,6 +2,7 @@ FROM ubuntu:26.04
 
 ARG NODE_MAJOR=24
 ARG CARGO_DENY_VERSION=0.19.4
+ARG CARGO_EDIT_VERSION=0.13.10
 
 ENV DEBIAN_FRONTEND=noninteractive
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
@@ -55,7 +56,7 @@ ENV LANG=en_US.UTF-8 \
 # Node 24 是 2026-04 当前 LTS；用 NodeSource 避免 Ubuntu 仓库版本漂移。
 RUN curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash - && \
     apt-get install --no-install-recommends -y nodejs && \
-    npm install -g @mermaid-js/mermaid-cli && \
+    npm install -g @mermaid-js/mermaid-cli npm-check-updates && \
     apt-get clean -y && \
     rm -rf /var/lib/apt/lists/*
 
@@ -63,6 +64,10 @@ RUN curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash - && \
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
     | sh -s -- -y --default-toolchain stable --component rustfmt --component clippy
 ENV PATH="/root/.cargo/bin:${PATH}"
+
+# Rust manifest 维护工具只装在容器内，避免污染宿主机 Cargo 环境。
+RUN cargo install cargo-edit --version "${CARGO_EDIT_VERSION}" --locked && \
+    cargo install --list | grep -F "cargo-edit v${CARGO_EDIT_VERSION}:"
 
 # 使用官方 release 二进制，避免在容器构建时从源码编译 cargo-deny。
 RUN arch="$(dpkg --print-architecture)" && \

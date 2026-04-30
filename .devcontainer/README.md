@@ -8,6 +8,7 @@
 - Node：24 LTS
 - Rust：stable，带 `rustfmt` 和 `clippy`
 - 审计工具：`cargo-deny 0.19.4`
+- 依赖维护工具：`cargo-edit 0.13.10`（提供 `cargo upgrade` / `cargo add` 等）、`npm-check-updates`
 - Tauri Linux 依赖：`libwebkit2gtk-4.1-dev`、`libxdo-dev`、`libssl-dev`、`libayatana-appindicator3-dev`、`librsvg2-dev`
 - 协作工具：`gh` 不在本镜像内默认安装；需要 GitHub CLI 时可在容器内追加安装或用宿主机凭据执行
 
@@ -45,6 +46,8 @@ npm --version
 rustc --version
 cargo --version
 cargo-deny --version
+cargo install --list | grep 'cargo-edit v0.13.10'
+ncu --version
 rg --version
 fd --version
 bat --version
