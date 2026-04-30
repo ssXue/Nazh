@@ -28,7 +28,7 @@ use uuid::Uuid;
 
 use crate::{
     CompletedExecutionEvent, ContextRef, DataStore, EngineError, ExecutionEvent, SharedResources,
-    WorkflowVariables,
+    WorkflowVariables, event::emit_event,
 };
 
 /// 节点部署钩子可用的受限上下文。
@@ -117,14 +117,14 @@ impl NodeHandle {
         let consumers = inner.downstream.len().max(1);
         let data_id = inner.store.write(payload, consumers)?;
 
-        // 2. 发 Started 事件（事件通道满 / 关闭都不阻塞 emit；事件丢失只影响可观测性）
-        let _ = inner
-            .event_tx
-            .send(ExecutionEvent::Started {
+        // 2. 发 Started 事件（事件通道满 / 关闭都不阻塞 emit；emit_event 会记录错误）
+        emit_event(
+            &inner.event_tx,
+            ExecutionEvent::Started {
                 stage: inner.node_id.clone(),
                 trace_id,
-            })
-            .await;
+            },
+        );
 
         // 3. 广播 ContextRef 到下游
         let ctx_ref = ContextRef::new(trace_id, data_id, Some(inner.node_id.clone()));
@@ -143,14 +143,14 @@ impl NodeHandle {
         } else {
             Some(metadata)
         };
-        let _ = inner
-            .event_tx
-            .send(ExecutionEvent::Completed(CompletedExecutionEvent {
+        emit_event(
+            &inner.event_tx,
+            ExecutionEvent::Completed(CompletedExecutionEvent {
                 stage: inner.node_id.clone(),
                 trace_id,
                 metadata: metadata_field,
-            }))
-            .await;
+            }),
+        );
 
         Ok(())
     }
@@ -414,6 +414,34 @@ mod tests {
             .emit(serde_json::Value::Null, Map::new())
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn node_handle_emit_事件通道满时仍不阻塞数据通路() {
+        let store: Arc<dyn DataStore> = Arc::new(ArenaDataStore::new());
+        let (event_tx, _event_rx) = mpsc::channel(1);
+        event_tx
+            .try_send(ExecutionEvent::Started {
+                stage: "占满事件通道".to_owned(),
+                trace_id: Uuid::nil(),
+            })
+            .unwrap();
+        let (downstream_tx, mut downstream_rx) = mpsc::channel(4);
+        let handle = NodeHandle::new("trigger-full", store, vec![downstream_tx], event_tx);
+
+        match tokio::time::timeout(
+            Duration::from_millis(100),
+            handle.emit(serde_json::json!({"value": 42}), Map::new()),
+        )
+        .await
+        {
+            Ok(Ok(())) => {}
+            Ok(Err(err)) => panic!("emit 应返回成功：{err}"),
+            Err(err) => panic!("事件通道满不应阻塞 emit：{err}"),
+        }
+
+        let ctx_ref = downstream_rx.recv().await.unwrap();
+        assert_eq!(ctx_ref.source_node.as_deref(), Some("trigger-full"));
     }
 
     #[tokio::test]

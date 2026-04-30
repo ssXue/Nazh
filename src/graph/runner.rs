@@ -312,10 +312,11 @@ pub(crate) async fn run_node(
                                 to_pin.to_owned(),
                             );
                             if let Some(window) = edge_windows.get_mut(&key) {
-                                // TODO(ADR-0016)：queue_depth 目前记录 0。
-                                // 精确测量需要 instrument 接收端（Receiver::len()），
-                                // 改为共享 channel 状态或由下游反馈。
-                                window.record(0);
+                                let queue_depth = target
+                                    .sender
+                                    .max_capacity()
+                                    .saturating_sub(target.sender.capacity());
+                                window.record(queue_depth);
                             }
                         }
                         if let Some(error) = downstream_error {

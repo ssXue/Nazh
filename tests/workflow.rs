@@ -2171,6 +2171,10 @@ async fn edge_transmit_summary_emitted_on_dispatch() {
                 assert_eq!(summary.from_node, "source");
                 assert_eq!(summary.to_node, "sink");
                 assert!(summary.transmit_count >= 1, "transmit_count 应 ≥ 1");
+                assert!(
+                    summary.max_queue_depth >= 1,
+                    "max_queue_depth 应反映发送后的下游积压，而不是硬编码 0"
+                );
                 assert_eq!(summary.edge_kind, PinKind::Exec);
                 found_summary = true;
                 break;
