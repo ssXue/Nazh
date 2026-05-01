@@ -9,11 +9,12 @@
 
 use std::{collections::HashMap, sync::Arc};
 
-use crate::{
+use connections::ConnectionDefinition;
+use nazh_core::{
     CancellationToken, ContextRef, DataStore, EngineError, ExecutionEvent, LifecycleGuard,
-    SharedResources, VariableDeclaration, WorkflowContext, WorkflowNodeDefinition,
+    OutputCache, PinKind, SharedResources, VariableDeclaration, WorkflowContext,
+    WorkflowNodeDefinition,
 };
-use nazh_core::{OutputCache, PinKind};
 use serde::{Deserialize, Deserializer, Serialize};
 use tokio::sync::mpsc;
 #[cfg(feature = "ts-export")]
@@ -27,7 +28,7 @@ pub struct WorkflowGraph {
     #[cfg_attr(feature = "ts-export", ts(optional))]
     pub name: Option<String>,
     #[serde(default)]
-    pub connections: Vec<crate::ConnectionDefinition>,
+    pub connections: Vec<ConnectionDefinition>,
     #[serde(default)]
     pub nodes: HashMap<String, WorkflowNodeDefinition>,
     #[serde(default)]

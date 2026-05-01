@@ -17,13 +17,12 @@
 //! | Ring 1 | `nodes-io` | I/O 节点（native/timer/serial/modbus/http/mqtt/bark/sql/debug） |
 //! | Ring 1 | `nodes-pure` | 纯计算节点（c2f/minutesSince/lookup） |
 //! | Ring 1 | `ai` | OpenAI-compatible `AiService` 实现 |
-//! | Facade | `nazh-engine`（本 crate） | 组装 Ring 0 + Ring 1，DAG 部署编排 |
+//! | Ring 1 | `graph` | DAG 工作流编排：解析、校验、拓扑排序、部署与执行 |
+//! | Facade | `nazh-engine`（本 crate） | 组装 Ring 0 + Ring 1，对外统一入口 |
 //! | IPC | `tauri-bindings` | Tauri 命令请求/响应类型 + ts-rs 导出汇总 |
 
-pub mod graph;
-
 #[doc(hidden)]
-pub use crate::graph::pull::merge_payload as __test_only_merge_payload;
+pub use nazh_graph::pull::merge_payload as __test_only_merge_payload;
 mod registry;
 
 pub use nazh_core::{
@@ -70,9 +69,9 @@ pub use nodes_io::{SerialTriggerNode, SerialTriggerNodeConfig};
 #[cfg(feature = "io-sql")]
 pub use nodes_io::{SqlWriterNode, SqlWriterNodeConfig};
 
-pub use graph::{
-    WorkflowDeployment, WorkflowDeploymentParts, WorkflowGraph, WorkflowIngress, WorkflowStreams,
-    deploy_workflow, deploy_workflow_with_ai,
+pub use nazh_graph::{
+    WorkflowDeployment, WorkflowDeploymentParts, WorkflowEdge, WorkflowGraph, WorkflowIngress,
+    WorkflowStreams, deploy_workflow, deploy_workflow_with_ai,
 };
 
 /// 加载全部标准库插件，返回就绪的节点注册表。
@@ -87,7 +86,7 @@ pub fn standard_registry() -> NodeRegistry {
 /// ts-rs 类型导出入口。仅在 `ts-export` feature 启用时编译。
 #[cfg(feature = "ts-export")]
 pub mod export_bindings {
-    use crate::graph::{WorkflowEdge, WorkflowGraph};
+    use nazh_graph::{WorkflowEdge, WorkflowGraph};
     use ts_rs::{Config, ExportError, TS};
 
     pub fn export_all() -> Result<(), ExportError> {

@@ -333,11 +333,12 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::duration_suboptimal_units)]
     async fn shutdown_超时则放弃等待() {
         let token = CancellationToken::new();
         // 任务故意忽略 cancel，模拟"卡住"的清理
         let join = tokio::spawn(async {
-            tokio::time::sleep(Duration::from_secs(60)).await;
+            tokio::time::sleep(Duration::from_mins(1)).await;
         });
 
         let guard =

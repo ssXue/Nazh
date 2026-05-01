@@ -2301,12 +2301,30 @@ dependencies = [
  "connections",
  "dashmap",
  "nazh-core",
+ "nazh-graph",
  "nodes-flow",
  "nodes-io",
  "nodes-pure",
  "pipeline",
  "rusqlite",
  "scripting",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "ts-rs",
+ "uuid",
+]
+
+[[package]]
+name = "nazh-graph"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "connections",
+ "dashmap",
+ "nazh-core",
  "serde",
  "serde_json",
  "tokio",

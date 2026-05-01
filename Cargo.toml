@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "crates/core", "crates/pipeline", "crates/connections", "crates/scripting", "crates/nodes-flow", "crates/nodes-io", "crates/nodes-pure", "crates/ai", "crates/tauri-bindings", "src-tauri"]
+members = [".", "crates/core", "crates/pipeline", "crates/connections", "crates/scripting", "crates/nodes-flow", "crates/nodes-io", "crates/nodes-pure", "crates/ai", "crates/graph", "crates/tauri-bindings", "src-tauri"]
 exclude = ["crates/nazh-core"]
 resolver = "2"
 
@@ -32,6 +32,7 @@ scripting = { path = "crates/scripting" }
 nodes-flow = { path = "crates/nodes-flow" }
 nodes-io = { path = "crates/nodes-io", default-features = false }
 nodes-pure = { path = "crates/nodes-pure" }
+nazh-graph = { path = "crates/graph" }
 tauri-bindings = { path = "crates/tauri-bindings" }
 arc-swap = "1"
 async-trait = "0.1"
@@ -90,6 +91,7 @@ connections.workspace = true
 scripting.workspace = true
 nodes-flow.workspace = true
 nodes-pure.workspace = true
+nazh-graph.workspace = true
 # nodes-io 的协议 features 由 facade 重新导出（ADR-0018）。workspace dep 已经
 # `default-features = false`；桌面默认通过 facade 的 io-all 元 feature 打开。
 nodes-io.workspace = true
@@ -110,6 +112,7 @@ ts-export = [
     "nazh-core/ts-export",
     "connections/ts-export",
     "ai/ts-export",
+    "nazh-graph/ts-export",
 ]
 
 # ADR-0018：把 nodes-io 的 IO feature 提升到 facade 层，便于上游（src-tauri /

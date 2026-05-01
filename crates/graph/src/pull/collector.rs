@@ -1,12 +1,4 @@
-//! ADR-0014 Phase 3：Data 输入引脚的运行时拉路径。
-//!
-//! 当一个被 Exec 边触发的下游节点在 [`NodeTrait::input_pins`] 中声明了
-//! [`PinKind::Data`](nazh_core::PinKind::Data) 引脚，本模块负责在 Runner 调用
-//! `transform` **之前**：
-//! 1. 反查每个 Data 输入引脚对应的上游边（[`EdgesByConsumer`]）
-//! 2. 上游若为 pure-form 节点 → 递归求值
-//! 3. 上游若为 Exec 节点（如 `modbusRead.latest`）→ 读取其 [`OutputCache`]
-//! 4. 把收集到的 Data 值合并进 `transform` payload
+//! Data 输入拉取：递归求值 pure 节点、读 Exec 节点缓存、合并 payload。
 
 use std::collections::HashMap;
 use std::collections::hash_map::DefaultHasher;
@@ -15,7 +7,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::Utc;
-use dashmap::DashMap;
 use nazh_core::{
     DEFAULT_BLOCK_TIMEOUT_MS, EmptyPolicy, EngineError, NodeTrait, OutputCache, Uuid,
     guard::guarded_execute, is_pure_form,
@@ -23,91 +14,8 @@ use nazh_core::{
 use serde_json::{Map, Value};
 use tracing::Instrument;
 
-use super::DEFAULT_OUTPUT_PIN_ID;
-use super::types::WorkflowEdge;
-
-/// 反向索引：每个 consumer node id → 其所有 Data 入边的元组列表。
-///
-/// 元组结构：`(consumer_input_pin_id, upstream_node_id, upstream_output_pin_id)`。
-/// `consumer_input_pin_id` 用 `target_port_id` 解析，缺省时为 `"in"`；
-/// `upstream_output_pin_id` 用 `source_port_id` 解析，缺省时为 [`DEFAULT_OUTPUT_PIN_ID`]。
-#[derive(Debug, Default, Clone)]
-pub(crate) struct EdgesByConsumer {
-    by_consumer: HashMap<String, Vec<DataInEdge>>,
-}
-
-#[derive(Debug, Clone)]
-#[allow(clippy::struct_field_names)]
-pub(crate) struct DataInEdge {
-    pub consumer_input_pin_id: String,
-    pub upstream_node_id: String,
-    pub upstream_output_pin_id: String,
-}
-
-impl EdgesByConsumer {
-    pub fn for_consumer(&self, consumer_node_id: &str) -> &[DataInEdge] {
-        self.by_consumer
-            .get(consumer_node_id)
-            .map_or(&[], Vec::as_slice)
-    }
-}
-
-/// PURE 纯函数节点在同一 trace 内的输入哈希记忆缓存（ADR-0014 Phase 4）。
-///
-/// Key = `(node_id, trace_id, input_hash)`；Value = transform 产出的 payload。
-/// fan-out 场景下同一 pure 节点被多个下游重复拉取时，第二次起直接命中缓存。
-///
-/// Trace 完成后由 Runner 调用 [`clear_trace`](Self::clear_trace) 清理对应条目，
-/// 防止内存随 trace 数无限增长。
-#[derive(Debug, Default)]
-pub(crate) struct PureMemo {
-    inner: Arc<DashMap<(String, Uuid, u64), Value>>,
-}
-
-impl PureMemo {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn get(&self, node_id: &str, trace_id: Uuid, input_hash: u64) -> Option<Value> {
-        self.inner
-            .get(&(node_id.to_owned(), trace_id, input_hash))
-            .map(|v| v.value().clone())
-    }
-
-    pub fn insert(&self, node_id: &str, trace_id: Uuid, input_hash: u64, payload: Value) {
-        self.inner
-            .insert((node_id.to_owned(), trace_id, input_hash), payload);
-    }
-
-    /// 清理指定 trace 的所有 memo 条目。
-    /// 由 Runner 在 Exec 节点完成一个 trace 后调用。
-    /// 幂等——不存在的 key 被 `DashMap` 静默跳过。
-    pub fn clear_trace(&self, trace_id: Uuid) {
-        self.inner.retain(|key, _| key.1 != trace_id);
-    }
-}
-
-/// 在 [`classify_edges`](super::topology::classify_edges) 已分出的 `data_edges`
-/// 上构造反向索引。
-pub(crate) fn build_edges_by_consumer(data_edges: &[&WorkflowEdge]) -> EdgesByConsumer {
-    let mut by_consumer: HashMap<String, Vec<DataInEdge>> = HashMap::new();
-    for edge in data_edges {
-        let entry = DataInEdge {
-            consumer_input_pin_id: edge
-                .target_port_id
-                .clone()
-                .unwrap_or_else(|| "in".to_owned()),
-            upstream_node_id: edge.from.clone(),
-            upstream_output_pin_id: edge
-                .source_port_id
-                .clone()
-                .unwrap_or_else(|| DEFAULT_OUTPUT_PIN_ID.to_owned()),
-        };
-        by_consumer.entry(edge.to.clone()).or_default().push(entry);
-    }
-    EdgesByConsumer { by_consumer }
-}
+use super::index::EdgesByConsumer;
+use super::memo::PureMemo;
 
 /// 在被 Exec 触发的下游节点 transform 之前，收集其 Data 输入引脚的最新值，
 /// 并把它们合并进 transform payload。
@@ -386,10 +294,9 @@ fn extract_pin_from_payload(payload: &Value, pin_id: &str) -> Option<Value> {
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
-    use crate::graph::types::WorkflowEdge;
+    use crate::types::WorkflowEdge;
     use nazh_core::{CachedOutput, NodeExecution, PinDefinition, PinDirection, PinKind, PinType};
     use serde_json::json;
-    use uuid::Uuid;
 
     fn data_edge(from: &str, sport: Option<&str>, to: &str, tport: Option<&str>) -> WorkflowEdge {
         WorkflowEdge {
@@ -398,38 +305,6 @@ mod tests {
             source_port_id: sport.map(ToOwned::to_owned),
             target_port_id: tport.map(ToOwned::to_owned),
         }
-    }
-
-    #[test]
-    fn 单_data_边构造单_entry() {
-        let e = data_edge("up", Some("latest"), "down", Some("temp"));
-        let refs = vec![&e];
-        let idx = build_edges_by_consumer(&refs);
-        let entries = idx.for_consumer("down");
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].consumer_input_pin_id, "temp");
-        assert_eq!(entries[0].upstream_node_id, "up");
-        assert_eq!(entries[0].upstream_output_pin_id, "latest");
-    }
-
-    #[test]
-    fn 多个_data_边按_consumer_分组() {
-        let e1 = data_edge("up1", Some("o1"), "down", Some("a"));
-        let e2 = data_edge("up2", Some("o2"), "down", Some("b"));
-        let refs = vec![&e1, &e2];
-        let idx = build_edges_by_consumer(&refs);
-        assert_eq!(idx.for_consumer("down").len(), 2);
-        assert!(idx.for_consumer("missing").is_empty());
-    }
-
-    #[test]
-    fn 缺端口_id_默认到_in_和_out() {
-        let e = data_edge("up", None, "down", None);
-        let refs = vec![&e];
-        let idx = build_edges_by_consumer(&refs);
-        let entries = idx.for_consumer("down");
-        assert_eq!(entries[0].consumer_input_pin_id, "in");
-        assert_eq!(entries[0].upstream_output_pin_id, "out");
     }
 
     // ---- Phase 4：empty_policy 分支 + PureMemo 单元测试 ----
@@ -514,7 +389,7 @@ mod tests {
 
         let e = data_edge("upstream", Some("latest"), "consumer", Some("sensor"));
         let refs = vec![&e];
-        let edges = build_edges_by_consumer(&refs);
+        let edges = super::super::index::build_edges_by_consumer(&refs);
 
         (nodes, caches, timeouts, edges, PureMemo::new(), consumer)
     }
@@ -650,7 +525,7 @@ mod tests {
         assert_eq!(result["sensor"], json!(0));
     }
 
-    // ---- PureMemo 测试 ----
+    // ---- PureMemo + fan-out 测试 ----
 
     /// 测试用 pure 节点：记录 transform 调用次数。
     struct CountingPureNode {
@@ -733,7 +608,7 @@ mod tests {
         let e1 = data_edge("pure", Some("out"), "consumer", Some("a"));
         let e2 = data_edge("pure", Some("out"), "consumer", Some("b"));
         let refs = vec![&e1, &e2];
-        let edges = build_edges_by_consumer(&refs);
+        let edges = super::super::index::build_edges_by_consumer(&refs);
         let memo = PureMemo::new();
 
         // Consumer 不需要实际 NodeTrait——只需 input_pins 返回带正确 empty_policy 的 pin。
@@ -790,40 +665,5 @@ mod tests {
             1,
             "fan-out 下 pure 节点应只 transform 一次"
         );
-    }
-
-    #[test]
-    fn pure_memo_insert_and_get() {
-        let memo = PureMemo::new();
-        let trace = Uuid::nil();
-
-        assert!(memo.get("node", trace, 123).is_none());
-
-        memo.insert("node", trace, 123, json!({"out": 99}));
-        let hit = memo.get("node", trace, 123).unwrap();
-        assert_eq!(hit, json!({"out": 99}));
-
-        // 不同 trace 不命中
-        let other_trace = Uuid::new_v4();
-        assert!(memo.get("node", other_trace, 123).is_none());
-    }
-
-    #[test]
-    fn clear_trace_只清目标_trace() {
-        let memo = PureMemo::new();
-        let t1 = Uuid::new_v4();
-        let t2 = Uuid::new_v4();
-
-        memo.insert("node", t1, 1, json!(1));
-        memo.insert("node", t2, 2, json!(2));
-        memo.insert("other", t1, 3, json!(3));
-
-        memo.clear_trace(t1);
-
-        // t1 的条目被清
-        assert!(memo.get("node", t1, 1).is_none());
-        assert!(memo.get("other", t1, 3).is_none());
-        // t2 的条目保留
-        assert_eq!(memo.get("node", t2, 2).unwrap(), json!(2));
     }
 }

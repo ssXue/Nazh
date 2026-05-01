@@ -42,7 +42,7 @@ use super::types::{
     DownstreamTarget, WorkflowDeployment, WorkflowGraph, WorkflowIngress, WorkflowStreams,
 };
 use super::variables_init::build_workflow_variables;
-use crate::SharedConnectionManager;
+use connections::SharedConnectionManager;
 use nazh_core::{
     ArenaDataStore, CancellationToken, ContextRef, DataStore, EngineError, NodeHandle,
     NodeLifecycleContext, NodeRegistry, NodeTrait, OutputCache, PinKind, RuntimeResources,

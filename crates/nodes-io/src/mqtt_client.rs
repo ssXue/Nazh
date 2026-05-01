@@ -629,7 +629,7 @@ async fn run_message_loop(
         let event = tokio::select! {
             biased;
             () = token.cancelled() => return None,
-            event = tokio::time::timeout(std::time::Duration::from_secs(60), eventloop.poll()) => event,
+            event = tokio::time::timeout(std::time::Duration::from_mins(1), eventloop.poll()) => event,
         };
         match event {
             Ok(Ok(rumqttc::Event::Incoming(rumqttc::Packet::Publish(message)))) => {

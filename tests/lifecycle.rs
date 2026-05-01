@@ -529,7 +529,7 @@ async fn shutdown_有超时保护() {
         ) -> Result<LifecycleGuard, EngineError> {
             // 故意忽略 ctx.shutdown，模拟"卡住"的清理路径
             let join = tokio::spawn(async {
-                tokio::time::sleep(Duration::from_secs(60)).await;
+                tokio::time::sleep(Duration::from_mins(1)).await;
             });
             Ok(LifecycleGuard::from_task(CancellationToken::new(), join)
                 .with_shutdown_timeout(Duration::from_millis(50)))
