@@ -370,6 +370,28 @@ impl WorkflowVariables {
         Ok(true)
     }
 
+    /// 移除指定变量并返回其先前值（ADR-0012 Phase 3）。
+    ///
+    /// 变量不存在时返回 `None`（不发事件、不报错）。
+    /// 移除后 `watch_tx` 发送 `None` 通知订阅者变量已消失；
+    /// 同时向已注入的事件通道发送 [`ExecutionEvent::VariableDeleted`]。
+    #[must_use]
+    pub fn remove(&self, name: &str) -> Option<TypedVariable> {
+        let (_, removed) = self.inner.remove(name)?;
+        let _ = removed.watch_tx.send(None);
+        let sink = self.event_sink.get();
+        if let Some(sink) = sink {
+            let event = crate::ExecutionEvent::VariableDeleted {
+                workflow_id: sink.workflow_id.clone(),
+                name: name.to_owned(),
+            };
+            if let Err(error) = sink.sender.try_send(event) {
+                tracing::debug!(?error, ?name, "VariableDeleted 事件 try_send 失败");
+            }
+        }
+        Some(removed)
+    }
+
     /// 拷贝当前所有变量的快照（IPC / 调试用）。
     #[must_use]
     pub fn snapshot(&self) -> HashMap<String, TypedVariable> {
@@ -850,5 +872,82 @@ mod tests {
         let b2 = rx2.borrow();
         assert_eq!(b1.as_ref().unwrap().1, Value::from(99_i64));
         assert_eq!(b2.as_ref().unwrap().1, Value::from(99_i64));
+    }
+
+    #[test]
+    fn remove_存在的变量返回旧值() {
+        let vars = vars_with("x", PinType::Integer, Value::from(42_i64));
+        let removed = vars.remove("x").expect("应返回旧值");
+        assert_eq!(removed.value, Value::from(42_i64));
+        assert!(vars.get("x").is_none(), "移除后 get 应返回 None");
+    }
+
+    #[test]
+    fn remove_不存在的变量返回_none() {
+        let vars = WorkflowVariables::empty();
+        assert!(vars.remove("nope").is_none());
+    }
+
+    #[tokio::test]
+    async fn remove_成功时发_variabledeleted_事件() {
+        use tokio::sync::mpsc;
+
+        let (tx, mut rx) = mpsc::channel(8);
+        let mut decls = HashMap::new();
+        decls.insert(
+            "x".to_owned(),
+            VariableDeclaration {
+                variable_type: PinType::Integer,
+                initial: Value::from(1_i64),
+            },
+        );
+        let vars = WorkflowVariables::from_declarations(&decls).unwrap();
+        vars.set_event_sender("wf-1".to_owned(), tx);
+
+        vars.remove("x").expect("应成功移除");
+
+        let event = rx.recv().await.expect("应收到事件");
+        match event {
+            crate::ExecutionEvent::VariableDeleted { workflow_id, name } => {
+                assert_eq!(workflow_id, "wf-1");
+                assert_eq!(name, "x");
+            }
+            other => panic!("expected VariableDeleted, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn remove_不存在的变量不发事件() {
+        use tokio::sync::mpsc;
+        use tokio::time::{Duration, timeout};
+
+        let (tx, mut rx) = mpsc::channel(8);
+        let vars = WorkflowVariables::empty();
+        vars.set_event_sender("wf-1".to_owned(), tx);
+
+        assert!(vars.remove("nope").is_none());
+
+        let result = timeout(Duration::from_millis(50), rx.recv()).await;
+        assert!(result.is_err(), "移除不存在的变量不应发事件");
+    }
+
+    #[tokio::test]
+    async fn remove_成功时_watch_channel_收到_none() {
+        let mut decls = HashMap::new();
+        decls.insert(
+            "x".to_owned(),
+            VariableDeclaration {
+                variable_type: PinType::Integer,
+                initial: Value::from(1_i64),
+            },
+        );
+        let vars = WorkflowVariables::from_declarations(&decls).unwrap();
+
+        let mut rx = vars.subscribe("x").expect("变量已声明");
+
+        vars.remove("x").expect("应成功移除");
+
+        rx.changed().await.expect("watch 应收到通知");
+        assert!(rx.borrow().is_none(), "删除后 watch 值应为 None");
     }
 }

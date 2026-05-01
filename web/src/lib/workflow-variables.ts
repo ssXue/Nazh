@@ -1,10 +1,13 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type {
+  DeleteWorkflowVariableRequest,
+  DeleteWorkflowVariableResponse,
   SetWorkflowVariableRequest,
   SetWorkflowVariableResponse,
   SnapshotWorkflowVariablesResponse,
   VariableChangedPayload,
+  VariableDeletedPayload,
 } from '../generated';
 
 /**
@@ -17,6 +20,19 @@ export async function setWorkflowVariable(
   request: SetWorkflowVariableRequest,
 ): Promise<SetWorkflowVariableResponse> {
   return invoke<SetWorkflowVariableResponse>('set_workflow_variable', {
+    request,
+  });
+}
+
+/**
+ * 删除工作流变量（ADR-0012 Phase 3）。
+ *
+ * 变量不存在时为幂等操作（`removedSnapshot` 为 `undefined`）。
+ */
+export async function deleteWorkflowVariable(
+  request: DeleteWorkflowVariableRequest,
+): Promise<DeleteWorkflowVariableResponse> {
+  return invoke<DeleteWorkflowVariableResponse>('delete_workflow_variable', {
     request,
   });
 }
@@ -42,21 +58,24 @@ export async function snapshotWorkflowVariables(
  * 每次工作流变量被节点脚本或 IPC 写入时触发，payload 携带最新值与来源。
  *
  * 返回 unlisten 函数；调用方负责在组件卸载 / hook cleanup 时调用以释放监听器。
- *
- * @example
- * ```ts
- * const unlisten = await onWorkflowVariableChanged((payload) => {
- *   console.log(payload.name, payload.value);
- * });
- * // 组件卸载时
- * unlisten();
- * ```
  */
 export async function onWorkflowVariableChanged(
   handler: (payload: VariableChangedPayload) => void,
 ): Promise<() => void> {
   return listen<VariableChangedPayload>(
     'workflow://variable-changed',
+    (event) => handler(event.payload),
+  );
+}
+
+/**
+ * 订阅 `workflow://variable-deleted` 事件（ADR-0012 Phase 3）。
+ */
+export async function onWorkflowVariableDeleted(
+  handler: (payload: VariableDeletedPayload) => void,
+): Promise<() => void> {
+  return listen<VariableDeletedPayload>(
+    'workflow://variable-deleted',
     (event) => handler(event.payload),
   );
 }

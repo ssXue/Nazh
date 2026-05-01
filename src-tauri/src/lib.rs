@@ -101,6 +101,7 @@ pub fn run() {
             commands::catalog::describe_node_pins,
             commands::variables::snapshot_workflow_variables,
             commands::variables::set_workflow_variable,
+            commands::variables::delete_workflow_variable,
             commands::runtime::list_runtime_workflows,
             commands::runtime::set_active_runtime_workflow,
             commands::runtime::list_dead_letters,

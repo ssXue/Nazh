@@ -54,6 +54,8 @@ pub enum ExecutionEvent {
         #[cfg_attr(feature = "ts-export", ts(optional))]
         updated_by: Option<String>,
     },
+    /// 工作流变量被删除（ADR-0012 Phase 3）。
+    VariableDeleted { workflow_id: String, name: String },
     /// 边传输汇总（ADR-0016，默认 100ms 窗口）。
     EdgeTransmitSummary(EdgeTransmitSummary),
     /// 背压告警（ADR-0016，下游 channel 接近容量上限）。
@@ -155,6 +157,10 @@ enum ExecutionEventSerde {
     },
     EdgeTransmitSummary(EdgeTransmitSummary),
     BackpressureDetected(BackpressureDetected),
+    VariableDeleted {
+        workflow_id: String,
+        name: String,
+    },
 }
 
 impl From<&ExecutionEvent> for ExecutionEventSerde {
@@ -204,6 +210,10 @@ impl From<&ExecutionEvent> for ExecutionEventSerde {
             ExecutionEvent::BackpressureDetected(detected) => {
                 Self::BackpressureDetected(detected.clone())
             }
+            ExecutionEvent::VariableDeleted { workflow_id, name } => Self::VariableDeleted {
+                workflow_id: workflow_id.clone(),
+                name: name.clone(),
+            },
         }
     }
 }
@@ -248,6 +258,9 @@ impl From<ExecutionEventSerde> for ExecutionEvent {
             ExecutionEventSerde::EdgeTransmitSummary(summary) => Self::EdgeTransmitSummary(summary),
             ExecutionEventSerde::BackpressureDetected(detected) => {
                 Self::BackpressureDetected(detected)
+            }
+            ExecutionEventSerde::VariableDeleted { workflow_id, name } => {
+                Self::VariableDeleted { workflow_id, name }
             }
         }
     }

@@ -62,6 +62,7 @@ export function RuntimeDock({
   const logViewportRef = useRef<HTMLDivElement | null>(null);
   const [hasCopiedEventFeed, setHasCopiedEventFeed] = useState(false);
   const [activePanel, setActivePanel] = useState<RuntimeDockPanel>('events');
+  const [variableCount, setVariableCount] = useState(0);
   const runtimeConsoleEntries = useMemo(
     () => buildRuntimeConsoleEntries(eventFeed, appErrors),
     [appErrors, eventFeed],
@@ -139,7 +140,7 @@ export function RuntimeDock({
                 ? results.length
                 : tab.id === 'connections'
                   ? connectionPreview.length
-                  : 0;
+                  : variableCount;
           const isActive = activePanel === tab.id;
 
           return (
@@ -318,7 +319,10 @@ export function RuntimeDock({
             </div>
 
             <div className="runtime-dock__panel-body">
-              <RuntimeVariablesPanel workflowId={activeWorkflowId} />
+              <RuntimeVariablesPanel
+                workflowId={activeWorkflowId}
+                onVariableCountChange={setVariableCount}
+              />
             </div>
           </section>
         </div>

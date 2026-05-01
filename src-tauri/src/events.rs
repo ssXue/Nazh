@@ -39,6 +39,16 @@ pub(crate) fn spawn_execution_event_forwarder(
                 continue;
             }
 
+            // ADR-0012 Phase 3：变量删除走独立事件通道。
+            if matches!(event, ExecutionEvent::VariableDeleted { .. }) {
+                if let Some(payload) = tauri_bindings::variable_deleted_payload(event)
+                    && let Err(error) = app.emit("workflow://variable-deleted", payload)
+                {
+                    tracing::warn!(?error, "workflow://variable-deleted 事件转发失败");
+                }
+                continue;
+            }
+
             if let Some(store) = &observability {
                 let _ = store.record_execution_event(&event).await;
             }

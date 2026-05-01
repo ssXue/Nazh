@@ -134,6 +134,26 @@ pub struct SetWorkflowVariableResponse {
     pub snapshot: TypedVariableSnapshot,
 }
 
+/// `delete_workflow_variable` 命令的请求（ADR-0012 Phase 3）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteWorkflowVariableRequest {
+    pub workflow_id: String,
+    pub name: String,
+}
+
+/// `delete_workflow_variable` 命令的响应（ADR-0012 Phase 3）。
+///
+/// 返回被删除变量在删除前的快照；变量不存在时为 `None`（幂等）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteWorkflowVariableResponse {
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub removed_snapshot: Option<TypedVariableSnapshot>,
+}
+
 /// `workflow://variable-changed` 事件载荷（ADR-0012 Phase 2）。
 ///
 /// 与 `ExecutionEvent::VariableChanged` 字段一致，但走独立 ts-rs 导出路径——
@@ -149,6 +169,15 @@ pub struct VariableChangedPayload {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts-export", ts(optional))]
     pub updated_by: Option<String>,
+}
+
+/// `workflow://variable-deleted` 事件载荷（ADR-0012 Phase 3）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct VariableDeletedPayload {
+    pub workflow_id: String,
+    pub name: String,
 }
 
 /// Reactive 引脚值变更推送载荷（ADR-0015 Phase 2 IPC）。
@@ -184,6 +213,18 @@ pub fn variable_changed_payload(
             updated_at,
             updated_by,
         }),
+        _ => None,
+    }
+}
+
+/// 将 [`nazh_core::ExecutionEvent::VariableDeleted`] 消耗式转换为 [`VariableDeletedPayload`]。
+pub fn variable_deleted_payload(
+    event: nazh_core::ExecutionEvent,
+) -> Option<VariableDeletedPayload> {
+    match event {
+        nazh_core::ExecutionEvent::VariableDeleted { workflow_id, name } => {
+            Some(VariableDeletedPayload { workflow_id, name })
+        }
         _ => None,
     }
 }
@@ -254,6 +295,9 @@ pub fn export_all() -> Result<(), ts_rs::ExportError> {
     SetWorkflowVariableRequest::export(&cfg)?;
     SetWorkflowVariableResponse::export(&cfg)?;
     VariableChangedPayload::export(&cfg)?;
+    VariableDeletedPayload::export(&cfg)?;
+    DeleteWorkflowVariableRequest::export(&cfg)?;
+    DeleteWorkflowVariableResponse::export(&cfg)?;
 
     trim_typescript_trailing_whitespace(cfg.out_dir())?;
     Ok(())

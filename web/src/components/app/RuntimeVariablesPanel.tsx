@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 import { formatPinType } from '../../lib/pin-schema-cache';
 import {
+  deleteWorkflowVariable,
   onWorkflowVariableChanged,
+  onWorkflowVariableDeleted,
   setWorkflowVariable,
   snapshotWorkflowVariables,
 } from '../../lib/workflow-variables';
@@ -11,10 +13,12 @@ import type {
   PinType,
   TypedVariableSnapshot,
   VariableChangedPayload,
+  VariableDeletedPayload,
 } from '../../generated';
 
 interface RuntimeVariablesPanelProps {
   workflowId: string | null;
+  onVariableCountChange?: (count: number) => void;
 }
 
 interface VariableEntry extends TypedVariableSnapshot {
@@ -22,13 +26,14 @@ interface VariableEntry extends TypedVariableSnapshot {
 }
 
 /**
- * 运行时变量面板（ADR-0012 Phase 2）。
+ * 运行时变量面板（ADR-0012 Phase 2 + Phase 3）。
  *
  * - 初始通过 `snapshotWorkflowVariables` 拉一次快照
- * - 订阅 `workflow://variable-changed` 事件实时更新本地 state
+ * - 订阅 `workflow://variable-changed` / `workflow://variable-deleted` 事件实时更新本地 state
  * - 编辑：按 `PinType.kind` 分派输入解析（bool / integer / float / string / json）
+ * - 删除：调 `deleteWorkflowVariable`，引擎侧发 `VariableDeleted` 事件
  */
-export function RuntimeVariablesPanel({ workflowId }: RuntimeVariablesPanelProps) {
+export function RuntimeVariablesPanel({ workflowId, onVariableCountChange }: RuntimeVariablesPanelProps) {
   const [variables, setVariables] = useState<Record<string, TypedVariableSnapshot>>({});
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -87,12 +92,55 @@ export function RuntimeVariablesPanel({ workflowId }: RuntimeVariablesPanelProps
     };
   }, [workflowId]);
 
+  // ADR-0012 Phase 3：监听变量删除事件
+  useEffect(() => {
+    if (!workflowId) return;
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+    void onWorkflowVariableDeleted((payload: VariableDeletedPayload) => {
+      if (cancelled || payload.workflowId !== workflowId) return;
+      setVariables((prev) => {
+        const next = { ...prev };
+        delete next[payload.name];
+        return next;
+      });
+    }).then((u) => {
+      if (cancelled) {
+        u();
+      } else {
+        unlisten = u;
+      }
+    });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [workflowId]);
+
+  // 向上报告变量数量（供 RuntimeDock badge 使用）
+  useEffect(() => {
+    onVariableCountChange?.(Object.keys(variables).length);
+  }, [variables, onVariableCountChange]);
+
   const handleSet = useCallback(
     async (name: string, value: JsonValue) => {
       if (!workflowId) return;
       try {
         setError(null);
         await setWorkflowVariable({ workflowId, name, value });
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [workflowId],
+  );
+
+  const handleDelete = useCallback(
+    async (name: string) => {
+      if (!workflowId) return;
+      try {
+        setError(null);
+        await deleteWorkflowVariable({ workflowId, name });
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
       }
@@ -123,7 +171,12 @@ export function RuntimeVariablesPanel({ workflowId }: RuntimeVariablesPanelProps
       ) : (
         <ul className="runtime-variables-panel__list">
           {entries.map((entry) => (
-            <VariableRow key={entry.name} entry={entry} onSubmit={handleSet} />
+            <VariableRow
+              key={entry.name}
+              entry={entry}
+              onSubmit={handleSet}
+              onDelete={handleDelete}
+            />
           ))}
         </ul>
       )}
@@ -134,34 +187,28 @@ export function RuntimeVariablesPanel({ workflowId }: RuntimeVariablesPanelProps
 interface VariableRowProps {
   entry: VariableEntry;
   onSubmit: (name: string, value: JsonValue) => Promise<void>;
+  onDelete: (name: string) => Promise<void>;
 }
 
-function VariableRow({ entry, onSubmit }: VariableRowProps) {
+function VariableRow({ entry, onSubmit, onDelete }: VariableRowProps) {
   const [draft, setDraft] = useState<string>(JSON.stringify(entry.value));
   const [isEditing, setIsEditing] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
-  const isSubmittingRef = useRef(false);
 
   // 外部事件更新 entry.value 时，非编辑态 draft 跟随，避免下次进入编辑看到过期值。
-  // 退出编辑态时重置双 submit 守卫，避免 onBlur+Enter 同时触发。
   useEffect(() => {
     if (!isEditing) {
       setDraft(JSON.stringify(entry.value));
-      isSubmittingRef.current = false;
     }
   }, [entry.value, isEditing]);
 
   const handleSubmit = async () => {
-    // Enter 触发 handleSubmit 后 setIsEditing(false) 会让 input blur，本守卫防止 onBlur 二次提交。
-    if (isSubmittingRef.current) return;
-    isSubmittingRef.current = true;
     let parsed: JsonValue;
     try {
       parsed = parseValueByPinType(draft, entry.variableType);
       setParseError(null);
     } catch (err) {
       setParseError(err instanceof Error ? err.message : String(err));
-      isSubmittingRef.current = false; // 解析失败回退守卫
       return;
     }
     await onSubmit(entry.name, parsed);
@@ -184,13 +231,20 @@ function VariableRow({ entry, onSubmit }: VariableRowProps) {
           >
             编辑
           </button>
+          <button
+            type="button"
+            className="runtime-variables-panel__delete"
+            onClick={() => void onDelete(entry.name)}
+          >
+            删除
+          </button>
         </>
       ) : (
         <>
           <input
             value={draft}
             onChange={(e) => setDraft(e.currentTarget.value)}
-            onBlur={() => void handleSubmit()}
+            onBlur={() => setIsEditing(false)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') void handleSubmit();
               if (e.key === 'Escape') setIsEditing(false);

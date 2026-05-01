@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use tauri::State;
 use tauri_bindings::{
-    SetWorkflowVariableRequest, SetWorkflowVariableResponse, SnapshotWorkflowVariablesRequest,
+    DeleteWorkflowVariableRequest, DeleteWorkflowVariableResponse, SetWorkflowVariableRequest,
+    SetWorkflowVariableResponse, SnapshotWorkflowVariablesRequest,
     SnapshotWorkflowVariablesResponse,
 };
 
@@ -10,7 +11,7 @@ use crate::state::DesktopState;
 
 /// 从已部署工作流中取出 `Arc<WorkflowVariables>` 并释放 `workflows` Mutex。
 ///
-/// 两个 IPC 命令（`snapshot_workflow_variables` / `set_workflow_variable`）共享同一套
+/// 四个 IPC 命令共享同一套
 /// "取 Arc → 块作用域 drop `MutexGuard`" 模式；提取为 helper 消除重复。
 async fn resolve_workflow_variables(
     state: &DesktopState,
@@ -77,10 +78,26 @@ pub(crate) async fn set_workflow_variable(
     // 类型由 SetWorkflowVariableResponse::snapshot 字段推断（TypedVariableSnapshot from nazh_core）
     let snapshot = vars
         .get(&request.name)
-        // 当前实现下此分支不可达：变量声明后无 remove API，写入成功必然能读回。
-        // 保留作为未来支持变量删除时的安全网。
+        // 理论上不可达：写入成功意味着变量存在。但并发 delete_workflow_variable 可能在
+        // set 与 get 之间移除该变量——保留作为安全网。
         .ok_or_else(|| format!("变量 `{}` 写入后未能读回", request.name))?
         .into();
 
     Ok(SetWorkflowVariableResponse { snapshot })
+}
+
+/// IPC 删除命令：移除指定工作流变量（ADR-0012 Phase 3）。
+///
+/// 变量不存在时为幂等操作（返回 `removed_snapshot: None`）。
+/// 成功移除时引擎侧发 `VariableDeleted` 事件，前端通过
+/// `workflow://variable-deleted` 通道接收。
+#[tauri::command]
+pub(crate) async fn delete_workflow_variable(
+    state: State<'_, DesktopState>,
+    request: DeleteWorkflowVariableRequest,
+) -> Result<DeleteWorkflowVariableResponse, String> {
+    let vars = resolve_workflow_variables(&state, &request.workflow_id).await?;
+    let removed = vars.remove(&request.name);
+    let removed_snapshot = removed.map(Into::into);
+    Ok(DeleteWorkflowVariableResponse { removed_snapshot })
 }

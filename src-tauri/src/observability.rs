@@ -358,6 +358,17 @@ impl ObservabilityStore {
                     now,
                 )));
             }
+            // ADR-0012 Phase 3：变量删除与 VariableChanged 同理，不入可观测性日志。
+            ExecutionEvent::VariableDeleted { .. } => {
+                return Ok(self.build_entry(ObservabilityEntryDraft::execution(
+                    "info",
+                    "variable_deleted_skip",
+                    "variables".to_owned(),
+                    "VariableDeleted 不持久化（独立事件通道转发）".to_owned(),
+                    String::new(),
+                    now,
+                )));
+            }
             // ADR-0016：边级观测事件不持久化到可观测性日志——
             // 它们通过 workflow://node-status 实时流向前端。
             ExecutionEvent::EdgeTransmitSummary(_) | ExecutionEvent::BackpressureDetected(_) => {
