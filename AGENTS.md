@@ -71,8 +71,9 @@ crates/
   nodes-io/          # Ring 1 — timer / serial / native / modbus / http / mqtt / bark / sql / debugConsole
   nodes-pure/        # Ring 1 — c2f / minutesSince / lookup pure-form Data 引脚节点（ADR-0014 Phase 3/3b）
   ai/                # Ring 1 — OpenAI-compatible client (streaming, thinking-mode) + 壳层配置型；AiService trait 在 Ring 0（ADR-0019）
+  graph/             # Ring 1 — DAG 工作流编排：解析、校验、拓扑排序、部署与执行（ADR-0020）
   tauri-bindings/    # IPC — Tauri 命令请求/响应类型 + ts-rs 导出汇总（ADR-0017）
-src/                 # Root facade crate `nazh-engine` — DAG orchestration + `standard_registry()`
+src/                 # Root facade crate `nazh-engine` — re-export + `standard_registry()`
 src-tauri/           # Tauri shell binary `nazh-desktop`
 web/                 # Frontend workspace
 ```
@@ -106,7 +107,7 @@ React / FlowGram canvas
 - **`crates/core/src/node.rs`** — `NodeTrait` with async `transform(trace_id, payload) → NodeExecution`. `NodeOutput { payload, metadata, dispatch }`. `NodeDispatch::Broadcast | Route(Vec<String>)`.
 - **`crates/core/src/plugin.rs`** — `Plugin` + `NodeRegistry` + `PluginHost` + `RuntimeResources` (typed Any bag). Engine core has **zero hardcoded nodes** — all Ring 1 crates register themselves.
 - **`crates/core/src/guard.rs`** — panic isolation helpers (AssertUnwindSafe + catch_unwind + timeout).
-- **`src/graph/`** — `WorkflowGraph` schema, topology (Kahn cycle check), `deploy_workflow` / `deploy_workflow_with_ai`, per-node `run_node` loop. See ADR-0020 for long-term placement.
+- **`crates/graph/`** — `WorkflowGraph` schema, topology (Kahn cycle check), `deploy_workflow` / `deploy_workflow_with_ai`, per-node `run_node` loop, pull-path collector, pin validator. Ring 1 crate, depends on `nazh-core` + `connections` only (ADR-0020).
 
 ### Type Contract (ts-rs)
 
@@ -380,7 +381,7 @@ Located in `docs/superpowers/plans/` and `docs/superpowers/specs/`. These are **
 
 **未来若需 IPC 真值的 E2E**：改用 `@tauri-apps/playwright` 或 webview/electron-mode；或加 IPC mock 层（`hasTauriRuntime() === false` 时让 `invoke` 返回 fixture 值）。不要硬撞——拖拽连接 + console capture 断言跨 Kind 拒绝在 Chromium 模式下也仍可行（`pin-validator` 是纯函数，不依赖 IPC），但 ADR-0014 Phase 2 评审决定不做（拖拽脆弱性 + Vitest 已覆盖）。
 
-## Project Status（2026-04-30）
+## Project Status（2026-05-01）
 
 **Phases 1-5 complete** (crate extraction, DataStore, ConnectionGuard, Ring 1 split, Plugin system). See `docs/rfcs/0002-分层内核与插件架构.md`.
 
@@ -403,10 +404,10 @@ Located in `docs/superpowers/plans/` and `docs/superpowers/specs/`. These are **
 - ADR-0013（子图与宏系统）— **已实施 子图核心**（2026-04-28，merge 68ab709 时丢失的 ADR-0013 改动恢复完成）。前端 `subgraph` 容器 + `subgraphInput` / `subgraphOutput` 桥接 + 设置面板 + AI 编排器扩展全部就位；`web/src/lib/flowgram.ts` 的 `flattenSubgraphs` 完整实现（递归展平 + 参数替换 `{{name}}` + 8 层深度上限 + 循环引用检测）；Rust `crates/nodes-flow/src/passthrough.rs` 已注册（`mod passthrough` + `subgraphInput` / `subgraphOutput` 通过 `NodeCapabilities::empty()` 在 `FlowPlugin::register` 内注册）；`tests/workflow.rs` `passthrough_nodes_forward_payload` 集成测试通过；`vitest.config.ts` 新增 `setupFiles: ['./vitest.setup.ts']` polyfill `navigator` 让 FlowGram SDK 在 node 环境正常 import；顺手修了 pre-existing 的 `flowgram-shortcuts.test.ts` 失败；loop 容器恢复已并入当前 `main`。
 - ADR-0015（反应式数据引脚）— **Phase 1+2+3 已实施**（2026-04-30）。Phase 1: PinKind::Reactive + Runner 三分支 dispatch + 集成测试。Phase 2: WorkflowVariables watch channel + `subscribe_reactive_pin` IPC + `ReactiveUpdatePayload` ts-rs。Phase 3: 前端 isKindCompatible 三分支 + Reactive 端口 CSS + reactive-update 事件解析 + 合约 fixtures 扩展。设计 spec：`docs/superpowers/specs/2026-04-30-adr-0015-reactive-data-pin-design.md`。
 - ADR-0016（边级可观测性）— **已接受，部分实施**（2026-04-30）。`EdgeTransmitSummary` 类型 + Runner `EdgeWindow` 累计器 + 每执行周期 flush + ts-rs 导出 + 前端解析。`BackpressureDetected` 类型就位，发射逻辑 deferred。
-- ADR-0020 — **提议中，重评已触发**（2026-04-30：`src/graph/` 3295 行且 ADR-0009/0013/0014 已落地）。见 `docs/adr/0020-graph-编排层长期归属.md`。
+- ADR-0020 — **已实施**（2026-05-01：`src/graph/` 拆分为 `crates/graph/`）。见 `docs/adr/0020-graph-编排层长期归属.md`。
 
 **Immediate known tech debt:**
-- **Architecture review 派生 P1**（2026-04-29）：变量控制事件从 `ExecutionEvent` 拆出；`src/graph/` 触发 ADR-0020 重评；runtime / dead-letter / scoped event 等 IPC 类型迁入 `tauri-bindings`；Rhai `max_operations` 增加统一 clamp；前端大文件拆分。详见 `docs/superpowers/specs/2026-04-29-architecture-review-findings.md`。
+- **Architecture review 派生 P1**（2026-04-29）：变量控制事件从 `ExecutionEvent` 拆出；~~`src/graph/` 触发 ADR-0020 重评~~（已偿还，2026-05-01 拆为 `crates/graph/`）；runtime / dead-letter / scoped event 等 IPC 类型迁入 `tauri-bindings`；Rhai `max_operations` 增加统一 clamp；前端大文件拆分。详见 `docs/superpowers/specs/2026-04-29-architecture-review-findings.md`。
 - **ADR-0016 deferred items**（2026-04-30）：`BackpressureDetected` 发射逻辑；`payload_bytes` 统计（需序列化测量）；`received_at` 精确测量（需 instrument 接收端）；100ms 定时窗口 flush（当前每执行周期 flush）；`queue_depth` 精确值（需共享 channel 状态）；前端边热力图 UI。
 - ~~**ADR-0013 子图实施 deployment 断链**（2026-04-28 发现）~~ **已偿还（2026-04-28）**。merge 68ab709 解决冲突时丢失的 ADR-0013 改动重写恢复——`flattenSubgraphs` + Rust `mod passthrough` 注册 + `FlowgramCanvas` 容器/桥接渲染 + 设置面板全部到位，三件套全绿。loop 容器恢复已并入当前 `main`。
 - ~~MQTT subscriber / Timer / Serial root lifecycle is owned by the Tauri shell.~~ **已偿还（2026-04-26，ADR-0009 已实施）**。三类触发器节点现自持 `on_deploy` + `LifecycleGuard`；壳层不再监督触发器任务。**语义变化**：触发器节点走 `NodeHandle::emit` 而非 `dispatch_router` 的 trigger lane，失去 backpressure / DLQ / retry / metrics 防御能力，等 ADR-0014 / ADR-0016 引擎级背压能力补回。
@@ -450,4 +451,4 @@ Located in `docs/superpowers/plans/` and `docs/superpowers/specs/`. These are **
 > 11. AI 能力扩展（embeddings、vision，未来 ADR）
 
 **评估性 ADR**：
-- ADR-0020 `src/graph/` 编排层归属 — Phase B 已确认触发重评条件（3295 行 + ADR-0009/0013/0014 已落地）；解冻后新 ADR/PR 决定是否拆 `crates/graph`。
+- ADR-0020 `src/graph/` 编排层归属 — **已实施**（2026-05-01，拆为 `crates/graph/` Ring 1 crate，依赖 `nazh-core` + `connections`）。

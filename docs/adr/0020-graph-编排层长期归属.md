@@ -1,9 +1,9 @@
 # ADR-0020: `src/graph/` 编排层是否独立成 crate（评估备案）
 
-- **状态**: 提议中（**评估性 ADR**，重评已触发：2026-04-30）
-- **日期**: 2026-04-24
+- **状态**: 已实施（2026-05-01，`src/graph/` 拆分为 `crates/graph/`）
+- **日期**: 2026-04-24（评估）、2026-05-01（实施）
 - **决策者**: Niu Zhihong
-- **关联**: 回溯评估 Phase 4（`7e7d5af`）的"facade + 编排合并"决策
+- **关联**: 回溯评估 Phase 4（`7e7d5af`）的"facade + 编排合并"决策、ADR-0021（DSL 编译器需访问 `WorkflowGraph` 类型）
 
 ## 背景
 
@@ -157,3 +157,19 @@ src/lib.rs                               # 瘦身：仅 re-export + standard_reg
   - ADR-0017（IPC 迁出）之后 Ring 0 瘦身了，但不影响 `src/graph/` 的判断——graph 的依赖是"所有 Ring 1 的交集"，不涉及 Ring 0 重构
   - ADR-0014（边类型分离）如果实施，会显著扩张 `runner.rs`——届时可能触发本 ADR 的第二个条件
   - ADR-0013（子图）如果实施，会扩张 `deploy.rs`——届时同样可能触发
+
+## 实施记录（2026-05-01）
+
+前两个触发条件均已满足（3,296 行 + ADR-0009/0013/0014 落地），且 ADR-0021 DSL 编译器带来新硬需求（需访问 `WorkflowGraph` 类型）。经评估，原方案 A 的三个反对理由均已弱化：
+
+| 原反对理由 | 实施时现状 |
+|------------|-----------|
+| 规模不足（~510 行） | 3,296 行，6.5 倍膨胀 |
+| 依赖所有 Ring 1 | 实际只依赖 `nazh-core` + `connections` |
+| 无硬需求 | ADR-0021 `dsl-compiler` 需访问 `WorkflowGraph` 类型 |
+
+实施内容：
+1. 新建 `crates/graph/`（Ring 1），包名 `nazh-graph`，依赖 `nazh-core` + `connections`
+2. 全部 7 个模块搬入，同时拆分 `pull/`（4 子模块）和 `topology/`（2 子模块）
+3. Facade `nazh-engine` 通过 `pub use nazh_graph::{...}` 透明 re-export，下游零改动
+4. `src/graph.rs` + `src/graph/` 删除，facade 回归 re-export + `standard_registry()` 角色（238 行）
