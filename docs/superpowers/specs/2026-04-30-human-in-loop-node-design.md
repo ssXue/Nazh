@@ -1,7 +1,7 @@
 # Human-in-the-Loop 节点设计 spec
 
 **日期：** 2026-04-30
-**状态：** 设计中
+**状态：** 已实施（2026-05-03），核心功能落地，偏离项见末尾「实施偏离」段。
 **关联：** RFC-0004（三段式 DSL）、ADR-0009（生命周期钩子）、ADR-0010（Pin 声明）、ADR-0011（节点能力）、ADR-0012（工作流变量）、ADR-0014（PinKind）、ADR-0016（边级可观测性）、ADR-0021（AI 编排入口）
 
 ## 动机
@@ -625,3 +625,21 @@ web/src/lib/tauri.ts             # IPC API 扩展
 | 表单 schema 过于复杂 | Phase 1 仅支持 boolean / number / string / select 四种类型；后续按需扩展 |
 | 多级审批需求提前到来 | `humanLoop` 节点可串联（A 审批 → B 审批）；复杂流程需新 ADR |
 | `NodeLifecycleContext` 扩展影响面 | `workflow_id` 是 `String`，零新依赖；所有现有 `on_deploy` 实现不受影响 |
+
+## 实施偏离（2026-05-03）
+
+核心功能（oneshot 阻塞、表单 schema、超时/默认动作、ApprovalRegistry、IPC 命令、前端节点注册、审批组件）已实施。以下偏离原始设计：
+
+### 设计简化（已落地的替代方案）
+
+1. **无 `HUMAN_LOOP` capability bit**：使用 `BRANCHING` 替代。`humanLoop` 有 approve/reject 输出分支，语义匹配。代价：前端无法通过 capability 区分"分支节点"与"审批节点"。
+2. **`workflow_id` 不走 `NodeLifecycleContext`**：不改 Ring 0 struct，通过 `RuntimeResources` 注入 `WorkflowId` 类型提取。侵入性更低。
+3. **无 `ExecutionEvent::HumanLoopPending`/`HumanLoopResolved` 专用变体**：改用标准 `Completed` 事件 + metadata key `"human_loop"`（符合 ADR-0008 metadata 通道约定）。代价：前端无法通过事件通道实时感知审批状态变化。
+4. **无 typed IPC structs**：`respond_human_loop` / `list_pending_approvals` 用 raw 参数 + `serde_json::Value`，无 `tauri-bindings` 类型导出 + ts-rs 生成。
+
+### 未完成项（可后续迭代补回）
+
+- **独立事件通道 `workflow://human-loop-pending` / `workflow://human-loop-resolved`**：前端改用轮询 `listPendingApprovals`（每次 `workflow://node-status` 事件触发 reload），functional 但实时性较差。
+- **RuntimeDock `approvals` tab**：`ApprovalQueue` + `ApprovalForm` 组件已实现，未接入 dock tab 系统。
+- **`tests/workflow.rs` HITL 集成测试**：单元测试已覆盖，缺 DAG 端到端测试。
+- **typed IPC structs + ts-rs 导出**：无编译期类型安全。

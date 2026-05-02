@@ -1,5 +1,7 @@
 # Human-in-the-Loop 审批节点 Implementation Plan
 
+> **Status:** 已实施（2026-05-03），Task 1-8 核心完成。偏离项与 deferred items 见下方「实施偏离」段。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 实现 `humanLoop` 审批节点，支持工作流执行暂停等待人工响应、结构化表单、独立超时与默认动作。
@@ -1576,20 +1578,28 @@ git commit -m "docs: HITL 实施文档更新"
 
 ## Spec Coverage Check
 
-| Spec 需求 | Task |
-|-----------|------|
-| 阻塞等待（oneshot channel） | Task 3 |
-| 结构化表单（4 种类型） | Task 2 |
-| 独立超时 + 默认动作 | Task 2, 3 |
-| Ring 纯净性（Registry 不进 core） | Task 2, 3 |
-| 优雅关闭（undeploy 清理） | Task 4 |
-| 可追踪（ExecutionEvent） | Task 1 |
-| NodeLifecycleContext.workflow_id | Task 1 |
-| HUMAN_LOOP capability | Task 1 |
-| IPC 事件通道 | Task 4 |
-| IPC 命令 | Task 4 |
-| 前端节点注册 | Task 6 |
-| 审批面板 UI | Task 7 |
-| DSL 编译器对接 | **Deferred**（Phase 5，依赖 ADR-0021 实施） |
-| 多级审批 | **非目标**（spec 明确排除） |
-| 审批历史持久化 | **非目标**（Phase 2） |
+| Spec 需求 | Task | 实施状态 |
+|-----------|------|----------|
+| 阻塞等待（oneshot channel） | Task 3 | ✅ 已实施 |
+| 结构化表单（4 种类型） | Task 2 | ✅ 已实施 |
+| 独立超时 + 默认动作 | Task 2, 3 | ✅ 已实施 |
+| Ring 纯净性（Registry 不进 core） | Task 2, 3 | ✅ 已实施 |
+| 优雅关闭（undeploy 清理） | Task 4 | ✅ 已实施 |
+| 可追踪（ExecutionEvent） | Task 1 | ⚠️ 偏离：无专用事件变体，改用 `Completed` + metadata `"human_loop"`（符合 ADR-0008） |
+| NodeLifecycleContext.workflow_id | Task 1 | ⚠️ 偏离：不改 Ring 0 struct，改用 `RuntimeResources` 注入 `WorkflowId` 类型 |
+| HUMAN_LOOP capability | Task 1 | ⚠️ 偏离：无专用 bit，使用 `BRANCHING`（节点有 approve/reject 分支，语义合理） |
+| IPC 事件通道（human-loop-pending/resolved） | Task 4 | ⚠️ 偏离：无独立事件通道，前端用轮询 `listPendingApprovals` 替代 |
+| IPC 命令 | Task 4 | ✅ 已实施（raw 参数，无 typed IPC struct） |
+| 前端节点注册 | Task 6 | ✅ 已实施 |
+| 审批面板 UI | Task 7 | ⚠️ 部分实施：组件存在但未接入 RuntimeDock tab 系统 |
+| DSL 编译器对接 | — | **Deferred**（Phase 5，依赖 ADR-0021 实施） |
+| 多级审批 | — | **非目标**（spec 明确排除） |
+| 审批历史持久化 | — | **非目标**（Phase 2） |
+
+### Deferred Items（可在后续迭代补回）
+
+- **`ExecutionEvent::HumanLoopPending`/`HumanLoopResolved` 专用变体 + 独立事件通道**：当前用 metadata + 轮询实现，功能等价但实时性较差。补回时需同步修改 `crates/core/src/event.rs` + `src-tauri/src/events.rs` + `web/src/lib/tauri.ts` 事件监听。
+- **`NodeCapabilities::HUMAN_LOOP` 专用 bit**：当前用 `BRANCHING`，前端无法区分"分支节点"与"审批节点"。补回时需 `crates/core/src/node.rs` + `web/src/lib/node-capabilities.ts` 同步。
+- **RuntimeDock `approvals` tab**：`ApprovalQueue` + `ApprovalForm` 组件已实现，需在 `RuntimeDock.tsx` 的 `RuntimeDockPanel` 类型 + tabs 数组中接入。
+- **`tests/workflow.rs` HITL 集成测试**：单元测试已覆盖 config/registry/node 逻辑，但缺少 DAG 端到端集成测试（审批通过 / 超时 / 拒绝三条路径）。
+- **typed IPC structs（`tauri-bindings`）+ ts-rs 导出**：当前用 raw `serde_json::Value`，无编译期类型安全。补回时需 `crates/tauri-bindings/src/lib.rs` 新增 `HumanLoopPendingPayload` / `HumanLoopResolvedPayload` / `RespondHumanLoopRequest`。
