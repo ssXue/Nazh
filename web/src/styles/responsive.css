@@ -113,10 +113,6 @@
 }
 
 @media (max-width: 1480px) {
-  .studio-board-workspace {
-    grid-template-columns: minmax(0, 1fr) clamp(296px, 26vw, 360px);
-  }
-
   .dashboard-telemetry-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -138,10 +134,6 @@
   .studio-board-workspace__controls {
     width: 100%;
     justify-content: flex-start;
-  }
-
-  .studio-board-workspace {
-    grid-template-columns: minmax(0, 1fr) clamp(288px, 28vw, 336px);
   }
 
   .dashboard-telemetry-grid {
@@ -196,6 +188,7 @@
   }
 
   .studio-board-workspace__canvas-area {
+    grid-template-rows: minmax(520px, auto) auto;
     min-height: auto;
     height: auto;
     overflow: visible;
@@ -209,8 +202,8 @@
 
   .runtime-dock,
   .runtime-dock.is-collapsed {
-    height: min(420px, calc(100vh - 120px));
-    min-height: 260px;
+    height: min(340px, calc(100vh - 120px));
+    min-height: 200px;
   }
 
   .runtime-dock.is-collapsed .runtime-dock__tabs {

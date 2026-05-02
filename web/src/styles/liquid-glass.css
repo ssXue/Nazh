@@ -345,14 +345,14 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
 
 .studio-board-workspace__canvas-area {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) clamp(332px, 25vw, 404px);
-  grid-template-rows: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) clamp(200px, 28vh, 380px);
   min-height: 0;
   height: 100%;
 }
 
 .studio-board-workspace.is-runtime-collapsed .studio-board-workspace__canvas-area {
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
 }
 
 .studio-board-workspace__header {
@@ -442,31 +442,16 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
 .runtime-dock {
   position: relative;
   border: 0;
-  border-left: 1px solid color-mix(in srgb, var(--line-soft) 78%, transparent);
+  border-top: 1px solid var(--line-soft);
   border-radius: 0;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.2), transparent 16%),
-    rgba(255, 255, 255, 0.06);
-  backdrop-filter: blur(18px) saturate(130%);
-  -webkit-backdrop-filter: blur(18px) saturate(130%);
+  background: var(--bg);
   box-shadow: none;
-  padding: 68px 14px 12px 18px;
+  padding: 0;
   overflow: hidden;
 }
 
 .studio-board-workspace.is-runtime-collapsed .runtime-dock {
   display: none;
-}
-
-.runtime-dock__header {
-  min-height: 42px;
-  padding: 2px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.16);
-}
-
-.runtime-dock__panel {
-  padding: 8px 2px 0;
 }
 
 .dashboard-panel {

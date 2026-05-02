@@ -6,7 +6,7 @@ import {
   DeleteActionIcon,
   EnvironmentIcon,
   PlusIcon,
-  RightSidebarIcon,
+  BottomPanelIcon,
   SaveIcon,
   SparklesIcon,
   SnapshotIcon,
@@ -357,11 +357,11 @@ export function ProjectWorkspaceHeader({
           className="studio-board-workspace__action studio-board-workspace__action--icon studio-board-workspace__action--dock-toggle"
           aria-expanded={!isRuntimeDockCollapsed}
           aria-controls="runtime-dock-grid"
-          aria-label={isRuntimeDockCollapsed ? '展开右侧窗体' : '收起右侧窗体'}
-          title={isRuntimeDockCollapsed ? '展开右侧窗体' : '收起右侧窗体'}
+          aria-label={isRuntimeDockCollapsed ? '展开底部面板' : '收起底部面板'}
+          title={isRuntimeDockCollapsed ? '展开底部面板' : '收起底部面板'}
           onClick={onToggleRuntimeDockCollapsed}
         >
-          <RightSidebarIcon />
+          <BottomPanelIcon />
         </button>
 
 
