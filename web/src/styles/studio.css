@@ -596,15 +596,17 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
   display: none;
 }
 
-.studio-content__panel--scroll {
+.studio-content--panel > .studio-content__panel--scroll {
   overflow: auto;
 }
 
-.studio-content__panel--scroll:has(.runtime-manager) {
+.studio-content--panel > .studio-content__panel--scroll:has(.runtime-manager) {
   overflow: hidden;
 }
 
-.studio-content__panel--scroll:has(.runtime-manager) > .runtime-manager {
+.studio-content--panel
+  > .studio-content__panel--scroll:has(.runtime-manager)
+  > .runtime-manager {
   height: 100%;
 }
 
