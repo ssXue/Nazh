@@ -73,6 +73,7 @@ crates/
   ai/                # Ring 1 — OpenAI-compatible client (streaming, thinking-mode) + 壳层配置型；AiService trait 在 Ring 0（ADR-0019）
   graph/             # Ring 1 — DAG 工作流编排：解析、校验、拓扑排序、部署与执行（ADR-0020）
   tauri-bindings/    # IPC — Tauri 命令请求/响应类型 + ts-rs 导出汇总（ADR-0017）
+  store/              # Ring 1 — SQLite 持久化：变量 / 历史 / 全局变量（ADR-0022）
 src/                 # Root facade crate `nazh-engine` — re-export + `standard_registry()`
 src-tauri/           # Tauri shell binary `nazh-desktop`
 web/                 # Frontend workspace
@@ -120,10 +121,10 @@ IPC boundary types are defined once in Rust and auto-generated to TypeScript via
 
 ### Tauri IPC Surface (`src-tauri/src/lib.rs` + `src-tauri/src/commands/`)
 
-30 commands covering:
+41 commands covering:
 - workflow lifecycle/runtime: `deploy_workflow`, `dispatch_payload`, `undeploy_workflow`, `list_runtime_workflows`, `set_active_runtime_workflow`, `list_dead_letters`
 - node / pin catalog: `list_node_types`, `describe_node_pins`
-- workflow variables: `snapshot_workflow_variables`, `set_workflow_variable`
+- workflow variables: `snapshot_workflow_variables`, `set_workflow_variable`, `delete_workflow_variable`, `reset_workflow_variable`, `query_variable_history`, `set_global_variable`, `get_global_variable`, `list_global_variables`, `delete_global_variable`
 - connections: `list_connections`, `load_connection_definitions`, `save_connection_definitions`
 - observability: `query_observability`
 - deployment session files: `load_deployment_session_file`, `load_deployment_session_state_file`, `list_deployment_sessions_file`, `save_deployment_session_file`, `set_deployment_session_active_project_file`, `remove_deployment_session_file`, `clear_deployment_session_file`
@@ -369,6 +370,16 @@ Located in `docs/superpowers/plans/` and `docs/superpowers/specs/`. These are **
 
 **删除/修改前必查**：grep `flowgram-node-library` 等 import 是否还会触达 `variable-plugin` 或 `i18n`；若 `environment` 升级到 `jsdom`，本 polyfill 多余但无害（保留亦可）。引入于 2026-04-28（恢复 ADR-0013 子图实施时）。
 
+#### FlowGram Provider 与 React StrictMode
+
+`@flowgram.ai/free-layout-editor` 1.0.11 的 `FreeLayoutEditorProvider` 在 React 开发态 root `StrictMode` 双挂载 / HMR 组合下可能重复注册内部 DI 服务，典型报错：
+
+```text
+Ambiguous match found for serviceIdentifier: FlowRendererRegistry
+```
+
+因此 `web/src/main.tsx` **不要**把整个 `<App />` 包进 root `React.StrictMode`。StrictMode 只应放在不包含 FlowGram Provider 的自有 UI 子树（例如 sidebar、非画布面板）中。升级 FlowGram 或调整 root render 前，必须跑 `web/e2e/flowgram-provider.spec.ts` 的 smoke test，并手动打开画布确认没有 `FlowRendererRegistry` ambiguous binding 错误。
+
 #### E2E：Playwright 在浏览器而非 Tauri webview
 
 `web/e2e/playwright.config.ts` 的 `webServer` 启动 `tauri dev`，但 Playwright runner 通过 headless **Chromium** 连 `http://localhost:1420`——**不是** Tauri webview。后果：
@@ -399,12 +410,13 @@ Located in `docs/superpowers/plans/` and `docs/superpowers/specs/`. These are **
 - ADR-0010 (Pin 声明系统) — **已实施 Phase 1 + Phase 2 + Phase 3 + Phase 4 (部分)**（Phase 1: 2026-04-26，Ring 0 类型 + 部署期校验器 + `if`/`switch`/`loop`/`tryCatch` 四个分支节点声明具体输出 pin；Phase 3: 2026-04-26，`modbusRead` / `sqlWriter` / `httpClient` / `mqttClient` 四协议节点 input/output 收紧到 `Json`（mqttClient 按 mode 实例方法切换）+ 兼容矩阵合约 fixture `tests/fixtures/pin_compat_matrix.jsonc` 作为前后端共享真值源 + 反向兼容性集成测试；Phase 2: 2026-04-26，IPC `describe_node_pins` + `web/src/lib/{pin-compat,pin-schema-cache,pin-validator}.ts` + FlowGram `canAddLine` 钩子接入连接期校验 + branch ports 按 PinType 着色。Phase 4: 2026-04-27，pin tooltip + AI 脚本生成 prompt 携带 pin schema；协议节点端口着色 / `Custom` 类型 + row-formatter 节点 deferred。两层防御=UI 拦截+部署期 backstop）
 - ADR-0019 (AI 能力依赖反转) — **已实施**（2026-04-26，`AiService` trait + 请求/响应类型上移到 `crates/core/src/ai.rs`；`ai` crate 改为纯实现 + 配置型；`scripting` / `nodes-flow` 不再依赖 `ai`）
 - ADR-0018 (`nodes-io` 按协议 feature 门控) — **已实施**（2026-04-26，`io-sql/io-http/io-mqtt/io-modbus/io-serial/io-notify` + 元 feature `io-all`；facade 转传；`debug/native/timer/template` 永远启用）
-- ADR-0012 (工作流变量) — **已实施 Phase 1+2**（Phase 1: 2026-04-27 / Phase 2: 2026-04-27，`crates/core/src/variables.rs` + Rhai `vars.get/set/cas` + `ExecutionEvent::VariableChanged` write-on-change 事件广播 + IPC `set_workflow_variable` 写命令 + 前端 `RuntimeVariablesPanel` + `workflow://variable-changed` 事件通道）
+- ADR-0012 (工作流变量) — **已实施 Phase 1+2+3**（Phase 1: 2026-04-27 / Phase 2: 2026-04-27 / Phase 3: 2026-05-03。Phase 3 含 reset/delete/history IPC + 变量持久化 `crates/store/`（ADR-0022）+ 部署时恢复 + 历史曲线 + 全局变量 CRUD + 删除确认弹窗 + React Testing Library 组件测试）
 - ADR-0014（执行边与数据边分离 → 重命名为「引脚求值语义二分」）— **已实施 Phase 1 + Phase 2 + Phase 3 + Phase 3b + Phase 4 + Phase 5**（2026-04-30）。Phase 5：节点头部 capability 自动着色 + CSS 变量化 + AI prompt PinKind + watch channel 替代 Notify + PureMemo trace 清理。Phase 6 EventBus（RFC-0002）已完成修订（否决 broadcast，改为 try_send 修复）。ADR-0015 已实施。
 - ADR-0013（子图与宏系统）— **已实施 子图核心**（2026-04-28，merge 68ab709 时丢失的 ADR-0013 改动恢复完成）。前端 `subgraph` 容器 + `subgraphInput` / `subgraphOutput` 桥接 + 设置面板 + AI 编排器扩展全部就位；`web/src/lib/flowgram.ts` 的 `flattenSubgraphs` 完整实现（递归展平 + 参数替换 `{{name}}` + 8 层深度上限 + 循环引用检测）；Rust `crates/nodes-flow/src/passthrough.rs` 已注册（`mod passthrough` + `subgraphInput` / `subgraphOutput` 通过 `NodeCapabilities::empty()` 在 `FlowPlugin::register` 内注册）；`tests/workflow.rs` `passthrough_nodes_forward_payload` 集成测试通过；`vitest.config.ts` 新增 `setupFiles: ['./vitest.setup.ts']` polyfill `navigator` 让 FlowGram SDK 在 node 环境正常 import；顺手修了 pre-existing 的 `flowgram-shortcuts.test.ts` 失败；loop 容器恢复已并入当前 `main`。
 - ADR-0015（反应式数据引脚）— **Phase 1+2+3 已实施**（2026-04-30）。Phase 1: PinKind::Reactive + Runner 三分支 dispatch + 集成测试。Phase 2: WorkflowVariables watch channel + `subscribe_reactive_pin` IPC + `ReactiveUpdatePayload` ts-rs。Phase 3: 前端 isKindCompatible 三分支 + Reactive 端口 CSS + reactive-update 事件解析 + 合约 fixtures 扩展。设计 spec：`docs/superpowers/specs/2026-04-30-adr-0015-reactive-data-pin-design.md`。
 - ADR-0016（边级可观测性）— **已接受，部分实施**（2026-04-30）。`EdgeTransmitSummary` 类型 + Runner `EdgeWindow` 累计器 + 每执行周期 flush + ts-rs 导出 + 前端解析。`BackpressureDetected` 类型就位，发射逻辑 deferred。
 - ADR-0020 — **已实施**（2026-05-01：`src/graph/` 拆分为 `crates/graph/`）。见 `docs/adr/0020-graph-编排层长期归属.md`。
+- ADR-0022 (工作流变量持久化) — **已实施**（2026-05-03，`crates/store/` Ring 1 SQLite crate + 壳层持久化钩子 + 部署时恢复）
 
 **Immediate known tech debt:**
 - **Architecture review 派生 P1**（2026-04-29）：变量控制事件从 `ExecutionEvent` 拆出；~~`src/graph/` 触发 ADR-0020 重评~~（已偿还，2026-05-01 拆为 `crates/graph/`）；runtime / dead-letter / scoped event 等 IPC 类型迁入 `tauri-bindings`；Rhai `max_operations` 增加统一 clamp；前端大文件拆分。详见 `docs/superpowers/specs/2026-04-29-architecture-review-findings.md`。
@@ -414,25 +426,7 @@ Located in `docs/superpowers/plans/` and `docs/superpowers/specs/`. These are **
 - ~~IPC response types in `crates/core/` contradict Ring 0 purity. ADR-0017 plans to extract `crates/tauri-bindings/`.~~ **已偿还（2026-04-24，ADR-0017 已实施）**
 - ~~`cargo clippy --workspace --all-targets -- -D warnings` 在 `src-tauri` 与 observability 上失败~~ **已偿还（2026-04-26，见 `docs/superpowers/plans/2026-04-25-cargo-clippy-workspace-fixes.md`）**。`crates/nodes-io/src/http_client.rs` / `bark_push.rs` 的 `too_many_lines` 现以 `#[allow]` 抑制（同上）。
 
-**ADR-0012 Phase 3 候选（待立项 / 待 plan，2026-04-27 决策）：**
-
-"Phase 3" **不**作为单一 milestone 推进——8 个候选差异太大，按复杂度与是否需要新 ADR 分类，逐项独立 plan 或 ADR：
-
-*小补丁（无需新 ADR，可单 plan 收尾，~3 commit）：*
-- "变量" Tab badge 显示变量数量 —— 需要从 `RuntimeVariablesPanel` 状态提升到 `RuntimeDock` 跨组件
-- `VariableRow` 双 submit 完全消除 + undo / "are you sure" 提示
-- mutation IPC 扩展：`reset_workflow_variable` / `delete_workflow_variable`（沿用 `set_workflow_variable` IPC pattern）
-
-*独立 ADR 立项（按需逐个推）：*
-- 变量持久化 —— 解除"进程退出即清零"限制，需要 store 抽象 / schema 迁移工具
-- 历史曲线 / time series —— time-series store + 前端图表选型
-- 跨工作流共享变量 / 全局变量 —— 作用域规则 / 命名空间 / 锁竞争
-- `Custom` 类型变量解封 —— 依赖 ADR-0010 Phase 4 deferred Item 2 触发（`Custom` 命名类型 + row-formatter 节点同步引入）
-
-*前端测试基建（与其他前端组件测试合并）：*
-- React Testing Library 配置 + `RuntimeVariablesPanel` 组件交互测试
-
-> 候选项原列在 `docs/adr/0012-工作流变量.md` 末尾"Phase 3 候选项"区。本节是"换机器接续工作"备忘——下次 session 在新机器上 pick up 时优先看此清单。
+**ADR-0012 Phase 3 已完成**（2026-05-03）。全部候选项已实施：reset/delete IPC、删除确认弹窗、React Testing Library + 组件测试、变量持久化 `crates/store/`（ADR-0022）、历史曲线 IPC + recharts 折线图、全局变量 CRUD + 前端面板。
 
 **ADR Execution Order**（2026-04-24 共识，依赖与独立性已分析过）：
 

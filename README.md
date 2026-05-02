@@ -35,7 +35,7 @@ Nazh 面向**工业边缘侧的本地部署**场景：
 
 ## 工程架构
 
-### Cargo Workspace（11 个 package）
+### Cargo Workspace（13 个 package）
 
 Rust 引擎内核 + Tauri 桌面壳 + React/FlowGram.AI 可视化工作台。
 分层设计保证内核零协议依赖，所有 I/O 能力通过插件扩展。
@@ -53,7 +53,7 @@ flowchart TB
     end
 
     subgraph Shell["Tauri v2 桌面壳 (nazh-desktop)"]
-        S1["30 IPC 命令 · 6 workflow/copilot 事件通道"]
+        S1["41 IPC 命令 · 6 workflow/copilot 事件通道"]
         S2["运行时调度 · 部署会话 · 工程库文件"]
         S3["AI Provider 配置 · 观测日志 · 工程库文件"]
     end
@@ -166,7 +166,7 @@ cargo fetch --locked
 ## 项目结构
 
 ```text
-crates/          # Rust 引擎库与 IPC bindings（9 crates）
+crates/          # Rust 引擎库、Store 与 IPC bindings（11 crates）
 src/             # DAG 编排与标准注册表
 src-tauri/       # Tauri 桌面壳（workspace package）
 web/             # React + FlowGram.AI 前端
