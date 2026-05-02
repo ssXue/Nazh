@@ -29,7 +29,9 @@ pub(crate) const DEFAULT_INPUT_PIN_ID: &str = "in";
 /// `WorkflowEdge.source_port_id == None` 时回落到此值。
 pub(crate) const DEFAULT_OUTPUT_PIN_ID: &str = "out";
 
-pub use deploy::{deploy_workflow, deploy_workflow_with_ai};
+pub use deploy::{
+    deploy_workflow, deploy_workflow_with_ai, deploy_workflow_with_ai_and_variable_overrides,
+};
 pub use types::{
     WorkflowDeployment, WorkflowDeploymentParts, WorkflowEdge, WorkflowGraph, WorkflowIngress,
     WorkflowStreams,

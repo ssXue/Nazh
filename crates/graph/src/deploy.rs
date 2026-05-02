@@ -28,11 +28,13 @@
 
 use std::{
     collections::{HashMap, HashSet},
+    hash::BuildHasher,
     sync::Arc,
     time::Duration,
 };
 
 use nazh_core::ai::AiService;
+use serde_json::Value;
 use tokio::sync::mpsc;
 
 use super::pin_validator;
@@ -96,6 +98,41 @@ pub async fn deploy_workflow_with_ai(
     workflow_id: Option<String>,
     extra_resources: RuntimeResources,
 ) -> Result<WorkflowDeployment, EngineError> {
+    deploy_workflow_with_ai_and_variable_overrides(
+        graph,
+        connection_manager,
+        ai_service,
+        registry,
+        workflow_id,
+        extra_resources,
+        HashMap::new(),
+    )
+    .await
+}
+
+/// 校验、实例化并将工作流图部署为并发 Tokio 任务，并在 `on_deploy` 前恢复变量值。
+///
+/// `variable_overrides` 只覆盖当前值，不改变声明初值；因此 `WorkflowVariables::reset`
+/// 仍会回到工作流 AST 中声明的初始值。未知变量和类型不匹配的持久化值会被跳过并记录
+/// warning，避免旧数据库内容阻塞声明已变更的工作流部署。
+///
+/// # Errors
+///
+/// DAG 校验失败、节点实例化失败、节点 `on_deploy` 失败或不在 Tokio 运行时
+/// 中调用时返回错误。
+// 函数为四阶段部署的线性主流程（阶段 0 变量构造、阶段 0.5 实例化 + Pin 校验、
+// 阶段 1 on_deploy、阶段 2 spawn run_node），拆 helper 会切碎时序的关键不变量
+// （每阶段全部完成才能进下一阶段），损可读性。
+#[allow(clippy::too_many_lines)]
+pub async fn deploy_workflow_with_ai_and_variable_overrides<S: BuildHasher>(
+    graph: WorkflowGraph,
+    connection_manager: SharedConnectionManager,
+    ai_service: Option<Arc<dyn AiService>>,
+    registry: &NodeRegistry,
+    workflow_id: Option<String>,
+    extra_resources: RuntimeResources,
+    variable_overrides: HashMap<String, Value, S>,
+) -> Result<WorkflowDeployment, EngineError> {
     tracing::info!(
         node_count = graph.nodes.len(),
         edge_count = graph.edges.len(),
@@ -108,6 +145,17 @@ pub async fn deploy_workflow_with_ai(
     // 声明的初值类型若与声明类型不匹配立即整图失败——节点尚未实例化、
     // 无 RAII 资源在手，无需回滚（ADR-0012 早失败原则）。
     let workflow_variables = build_workflow_variables(graph.variables.as_ref())?;
+    for (key, value) in variable_overrides {
+        if workflow_variables.get(&key).is_some()
+            && let Err(error) = workflow_variables.set(&key, value, Some("restore"))
+        {
+            tracing::warn!(
+                key = %key,
+                ?error,
+                "持久化变量恢复失败（类型不匹配？）"
+            );
+        }
+    }
 
     connection_manager
         .upsert_connections(graph.connections)
@@ -421,4 +469,56 @@ pub async fn deploy_workflow_with_ai(
         shared_resources: shared_resources.clone(),
         output_caches,
     })
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use nazh_core::{PinType, VariableDeclaration, WorkflowVariables};
+    use serde_json::json;
+    use std::collections::HashMap;
+
+    #[tokio::test]
+    async fn 变量覆盖值在_on_deploy_前恢复且保留声明初值() {
+        let mut declarations = HashMap::new();
+        declarations.insert(
+            "counter".to_owned(),
+            VariableDeclaration {
+                variable_type: PinType::Integer,
+                initial: json!(0),
+            },
+        );
+        let graph = WorkflowGraph {
+            name: Some("wf".to_owned()),
+            nodes: HashMap::new(),
+            edges: Vec::new(),
+            connections: Vec::new(),
+            variables: Some(declarations),
+        };
+        let mut overrides = HashMap::new();
+        overrides.insert("counter".to_owned(), json!(42));
+
+        let deployment = deploy_workflow_with_ai_and_variable_overrides(
+            graph,
+            connections::shared_connection_manager(),
+            None,
+            &NodeRegistry::new(),
+            Some("wf".to_owned()),
+            RuntimeResources::new(),
+            overrides,
+        )
+        .await
+        .unwrap();
+        let parts = deployment.into_parts();
+        let vars = parts
+            .shared_resources
+            .get::<Arc<WorkflowVariables>>()
+            .unwrap();
+        let counter = vars.get("counter").unwrap();
+
+        assert_eq!(counter.value, json!(42));
+        assert_eq!(counter.initial, json!(0));
+        assert_eq!(counter.updated_by.as_deref(), Some("restore"));
+    }
 }

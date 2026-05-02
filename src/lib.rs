@@ -73,6 +73,7 @@ pub use nodes_io::{SqlWriterNode, SqlWriterNodeConfig};
 pub use nazh_graph::{
     WorkflowDeployment, WorkflowDeploymentParts, WorkflowEdge, WorkflowGraph, WorkflowIngress,
     WorkflowStreams, deploy_workflow, deploy_workflow_with_ai,
+    deploy_workflow_with_ai_and_variable_overrides,
 };
 
 /// 加载全部标准库插件，返回就绪的节点注册表。
