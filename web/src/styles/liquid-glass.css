@@ -161,7 +161,7 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
   overflow: visible;
   padding: 10px 12px 12px;
   border: 1px solid var(--panel-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.24), transparent 36%),
     linear-gradient(180deg, var(--panel-strong), var(--sidebar-surface));
