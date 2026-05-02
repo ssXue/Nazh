@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { StrictMode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useAiConfigState } from './hooks/use-ai-config-state';
 import { useAiWorkflowComposerState } from './hooks/use-ai-workflow-composer-state';
@@ -507,20 +507,22 @@ function App() {
           <SidebarToggleIcon />
         </button>
         <aside className={`studio-nav-sidebar${sidebarCollapsed ? ' is-collapsed' : ''}`}>
-          <SidebarNav
-            activeSection={sidebarSection}
-            sections={sidebarSections}
-            onSectionChange={setSidebarSection}
-            userName={CURRENT_USER_NAME}
-            userRole={currentUserRole}
-            onUserSwitch={() => setSidebarSection('settings')}
-            workflowStatusLabel={workflowStatusLabel}
-            workflowStatusPillClass={workflowStatusPillClass}
-            themeMode={settings.themeMode}
-            onToggleTheme={settings.toggleTheme}
-            isCollapsed={sidebarCollapsed}
-            onToggleCollapsed={toggleSidebarCollapsed}
-          />
+          <StrictMode>
+            <SidebarNav
+              activeSection={sidebarSection}
+              sections={sidebarSections}
+              onSectionChange={setSidebarSection}
+              userName={CURRENT_USER_NAME}
+              userRole={currentUserRole}
+              onUserSwitch={() => setSidebarSection('settings')}
+              workflowStatusLabel={workflowStatusLabel}
+              workflowStatusPillClass={workflowStatusPillClass}
+              themeMode={settings.themeMode}
+              onToggleTheme={settings.toggleTheme}
+              isCollapsed={sidebarCollapsed}
+              onToggleCollapsed={toggleSidebarCollapsed}
+            />
+          </StrictMode>
         </aside>
 
         <StudioContentRouter

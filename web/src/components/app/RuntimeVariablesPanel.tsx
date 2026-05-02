@@ -1,14 +1,18 @@
 import { useCallback, useEffect, useState } from 'react';
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 
 import { formatPinType } from '../../lib/pin-schema-cache';
 import {
   deleteWorkflowVariable,
   onWorkflowVariableChanged,
   onWorkflowVariableDeleted,
+  queryVariableHistory,
+  resetWorkflowVariable,
   setWorkflowVariable,
   snapshotWorkflowVariables,
 } from '../../lib/workflow-variables';
 import type {
+  HistoryEntryPayload,
   JsonValue,
   PinType,
   TypedVariableSnapshot,
@@ -75,6 +79,7 @@ export function RuntimeVariablesPanel({ workflowId, onVariableCountChange }: Run
         [payload.name]: {
           value: payload.value,
           variableType: prev[payload.name]?.variableType ?? { kind: 'any' },
+          initial: prev[payload.name]?.initial ?? payload.value,
           updatedAt: payload.updatedAt,
           updatedBy: payload.updatedBy,
         },
@@ -148,6 +153,19 @@ export function RuntimeVariablesPanel({ workflowId, onVariableCountChange }: Run
     [workflowId],
   );
 
+  const handleReset = useCallback(
+    async (name: string) => {
+      if (!workflowId) return;
+      try {
+        setError(null);
+        await resetWorkflowVariable({ workflowId, name });
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [workflowId],
+  );
+
   const entries: VariableEntry[] = Object.entries(variables).map(([name, snapshot]) => ({
     name,
     ...snapshot,
@@ -173,9 +191,11 @@ export function RuntimeVariablesPanel({ workflowId, onVariableCountChange }: Run
           {entries.map((entry) => (
             <VariableRow
               key={entry.name}
+              workflowId={workflowId}
               entry={entry}
               onSubmit={handleSet}
               onDelete={handleDelete}
+              onReset={handleReset}
             />
           ))}
         </ul>
@@ -185,15 +205,21 @@ export function RuntimeVariablesPanel({ workflowId, onVariableCountChange }: Run
 }
 
 interface VariableRowProps {
+  workflowId: string;
   entry: VariableEntry;
   onSubmit: (name: string, value: JsonValue) => Promise<void>;
   onDelete: (name: string) => Promise<void>;
+  onReset: (name: string) => Promise<void>;
 }
 
-function VariableRow({ entry, onSubmit, onDelete }: VariableRowProps) {
+function VariableRow({ workflowId, entry, onSubmit, onDelete, onReset }: VariableRowProps) {
   const [draft, setDraft] = useState<string>(JSON.stringify(entry.value));
   const [isEditing, setIsEditing] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
+  const [historyEntries, setHistoryEntries] = useState<HistoryEntryPayload[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   // 外部事件更新 entry.value 时，非编辑态 draft 跟随，避免下次进入编辑看到过期值。
   useEffect(() => {
@@ -215,6 +241,38 @@ function VariableRow({ entry, onSubmit, onDelete }: VariableRowProps) {
     setIsEditing(false);
   };
 
+  const handleToggleHistory = async () => {
+    if (showHistory) {
+      setShowHistory(false);
+      return;
+    }
+    setShowHistory(true);
+    setHistoryLoading(true);
+    try {
+      const response = await queryVariableHistory({
+        workflowId,
+        name: entry.name,
+        limit: 50,
+      });
+      setHistoryEntries(response.entries);
+    } catch {
+      setHistoryEntries([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const isNumeric = entry.variableType.kind === 'integer' || entry.variableType.kind === 'float';
+  const chartData = isNumeric
+    ? historyEntries
+        .filter((e) => typeof e.value === 'number')
+        .reverse()
+        .map((e) => ({
+          time: new Date(e.updatedAt).toLocaleTimeString(),
+          value: e.value as number,
+        }))
+    : [];
+
   return (
     <li className="runtime-variables-panel__row">
       <div className="runtime-variables-panel__name">{entry.name}</div>
@@ -233,11 +291,41 @@ function VariableRow({ entry, onSubmit, onDelete }: VariableRowProps) {
           </button>
           <button
             type="button"
-            className="runtime-variables-panel__delete"
-            onClick={() => void onDelete(entry.name)}
+            className="runtime-variables-panel__reset"
+            onClick={() => void onReset(entry.name)}
           >
-            删除
+            重置
           </button>
+          {!confirmDelete ? (
+            <button
+              type="button"
+              className="runtime-variables-panel__delete"
+              onClick={() => setConfirmDelete(true)}
+            >
+              删除
+            </button>
+          ) : (
+            <span className="runtime-variables-panel__confirm-delete">
+              确认删除？
+              <button
+                type="button"
+                className="runtime-variables-panel__confirm-yes"
+                onClick={() => {
+                  setConfirmDelete(false);
+                  void onDelete(entry.name);
+                }}
+              >
+                是
+              </button>
+              <button
+                type="button"
+                className="runtime-variables-panel__confirm-no"
+                onClick={() => setConfirmDelete(false)}
+              >
+                否
+              </button>
+            </span>
+          )}
         </>
       ) : (
         <>
@@ -259,6 +347,43 @@ function VariableRow({ entry, onSubmit, onDelete }: VariableRowProps) {
       <div className="runtime-variables-panel__meta">
         {entry.updatedBy ?? '-'} · {entry.updatedAt}
       </div>
+      <button
+        type="button"
+        className="runtime-variables-panel__history-toggle"
+        onClick={() => void handleToggleHistory()}
+      >
+        {showHistory ? '收起' : '历史'}
+      </button>
+      {showHistory && (
+        <div className="runtime-variables-panel__history">
+          {historyLoading ? (
+            <span>加载中…</span>
+          ) : historyEntries.length === 0 ? (
+            <span>暂无历史记录</span>
+          ) : isNumeric && chartData.length > 1 ? (
+            <ResponsiveContainer width="100%" height={120}>
+              <LineChart data={chartData}>
+                <XAxis dataKey="time" tick={{ fontSize: 10 }} />
+                <YAxis tick={{ fontSize: 10 }} width={40} />
+                <Tooltip />
+                <Line type="monotone" dataKey="value" stroke="#6366f1" dot={false} strokeWidth={1.5} />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : (
+            <ul className="runtime-variables-panel__history-list">
+              {historyEntries.map((h, i) => (
+                <li key={i}>
+                  <span className="runtime-variables-panel__history-value">{JSON.stringify(h.value)}</span>
+                  <span className="runtime-variables-panel__history-time">
+                    {new Date(h.updatedAt).toLocaleTimeString()}
+                    {h.updatedBy ? ` · ${h.updatedBy}` : ''}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </li>
   );
 }

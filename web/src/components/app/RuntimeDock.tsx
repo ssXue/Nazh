@@ -17,6 +17,7 @@ import {
   formatLogTimestamp,
 } from './runtime-console';
 import { RuntimeVariablesPanel } from './RuntimeVariablesPanel';
+import { GlobalVariablesPanel } from './GlobalVariablesPanel';
 import type { RuntimeDockProps } from './types';
 
 function normalizeResultPayload(payload: unknown): Record<string, unknown> | unknown[] {
@@ -407,6 +408,58 @@ export function RuntimeDock({
   );
 }
 
+// ── 变量面板（子标签切换工作流/全局）──
+
+type VariableSubTab = 'workflow' | 'global';
+
+function VariablesPanelWithSubTabs({
+  activeWorkflowId,
+  onVariableCountChange,
+}: {
+  activeWorkflowId: RuntimeDockProps['activeWorkflowId'];
+  onVariableCountChange: (count: number) => void;
+}) {
+  const [subTab, setSubTab] = useState<VariableSubTab>('workflow');
+
+  return (
+    <section className="runtime-dock__panel is-active" role="tabpanel">
+      <div className="runtime-dock__panel-header">
+        <h3>运行时变量</h3>
+        <div className="runtime-dock__sub-tabs" role="tablist">
+          <button
+            type="button"
+            role="tab"
+            className={`runtime-dock__sub-tab ${subTab === 'workflow' ? 'is-active' : ''}`}
+            aria-selected={subTab === 'workflow'}
+            onClick={() => setSubTab('workflow')}
+          >
+            工作流变量
+          </button>
+          <button
+            type="button"
+            role="tab"
+            className={`runtime-dock__sub-tab ${subTab === 'global' ? 'is-active' : ''}`}
+            aria-selected={subTab === 'global'}
+            onClick={() => setSubTab('global')}
+          >
+            全局变量
+          </button>
+        </div>
+      </div>
+      <div className="runtime-dock__panel-body">
+        {subTab === 'workflow' ? (
+          <RuntimeVariablesPanel
+            workflowId={activeWorkflowId}
+            onVariableCountChange={onVariableCountChange}
+          />
+        ) : (
+          <GlobalVariablesPanel />
+        )}
+      </div>
+    </section>
+  );
+}
+
 // ── 面板内容渲染 ──
 
 interface DockPanelContentProps {
@@ -558,17 +611,10 @@ function DockPanelContent({
 
   // variables
   return (
-    <section className="runtime-dock__panel is-active" role="tabpanel">
-      <div className="runtime-dock__panel-header">
-        <h3>运行时变量</h3>
-      </div>
-      <div className="runtime-dock__panel-body">
-        <RuntimeVariablesPanel
-          workflowId={activeWorkflowId}
-          onVariableCountChange={onVariableCountChange}
-        />
-      </div>
-    </section>
+    <VariablesPanelWithSubTabs
+      activeWorkflowId={activeWorkflowId}
+      onVariableCountChange={onVariableCountChange}
+    />
   );
 }
 

@@ -1,8 +1,19 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type {
+  DeleteGlobalVariableRequest,
   DeleteWorkflowVariableRequest,
   DeleteWorkflowVariableResponse,
+  GetGlobalVariableRequest,
+  GetGlobalVariableResponse,
+  ListGlobalVariablesRequest,
+  ListGlobalVariablesResponse,
+  QueryVariableHistoryRequest,
+  QueryVariableHistoryResponse,
+  ResetWorkflowVariableRequest,
+  ResetWorkflowVariableResponse,
+  SetGlobalVariableRequest,
+  SetGlobalVariableResponse,
   SetWorkflowVariableRequest,
   SetWorkflowVariableResponse,
   SnapshotWorkflowVariablesResponse,
@@ -33,6 +44,19 @@ export async function deleteWorkflowVariable(
   request: DeleteWorkflowVariableRequest,
 ): Promise<DeleteWorkflowVariableResponse> {
   return invoke<DeleteWorkflowVariableResponse>('delete_workflow_variable', {
+    request,
+  });
+}
+
+/**
+ * 将变量重置为声明初值（ADR-0012 Phase 3）。
+ *
+ * 后端 `TypedVariable.initial` 保存了部署时的声明初值，调用方无需传入。
+ */
+export async function resetWorkflowVariable(
+  request: ResetWorkflowVariableRequest,
+): Promise<ResetWorkflowVariableResponse> {
+  return invoke<ResetWorkflowVariableResponse>('reset_workflow_variable', {
     request,
   });
 }
@@ -78,4 +102,68 @@ export async function onWorkflowVariableDeleted(
     'workflow://variable-deleted',
     (event) => handler(event.payload),
   );
+}
+
+/**
+ * 查询变量变更历史（ADR-0012 Phase 3）。
+ *
+ * 返回最近 N 条历史记录（默认 100 条），按时间倒序。
+ */
+export async function queryVariableHistory(
+  request: QueryVariableHistoryRequest,
+): Promise<QueryVariableHistoryResponse> {
+  return invoke<QueryVariableHistoryResponse>('query_variable_history', {
+    request,
+  });
+}
+
+/**
+ * 设置全局变量（ADR-0012 Phase 3）。
+ *
+ * 全局变量不属于任何工作流，按 namespace + key 唯一标识。
+ * `varType` 缺省为 `"Any"`。
+ */
+export async function setGlobalVariable(
+  request: SetGlobalVariableRequest,
+): Promise<SetGlobalVariableResponse> {
+  return invoke<SetGlobalVariableResponse>('set_global_variable', {
+    request,
+  });
+}
+
+/**
+ * 获取单个全局变量（ADR-0012 Phase 3）。
+ *
+ * 变量不存在时 `snapshot` 为 `undefined`。
+ */
+export async function getGlobalVariable(
+  request: GetGlobalVariableRequest,
+): Promise<GetGlobalVariableResponse> {
+  return invoke<GetGlobalVariableResponse>('get_global_variable', {
+    request,
+  });
+}
+
+/**
+ * 列出全局变量（ADR-0012 Phase 3）。
+ *
+ * 可选按 namespace 过滤；缺省返回全部。
+ */
+export async function listGlobalVariables(
+  request: ListGlobalVariablesRequest,
+): Promise<ListGlobalVariablesResponse> {
+  return invoke<ListGlobalVariablesResponse>('list_global_variables', {
+    request,
+  });
+}
+
+/**
+ * 删除全局变量（ADR-0012 Phase 3）。
+ *
+ * 变量不存在时为幂等操作。
+ */
+export async function deleteGlobalVariable(
+  request: DeleteGlobalVariableRequest,
+): Promise<void> {
+  return invoke<void>('delete_global_variable', { request });
 }

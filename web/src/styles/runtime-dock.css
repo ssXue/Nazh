@@ -946,3 +946,265 @@
   color: var(--muted);
   font-size: var(--font-caption);
 }
+
+/* ── 变量面板子标签 ── */
+
+.runtime-dock__sub-tabs {
+  display: flex;
+  gap: 4px;
+  margin-left: 8px;
+}
+
+.runtime-dock__sub-tab {
+  font-size: var(--font-caption, 11px);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm, 4px);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.1));
+  background: transparent;
+  color: var(--muted, rgba(255, 255, 255, 0.5));
+  cursor: pointer;
+}
+
+.runtime-dock__sub-tab.is-active {
+  background: var(--accent, rgba(255, 255, 255, 0.08));
+  color: var(--fg, #fff);
+  border-color: var(--accent, rgba(255, 255, 255, 0.15));
+}
+
+/* ── 运行时变量面板 ── */
+
+.runtime-variables-panel__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.runtime-variables-panel__row {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border, rgba(255, 255, 255, 0.06));
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  gap: 6px;
+  align-items: center;
+  font-size: var(--font-body, 13px);
+}
+
+.runtime-variables-panel__name {
+  font-weight: 500;
+  color: var(--fg, #fff);
+}
+
+.runtime-variables-panel__type {
+  color: var(--muted, rgba(255, 255, 255, 0.5));
+  font-size: var(--font-caption, 11px);
+}
+
+.runtime-variables-panel__value {
+  color: var(--fg, rgba(255, 255, 255, 0.8));
+  font-family: var(--font-mono, monospace);
+  font-size: var(--font-caption, 11px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.runtime-variables-panel__meta {
+  grid-column: 1 / -1;
+  color: var(--muted, rgba(255, 255, 255, 0.4));
+  font-size: 10px;
+}
+
+.runtime-variables-panel__history-toggle {
+  grid-column: 1 / -1;
+  font-size: var(--font-caption, 11px);
+  color: var(--muted, rgba(255, 255, 255, 0.5));
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 0;
+  text-align: left;
+}
+
+.runtime-variables-panel__history-toggle:hover {
+  color: var(--fg, rgba(255, 255, 255, 0.8));
+}
+
+.runtime-variables-panel__history {
+  grid-column: 1 / -1;
+  padding: 4px 0;
+}
+
+.runtime-variables-panel__history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.runtime-variables-panel__history-list li {
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 0;
+  font-size: var(--font-caption, 11px);
+  border-bottom: 1px solid var(--border, rgba(255, 255, 255, 0.03));
+}
+
+.runtime-variables-panel__history-value {
+  font-family: var(--font-mono, monospace);
+  color: var(--fg, rgba(255, 255, 255, 0.7));
+}
+
+.runtime-variables-panel__history-time {
+  color: var(--muted, rgba(255, 255, 255, 0.4));
+}
+
+.runtime-variables-panel__confirm-delete {
+  font-size: var(--font-caption, 11px);
+  color: var(--fg, rgba(255, 255, 255, 0.6));
+}
+
+.runtime-variables-panel__confirm-delete button {
+  font-size: var(--font-caption, 11px);
+  margin-left: 4px;
+}
+
+.runtime-variables-panel__reset {
+  font-size: var(--font-caption, 11px);
+}
+
+.runtime-variables-panel__delete {
+  font-size: var(--font-caption, 11px);
+}
+
+.runtime-variables-panel__parse-error {
+  color: var(--error, #f87171);
+  font-size: var(--font-caption, 11px);
+}
+
+.runtime-variables-panel--empty,
+.runtime-variables-panel--loading {
+  color: var(--muted, rgba(255, 255, 255, 0.4));
+  padding: 12px 0;
+  font-size: var(--font-body, 13px);
+}
+
+.runtime-variables-panel__error {
+  color: var(--error, #f87171);
+  font-size: var(--font-caption, 11px);
+  padding: 4px 0;
+}
+
+/* ── 全局变量面板 ── */
+
+.global-variables-panel__toolbar {
+  padding: 6px 0;
+}
+
+.global-variables-panel__add-btn {
+  font-size: var(--font-caption, 11px);
+  color: var(--accent, #818cf8);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 0;
+}
+
+.global-variables-panel__add-btn:hover {
+  text-decoration: underline;
+}
+
+.global-variables-panel__add-form {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  padding: 4px 0;
+}
+
+.global-variables-panel__add-form input {
+  font-size: var(--font-caption, 11px);
+  padding: 3px 6px;
+  border-radius: var(--radius-sm, 4px);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.1));
+  background: var(--surface, rgba(255, 255, 255, 0.04));
+  color: var(--fg, #fff);
+  min-width: 60px;
+}
+
+.global-variables-panel__namespace {
+  margin-bottom: 8px;
+}
+
+.global-variables-panel__namespace-title {
+  font-size: var(--font-caption, 11px);
+  color: var(--muted, rgba(255, 255, 255, 0.5));
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 8px 0 4px;
+}
+
+.global-variables-panel__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.global-variables-panel__row {
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border, rgba(255, 255, 255, 0.06));
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  gap: 6px;
+  align-items: center;
+  font-size: var(--font-body, 13px);
+}
+
+.global-variables-panel__key {
+  font-weight: 500;
+  color: var(--fg, #fff);
+}
+
+.global-variables-panel__type {
+  color: var(--muted, rgba(255, 255, 255, 0.5));
+  font-size: var(--font-caption, 11px);
+}
+
+.global-variables-panel__value {
+  color: var(--fg, rgba(255, 255, 255, 0.8));
+  font-family: var(--font-mono, monospace);
+  font-size: var(--font-caption, 11px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.global-variables-panel__meta {
+  grid-column: 1 / -1;
+  color: var(--muted, rgba(255, 255, 255, 0.4));
+  font-size: 10px;
+}
+
+.global-variables-panel__confirm-delete {
+  font-size: var(--font-caption, 11px);
+  color: var(--fg, rgba(255, 255, 255, 0.6));
+}
+
+.global-variables-panel__confirm-delete button {
+  font-size: var(--font-caption, 11px);
+  margin-left: 4px;
+}
+
+.global-variables-panel__delete {
+  font-size: var(--font-caption, 11px);
+}
+
+.global-variables-panel--empty,
+.global-variables-panel--loading {
+  color: var(--muted, rgba(255, 255, 255, 0.4));
+  padding: 12px 0;
+  font-size: var(--font-body, 13px);
+}
+
+.global-variables-panel__error {
+  color: var(--error, #f87171);
+  font-size: var(--font-caption, 11px);
+  padding: 4px 0;
+}

@@ -1,4 +1,4 @@
-import type { RefObject } from 'react';
+import { StrictMode, type ReactNode, type RefObject } from 'react';
 
 import { ConnectionStudio } from '../ConnectionStudio';
 import type { UseConnectionLibraryResult } from '../../hooks/use-connection-library';
@@ -116,6 +116,10 @@ function ProjectGate({
   );
 }
 
+function StrictStudioPanel({ children }: { children: ReactNode }) {
+  return <StrictMode>{children}</StrictMode>;
+}
+
 export function StudioContentRouter({
   activeBoard,
   activeProject,
@@ -179,46 +183,50 @@ export function StudioContentRouter({
   switch (section) {
     case 'dashboard':
       return (
-        <section className="studio-content studio-content--panel">
-          <ScrollSurface className="panel studio-content__panel studio-content__panel--scroll">
-            <DashboardPanel
-              userId={CURRENT_USER_NAME}
-              activeBoardName={activeBoard?.name ?? null}
-              boardCount={boardItems.length}
-              graphNodeCount={graphNodeCount}
-              graphEdgeCount={graphEdgeCount}
-              graphConnectionCount={graphConnectionCount}
-              activeNodeCount={engine.runtimeState.activeNodeIds.length}
-              completedNodeCount={engine.runtimeState.completedNodeIds.length}
-              failedNodeCount={engine.runtimeState.failedNodeIds.length}
-              outputNodeCount={engine.runtimeState.outputNodeIds.length}
-              eventCount={engine.eventFeed.length}
-              resultCount={engine.results.length}
-              statusMessage={engine.statusMessage}
-              deployInfo={currentBoardDeployInfo}
-              onNavigateToBoards={onBackToBoards}
-            />
-          </ScrollSurface>
-        </section>
+        <StrictStudioPanel>
+          <section className="studio-content studio-content--panel">
+            <ScrollSurface className="panel studio-content__panel studio-content__panel--scroll">
+              <DashboardPanel
+                userId={CURRENT_USER_NAME}
+                activeBoardName={activeBoard?.name ?? null}
+                boardCount={boardItems.length}
+                graphNodeCount={graphNodeCount}
+                graphEdgeCount={graphEdgeCount}
+                graphConnectionCount={graphConnectionCount}
+                activeNodeCount={engine.runtimeState.activeNodeIds.length}
+                completedNodeCount={engine.runtimeState.completedNodeIds.length}
+                failedNodeCount={engine.runtimeState.failedNodeIds.length}
+                outputNodeCount={engine.runtimeState.outputNodeIds.length}
+                eventCount={engine.eventFeed.length}
+                resultCount={engine.results.length}
+                statusMessage={engine.statusMessage}
+                deployInfo={currentBoardDeployInfo}
+                onNavigateToBoards={onBackToBoards}
+              />
+            </ScrollSurface>
+          </section>
+        </StrictStudioPanel>
       );
     case 'boards':
       if (!activeBoard || !activeProject) {
         return (
-          <section className="studio-content studio-content--panel">
-            <ScrollSurface className="panel studio-content__panel studio-content__panel--scroll">
-              <BoardsPanel
-                boards={boardItems}
-                onOpenBoard={onOpenBoard}
-                onCreateBoard={onCreateBoard}
-                onStartAiCreate={onOpenAiCreate}
-                onImportBoardFile={onImportBoardFile}
-                onDeleteBoard={onDeleteBoard}
-                aiActionTitle={aiActionTitle}
-                aiActionDisabled={aiActionDisabled}
-                aiActionLoading={aiActionLoadingCreate}
-              />
-            </ScrollSurface>
-          </section>
+          <StrictStudioPanel>
+            <section className="studio-content studio-content--panel">
+              <ScrollSurface className="panel studio-content__panel studio-content__panel--scroll">
+                <BoardsPanel
+                  boards={boardItems}
+                  onOpenBoard={onOpenBoard}
+                  onCreateBoard={onCreateBoard}
+                  onStartAiCreate={onOpenAiCreate}
+                  onImportBoardFile={onImportBoardFile}
+                  onDeleteBoard={onDeleteBoard}
+                  aiActionTitle={aiActionTitle}
+                  aiActionDisabled={aiActionDisabled}
+                  aiActionLoading={aiActionLoadingCreate}
+                />
+              </ScrollSurface>
+            </section>
+          </StrictStudioPanel>
         );
       }
 
@@ -289,133 +297,147 @@ export function StudioContentRouter({
       );
     case 'runtime':
       return (
-        <section className="studio-content studio-content--panel">
-          <ScrollSurface className="panel studio-content__panel studio-content__panel--scroll">
-            <RuntimeManagerPanel
-              workspacePath={settings.projectWorkspacePath}
-              themeMode={settings.themeMode}
-              activeBoardId={activeBoard?.id ?? null}
-              onOpenBoard={(boardId) => {
-                const targetBoard =
-                  boardItems.find((board) => board.id === boardId) ?? {
-                    id: boardId,
-                    name: boardId,
-                    description: '',
-                    nodeCount: 0,
-                    updatedAt: '',
-                    snapshotCount: 0,
-                    environmentCount: 0,
-                    environmentName: '未选择环境',
-                    migrationNote: null,
-                  };
-                onOpenBoard(targetBoard);
-              }}
-              onPersistActiveProject={onPersistActiveProject}
-              onBeforeWorkflowStop={onBeforeWorkflowStop}
-              onAfterWorkflowStop={onAfterWorkflowStop}
-              onRemovePersistedDeployment={onRemovePersistedDeployment}
-              onStatusMessage={engine.setStatusMessage}
-              onRuntimeCountChange={onRuntimeCountChange}
-            />
-          </ScrollSurface>
-        </section>
+        <StrictStudioPanel>
+          <section className="studio-content studio-content--panel">
+            <ScrollSurface className="panel studio-content__panel studio-content__panel--scroll">
+              <RuntimeManagerPanel
+                workspacePath={settings.projectWorkspacePath}
+                themeMode={settings.themeMode}
+                activeBoardId={activeBoard?.id ?? null}
+                onOpenBoard={(boardId) => {
+                  const targetBoard =
+                    boardItems.find((board) => board.id === boardId) ?? {
+                      id: boardId,
+                      name: boardId,
+                      description: '',
+                      nodeCount: 0,
+                      updatedAt: '',
+                      snapshotCount: 0,
+                      environmentCount: 0,
+                      environmentName: '未选择环境',
+                      migrationNote: null,
+                    };
+                  onOpenBoard(targetBoard);
+                }}
+                onPersistActiveProject={onPersistActiveProject}
+                onBeforeWorkflowStop={onBeforeWorkflowStop}
+                onAfterWorkflowStop={onAfterWorkflowStop}
+                onRemovePersistedDeployment={onRemovePersistedDeployment}
+                onStatusMessage={engine.setStatusMessage}
+                onRuntimeCountChange={onRuntimeCountChange}
+              />
+            </ScrollSurface>
+          </section>
+        </StrictStudioPanel>
       );
     case 'connections':
       return (
-        <section className="studio-content studio-content--panel">
-          <ScrollSurface className="panel studio-content__panel studio-content__panel--scroll panel--connection-card">
-            <ConnectionStudio
-              connections={connectionLibrary.connections}
-              setConnections={connectionLibrary.setConnections}
-              usageByConnection={connectionUsageById}
-              runtimeConnections={engine.connections}
-              isLoading={!connectionLibrary.storage.isReady}
-              storageError={connectionLibrary.storage.error}
-              onStatusMessage={(msg) => engine.setStatusMessage(msg)}
-            />
-          </ScrollSurface>
-        </section>
+        <StrictStudioPanel>
+          <section className="studio-content studio-content--panel">
+            <ScrollSurface className="panel studio-content__panel studio-content__panel--scroll panel--connection-card">
+              <ConnectionStudio
+                connections={connectionLibrary.connections}
+                setConnections={connectionLibrary.setConnections}
+                usageByConnection={connectionUsageById}
+                runtimeConnections={engine.connections}
+                isLoading={!connectionLibrary.storage.isReady}
+                storageError={connectionLibrary.storage.error}
+                onStatusMessage={(msg) => engine.setStatusMessage(msg)}
+              />
+            </ScrollSurface>
+          </section>
+        </StrictStudioPanel>
       );
     case 'plugins':
       return (
-        <section className="studio-content studio-content--panel">
-          <ScrollSurface className="panel studio-content__panel studio-content__panel--scroll">
-            <PluginPanel isTauriRuntime={isTauriRuntime} />
-          </ScrollSurface>
-        </section>
+        <StrictStudioPanel>
+          <section className="studio-content studio-content--panel">
+            <ScrollSurface className="panel studio-content__panel studio-content__panel--scroll">
+              <PluginPanel isTauriRuntime={isTauriRuntime} />
+            </ScrollSurface>
+          </section>
+        </StrictStudioPanel>
       );
     case 'logs':
       return (
-        <section className="studio-content studio-content--panel">
-          <ScrollSurface className="panel studio-content__panel studio-content__panel--scroll">
-            <LogsPanel
-              eventFeed={engine.eventFeed}
-              appErrors={engine.appErrors}
-              resultCount={engine.results.length}
-              themeMode={settings.themeMode}
-              activeBoardName={activeBoard?.name ?? null}
-              workflowStatusLabel={workflowStatusLabel}
-              workspacePath={settings.projectWorkspacePath}
-              activeTraceId={engine.runtimeState.traceId}
-            />
-          </ScrollSurface>
-        </section>
+        <StrictStudioPanel>
+          <section className="studio-content studio-content--panel">
+            <ScrollSurface className="panel studio-content__panel studio-content__panel--scroll">
+              <LogsPanel
+                eventFeed={engine.eventFeed}
+                appErrors={engine.appErrors}
+                resultCount={engine.results.length}
+                themeMode={settings.themeMode}
+                activeBoardName={activeBoard?.name ?? null}
+                workflowStatusLabel={workflowStatusLabel}
+                workspacePath={settings.projectWorkspacePath}
+                activeTraceId={engine.runtimeState.traceId}
+              />
+            </ScrollSurface>
+          </section>
+        </StrictStudioPanel>
       );
     case 'settings':
       return (
-        <section className="studio-content studio-content--panel">
-          <ScrollSurface className="panel studio-content__panel studio-content__panel--scroll">
-            <SettingsPanel
-              isTauriRuntime={isTauriRuntime}
-              runtimeModeLabel={runtimeModeLabel}
-              workflowStatusLabel={workflowStatusLabel}
-              statusMessage={engine.statusMessage}
-              themeMode={settings.themeMode}
-              onThemeModeChange={settings.setThemeMode}
-              accentPreset={settings.accentPreset}
-              accentOptions={ACCENT_PRESET_OPTIONS}
-              customAccentHex={settings.customAccentHex}
-              onAccentPresetChange={settings.setAccentPreset}
-              onCustomAccentChange={settings.setCustomAccentHex}
-              motionMode={settings.motionMode}
-              onMotionModeChange={settings.setMotionMode}
-              startupPage={settings.startupPage}
-              onStartupPageChange={settings.setStartupPage}
-              projectWorkspacePath={settings.projectWorkspacePath}
-              projectWorkspaceResolvedPath={projectLibrary.storage.resolvedWorkspacePath}
-              projectWorkspaceBoardsDirectoryPath={projectLibrary.storage.boardsDirectoryPath}
-              projectWorkspaceUsingDefault={projectLibrary.storage.usingDefaultLocation}
-              projectWorkspaceIsSyncing={projectLibrary.storage.isSyncing}
-              projectWorkspaceError={projectLibrary.storage.error}
-              onProjectWorkspacePathChange={settings.setProjectWorkspacePath}
-            />
-          </ScrollSurface>
-        </section>
+        <StrictStudioPanel>
+          <section className="studio-content studio-content--panel">
+            <ScrollSurface className="panel studio-content__panel studio-content__panel--scroll">
+              <SettingsPanel
+                isTauriRuntime={isTauriRuntime}
+                runtimeModeLabel={runtimeModeLabel}
+                workflowStatusLabel={workflowStatusLabel}
+                statusMessage={engine.statusMessage}
+                themeMode={settings.themeMode}
+                onThemeModeChange={settings.setThemeMode}
+                accentPreset={settings.accentPreset}
+                accentOptions={ACCENT_PRESET_OPTIONS}
+                customAccentHex={settings.customAccentHex}
+                onAccentPresetChange={settings.setAccentPreset}
+                onCustomAccentChange={settings.setCustomAccentHex}
+                motionMode={settings.motionMode}
+                onMotionModeChange={settings.setMotionMode}
+                startupPage={settings.startupPage}
+                onStartupPageChange={settings.setStartupPage}
+                projectWorkspacePath={settings.projectWorkspacePath}
+                projectWorkspaceResolvedPath={projectLibrary.storage.resolvedWorkspacePath}
+                projectWorkspaceBoardsDirectoryPath={projectLibrary.storage.boardsDirectoryPath}
+                projectWorkspaceUsingDefault={projectLibrary.storage.usingDefaultLocation}
+                projectWorkspaceIsSyncing={projectLibrary.storage.isSyncing}
+                projectWorkspaceError={projectLibrary.storage.error}
+                onProjectWorkspacePathChange={settings.setProjectWorkspacePath}
+              />
+            </ScrollSurface>
+          </section>
+        </StrictStudioPanel>
       );
     case 'ai':
       return (
-        <section className="studio-content studio-content--panel">
-          <ScrollSurface className="panel studio-content__panel studio-content__panel--scroll">
-            <AiConfigPanel
-              isTauriRuntime={isTauriRuntime}
-              aiConfig={aiConfig}
-              aiConfigLoading={aiConfigLoading}
-              aiConfigError={aiConfigError}
-              onAiConfigSave={onAiConfigSave}
-              onAiProviderTest={onAiProviderTest}
-              aiTestResult={aiTestResult}
-              aiTesting={aiTesting}
-            />
-          </ScrollSurface>
-        </section>
+        <StrictStudioPanel>
+          <section className="studio-content studio-content--panel">
+            <ScrollSurface className="panel studio-content__panel studio-content__panel--scroll">
+              <AiConfigPanel
+                isTauriRuntime={isTauriRuntime}
+                aiConfig={aiConfig}
+                aiConfigLoading={aiConfigLoading}
+                aiConfigError={aiConfigError}
+                onAiConfigSave={onAiConfigSave}
+                onAiProviderTest={onAiProviderTest}
+                aiTestResult={aiTestResult}
+                aiTesting={aiTesting}
+              />
+            </ScrollSurface>
+          </section>
+        </StrictStudioPanel>
       );
     case 'about':
       return (
-        <section className="studio-content studio-content--panel">
-          <ScrollSurface className="panel studio-content__panel studio-content__panel--scroll">
-            <AboutPanel />
-          </ScrollSurface>
-        </section>
+        <StrictStudioPanel>
+          <section className="studio-content studio-content--panel">
+            <ScrollSurface className="panel studio-content__panel studio-content__panel--scroll">
+              <AboutPanel />
+            </ScrollSurface>
+          </section>
+        </StrictStudioPanel>
       );
   }
 }
