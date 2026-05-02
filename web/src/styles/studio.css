@@ -155,10 +155,14 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
 .studio-nav-group {
   display: grid;
   gap: 8px;
+  border-top: 1px solid var(--line-faint);
+  padding-top: 12px;
 }
 
 .studio-nav-group--top {
   gap: 10px;
+  border-top: 0;
+  padding-top: 0;
 }
 
 .studio-nav-group__title {
@@ -168,7 +172,8 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
   letter-spacing: 0.08em;
   text-transform: uppercase;
   padding-left: 10px;
-  transition: color 180ms ease;
+  margin-top: 2px;
+  transition: color 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
 }
 
 .studio-nav {
@@ -184,73 +189,36 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
   align-items: center;
   justify-items: start;
   width: 100%;
-  min-height: 46px;
-  border-radius: var(--radius-md);
-  padding: 6px 9px;
-  border: 1px solid transparent;
+  min-height: 32px;
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  border: 0;
   background: transparent;
   color: var(--text);
   box-shadow: none;
   overflow: hidden;
   transition:
-    background 180ms ease,
-    border-color 180ms ease,
-    box-shadow 180ms ease,
-    color 180ms ease,
-    transform 180ms ease;
-}
-
-.studio-nav__button::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 8px;
-  bottom: 8px;
-  width: 2.5px;
-  border-radius: var(--radius-pill);
-  background: linear-gradient(180deg, var(--accent-gradient-start), var(--accent-gradient-end));
-  opacity: 0;
-  transform: scaleY(0.35);
-  transform-origin: center;
-  transition:
-    opacity 180ms ease,
-    transform 180ms ease;
+    background 160ms ease,
+    color 160ms ease;
 }
 
 .studio-nav__button:hover {
-  transform: none;
-  background: var(--nav-hover-surface);
-  border-color: var(--accent-soft);
-  box-shadow: none;
+  background: var(--surface-muted);
   color: var(--text);
-}
-
-.studio-nav__button:hover::before {
-  opacity: 0.72;
-  transform: scaleY(1);
 }
 
 .studio-nav__button:focus-visible {
   outline: none;
-  border-color: var(--accent-border);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  box-shadow: 0 0 0 2px var(--accent-soft);
 }
 
 .studio-nav__button.is-active {
-  min-height: 50px;
-  border-radius: var(--radius-md);
-  padding: 6px 9px;
-  border: 1px solid var(--accent-border);
-  border-color: var(--accent-border);
-  background: linear-gradient(135deg, var(--accent-gradient-start), var(--accent-gradient-end));
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  border: 0;
+  background: var(--accent-soft);
   color: var(--nav-active-text);
-  box-shadow: 0 3px 14px var(--accent-shadow);
-}
-
-.studio-nav__button.is-active::before {
-  opacity: 1;
-  transform: scaleY(1);
-  background: var(--nav-active-muted);
+  box-shadow: none;
 }
 
 .studio-nav__icon {
@@ -259,45 +227,41 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: var(--radius-sm);
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-xs);
   color: inherit;
   background: transparent;
-  transition:
-    background-color 180ms ease,
-    color 180ms ease,
-    transform 180ms ease;
+  transition: color 160ms ease;
 }
 
 .studio-nav__icon svg {
-  width: 15px;
-  height: 15px;
+  width: 14px;
+  height: 14px;
 }
 
 .studio-nav__button:hover .studio-nav__icon,
 .studio-nav__button:focus-visible .studio-nav__icon {
-  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .studio-nav__button.is-active .studio-nav__icon {
-  background: var(--accent-soft-strong);
+  color: var(--accent);
 }
 
 .studio-nav__copy {
   position: relative;
   z-index: 1;
   display: grid;
-  gap: 2px;
+  gap: 1px;
   width: 100%;
-  padding-left: 8px;
-  transition: transform 180ms ease;
+  padding-left: 6px;
 }
 
 .studio-nav__button:hover .studio-nav__copy,
 .studio-nav__button:focus-visible .studio-nav__copy,
 .studio-nav__button.is-active .studio-nav__copy {
-  transform: translateX(1px);
+  /* noop */
 }
 
 .studio-nav__mono {
@@ -313,20 +277,18 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
 .studio-nav__label {
   display: block;
   margin: 0;
-  font-weight: 600;
-  font-size: var(--font-body);
-  line-height: 1.15;
-  letter-spacing: 0.01em;
+  font-weight: 500;
+  font-size: var(--font-callout);
+  line-height: 1.2;
+  letter-spacing: 0;
   text-align: left;
-  transition: color 180ms ease;
 }
 
 .studio-nav__meta {
   color: var(--muted);
-  font-size: var(--font-caption);
-  line-height: 1.25;
+  font-size: var(--font-footnote);
+  line-height: 1.2;
   text-align: left;
-  transition: color 180ms ease, opacity 180ms ease;
 }
 
 .studio-nav__button.is-active .studio-nav__label {
@@ -339,9 +301,10 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
 
 .studio-nav__footer {
   margin-top: auto;
-  padding-top: 10px;
+  padding-top: 12px;
   display: grid;
   gap: 8px;
+  border-top: 1px solid var(--line-faint);
 }
 
 .studio-nav-status {
@@ -368,12 +331,18 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
   background: var(--panel);
   color: var(--text);
   box-shadow: none;
+  transition:
+    border-color 200ms cubic-bezier(0.25, 0.1, 0.25, 1),
+    background-color 200ms cubic-bezier(0.25, 0.1, 0.25, 1),
+    box-shadow 200ms cubic-bezier(0.25, 0.1, 0.25, 1),
+    transform 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
 }
 
 .studio-nav-theme-toggle:hover {
   border-color: var(--accent-border);
   background: var(--nav-hover-surface);
   box-shadow: var(--shadow-low);
+  transform: rotate(15deg);
 }
 
 .studio-nav-theme-toggle svg {
@@ -450,6 +419,14 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
   padding: 8px 8px 8px 10px;
   background: var(--surface-muted);
   box-shadow: var(--shadow-low);
+  transition:
+    box-shadow 200ms cubic-bezier(0.25, 0.1, 0.25, 1),
+    border-color 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+.studio-nav-user:hover {
+  border-color: color-mix(in srgb, var(--accent-border) 40%, var(--line-soft));
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06), var(--shadow-low);
 }
 
 .studio-nav-user__avatar {
@@ -464,6 +441,7 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
   font-size: var(--font-subheadline);
   font-weight: 700;
   letter-spacing: 0.08em;
+  box-shadow: 0 2px 6px rgba(var(--accent-rgb), 0.18);
 }
 
 .studio-nav-user__copy {
@@ -500,6 +478,10 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
   background: var(--panel);
   color: var(--text);
   box-shadow: none;
+  transition:
+    border-color 200ms cubic-bezier(0.25, 0.1, 0.25, 1),
+    background-color 200ms cubic-bezier(0.25, 0.1, 0.25, 1),
+    box-shadow 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
 }
 
 .studio-nav-user__action:hover {
@@ -515,14 +497,14 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
 
 @media (prefers-reduced-motion: reduce) {
   .studio-nav__button,
-  .studio-nav__button::before,
   .studio-nav__icon,
   .studio-nav__copy,
   .studio-nav__label,
   .studio-nav__meta,
   .studio-nav-group__title,
   .studio-nav-theme-toggle,
-  .studio-nav-user__action {
+  .studio-nav-user__action,
+  .studio-nav-user {
     transition: none;
   }
 }
