@@ -104,8 +104,8 @@ React / FlowGram canvas
 
 - **`crates/core/src/context.rs`** — `WorkflowContext` (trace_id, timestamp, payload) + `ContextRef` (DataStore pointer). Kept to three fields; metadata does NOT live here.
 - **`crates/core/src/data.rs`** — `DataStore` trait + `ArenaDataStore` (in-memory default). `DataId` indexes payloads with Arc ref-counting.
-- **`crates/core/src/event.rs`** — `ExecutionEvent { Started, Completed(CompletedExecutionEvent), Failed, Output, Finished }`. `Completed` carries a `metadata: Option<Map<String, Value>>` — execution metadata walks this channel, not the data channel.
-- **`crates/core/src/node.rs`** — `NodeTrait` with async `transform(trace_id, payload) → NodeExecution`. `NodeOutput { payload, metadata, dispatch }`. `NodeDispatch::Broadcast | Route(Vec<String>)`.
+- **`crates/core/src/event.rs`** — `ExecutionEvent { Started, Completed(CompletedExecutionEvent), Failed, Output, Finished }`. `Completed` carries a `metadata: Option<Map<String, Value>>` — execution metadata walks this channel, not the data channel. Variable events (`WorkflowVariableEvent`) use a separate channel since 2026-05-03 (B1-R0-01/B1-R0-05).
+- **`crates/core/src/node.rs`** — `NodeTrait` with async `transform(trace_id, payload) → NodeExecution`. `NodeOutput { payload, metadata: Option<Map>, dispatch }`. `NodeDispatch::Broadcast | Route(Vec<String>)`. Metadata is `Option<Map>` for explicit None/Some(empty)/Some(non-empty) three-value semantics (B1-R0-02, 2026-05-03).
 - **`crates/core/src/plugin.rs`** — `Plugin` + `NodeRegistry` + `PluginHost` + `RuntimeResources` (typed Any bag). Engine core has **zero hardcoded nodes** — all Ring 1 crates register themselves.
 - **`crates/core/src/guard.rs`** — panic isolation helpers (AssertUnwindSafe + catch_unwind + timeout).
 - **`crates/graph/`** — `WorkflowGraph` schema, topology (Kahn cycle check), `deploy_workflow` / `deploy_workflow_with_ai`, per-node `run_node` loop, pull-path collector, pin validator. Ring 1 crate, depends on `nazh-core` + `connections` only (ADR-0020).
@@ -121,6 +121,8 @@ IPC boundary types are defined once in Rust and auto-generated to TypeScript via
 
 ### Tauri IPC Surface (`src-tauri/src/lib.rs` + `src-tauri/src/commands/`)
 
+Workflow commands are split across `workflow_deploy.rs` / `workflow_dispatch.rs` / `workflow_undeploy.rs` (since 2026-05-03, was single `workflow.rs`). Other command domains remain in their respective files (`ai.rs`, `catalog.rs`, `connections.rs`, `variables.rs`, etc.).
+
 41 commands covering:
 - workflow lifecycle/runtime: `deploy_workflow`, `dispatch_payload`, `undeploy_workflow`, `list_runtime_workflows`, `set_active_runtime_workflow`, `list_dead_letters`
 - node / pin catalog: `list_node_types`, `describe_node_pins`
@@ -133,7 +135,7 @@ IPC boundary types are defined once in Rust and auto-generated to TypeScript via
 - AI: `load_ai_config`, `save_ai_config`, `test_ai_provider`, `copilot_complete`, `copilot_complete_stream`
 - reactive: `subscribe_reactive_pin`（ADR-0015 Phase 2，OutputCache watch → Tauri 事件推送）
 
-Event channels: `workflow://node-status`, `workflow://result`, `workflow://deployed`, `workflow://undeployed`, `workflow://runtime-focus`, `workflow://variable-changed`（ADR-0012 Phase 2，write-on-change 变量变更广播）, `workflow://reactive-update/{workflow_id}/{node_id}/{pin_id}`（ADR-0015 Phase 2，Reactive 引脚值变更推送） and dynamic `copilot://stream/{stream_id}`. Runtime result/status events are scoped payloads with `workflow_id`.
+Event channels: `workflow://node-status`, `workflow://result`, `workflow://deployed`, `workflow://undeployed`, `workflow://runtime-focus`, `workflow://variable-changed`（ADR-0012 Phase 2，write-on-change 变量变更广播；内部走独立 `WorkflowVariableEvent` 通道，不混入 `ExecutionEvent`——B1-R0-01/B1-R0-05，2026-05-03）, `workflow://reactive-update/{workflow_id}/{node_id}/{pin_id}`（ADR-0015 Phase 2，Reactive 引脚值变更推送） and dynamic `copilot://stream/{stream_id}`. Runtime result/status events are scoped payloads with `workflow_id`.
 
 ## Critical Coding Constraints
 
@@ -144,9 +146,9 @@ Industrial-reliability requirements. **Enforced by Cargo lints**; violations fai
 3. **Panic isolation is mandatory.** Node execution is wrapped in `AssertUnwindSafe + catch_unwind + timeout`. One bad node must never crash the DAG.
 4. **Nodes never access hardware directly.** All I/O goes through `ConnectionManager` (borrow → use → release via RAII `ConnectionGuard`).
 5. **Channel-based message passing over shared state.** Tokio MPSC between nodes. The only shared mutable state is `ConnectionManager` behind `Arc<RwLock<...>>`, `DataStore` behind `Arc<dyn DataStore>`, and `WorkflowVariables` behind `Arc<DashMap>` (ADR-0012).
-6. **Rhai scripts must have step limits** (`max_operations`, default 50k) to prevent infinite loops.
+6. **Rhai scripts must have step limits** (`max_operations`, default 50k via `scripting::default_max_operations()`) to prevent infinite loops.
 7. **`NodeTrait::transform(trace_id, payload) → NodeExecution` is the contract.** Nodes must not touch `DataStore`. The Runner is solely responsible for store reads/writes.
-8. **Execution metadata must not leak into payload.** Return metadata via `NodeOutput::metadata` + `NodeExecution::with_metadata()`, using non-underscore keys (`"timer"`, `"http"`, `"modbus"`, `"serial"`, `"sql_writer"`, `"debug_console"`, `"connection"`, `"bark"`, `"ai"`). The Runner merges metadata into `ExecutionEvent::Completed` events. Only routing context (`_loop`, `_error`) is allowed to remain in the payload. See ADR-0008.
+8. **Execution metadata must not leak into payload.** Return metadata via `NodeOutput::metadata` (`Option<Map<String, Value>>`) + `NodeExecution::with_metadata()`, using non-underscore keys (`"timer"`, `"http"`, `"modbus"`, `"serial"`, `"sql_writer"`, `"debug_console"`, `"connection"`, `"bark"`, `"ai"`). The Runner merges metadata into `ExecutionEvent::Completed` events. Only routing context (`_loop`, `_error`) is allowed to remain in the payload. See ADR-0008.
 9. **Field visibility: prefer private + getters for stable core types.** `WorkflowNodeDefinition` is the reference pattern — fields are private, access via `id()` / `node_type()` / `connection_id()` / etc., mutations only through methods like `normalize()` and `config_mut()`. Apply the same to future stable types.
 
 ## Design Principles (team-aligned contract)
@@ -392,7 +394,7 @@ Ambiguous match found for serviceIdentifier: FlowRendererRegistry
 
 **未来若需 IPC 真值的 E2E**：改用 `@tauri-apps/playwright` 或 webview/electron-mode；或加 IPC mock 层（`hasTauriRuntime() === false` 时让 `invoke` 返回 fixture 值）。不要硬撞——拖拽连接 + console capture 断言跨 Kind 拒绝在 Chromium 模式下也仍可行（`pin-validator` 是纯函数，不依赖 IPC），但 ADR-0014 Phase 2 评审决定不做（拖拽脆弱性 + Vitest 已覆盖）。
 
-## Project Status（2026-05-01）
+## Project Status（2026-05-03）
 
 **Phases 1-5 complete** (crate extraction, DataStore, ConnectionGuard, Ring 1 split, Plugin system). See `docs/rfcs/0002-分层内核与插件架构.md`.
 
@@ -401,6 +403,7 @@ Ambiguous match found for serviceIdentifier: FlowRendererRegistry
 - `src-tauri/src/lib.rs` 已按 IPC 命令域拆到 `src-tauri/src/commands/*`，`lib.rs` 只保留 setup + handler 注册（132 行）。
 - 规范扫描结论：生产代码 `.unwrap()` / `.expect()` 0 命中、`unsafe` 0 命中、节点不直接读写 `DataStore`；`native` 节点 payload 键从 `_native_message` 修正为 `native_message`。
 - **已解冻**：`docs/superpowers/plans/2026-04-28-architecture-review.md` 的 Phase A/B/C/D/E 全部完成（2026-04-30）；原 ARCHITECTURE FREEZE 段已删除。ADR-0016 仍有 deferred items，但不再阻塞常规 PR 流程。
+- **P1/P2 技术债批量偿还**（2026-05-03，commit 2e428a2）：变量事件独立通道（`WorkflowVariableEvent`）+ `NodeOutput.metadata` 改 `Option<Map>` + Rhai `default_max_operations` 统一 + `workflow.rs` 拆为 `workflow_deploy/dispatch/undeploy` 三模块 + FlowgramCanvas 988 行 / ConnectionStudio 1372 行 + core/connections/ai crate AGENTS.md 同步 + 17 IPC 类型迁入 `tauri-bindings`。详见下文"Immediate known tech debt"。
 
 **Current batch of ADRs** (2026-04-17 to 2026-04-29):
 - ADR-0008 (metadata separation) — **accepted / landed**
@@ -419,7 +422,7 @@ Ambiguous match found for serviceIdentifier: FlowRendererRegistry
 - ADR-0022 (工作流变量持久化) — **已实施**（2026-05-03，`crates/store/` Ring 1 SQLite crate + 壳层持久化钩子 + 部署时恢复）
 
 **Immediate known tech debt:**
-- **Architecture review 派生 P1**（2026-04-29）：变量控制事件从 `ExecutionEvent` 拆出；~~`src/graph/` 触发 ADR-0020 重评~~（已偿还，2026-05-01 拆为 `crates/graph/`）；runtime / dead-letter / scoped event 等 IPC 类型迁入 `tauri-bindings`；Rhai `max_operations` 增加统一 clamp；前端大文件拆分。详见 `docs/superpowers/specs/2026-04-29-architecture-review-findings.md`。
+- **Architecture review 派生 P1/P2**（2026-04-29，~~已偿还~~ 2026-05-03）：~~变量控制事件从 `ExecutionEvent` 拆出~~（已偿还：`WorkflowVariableEvent` 独立枚举 + 独立通道，B1-R0-01/B1-R0-05）；~~`src/graph/` 触发 ADR-0020 重评~~（已偿还，2026-05-01 拆为 `crates/graph/`）；~~Rhai `max_operations` 增加统一 clamp~~（已偿还：`scripting::default_max_operations()` 统一，D-01）；~~`NodeOutput.metadata` 显式三值语义~~（已偿还：`Map` → `Option<Map>`，B1-R0-02）；~~前端大文件拆分~~（已偿还：FlowgramCanvas 2025→988 行 / ConnectionStudio 1824→1372 行，C-02）；~~`workflow.rs` 单文件过~~大（已偿还：拆为 `workflow_deploy/dispatch/undeploy` 三模块，C-01）。**剩余**：runtime / dead-letter / scoped event 等 IPC 类型迁入 `tauri-bindings`（B4-IPC-02/03，17 类型已迁入定义，壳层 import 替换待后续）；core/connections/ai crate AGENTS.md 已同步（B2-R1-03/04）。详见 `docs/superpowers/specs/2026-04-29-architecture-review-findings.md`。
 - **ADR-0016 deferred items**（2026-04-30）：`BackpressureDetected` 发射逻辑；`payload_bytes` 统计（需序列化测量）；`received_at` 精确测量（需 instrument 接收端）；100ms 定时窗口 flush（当前每执行周期 flush）；`queue_depth` 精确值（需共享 channel 状态）；前端边热力图 UI。
 - ~~**ADR-0013 子图实施 deployment 断链**（2026-04-28 发现）~~ **已偿还（2026-04-28）**。merge 68ab709 解决冲突时丢失的 ADR-0013 改动重写恢复——`flattenSubgraphs` + Rust `mod passthrough` 注册 + `FlowgramCanvas` 容器/桥接渲染 + 设置面板全部到位，三件套全绿。loop 容器恢复已并入当前 `main`。
 - ~~MQTT subscriber / Timer / Serial root lifecycle is owned by the Tauri shell.~~ **已偿还（2026-04-26，ADR-0009 已实施）**。三类触发器节点现自持 `on_deploy` + `LifecycleGuard`；壳层不再监督触发器任务。**语义变化**：触发器节点走 `NodeHandle::emit` 而非 `dispatch_router` 的 trigger lane，失去 backpressure / DLQ / retry / metrics 防御能力，等 ADR-0014 / ADR-0016 引擎级背压能力补回。
@@ -435,7 +438,7 @@ Ambiguous match found for serviceIdentifier: FlowRendererRegistry
 > 2. ✅ **ADR-0009** 生命周期钩子（`on_deploy` + `LifecycleGuard`）— **已实施**（2026-04-26，Ring 0 lifecycle 模块 + Runner 两阶段部署 + Timer/Serial/MQTT 三类节点迁回；壳层 `src-tauri/src/lib.rs` 由 3609 → 2498 行）
 > 3. ✅ **ADR-0010** Pin 声明系统 — **Phase 1 + Phase 2 + Phase 3 + Phase 4 部分已实施**（Phase 1: Ring 0 类型 + 部署期校验器 + 4 分支节点；Phase 3: 4 协议节点 input/output 收紧到 `Json`（保守方案，不引入 `Custom`）+ 兼容矩阵合约 fixture 前后端共享；Phase 2: IPC `describe_node_pins` + 前端 pin-compat/cache/validator 三件套 + FlowGram `canAddLine` 接入连接期校验 + branch ports 按 PinType 着色；Phase 4: pin tooltip + AI prompt 携带 pin schema。协议节点端口着色 / `Custom` 类型 + row-formatter 节点 deferred）
 > 4. ✅ **ADR-0018 / ADR-0019**（独立支线，**已实施**，2026-04-26）— `nodes-io` 协议 feature 门控 + AI 依赖反转。`nazh-core::ai` 现为 trait + 类型源头；`nodes-io` 协议 dep 全部 optional
-> 5. ✅ **ADR-0012** 工作流变量 — Phase 1+2 已实施（2026-04-27）；Phase 3 候选项已分类，见上文"ADR-0012 Phase 3 候选"小节
+> 5. ✅ **ADR-0012** 工作流变量 — Phase 1+2+3 已实施（2026-04-27 / Phase 3: 2026-05-03）
 > 6. ✅ **ADR-0013** 子图与宏（依赖 0010）— 子图核心已实施；loop 容器恢复已并入当前 `main`
 > 7. ✅ **Phase 6 (RFC-0002)** EventBus + EdgeBackpressure + ConcurrencyPolicy — **已完成修订**（2026-04-16）。EventBus broadcast 否决，ConcurrencyPolicy/EdgeBackpressure 推迟；实际修复：`emit_event` 改 `try_send` + 错误日志。详见 RFC-0002 Phase 6 段。
 > 8. ✅ **ADR-0014** Pin 求值语义二分 — **Phase 1 + Phase 2 + Phase 3 + Phase 3b + Phase 4 + Phase 5 已实施**（2026-04-30）。Phase 5：capability 着色 + PinKind prompt + watch channel + PureMemo trace 清理。Phase 6 EventBus 已完成修订。

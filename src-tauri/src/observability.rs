@@ -8,8 +8,12 @@ use std::{
 
 use chrono::{DateTime, Utc};
 use nazh_engine::{ExecutionEvent, WorkflowContext};
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
+use tauri_bindings::{
+    AlertDeliveryRecord, ObservabilityContextInput, ObservabilityEntry,
+    ObservabilityQueryResult, ObservabilityTraceSummary,
+};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
@@ -19,108 +23,6 @@ const AUDIT_FILE: &str = "audit.jsonl";
 const ALERTS_FILE: &str = "alerts.jsonl";
 
 pub type SharedObservabilityStore = Arc<ObservabilityStore>;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ObservabilityContextInput {
-    pub workspace_path: String,
-    pub project_id: String,
-    pub project_name: String,
-    pub environment_id: String,
-    pub environment_name: String,
-    #[serde(default)]
-    pub deployment_source: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ObservabilityEntry {
-    pub id: String,
-    pub timestamp: String,
-    pub level: String,
-    pub category: String,
-    pub source: String,
-    pub message: String,
-    #[serde(default)]
-    pub detail: Option<String>,
-    #[serde(default)]
-    pub trace_id: Option<String>,
-    #[serde(default)]
-    pub node_id: Option<String>,
-    #[serde(default)]
-    pub duration_ms: Option<u64>,
-    #[serde(default)]
-    pub project_id: Option<String>,
-    #[serde(default)]
-    pub project_name: Option<String>,
-    #[serde(default)]
-    pub environment_id: Option<String>,
-    #[serde(default)]
-    pub environment_name: Option<String>,
-    #[serde(default)]
-    pub data: Option<Value>,
-    #[serde(default)]
-    pub event_kind: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AlertDeliveryRecord {
-    pub id: String,
-    pub timestamp: String,
-    pub trace_id: String,
-    pub node_id: String,
-    pub project_id: String,
-    pub project_name: String,
-    pub environment_id: String,
-    pub environment_name: String,
-    pub url: String,
-    pub method: String,
-    pub status: u16,
-    pub success: bool,
-    #[serde(default)]
-    pub webhook_kind: Option<String>,
-    #[serde(default)]
-    pub body_mode: Option<String>,
-    #[serde(default)]
-    pub request_timeout_ms: Option<u64>,
-    #[serde(default)]
-    pub requested_at: Option<String>,
-    #[serde(default)]
-    pub request_body_preview: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ObservabilityTraceSummary {
-    pub trace_id: String,
-    pub status: String,
-    #[serde(default)]
-    pub started_at: Option<String>,
-    #[serde(default)]
-    pub last_seen_at: Option<String>,
-    pub total_events: usize,
-    pub node_count: usize,
-    pub output_count: usize,
-    pub failure_count: usize,
-    #[serde(default)]
-    pub total_duration_ms: Option<u64>,
-    #[serde(default)]
-    pub last_node_id: Option<String>,
-    #[serde(default)]
-    pub project_name: Option<String>,
-    #[serde(default)]
-    pub environment_name: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ObservabilityQueryResult {
-    pub entries: Vec<ObservabilityEntry>,
-    pub traces: Vec<ObservabilityTraceSummary>,
-    pub alerts: Vec<AlertDeliveryRecord>,
-    pub audits: Vec<ObservabilityEntry>,
-}
 
 #[derive(Debug, Clone)]
 struct ObservabilitySession {

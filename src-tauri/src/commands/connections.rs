@@ -1,16 +1,9 @@
 use nazh_engine::{ConnectionDefinition, ConnectionRecord};
-use serde::Serialize;
 use tauri::{AppHandle, State};
+use tauri_bindings::ConnectionDefinitionsLoadResult;
 use tokio::fs;
 
 use crate::state::DesktopState;
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct ConnectionDefinitionsLoadResult {
-    pub(crate) definitions: Vec<ConnectionDefinition>,
-    pub(crate) file_exists: bool,
-}
 
 #[tauri::command]
 pub(crate) async fn list_connections(

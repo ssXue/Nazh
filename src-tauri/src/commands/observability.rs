@@ -1,9 +1,8 @@
 use tauri::AppHandle;
+use tauri_bindings::ObservabilityQueryResult;
 
 use crate::{
-    observability::{
-        ObservabilityQueryResult, query_observability as query_workspace_observability,
-    },
+    observability::query_observability as query_workspace_observability,
     workspace::resolve_project_workspace_dir,
 };
 

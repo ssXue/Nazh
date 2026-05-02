@@ -1,43 +1,14 @@
 use std::path::Path;
 
-use nazh_engine::ConnectionDefinition;
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::AppHandle;
+use tauri_bindings::{
+    PersistedDeploymentSession, PersistedDeploymentSessionCollection,
+    PersistedDeploymentSessionState,
+};
 use tokio::fs;
 
 use crate::state::DesktopState;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct PersistedDeploymentSession {
-    pub(crate) version: u8,
-    pub(crate) project_id: String,
-    pub(crate) project_name: String,
-    pub(crate) environment_id: String,
-    pub(crate) environment_name: String,
-    pub(crate) deployed_at: String,
-    pub(crate) runtime_ast_text: String,
-    pub(crate) runtime_connections: Vec<ConnectionDefinition>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct PersistedDeploymentSessionCollection {
-    pub(crate) version: u8,
-    #[serde(default)]
-    pub(crate) active_project_id: Option<String>,
-    pub(crate) sessions: Vec<PersistedDeploymentSession>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct PersistedDeploymentSessionState {
-    pub(crate) version: u8,
-    #[serde(default)]
-    pub(crate) active_project_id: Option<String>,
-    pub(crate) sessions: Vec<PersistedDeploymentSession>,
-}
 
 fn sort_deployment_sessions_by_freshness(sessions: &mut [PersistedDeploymentSession]) {
     sessions.sort_by(|left, right| right.deployed_at.cmp(&left.deployed_at));

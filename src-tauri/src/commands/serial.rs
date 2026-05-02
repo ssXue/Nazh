@@ -1,14 +1,6 @@
 use std::time::Duration;
 
-use serde::Serialize;
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct SerialPortInfo {
-    pub(crate) path: String,
-    pub(crate) port_type: String,
-    pub(crate) description: String,
-}
+use tauri_bindings::{SerialPortInfo, TestSerialResult};
 
 #[tauri::command]
 pub(crate) async fn list_serial_ports() -> Result<Vec<SerialPortInfo>, String> {
@@ -47,12 +39,7 @@ fn classify_serial_port(path: &str) -> String {
     }
 }
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct TestSerialResult {
-    pub(crate) ok: bool,
-    pub(crate) message: String,
-}
+// TestSerialResult 已迁入 tauri-bindings crate，此处仅使用。
 
 #[tauri::command]
 pub(crate) async fn test_serial_connection(

@@ -11,105 +11,18 @@ use std::{
 use std::collections::HashMap;
 
 use nazh_engine::{OutputCache, WorkflowContext, WorkflowIngress};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::Value;
+use tauri_bindings::{
+    DeadLetterRecord, DispatchLaneSnapshot, RuntimeBackpressureStrategy, RuntimeWorkflowSummary,
+    WorkflowRuntimePolicy,
+};
 use tokio::sync::mpsc;
 
 use crate::observability::SharedObservabilityStore;
 
 pub(crate) const DEAD_LETTER_DIR: &str = "runtime";
 pub(crate) const DEAD_LETTER_FILE: &str = "dead-letters.jsonl";
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-#[derive(Default)]
-pub(crate) enum RuntimeBackpressureStrategy {
-    #[default]
-    Block,
-    RejectNewest,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct WorkflowRuntimePolicyInput {
-    #[serde(default)]
-    pub(crate) manual_queue_capacity: Option<usize>,
-    #[serde(default)]
-    pub(crate) trigger_queue_capacity: Option<usize>,
-    #[serde(default)]
-    pub(crate) manual_backpressure_strategy: Option<RuntimeBackpressureStrategy>,
-    #[serde(default)]
-    pub(crate) trigger_backpressure_strategy: Option<RuntimeBackpressureStrategy>,
-    #[serde(default)]
-    pub(crate) max_retry_attempts: Option<u32>,
-    #[serde(default)]
-    pub(crate) initial_retry_backoff_ms: Option<u64>,
-    #[serde(default)]
-    pub(crate) max_retry_backoff_ms: Option<u64>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct WorkflowRuntimePolicy {
-    pub(crate) manual_queue_capacity: usize,
-    pub(crate) trigger_queue_capacity: usize,
-    pub(crate) manual_backpressure_strategy: RuntimeBackpressureStrategy,
-    pub(crate) trigger_backpressure_strategy: RuntimeBackpressureStrategy,
-    pub(crate) max_retry_attempts: u32,
-    pub(crate) initial_retry_backoff_ms: u64,
-    pub(crate) max_retry_backoff_ms: u64,
-}
-
-impl Default for WorkflowRuntimePolicy {
-    fn default() -> Self {
-        Self {
-            manual_queue_capacity: 64,
-            trigger_queue_capacity: 256,
-            manual_backpressure_strategy: RuntimeBackpressureStrategy::Block,
-            trigger_backpressure_strategy: RuntimeBackpressureStrategy::RejectNewest,
-            max_retry_attempts: 3,
-            initial_retry_backoff_ms: 150,
-            max_retry_backoff_ms: 2_000,
-        }
-    }
-}
-
-impl WorkflowRuntimePolicy {
-    pub(crate) fn from_input(input: Option<WorkflowRuntimePolicyInput>) -> Self {
-        let defaults = Self::default();
-        let Some(input) = input else {
-            return defaults;
-        };
-
-        Self {
-            manual_queue_capacity: input
-                .manual_queue_capacity
-                .map_or(defaults.manual_queue_capacity, normalize_queue_capacity),
-            trigger_queue_capacity: input
-                .trigger_queue_capacity
-                .map_or(defaults.trigger_queue_capacity, normalize_queue_capacity),
-            manual_backpressure_strategy: input
-                .manual_backpressure_strategy
-                .unwrap_or(defaults.manual_backpressure_strategy),
-            trigger_backpressure_strategy: input
-                .trigger_backpressure_strategy
-                .unwrap_or(defaults.trigger_backpressure_strategy),
-            max_retry_attempts: input
-                .max_retry_attempts
-                .map_or(defaults.max_retry_attempts, |value| value.min(8)),
-            initial_retry_backoff_ms: input
-                .initial_retry_backoff_ms
-                .map_or(defaults.initial_retry_backoff_ms, |value| {
-                    value.clamp(25, 5_000)
-                }),
-            max_retry_backoff_ms: input
-                .max_retry_backoff_ms
-                .map_or(defaults.max_retry_backoff_ms, |value| {
-                    value.clamp(100, 30_000)
-                }),
-        }
-    }
-}
 
 #[derive(Debug, Default)]
 struct DispatchLaneMetrics {
@@ -119,14 +32,7 @@ struct DispatchLaneMetrics {
     dead_lettered: AtomicU64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct DispatchLaneSnapshot {
-    depth: usize,
-    accepted: u64,
-    retried: u64,
-    dead_lettered: u64,
-}
+// DispatchLaneSnapshot 已迁入 tauri-bindings crate，此处仅使用。
 
 impl DispatchLaneMetrics {
     fn snapshot(&self) -> DispatchLaneSnapshot {
@@ -149,27 +55,7 @@ pub(crate) struct RuntimeWorkflowMetadata {
     pub(crate) deployed_at: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct RuntimeWorkflowSummary {
-    pub(crate) workflow_id: String,
-    #[serde(default)]
-    pub(crate) project_id: Option<String>,
-    #[serde(default)]
-    pub(crate) project_name: Option<String>,
-    #[serde(default)]
-    pub(crate) environment_id: Option<String>,
-    #[serde(default)]
-    pub(crate) environment_name: Option<String>,
-    pub(crate) deployed_at: String,
-    pub(crate) node_count: usize,
-    pub(crate) edge_count: usize,
-    pub(crate) root_nodes: Vec<String>,
-    pub(crate) active: bool,
-    pub(crate) policy: WorkflowRuntimePolicy,
-    pub(crate) manual_lane: DispatchLaneSnapshot,
-    pub(crate) trigger_lane: DispatchLaneSnapshot,
-}
+// RuntimeWorkflowSummary 已迁入 tauri-bindings crate，此处仅使用。
 
 #[derive(Debug, Clone)]
 enum DispatchLane {
@@ -195,29 +81,7 @@ struct DispatchEnvelope {
     attempts: u32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct DeadLetterRecord {
-    pub(crate) id: String,
-    pub(crate) timestamp: String,
-    pub(crate) workflow_id: String,
-    pub(crate) lane: String,
-    pub(crate) source: String,
-    #[serde(default)]
-    pub(crate) target_node_id: Option<String>,
-    pub(crate) trace_id: String,
-    pub(crate) attempts: u32,
-    pub(crate) reason: String,
-    #[serde(default)]
-    pub(crate) project_id: Option<String>,
-    #[serde(default)]
-    pub(crate) project_name: Option<String>,
-    #[serde(default)]
-    pub(crate) environment_id: Option<String>,
-    #[serde(default)]
-    pub(crate) environment_name: Option<String>,
-    pub(crate) payload: Value,
-}
+// DeadLetterRecord 已迁入 tauri-bindings crate，此处仅使用。
 
 #[derive(Debug)]
 pub(crate) struct DeadLetterSink {
@@ -492,10 +356,6 @@ impl DesktopWorkflow {
     pub(crate) fn output_cache(&self, node_id: &str) -> Option<Arc<OutputCache>> {
         self.output_caches.get(node_id).map(Arc::clone)
     }
-}
-
-fn normalize_queue_capacity(value: usize) -> usize {
-    value.clamp(1, 4_096)
 }
 
 async fn append_json_line_async<T>(path: PathBuf, value: T) -> Result<(), String>

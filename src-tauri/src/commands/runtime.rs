@@ -1,8 +1,9 @@
 use tauri::{AppHandle, Emitter, State};
+use tauri_bindings::{DeadLetterRecord, RuntimeWorkflowSummary};
 use tokio::fs;
 
 use crate::{
-    runtime::{DEAD_LETTER_DIR, DEAD_LETTER_FILE, DeadLetterRecord, RuntimeWorkflowSummary},
+    runtime::{DEAD_LETTER_DIR, DEAD_LETTER_FILE},
     state::DesktopState,
     workspace::resolve_project_workspace_dir,
 };
