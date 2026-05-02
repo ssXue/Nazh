@@ -20,6 +20,11 @@ import {
 import { toFlowgramWorkflowJson } from './flowgram';
 import { copilotCompleteStream } from './tauri';
 import { isUsableGlobalAiProvider, resolveGlobalAiProvider } from './workflow-ai';
+import {
+  buildWorkflowAiNodeGuideText,
+  getWorkflowAiAllowedNodeKinds,
+  normalizeWorkflowAiNodeKind,
+} from './workflow-node-capabilities';
 
 const DEFAULT_WORKFLOW_TIMEOUT_MS = 90_000;
 const MAX_WORKFLOW_TRANSPORT_RETRY_ATTEMPTS = 2;
@@ -45,41 +50,7 @@ const FLOWGRAM_NODE_REGISTRY_MAP = new Map(
   ]),
 );
 
-const ALLOWED_NODE_KINDS: NazhNodeKind[] = [
-  'native',
-  'code',
-  'timer',
-  'serialTrigger',
-  'modbusRead',
-  'if',
-  'switch',
-  'tryCatch',
-  'loop',
-  'httpClient',
-  'barkPush',
-  'sqlWriter',
-  'debugConsole',
-  'c2f',
-  'minutesSince',
-  'lookup',
-];
-
-const NODE_GUIDE_TEXT = `可用节点类型与建议：
-- timer: 定时触发。config 可含 interval_ms, immediate, inject
-- native: 本地透传/注入。config 可含 message
-- code: Rhai 脚本处理。config 必须含 script，脚本输入变量是 payload，常用能力有 ai_complete("prompt"), rand(min, max), now_ms(), from_json(text), to_json(value), is_blank(text)
-- if: 条件分支。config 必须含 script；下游边 sourcePortId 只能是 true / false
-- switch: 多路分支。config 必须含 script 与 branches，branches 形如 [{key, label}]；下游边 sourcePortId 必须对应 branch key 或 default
-- tryCatch: 异常分支。config 必须含 script；下游边 sourcePortId 只能是 try / catch
-- loop: 循环分发。config 必须含 script；下游边 sourcePortId 只能是 body / done
-- serialTrigger: 串口触发。通常不填写 connectionId，等待用户后续绑定
-- modbusRead: Modbus 读取。config 可含 unit_id, register, quantity, register_type, base_value, amplitude；通常不填写 connectionId
-- httpClient: HTTP/Webhook 发送。config 可含 body_mode, title_template, body_template；通常不填写 connectionId
-- barkPush: Bark 推送。config 可含 title_template, subtitle_template, body_template, level；通常不填写 connectionId
-- sqlWriter: SQLite 写入。config 可含 database_path, table
-- debugConsole: 调试输出。config 可含 label, pretty
-
-协议要求：
+const PROTOCOL_REQUIREMENTS_TEXT = `协议要求：
 - 只输出 JSON Lines，每行一个 JSON 对象
 - 不要输出 Markdown、代码块、解释文字或序号
 - 一旦确定一个节点或一条边，就立即输出，不要等全部设计完再统一输出
@@ -219,25 +190,9 @@ function hasOwnKey<T extends object>(value: T, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(value, key);
 }
 
+/** 动态校验 AI 输出的 nodeType 是否合法。 */
 function normalizeAllowedNodeKind(value: unknown): NazhNodeKind | null {
-  switch (value) {
-    case 'native':
-    case 'code':
-    case 'timer':
-    case 'serialTrigger':
-    case 'modbusRead':
-    case 'if':
-    case 'switch':
-    case 'tryCatch':
-    case 'loop':
-    case 'httpClient':
-    case 'barkPush':
-    case 'sqlWriter':
-    case 'debugConsole':
-      return value;
-    default:
-      return null;
-  }
+  return normalizeWorkflowAiNodeKind(value);
 }
 
 function isRecoverableWorkflowOrchestrationError(error: Error): boolean {
@@ -603,7 +558,10 @@ ${currentGraphText}
       role: 'system',
       content: `你是 Nazh 的工业工作流 AI 编排助手。你必须使用可流式消费的 JSON Lines 操作协议完成工作流创建或编辑。
 
-${NODE_GUIDE_TEXT}
+可用节点类型与建议：
+${buildWorkflowAiNodeGuideText()}
+
+${PROTOCOL_REQUIREMENTS_TEXT}
 
 操作格式：
 {"type":"project","name":"工程名","description":"说明","payloadText":"{\\"manual\\":true}"}
@@ -614,7 +572,7 @@ ${NODE_GUIDE_TEXT}
 {"type":"done","summary":"完成摘要"}
 
 注意：
-- nodeType 只能从 ${ALLOWED_NODE_KINDS.join(', ')} 中选择
+- nodeType 只能从 ${getWorkflowAiAllowedNodeKinds().join(', ')} 中选择
 - switch / if / tryCatch / loop 的 sourcePortId 要合法
 - code 节点脚本只输出 Rhai 可执行逻辑，不要使用未声明 API
 - 对于工业场景，优先给出可以直接继续编辑和绑定连接的稳定草图
