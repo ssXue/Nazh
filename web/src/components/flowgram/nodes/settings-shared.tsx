@@ -329,3 +329,28 @@ export function validateConnectionBinding(params: {
 
   return result;
 }
+
+export function SwitchBar({
+  checked,
+  onChange,
+  label,
+}: {
+  checked: boolean;
+  onChange: (value: boolean) => void;
+  label?: string;
+}) {
+  return (
+    <label className="flowgram-switch-row">
+      {label ? <span>{label}</span> : null}
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        className={`flowgram-switch-bar${checked ? ' flowgram-switch-bar--on' : ''}`}
+        onClick={() => onChange(!checked)}
+      >
+        <span className="flowgram-switch-bar__thumb" />
+      </button>
+    </label>
+  );
+}

@@ -1,4 +1,5 @@
 import type { NodeSettingsProps } from '../settings-shared';
+import { SwitchBar } from '../settings-shared';
 
 export function BarkPushNodeSettings({ draft, updateDraft, selectedConnection }: NodeSettingsProps) {
   return (
@@ -108,26 +109,16 @@ export function BarkPushNodeSettings({ draft, updateDraft, selectedConnection }:
           placeholder="留空时不附带 copy 字段"
         />
       </label>
-      <label>
-        <span>自动复制</span>
-        <select
-          value={draft.barkAutoCopy ? 'true' : 'false'}
-          onChange={(event) => updateDraft({ barkAutoCopy: event.target.value === 'true' })}
-        >
-          <option value="false">否</option>
-          <option value="true">是</option>
-        </select>
-      </label>
-      <label>
-        <span>重复响铃</span>
-        <select
-          value={draft.barkCall ? 'true' : 'false'}
-          onChange={(event) => updateDraft({ barkCall: event.target.value === 'true' })}
-        >
-          <option value="false">否</option>
-          <option value="true">是</option>
-        </select>
-      </label>
+      <SwitchBar
+        label="自动复制"
+        checked={draft.barkAutoCopy}
+        onChange={(value) => updateDraft({ barkAutoCopy: value })}
+      />
+      <SwitchBar
+        label="重复响铃"
+        checked={draft.barkCall}
+        onChange={(value) => updateDraft({ barkCall: value })}
+      />
       <label>
         <span>历史归档</span>
         <select

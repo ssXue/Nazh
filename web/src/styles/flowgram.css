@@ -885,6 +885,169 @@ html[data-theme='dark'] .flowgram-floating-panel--node {
   padding: 0.38rem 0.72rem;
 }
 
+.flowgram-floating-panel__header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.flowgram-floating-panel__header-left h3 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flowgram-floating-panel__header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.flowgram-header-stats {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  background: var(--surface-muted);
+  color: var(--muted);
+  font-size: var(--font-caption);
+  white-space: nowrap;
+}
+
+.flowgram-header-node-id {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  background: var(--surface-muted);
+  color: var(--muted);
+  font-size: var(--font-caption);
+  font-family: var(--font-mono, monospace);
+  white-space: nowrap;
+  cursor: pointer;
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.flowgram-node-badge {
+  display: inline-flex;
+  border-radius: 999px;
+  padding: 0.15rem 0.42rem;
+  background: var(--surface-muted);
+  color: var(--muted);
+  font-size: var(--font-caption);
+  flex-shrink: 0;
+}
+
+.flowgram-node-badge--native { background: color-mix(in srgb, var(--accent) 13%, transparent); color: var(--accent-ink); }
+.flowgram-node-badge--code { background: color-mix(in srgb, var(--node-code) 14%, transparent); color: color-mix(in srgb, var(--node-code) 82%, var(--text) 18%); }
+.flowgram-node-badge--timer { background: color-mix(in srgb, var(--warning) 16%, transparent); color: var(--warning-ink); }
+.flowgram-node-badge--serialTrigger { background: color-mix(in srgb, var(--accent) 13%, var(--success) 9%); color: color-mix(in srgb, var(--accent-ink) 62%, var(--success-ink) 38%); }
+.flowgram-node-badge--modbusRead { background: color-mix(in srgb, var(--accent) 11%, var(--success) 8%); color: color-mix(in srgb, var(--accent-ink) 56%, var(--success-ink) 44%); }
+.flowgram-node-badge--if { background: color-mix(in srgb, var(--success) 14%, transparent); color: var(--success-ink); }
+.flowgram-node-badge--switch { background: color-mix(in srgb, var(--warning) 16%, transparent); color: var(--warning-ink); }
+.flowgram-node-badge--tryCatch { background: color-mix(in srgb, var(--danger) 13%, transparent); color: var(--danger-ink); }
+.flowgram-node-badge--loop { background: color-mix(in srgb, var(--accent) 12%, var(--success) 8%); color: color-mix(in srgb, var(--accent-ink) 68%, var(--success-ink) 32%); }
+.flowgram-node-badge--httpClient { background: color-mix(in srgb, var(--warning) 14%, var(--danger) 9%); color: color-mix(in srgb, var(--warning-ink) 56%, var(--danger-ink) 44%); }
+.flowgram-node-badge--mqttClient { background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent-ink); }
+.flowgram-node-badge--sqlWriter { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success-ink); }
+.flowgram-node-badge--barkPush { background: color-mix(in srgb, var(--warning) 14%, var(--danger) 9%); color: color-mix(in srgb, var(--warning-ink) 56%, var(--danger-ink) 44%); }
+.flowgram-node-badge--debugConsole { background: color-mix(in srgb, var(--surface-muted) 70%, transparent); color: var(--muted); }
+.flowgram-node-badge--lookup { background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--accent-ink); }
+.flowgram-node-badge--subgraph { background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--accent-ink); }
+.flowgram-node-badge--humanLoop { background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--accent-ink); }
+
+.flowgram-form__divider {
+  border: none;
+  border-top: 1px solid var(--line-faint);
+  margin: 4px 0;
+}
+
+.flowgram-form .flowgram-switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.flowgram-switch-row span {
+  color: var(--muted);
+  font-size: var(--font-subheadline);
+}
+
+.flowgram-switch-bar {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  border-radius: 999px;
+  border: none;
+  padding: 0;
+  background: var(--line-strong);
+  cursor: pointer;
+  transition: background 160ms ease;
+}
+
+.flowgram-switch-bar--on {
+  background: var(--accent);
+}
+
+.flowgram-switch-bar__thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 160ms ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+
+.flowgram-switch-bar--on .flowgram-switch-bar__thumb {
+  transform: translateX(16px);
+}
+
+.flowgram-advanced-section {
+  display: grid;
+  gap: 6px;
+}
+
+.flowgram-advanced-section__toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: var(--font-subheadline);
+  list-style: none;
+  padding: 0;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.flowgram-advanced-section__toggle::-webkit-details-marker {
+  display: none;
+}
+
+.flowgram-advanced-section__toggle::before {
+  content: '▸';
+  display: inline-flex;
+  font-size: 0.75em;
+  transition: transform 120ms ease;
+}
+
+.flowgram-advanced-section[open] > .flowgram-advanced-section__toggle::before {
+  transform: rotate(90deg);
+}
+
+.flowgram-advanced-section__body {
+  display: grid;
+  gap: 6px;
+}
+
 .flowgram-floating-panel__actions {
   display: flex;
   align-items: center;

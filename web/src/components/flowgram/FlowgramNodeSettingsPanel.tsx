@@ -14,6 +14,7 @@ import {
   normalizeHttpBodyMode,
   parseTimeoutMs,
   resolveNodeDisplayLabel,
+  getFallbackNodeLabel,
   type FlowgramLogicBranch,
   type NazhNodeKind,
   getNodeDefinition,
@@ -569,10 +570,27 @@ function FlowgramNodeSettingsPanel({
     <div className="flowgram-settings-host">
       <section className="flowgram-floating-panel flowgram-floating-panel--node">
       <div className="flowgram-floating-panel__header">
-        <h3>节点设置</h3>
-        <button type="button" className="ghost flowgram-floating-panel__close" onClick={closePanel}>
-          关闭
-        </button>
+        <div className="flowgram-floating-panel__header-left">
+          <h3>{resolveNodeDisplayLabel(draft.nodeType, draft.label)}</h3>
+          <span className={`flowgram-node-badge flowgram-node-badge--${draft.nodeType}`}>
+            {getFallbackNodeLabel(draft.nodeType as NazhNodeKind)}
+          </span>
+        </div>
+        <div className="flowgram-floating-panel__header-right">
+          {stats ? (
+            <span className="flowgram-header-stats">
+              <span>↑{stats.incoming}</span>
+              <span>↓{stats.outgoing}</span>
+            </span>
+          ) : null}
+          <span
+            className="flowgram-header-node-id"
+            title="点击复制节点 ID"
+            onClick={() => { void navigator.clipboard.writeText(draft.id); }}
+          >
+            ID: {draft.id}
+          </span>
+        </div>
       </div>
 
       <div className="flowgram-form">
@@ -580,10 +598,9 @@ function FlowgramNodeSettingsPanel({
           <span>显示名称</span>
           <input value={draft.label} onChange={(event) => updateDraft({ label: event.target.value })} />
         </label>
-        <label>
-          <span>节点类型</span>
-          <input value={draft.nodeType} readOnly />
-        </label>
+
+        <hr className="flowgram-form__divider" />
+
         {supportsConnectionBinding(draft.nodeType) ? (
           <label>
             <span>连接资源</span>
@@ -614,14 +631,22 @@ function FlowgramNodeSettingsPanel({
             </select>
           </label>
         ) : null}
-        <label>
-          <span>超时 ms</span>
-          <input
-            value={draft.timeoutMs}
-            onChange={(event) => updateDraft({ timeoutMs: event.target.value })}
-            placeholder="留空表示不限"
-          />
-        </label>
+
+        <details className="flowgram-advanced-section" open={Boolean(draft.timeoutMs.trim())}>
+          <summary className="flowgram-advanced-section__toggle">高级设置</summary>
+          <div className="flowgram-advanced-section__body">
+            <label>
+              <span>超时 ms</span>
+              <input
+                value={draft.timeoutMs}
+                onChange={(event) => updateDraft({ timeoutMs: event.target.value })}
+                placeholder="留空表示不限"
+              />
+            </label>
+          </div>
+        </details>
+
+        <hr className="flowgram-form__divider" />
 
         {draft.nodeType !== 'switch' && NodeSettingsComponent ? <NodeSettingsComponent {...settingsProps} /> : null}
       </div>
@@ -641,19 +666,6 @@ function FlowgramNodeSettingsPanel({
             ))}
           </div>
         </section>
-      ) : null}
-
-      {stats ? (
-        <div className="flowgram-stats">
-          <article>
-            <span>上游</span>
-            <strong>{stats.incoming}</strong>
-          </article>
-          <article>
-            <span>下游</span>
-            <strong>{stats.outgoing}</strong>
-          </article>
-        </div>
       ) : null}
 
       <div className="flowgram-notes">

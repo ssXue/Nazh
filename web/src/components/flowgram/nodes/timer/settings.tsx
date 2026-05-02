@@ -1,4 +1,5 @@
 import type { NodeSettingsProps } from '../settings-shared';
+import { SwitchBar } from '../settings-shared';
 
 export function TimerNodeSettings({ draft, updateDraft }: NodeSettingsProps) {
   return (
@@ -10,18 +11,11 @@ export function TimerNodeSettings({ draft, updateDraft }: NodeSettingsProps) {
           onChange={(event) => updateDraft({ timerIntervalMs: event.target.value })}
         />
       </label>
-      <label>
-        <span>部署后立即触发</span>
-        <select
-          value={draft.timerImmediate ? 'true' : 'false'}
-          onChange={(event) =>
-            updateDraft({ timerImmediate: event.target.value === 'true' })
-          }
-        >
-          <option value="true">是</option>
-          <option value="false">否</option>
-        </select>
-      </label>
+      <SwitchBar
+        label="部署后立即触发"
+        checked={draft.timerImmediate}
+        onChange={(value) => updateDraft({ timerImmediate: value })}
+      />
     </>
   );
 }

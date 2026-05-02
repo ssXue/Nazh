@@ -3,7 +3,7 @@ import { parsePositiveInteger } from '../settings-shared';
 
 export const definition = {
   kind: 'timer' as const,
-  catalog: { category: '硬件接口', description: '按固定间隔触发工作流并注入计时元数据' },
+  catalog: { category: '流程控制', description: '按固定间隔触发工作流并注入计时元数据' },
   fallbackLabel: 'Timer Node',
   palette: { title: 'Timer', badge: 'Timer' },
   ai: { hint: 'config 可含 interval_ms, immediate, inject。' },
