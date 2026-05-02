@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "crates/core", "crates/pipeline", "crates/connections", "crates/scripting", "crates/nodes-flow", "crates/nodes-io", "crates/nodes-pure", "crates/ai", "crates/graph", "crates/tauri-bindings", "src-tauri"]
+members = [".", "crates/core", "crates/pipeline", "crates/connections", "crates/scripting", "crates/nodes-flow", "crates/nodes-io", "crates/nodes-pure", "crates/ai", "crates/graph", "crates/store", "crates/tauri-bindings", "src-tauri"]
 exclude = ["crates/nazh-core"]
 resolver = "2"
 
@@ -33,6 +33,7 @@ nodes-flow = { path = "crates/nodes-flow" }
 nodes-io = { path = "crates/nodes-io", default-features = false }
 nodes-pure = { path = "crates/nodes-pure" }
 nazh-graph = { path = "crates/graph" }
+store = { path = "crates/store" }
 tauri-bindings = { path = "crates/tauri-bindings" }
 arc-swap = "1"
 async-trait = "0.1"

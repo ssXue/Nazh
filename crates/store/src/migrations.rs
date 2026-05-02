@@ -1,0 +1,68 @@
+//! Schema 版本管理与 migration 执行器（RFC-0003 Phase 1，ADR-0022）。
+
+use rusqlite::Connection;
+
+/// 内联 SQL migrations，按版本号顺序执行。
+const MIGRATIONS: &[(&str, &str)] = &[(
+    "001",
+    "
+        CREATE TABLE IF NOT EXISTS schema_version (
+            version    INTEGER PRIMARY KEY,
+            applied_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS variables (
+            workflow_id TEXT NOT NULL,
+            key         TEXT NOT NULL,
+            value       TEXT NOT NULL,
+            var_type    TEXT NOT NULL,
+            initial     TEXT NOT NULL,
+            updated_at  TEXT NOT NULL,
+            updated_by  TEXT,
+            PRIMARY KEY (workflow_id, key)
+        );
+
+        CREATE TABLE IF NOT EXISTS variable_history (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            workflow_id TEXT NOT NULL,
+            key         TEXT NOT NULL,
+            value       TEXT NOT NULL,
+            updated_at  TEXT NOT NULL,
+            updated_by  TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_var_history_time
+            ON variable_history(workflow_id, key, updated_at);
+
+        CREATE TABLE IF NOT EXISTS global_variables (
+            namespace  TEXT NOT NULL,
+            key        TEXT NOT NULL,
+            value      TEXT NOT NULL,
+            var_type   TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            updated_by TEXT,
+            PRIMARY KEY (namespace, key)
+        );
+        ",
+)];
+
+/// 检查 `schema_version` 表，执行尚未应用的 migrations。
+pub(crate) fn run(db: &Connection) -> Result<(), rusqlite::Error> {
+    for (version, sql) in MIGRATIONS {
+        let applied: bool = db
+            .query_row(
+                "SELECT COUNT(*) > 0 FROM schema_version WHERE version = ?1",
+                [version],
+                |row| row.get(0),
+            )
+            .unwrap_or(false);
+        if applied {
+            continue;
+        }
+        db.execute_batch(sql)?;
+        db.execute(
+            "INSERT INTO schema_version (version, applied_at) VALUES (?1, datetime('now'))",
+            [version],
+        )?;
+    }
+    Ok(())
+}
