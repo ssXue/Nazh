@@ -93,6 +93,7 @@ import { hasTauriRuntime, saveFlowgramExportFile } from '../lib/tauri';
 import { refreshCapabilitiesCache } from '../lib/node-capabilities-cache';
 import { getCachedCapabilities } from '../lib/node-capabilities-cache';
 import { hasCapability } from '../lib/node-capabilities';
+import { allocateNodeId } from '../lib/workflow-node-id';
 import type {
   AiGenerationParams,
   AiProviderView,
@@ -1905,12 +1906,7 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
       editorCtx?.document.getAllNodes().map((node) => node.id) ?? Object.keys(resolvedGraph?.nodes ?? {}),
     );
 
-    let index = 1;
-    while (currentIds.has(`${prefix}_${index}`)) {
-      index += 1;
-    }
-
-    return `${prefix}_${index}`;
+    return allocateNodeId(prefix, currentIds);
   }
 
   function buildInsertionPosition(anchorNode: FlowNodeEntity | null) {

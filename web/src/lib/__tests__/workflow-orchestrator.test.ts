@@ -23,6 +23,8 @@ describe('buildWorkflowOrchestrationPrompt', () => {
     expect(messages).toHaveLength(2);
     expect(messages[0].content).toContain('JSON Lines');
     expect(messages[0].content).toContain('不要等全部设计完再统一输出');
+    expect(messages[0].content).toContain('真实 node id 由 Nazh 创建');
+    expect(messages[0].content).toContain('"type":"create_node"');
     expect(messages[0].content).toContain('timer');
     expect(messages[0].content).toContain('switch: sourcePortId 使用该节点 config.branches[].key');
     expect(messages[0].content).toContain('humanLoop: sourcePortId 只能是 approve / reject');
@@ -53,7 +55,8 @@ describe('buildWorkflowOrchestrationPrompt', () => {
     });
 
     expect(messages[1].content).toContain('edit（基于当前工作流流式修改）');
-    expect(messages[1].content).toContain('"code_clean"');
+    expect(messages[1].content).toContain('"ref": "code_1"');
+    expect(messages[1].content).not.toContain('"code_clean"');
     expect(messages[1].content).toContain('把输出改成 HTTP 上报');
   });
 });
@@ -69,8 +72,8 @@ describe('applyWorkflowOrchestrationOperation', () => {
       payloadText: '{"manual":true}',
     });
     state = applyWorkflowOrchestrationOperation(state, {
-      type: 'upsert_node',
-      id: 'timer_trigger',
+      type: 'create_node',
+      ref: 'timer',
       nodeType: 'timer',
       label: '定时触发',
       config: {
@@ -79,8 +82,8 @@ describe('applyWorkflowOrchestrationOperation', () => {
       },
     });
     state = applyWorkflowOrchestrationOperation(state, {
-      type: 'upsert_node',
-      id: 'debug_console',
+      type: 'create_node',
+      ref: 'debug',
       nodeType: 'debugConsole',
       label: '调试输出',
       config: {
@@ -88,27 +91,29 @@ describe('applyWorkflowOrchestrationOperation', () => {
       },
     });
     state = applyWorkflowOrchestrationOperation(state, {
-      type: 'upsert_edge',
-      from: 'timer_trigger',
-      to: 'debug_console',
+      type: 'create_edge',
+      fromRef: 'timer',
+      toRef: 'debug',
     });
 
     expect(state.draft.name).toBe('锅炉巡检');
     expect(state.draft.description).toBe('AI 生成的巡检流程');
     expect(state.draft.payloadText).toContain('"manual": true');
-    expect(state.draft.graph.nodes['timer_trigger']?.type).toBe('timer');
-    expect(state.draft.graph.nodes['debug_console']?.type).toBe('debugConsole');
-    expect(state.nodeLabels['timer_trigger']).toBe('定时触发');
+    expect(state.nodeRefs.timer).toBe('timer_node_1');
+    expect(state.nodeRefs.debug).toBe('debug_console_1');
+    expect(state.draft.graph.nodes['timer_node_1']?.type).toBe('timer');
+    expect(state.draft.graph.nodes['debug_console_1']?.type).toBe('debugConsole');
+    expect(state.nodeLabels['timer_node_1']).toBe('定时触发');
     expect(state.draft.graph.edges).toEqual([
       {
-        from: 'timer_trigger',
-        to: 'debug_console',
+        from: 'timer_node_1',
+        to: 'debug_console_1',
         source_port_id: undefined,
         target_port_id: undefined,
       },
     ]);
     expect(
-      state.draft.graph.editor_graph?.nodes.find((node) => node.id === 'timer_trigger')?.data,
+      state.draft.graph.editor_graph?.nodes.find((node) => node.id === 'timer_node_1')?.data,
     ).toMatchObject({
       label: '定时触发',
     });
@@ -136,9 +141,8 @@ describe('applyWorkflowOrchestrationOperation', () => {
     });
 
     state = applyWorkflowOrchestrationOperation(state, {
-      type: 'upsert_node',
-      id: 'http_alarm',
-      nodeType: 'httpClient',
+      type: 'update_node',
+      ref: 'http_client_1',
       config: {
         body_mode: 'template',
         body_template: '告警：{{payload}}',
@@ -152,12 +156,48 @@ describe('applyWorkflowOrchestrationOperation', () => {
     });
   });
 
+  it('AI 新增节点时由系统分配不冲突的真实 id', () => {
+    let state = createWorkflowOrchestrationState({
+      name: '已有工程',
+      description: '已有说明',
+      payloadText: '{}',
+      graph: {
+        name: '已有工程',
+        connections: [],
+        nodes: {
+          timer_node_1: {
+            type: 'timer',
+            config: {
+              interval_ms: 1000,
+            },
+          },
+        },
+        edges: [],
+      },
+    });
+
+    state = applyWorkflowOrchestrationOperation(state, {
+      type: 'create_node',
+      ref: 'new_timer',
+      nodeType: 'timer',
+      config: {
+        interval_ms: 5000,
+      },
+    });
+
+    expect(state.nodeRefs.timer_1).toBe('timer_node_1');
+    expect(state.nodeRefs.new_timer).toBe('timer_node_2');
+    expect(state.draft.graph.nodes['timer_node_2']?.config).toMatchObject({
+      interval_ms: 5000,
+    });
+  });
+
   it('AI 新增 loop 节点时补齐容器内部出入桥接点', () => {
     let state = createWorkflowOrchestrationState(createEmptyWorkflowDraft('AI 草稿'));
 
     state = applyWorkflowOrchestrationOperation(state, {
-      type: 'upsert_node',
-      id: 'loop_items',
+      type: 'create_node',
+      ref: 'loop_items',
       nodeType: 'loop',
       label: '逐项处理',
       config: {
@@ -165,7 +205,7 @@ describe('applyWorkflowOrchestrationOperation', () => {
       },
     });
 
-    const loopNode = state.draft.graph.editor_graph?.nodes.find((node) => node.id === 'loop_items');
+    const loopNode = state.draft.graph.editor_graph?.nodes.find((node) => node.id === 'loop_node_1');
 
     expect((loopNode?.data as { label?: string } | undefined)?.label).toBe('逐项处理');
     expect(loopNode?.blocks).toEqual([
@@ -196,17 +236,17 @@ describe('applyWorkflowOrchestrationOperation', () => {
     let state = createWorkflowOrchestrationState(createEmptyWorkflowDraft('AI 草稿'));
 
     state = applyWorkflowOrchestrationOperation(state, {
-      type: 'upsert_node',
-      id: 'loop_items',
+      type: 'create_node',
+      ref: 'loop_items',
       nodeType: 'loop',
       config: {
         script: '[payload]',
       },
     });
 
-    const loopNode = state.draft.graph.editor_graph?.nodes.find((node) => node.id === 'loop_items');
+    const loopNode = state.draft.graph.editor_graph?.nodes.find((node) => node.id === 'loop_node_1');
 
-    expect(state.nodeLabels.loop_items).toBe('Loop Node');
+    expect(state.nodeLabels.loop_node_1).toBe('Loop Node');
     expect((loopNode?.data as { label?: string } | undefined)?.label).toBe('Loop Node');
   });
 });
@@ -218,9 +258,9 @@ describe('streamWorkflowOrchestration', () => {
     mocked.mockImplementationOnce(async (_request, onDelta) => {
       const lines = [
         '{"type":"project","name":"AI 巡检工程","description":"流式生成","payloadText":"{\\"manual\\":true}"}\n',
-        '{"type":"upsert_node","id":"timer_trigger","nodeType":"timer","label":"定时触发","config":{"interval_ms":3000,"immediate":true}}\n',
-        '{"type":"upsert_node","id":"debug_console","nodeType":"debugConsole","label":"调试输出","config":{"label":"stream"}}\n',
-        '{"type":"upsert_edge","from":"timer_trigger","to":"debug_console"}\n',
+        '{"type":"create_node","ref":"timer","nodeType":"timer","label":"定时触发","config":{"interval_ms":3000,"immediate":true}}\n',
+        '{"type":"create_node","ref":"debug","nodeType":"debugConsole","label":"调试输出","config":{"label":"stream"}}\n',
+        '{"type":"create_edge","fromRef":"timer","toRef":"debug"}\n',
         '{"type":"done","summary":"完成"}',
       ];
       let accumulated = '';
@@ -246,15 +286,15 @@ describe('streamWorkflowOrchestration', () => {
 
     expect(seenOperations).toEqual([
       'project',
-      'upsert_node',
-      'upsert_node',
-      'upsert_edge',
+      'create_node',
+      'create_node',
+      'create_edge',
       'done',
     ]);
     expect(result.draft.name).toBe('AI 巡检工程');
     expect(result.summary).toBe('完成');
     expect(result.draft.graph.edges).toHaveLength(1);
-    expect(result.draft.graph.nodes['timer_trigger']?.type).toBe('timer');
+    expect(result.draft.graph.nodes['timer_node_1']?.type).toBe('timer');
   });
 
   it('流结束但缺少 done 操作时会抛出中断错误，并保留已解析的草稿', async () => {
@@ -264,7 +304,7 @@ describe('streamWorkflowOrchestration', () => {
       .mockImplementationOnce(async (_request, onDelta) => {
         const lines = [
           '{"type":"project","name":"未完成工程"}\n',
-          '{"type":"upsert_node","id":"timer_trigger","nodeType":"timer","label":"定时触发","config":{"interval_ms":3000}}\n',
+          '{"type":"create_node","ref":"timer","nodeType":"timer","label":"定时触发","config":{"interval_ms":3000}}\n',
         ];
         let accumulated = '';
         for (const line of lines) {
@@ -278,8 +318,8 @@ describe('streamWorkflowOrchestration', () => {
       })
       .mockImplementationOnce(async (_request, onDelta) => {
         const lines = [
-          '{"type":"upsert_node","id":"debug_console","nodeType":"debugConsole","label":"调试输出","config":{"label":"resume"}}\n',
-          '{"type":"upsert_edge","from":"timer_trigger","to":"debug_console"}\n',
+          '{"type":"create_node","ref":"debug","nodeType":"debugConsole","label":"调试输出","config":{"label":"resume"}}\n',
+          '{"type":"create_edge","fromRef":"timer","toRef":"debug"}\n',
           '{"type":"done","summary":"续传完成"}',
         ];
         let accumulated = '';
@@ -305,12 +345,12 @@ describe('streamWorkflowOrchestration', () => {
 
     expect(retries).toEqual(['resume']);
     expect(result.summary).toBe('续传完成');
-    expect(result.draft.graph.nodes['timer_trigger']?.type).toBe('timer');
-    expect(result.draft.graph.nodes['debug_console']?.type).toBe('debugConsole');
+    expect(result.draft.graph.nodes['timer_node_1']?.type).toBe('timer');
+    expect(result.draft.graph.nodes['debug_console_1']?.type).toBe('debugConsole');
     expect(result.draft.graph.edges).toEqual([
       {
-        from: 'timer_trigger',
-        to: 'debug_console',
+        from: 'timer_node_1',
+        to: 'debug_console_1',
         source_port_id: undefined,
         target_port_id: undefined,
       },
@@ -328,7 +368,7 @@ describe('streamWorkflowOrchestration', () => {
       .mockImplementationOnce(async (_request, onDelta) => {
         const lines = [
           '{"type":"project","name":"重试成功工程"}\n',
-          '{"type":"upsert_node","id":"timer_trigger","nodeType":"timer","label":"定时触发","config":{"interval_ms":1000}}\n',
+          '{"type":"create_node","ref":"timer","nodeType":"timer","label":"定时触发","config":{"interval_ms":1000}}\n',
           '{"type":"done","summary":"重试成功"}',
         ];
         let accumulated = '';
@@ -372,7 +412,7 @@ describe('streamWorkflowOrchestration', () => {
         requestMessages.push(JSON.stringify(request.messages));
         const lines = [
           '{"type":"project","name":"续传工程"}\n',
-          '{"type":"upsert_node","id":"timer_trigger","nodeType":"timer","label":"定时触发","config":{"interval_ms":3000}}\n',
+          '{"type":"create_node","ref":"timer","nodeType":"timer","label":"定时触发","config":{"interval_ms":3000}}\n',
         ];
         let accumulated = '';
         for (const line of lines) {
@@ -392,8 +432,8 @@ describe('streamWorkflowOrchestration', () => {
       .mockImplementationOnce(async (request, onDelta) => {
         requestMessages.push(JSON.stringify(request.messages));
         const lines = [
-          '{"type":"upsert_node","id":"debug_console","nodeType":"debugConsole","label":"调试输出","config":{"label":"resume"}}\n',
-          '{"type":"upsert_edge","from":"timer_trigger","to":"debug_console"}\n',
+          '{"type":"create_node","ref":"debug","nodeType":"debugConsole","label":"调试输出","config":{"label":"resume"}}\n',
+          '{"type":"create_edge","fromRef":"timer","toRef":"debug"}\n',
           '{"type":"done","summary":"续传完成"}',
         ];
         let accumulated = '';
@@ -422,6 +462,6 @@ describe('streamWorkflowOrchestration', () => {
     expect(requestMessages[1]).toBe(requestMessages[2]);
     expect(requestMessages[0]).not.toBe(requestMessages[1]);
     expect(result.summary).toBe('续传完成');
-    expect(result.draft.graph.nodes['debug_console']?.type).toBe('debugConsole');
+    expect(result.draft.graph.nodes['debug_console_1']?.type).toBe('debugConsole');
   });
 });

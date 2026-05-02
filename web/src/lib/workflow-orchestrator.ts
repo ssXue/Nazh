@@ -21,6 +21,7 @@ import {
 import { toFlowgramWorkflowJson } from './flowgram';
 import { copilotCompleteStream } from './tauri';
 import { isUsableGlobalAiProvider, resolveGlobalAiProvider } from './workflow-ai';
+import { allocateNodeId } from './workflow-node-id';
 import {
   buildWorkflowAiNodeGuideText,
   getWorkflowAiAllowedNodeKinds,
@@ -57,7 +58,7 @@ const PROTOCOL_REQUIREMENTS_TEXT = `协议要求：
 - 一旦确定一个节点或一条边，就立即输出，不要等全部设计完再统一输出
 - 先输出 project，再输出 node，再输出 edge，最后输出 done
 - 编辑已有工作流时，只输出必要修改，不要重复未改动的节点
-- 节点 id 使用简短的 snake_case 英文
+- 节点 ref 只用于本次编排会话内引用，不是系统 node id；真实 node id 由 Nazh 创建
 - 不要编造不存在的节点类型
 - connectionId 只有在用户明确给出可复用的连接 id 时才填写，否则留空或省略
 - 输出的 payloadText 必须是合法 JSON 字符串`;
@@ -78,10 +79,20 @@ export interface ProjectMetadataOperation {
   payloadText?: string;
 }
 
-export interface UpsertNodeOperation {
-  type: 'upsert_node';
-  id: string;
+export interface CreateNodeOperation {
+  type: 'create_node';
+  ref: string;
   nodeType: NazhNodeKind;
+  label?: string;
+  connectionId?: string | null;
+  timeoutMs?: number | null;
+  config?: JsonValue;
+}
+
+export interface UpdateNodeOperation {
+  type: 'update_node';
+  ref: string;
+  nodeType?: NazhNodeKind;
   label?: string;
   connectionId?: string | null;
   timeoutMs?: number | null;
@@ -90,21 +101,21 @@ export interface UpsertNodeOperation {
 
 export interface DeleteNodeOperation {
   type: 'delete_node';
-  id: string;
+  ref: string;
 }
 
-export interface UpsertEdgeOperation {
-  type: 'upsert_edge';
-  from: string;
-  to: string;
+export interface CreateEdgeOperation {
+  type: 'create_edge';
+  fromRef: string;
+  toRef: string;
   sourcePortId?: string;
   targetPortId?: string;
 }
 
 export interface DeleteEdgeOperation {
   type: 'delete_edge';
-  from: string;
-  to: string;
+  fromRef: string;
+  toRef: string;
   sourcePortId?: string;
   targetPortId?: string;
 }
@@ -116,15 +127,17 @@ export interface DoneOperation {
 
 export type WorkflowOrchestrationOperation =
   | ProjectMetadataOperation
-  | UpsertNodeOperation
+  | CreateNodeOperation
+  | UpdateNodeOperation
   | DeleteNodeOperation
-  | UpsertEdgeOperation
+  | CreateEdgeOperation
   | DeleteEdgeOperation
   | DoneOperation;
 
 export interface WorkflowOrchestrationSessionState {
   draft: WorkflowOrchestrationDraft;
   nodeLabels: Record<string, string>;
+  nodeRefs: Record<string, string>;
   operations: WorkflowOrchestrationOperation[];
   summary: string | null;
 }
@@ -413,10 +426,40 @@ export function createEmptyWorkflowDraft(name = 'AI 编排草稿'): WorkflowOrch
   };
 }
 
+function toWorkflowNodeRefPrefix(value: string): string {
+  return (
+    value
+      .trim()
+      .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+      .toLowerCase()
+      .replace(/[^a-z0-9_]+/g, '_')
+      .replace(/^_+|_+$/g, '') || 'node'
+  );
+}
+
+function buildInitialNodeRefs(graph: WorkflowGraph): Record<string, string> {
+  const usedRefs = new Set<string>();
+  return Object.entries(graph.nodes).reduce<Record<string, string>>((acc, [nodeId, node]) => {
+    const prefix = toWorkflowNodeRefPrefix(node.type);
+    const ref = allocateNodeId(prefix, usedRefs);
+    usedRefs.add(ref);
+    acc[ref] = nodeId;
+    return acc;
+  }, {});
+}
+
+function invertNodeRefs(nodeRefs: Record<string, string>): Record<string, string> {
+  return Object.entries(nodeRefs).reduce<Record<string, string>>((acc, [ref, nodeId]) => {
+    acc[nodeId] = ref;
+    return acc;
+  }, {});
+}
+
 export function createWorkflowOrchestrationState(
   baseDraft?: WorkflowOrchestrationDraft | null,
 ): WorkflowOrchestrationSessionState {
   const draft = baseDraft ?? createEmptyWorkflowDraft();
+  const nodeRefs = buildInitialNodeRefs(draft.graph);
   const nodeLabels = Object.keys(draft.graph.nodes).reduce<Record<string, string>>((acc, nodeId) => {
     const node = draft.graph.nodes[nodeId];
     const editorNode = draft.graph.editor_graph?.nodes.find((item) => item.id === nodeId);
@@ -435,6 +478,7 @@ export function createWorkflowOrchestrationState(
       nodeLabels,
     ),
     nodeLabels,
+    nodeRefs,
     operations: [],
     summary: null,
   };
@@ -446,14 +490,16 @@ export function describeWorkflowOrchestrationOperation(
   switch (operation.type) {
     case 'project':
       return `更新工程信息${operation.name ? `：${operation.name}` : ''}`;
-    case 'upsert_node':
-      return `编排节点 ${operation.id} · ${operation.nodeType}`;
+    case 'create_node':
+      return `创建节点 ${operation.ref} · ${operation.nodeType}`;
+    case 'update_node':
+      return `更新节点 ${operation.ref}${operation.nodeType ? ` · ${operation.nodeType}` : ''}`;
     case 'delete_node':
-      return `删除节点 ${operation.id}`;
-    case 'upsert_edge':
-      return `连接 ${operation.from} -> ${operation.to}`;
+      return `删除节点 ${operation.ref}`;
+    case 'create_edge':
+      return `连接 ${operation.fromRef} -> ${operation.toRef}`;
     case 'delete_edge':
-      return `移除连线 ${operation.from} -> ${operation.to}`;
+      return `移除连线 ${operation.fromRef} -> ${operation.toRef}`;
     case 'done':
       return operation.summary?.trim() ? operation.summary.trim() : 'AI 编排完成';
   }
@@ -499,7 +545,10 @@ export function getWorkflowAiUnavailableReason(aiConfig: AiConfigView | null): s
   return '请先启用一个 AI 提供商';
 }
 
-function buildExistingGraphSummary(draft: WorkflowOrchestrationDraft): string {
+function buildExistingGraphSummary(state: WorkflowOrchestrationSessionState): string {
+  const draft = state.draft;
+  const refByNodeId = invertNodeRefs(state.nodeRefs);
+
   return JSON.stringify(
     {
       project: {
@@ -509,20 +558,16 @@ function buildExistingGraphSummary(draft: WorkflowOrchestrationDraft): string {
       },
       graph: {
         name: draft.graph.name,
-        nodes: Object.fromEntries(
-          Object.entries(draft.graph.nodes).map(([nodeId, node]) => [
-            nodeId,
-            {
-              type: node.type,
-              connection_id: node.connection_id ?? null,
-              timeout_ms: node.timeout_ms ?? null,
-              config: node.config ?? {},
-            },
-          ]),
-        ),
+        nodes: Object.entries(draft.graph.nodes).map(([nodeId, node]) => ({
+          ref: refByNodeId[nodeId] ?? null,
+          type: node.type,
+          connection_id: node.connection_id ?? null,
+          timeout_ms: node.timeout_ms ?? null,
+          config: node.config ?? {},
+        })),
         edges: (draft.graph.edges ?? []).map((edge) => ({
-          from: edge.from,
-          to: edge.to,
+          fromRef: refByNodeId[edge.from] ?? null,
+          toRef: refByNodeId[edge.to] ?? null,
           source_port_id: edge.source_port_id ?? null,
           target_port_id: edge.target_port_id ?? null,
         })),
@@ -556,11 +601,14 @@ export function buildWorkflowOrchestrationPrompt(options: {
   mode: WorkflowOrchestrationMode;
   requirement: string;
   baseDraft?: WorkflowOrchestrationDraft | null;
+  baseState?: WorkflowOrchestrationSessionState | null;
 }): AiMessage[] {
-  const { mode, requirement, baseDraft } = options;
+  const { mode, requirement, baseDraft, baseState } = options;
+  const promptState =
+    baseState ?? (baseDraft ? createWorkflowOrchestrationState(baseDraft) : null);
   const currentGraphText =
-    mode === 'edit' && baseDraft
-      ? buildExistingGraphSummary(baseDraft)
+    mode === 'edit' && promptState
+      ? buildExistingGraphSummary(promptState)
       : '当前从空白工作流开始。';
   const sourcePortGuideText = buildWorkflowAiSourcePortGuideText();
 
@@ -586,15 +634,18 @@ ${PROTOCOL_REQUIREMENTS_TEXT}
 
 操作格式：
 {"type":"project","name":"工程名","description":"说明","payloadText":"{\\"manual\\":true}"}
-{"type":"upsert_node","id":"timer_trigger","nodeType":"timer","label":"定时触发","timeoutMs":null,"config":{"interval_ms":5000,"immediate":true,"inject":{"source":"timer"}}}
-{"type":"upsert_edge","from":"timer_trigger","to":"debug_console"}
-{"type":"delete_node","id":"old_node"}
-{"type":"delete_edge","from":"old_a","to":"old_b"}
+{"type":"create_node","ref":"timer","nodeType":"timer","label":"定时触发","timeoutMs":null,"config":{"interval_ms":5000,"immediate":true,"inject":{"source":"timer"}}}
+{"type":"update_node","ref":"timer","config":{"interval_ms":10000}}
+{"type":"create_edge","fromRef":"timer","toRef":"debug"}
+{"type":"delete_node","ref":"old"}
+{"type":"delete_edge","fromRef":"old_a","toRef":"old_b"}
 {"type":"done","summary":"完成摘要"}
 
 注意：
 - nodeType 只能从 ${getWorkflowAiAllowedNodeKinds().join(', ')} 中选择
 ${sourcePortGuideText}
+- ref 必须是本次会话内稳定、简短的英文别名；引用已有节点时只能使用“当前工作流上下文”里给出的 ref
+- 新建节点时自己选择 ref，但不要输出或猜测系统 node id
 - code 节点脚本只输出 Rhai 可执行逻辑，不要使用未声明 API
 - 对于工业场景，优先给出可以直接继续编辑和绑定连接的稳定草图
 - 如果需求不清晰，优先从最小可运行链路开始，再补上分支和输出
@@ -618,7 +669,7 @@ function buildWorkflowOrchestrationContinuationPrompt(options: {
   const baseMessages = buildWorkflowOrchestrationPrompt({
     mode: options.mode,
     requirement: options.requirement,
-    baseDraft: options.acceptedState.draft,
+    baseState: options.acceptedState,
   });
   const acceptedOperationsText = options.acceptedState.operations
     .map((operation) => JSON.stringify(operation))
@@ -689,13 +740,12 @@ function normalizeOperation(input: unknown): WorkflowOrchestrationOperation | nu
         description: readString(input, ['description', 'desc']),
         payloadText: readString(input, ['payloadText', 'payload_text']),
       };
-    case 'node':
-    case 'upsert_node': {
-      const id = readString(input, ['id', 'nodeId', 'node_id']);
+    case 'create_node': {
+      const ref = readString(input, ['ref']);
       const nodeType = normalizeAllowedNodeKind(
         readString(input, ['nodeType', 'node_type', 'kind']),
       );
-      if (!id || !nodeType) {
+      if (!ref || !nodeType) {
         return null;
       }
 
@@ -709,8 +759,8 @@ function normalizeOperation(input: unknown): WorkflowOrchestrationOperation | nu
         : undefined;
 
       return {
-        type: 'upsert_node',
-        id,
+        type: 'create_node',
+        ref,
         nodeType,
         label: readString(input, ['label', 'title']),
         connectionId: nextConnectionId,
@@ -720,45 +770,78 @@ function normalizeOperation(input: unknown): WorkflowOrchestrationOperation | nu
         config,
       };
     }
-    case 'remove_node':
+    case 'update_node': {
+      const ref = readString(input, ['ref']);
+      if (!ref) {
+        return null;
+      }
+
+      const rawNodeType = readString(input, ['nodeType', 'node_type', 'kind']);
+      let nodeType: NazhNodeKind | undefined;
+      if (rawNodeType) {
+        const normalizedNodeType = normalizeAllowedNodeKind(rawNodeType);
+        if (!normalizedNodeType) {
+          return null;
+        }
+        nodeType = normalizedNodeType;
+      }
+      const config = isRecord(input.config) || Array.isArray(input.config)
+        ? (input.config as JsonValue)
+        : undefined;
+      const hasConnectionId =
+        hasOwnKey(input, 'connectionId') || hasOwnKey(input, 'connection_id');
+      const nextConnectionId = hasConnectionId
+        ? readString(input, ['connectionId', 'connection_id']) ?? null
+        : undefined;
+
+      return {
+        type: 'update_node',
+        ref,
+        nodeType,
+        label: readString(input, ['label', 'title']),
+        connectionId: nextConnectionId,
+        timeoutMs: toPositiveRoundedNumber(
+          readFiniteNumber(input, ['timeoutMs', 'timeout_ms']),
+        ),
+        config,
+      };
+    }
     case 'delete_node': {
-      const id = readString(input, ['id', 'nodeId', 'node_id']);
-      if (!id) {
+      const ref = readString(input, ['ref']);
+      if (!ref) {
         return null;
       }
       return {
         type: 'delete_node',
-        id,
+        ref,
       };
     }
-    case 'edge':
-    case 'upsert_edge': {
-      const from = readString(input, ['from', 'source', 'sourceNodeId', 'source_node_id']);
-      const to = readString(input, ['to', 'target', 'targetNodeId', 'target_node_id']);
-      if (!from || !to) {
+    case 'create_edge': {
+      const fromRef = readString(input, ['fromRef']);
+      const toRef = readString(input, ['toRef']);
+      if (!fromRef || !toRef) {
         return null;
       }
 
       return {
-        type: 'upsert_edge',
-        from,
-        to,
+        type: 'create_edge',
+        fromRef,
+        toRef,
         sourcePortId: readString(input, ['sourcePortId', 'source_port_id', 'sourcePort']),
         targetPortId: readString(input, ['targetPortId', 'target_port_id', 'targetPort']),
       };
     }
-    case 'remove_edge':
     case 'delete_edge': {
-      const from = readString(input, ['from', 'source', 'sourceNodeId', 'source_node_id']);
-      const to = readString(input, ['to', 'target', 'targetNodeId', 'target_node_id']);
-      if (!from || !to) {
+      const fromRef = readString(input, ['fromRef']);
+      const toRef = readString(input, ['toRef']);
+      if (!fromRef || !toRef) {
         return null;
       }
 
       return {
         type: 'delete_edge',
-        from,
-        to,
+        fromRef,
+        toRef,
         sourcePortId: readString(input, ['sourcePortId', 'source_port_id', 'sourcePort']),
         targetPortId: readString(input, ['targetPortId', 'target_port_id', 'targetPort']),
       };
@@ -811,6 +894,27 @@ function resolveNodeLabel(
   );
 }
 
+function resolveRequiredNodeId(
+  nodeRefs: Record<string, string>,
+  ref: string,
+): string {
+  const nodeId = nodeRefs[ref];
+  if (!nodeId) {
+    throw new Error(`AI 编排引用了未知节点 ref: ${ref}`);
+  }
+
+  return nodeId;
+}
+
+function removeNodeRefs(
+  nodeRefs: Record<string, string>,
+  nodeId: string,
+): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(nodeRefs).filter(([, currentNodeId]) => currentNodeId !== nodeId),
+  );
+}
+
 export function applyWorkflowOrchestrationOperation(
   state: WorkflowOrchestrationSessionState,
   operation: WorkflowOrchestrationOperation,
@@ -820,6 +924,7 @@ export function applyWorkflowOrchestrationOperation(
   let nextPayloadText = state.draft.payloadText;
   let nextNodes = { ...state.draft.graph.nodes };
   let nextNodeLabels = { ...state.nodeLabels };
+  let nextNodeRefs = { ...state.nodeRefs };
   let nextEdges = [...(state.draft.graph.edges ?? [])];
   let nextSummary = state.summary;
 
@@ -831,24 +936,31 @@ export function applyWorkflowOrchestrationOperation(
         nextPayloadText = normalizePayloadText(operation.payloadText);
       }
       break;
-    case 'upsert_node': {
+    case 'create_node': {
       const defaultSeed = buildDefaultNodeSeed(operation.nodeType);
-      const existingNode = nextNodes[operation.id];
+      const existingNodeId = nextNodeRefs[operation.ref];
+      const usedNodeIds = new Set([
+        ...Object.keys(nextNodes),
+        ...Object.values(nextNodeRefs),
+      ]);
+      const nodeId = existingNodeId ?? allocateNodeId(defaultSeed.idPrefix, usedNodeIds);
+      const existingNode = nextNodes[nodeId];
       const mergedConfig = mergeJsonValue(
         (existingNode?.config ?? defaultSeed.config) as JsonValue,
         (operation.config ?? {}) as JsonValue,
       );
       const normalizedConfig = normalizeNodeConfig(operation.nodeType, mergedConfig);
 
-      nextNodeLabels[operation.id] = resolveNodeLabel(
-        operation.id,
+      nextNodeRefs[operation.ref] = nodeId;
+      nextNodeLabels[nodeId] = resolveNodeLabel(
+        nodeId,
         operation.nodeType,
         operation.label,
         nextNodeLabels,
       );
 
-      nextNodes[operation.id] = {
-        id: operation.id,
+      nextNodes[nodeId] = {
+        id: nodeId,
         type: operation.nodeType,
         connection_id:
           operation.connectionId !== undefined
@@ -863,15 +975,62 @@ export function applyWorkflowOrchestrationOperation(
       };
       break;
     }
-    case 'delete_node':
-      delete nextNodes[operation.id];
-      delete nextNodeLabels[operation.id];
-      nextEdges = nextEdges.filter((edge) => edge.from !== operation.id && edge.to !== operation.id);
+    case 'update_node': {
+      const nodeId = resolveRequiredNodeId(nextNodeRefs, operation.ref);
+      const existingNode = nextNodes[nodeId];
+      if (!existingNode) {
+        throw new Error(`AI 编排引用的节点 ref 已不存在: ${operation.ref}`);
+      }
+      const nodeType =
+        operation.nodeType ?? normalizeAllowedNodeKind(existingNode.type) ?? 'native';
+      const defaultSeed = buildDefaultNodeSeed(nodeType);
+      const baseConfig =
+        operation.nodeType && operation.nodeType !== existingNode.type
+          ? defaultSeed.config
+          : existingNode.config ?? defaultSeed.config;
+      const mergedConfig = mergeJsonValue(
+        baseConfig as JsonValue,
+        (operation.config ?? {}) as JsonValue,
+      );
+      const normalizedConfig = normalizeNodeConfig(nodeType, mergedConfig);
+
+      nextNodeLabels[nodeId] = resolveNodeLabel(
+        nodeId,
+        nodeType,
+        operation.label,
+        nextNodeLabels,
+      );
+
+      nextNodes[nodeId] = {
+        ...existingNode,
+        id: nodeId,
+        type: nodeType,
+        connection_id:
+          operation.connectionId !== undefined
+            ? operation.connectionId?.trim() || undefined
+            : existingNode.connection_id,
+        timeout_ms:
+          operation.timeoutMs !== undefined
+            ? normalizeTimeoutMs(operation.timeoutMs)
+            : existingNode.timeout_ms,
+        config: normalizedConfig as JsonValue,
+      };
       break;
-    case 'upsert_edge': {
+    }
+    case 'delete_node': {
+      const nodeId = resolveRequiredNodeId(nextNodeRefs, operation.ref);
+      delete nextNodes[nodeId];
+      delete nextNodeLabels[nodeId];
+      nextNodeRefs = removeNodeRefs(nextNodeRefs, nodeId);
+      nextEdges = nextEdges.filter((edge) => edge.from !== nodeId && edge.to !== nodeId);
+      break;
+    }
+    case 'create_edge': {
+      const fromNodeId = resolveRequiredNodeId(nextNodeRefs, operation.fromRef);
+      const toNodeId = resolveRequiredNodeId(nextNodeRefs, operation.toRef);
       const nextEdge: WorkflowEdge = {
-        from: operation.from,
-        to: operation.to,
+        from: fromNodeId,
+        to: toNodeId,
         source_port_id: normalizeEdgePortId(operation.sourcePortId),
         target_port_id: normalizeEdgePortId(operation.targetPortId),
       };
@@ -881,9 +1040,11 @@ export function applyWorkflowOrchestrationOperation(
       break;
     }
     case 'delete_edge': {
+      const fromNodeId = resolveRequiredNodeId(nextNodeRefs, operation.fromRef);
+      const toNodeId = resolveRequiredNodeId(nextNodeRefs, operation.toRef);
       const nextEdgeKey = buildEdgeKey({
-        from: operation.from,
-        to: operation.to,
+        from: fromNodeId,
+        to: toNodeId,
         source_port_id: normalizeEdgePortId(operation.sourcePortId),
         target_port_id: normalizeEdgePortId(operation.targetPortId),
       });
@@ -905,6 +1066,7 @@ export function applyWorkflowOrchestrationOperation(
       nextNodeLabels,
     ),
     nodeLabels: nextNodeLabels,
+    nodeRefs: nextNodeRefs,
     operations: [...state.operations, operation],
     summary: nextSummary,
   };
@@ -1019,7 +1181,7 @@ export async function streamWorkflowOrchestration(
         : buildWorkflowOrchestrationPrompt({
             mode: options.mode,
             requirement: options.requirement,
-            baseDraft: options.baseDraft,
+            baseState: nextState,
           });
 
     const request: AiCompletionRequest = {
