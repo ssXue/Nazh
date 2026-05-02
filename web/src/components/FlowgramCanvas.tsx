@@ -59,6 +59,7 @@ import {
 } from './flowgram/FlowgramNodeGlyph';
 import {
   getLogicNodeBranchDefinitions,
+  isKnownEditorNodeType,
   normalizeNodeKind,
   resolveNodeData,
   resolveNodeDisplayLabel,
@@ -515,30 +516,12 @@ function isBusinessFlowNode(node: FlowNodeEntity | null): node is FlowNodeEntity
   const rawData = (node.getExtInfo() ?? {}) as {
     nodeType?: string;
   };
-  const nodeType = normalizeNodeKind(rawData.nodeType ?? node.flowNodeType);
+  const explicitNodeType =
+    typeof rawData.nodeType === 'string' && rawData.nodeType.trim()
+      ? rawData.nodeType.trim()
+      : null;
 
-  return (
-    nodeType === 'timer' ||
-    nodeType === 'serialTrigger' ||
-    nodeType === 'modbusRead' ||
-    nodeType === 'code' ||
-    nodeType === 'native' ||
-    nodeType === 'if' ||
-    nodeType === 'switch' ||
-    nodeType === 'tryCatch' ||
-    nodeType === 'loop' ||
-    nodeType === 'httpClient' ||
-    nodeType === 'barkPush' ||
-    nodeType === 'sqlWriter' ||
-    nodeType === 'debugConsole' ||
-    nodeType === 'subgraph' ||
-    nodeType === 'subgraphInput' ||
-    nodeType === 'subgraphOutput' ||
-    nodeType === 'c2f' ||
-    nodeType === 'minutesSince' ||
-    nodeType === 'lookup' ||
-    nodeType === 'humanLoop'
-  );
+  return explicitNodeType !== null || isKnownEditorNodeType(node.flowNodeType);
 }
 
 /** 拒收一条连接时给用户的视觉 + 诊断反馈。
@@ -634,11 +617,12 @@ function FlowgramContainerCard(props: FlowgramNodeMaterialProps) {
   const rawData = props.node.getExtInfo() as
     | { label?: string; nodeType?: string; config?: { script?: string } }
     | undefined;
-  const nodeType = normalizeNodeKind(rawData?.nodeType ?? props.node.flowNodeType);
+  const rawNodeType = rawData?.nodeType ?? props.node.flowNodeType;
+  const nodeType = normalizeNodeKind(rawNodeType);
   const displayType = normalizeFlowgramDisplayType(nodeType);
   const runtimeStatus = props.runtimeStatus ?? 'idle';
   const containerClass = nodeType === 'loop' ? 'loop' : 'subgraph';
-  const displayLabel = resolveNodeDisplayLabel(nodeType, rawData?.label);
+  const displayLabel = resolveNodeDisplayLabel(rawNodeType, rawData?.label);
 
   return (
     <WorkflowNodeRenderer
@@ -700,7 +684,8 @@ function FlowgramNodeCard(props: FlowgramNodeMaterialProps) {
       }
     | undefined;
 
-  const nodeType = normalizeNodeKind(rawData?.nodeType ?? props.node.flowNodeType);
+  const rawNodeType = rawData?.nodeType ?? props.node.flowNodeType;
+  const nodeType = normalizeNodeKind(rawNodeType);
   const displayType = normalizeFlowgramDisplayType(rawData?.displayType ?? nodeType);
   const runtimeStatus = props.runtimeStatus ?? 'idle';
   const branchDefinitions = useMemo(
@@ -841,7 +826,7 @@ function FlowgramNodeCard(props: FlowgramNodeMaterialProps) {
             </span>
           ) : null}
         </div>
-        <strong>{resolveNodeDisplayLabel(nodeType, rawData?.label)}</strong>
+        <strong>{resolveNodeDisplayLabel(rawNodeType, rawData?.label)}</strong>
         <p className="flowgram-card__preview">{preview}</p>
         {branchDefinitions.length > 0 ? (
           <div className="flowgram-card__branches">

@@ -1,6 +1,6 @@
 # NodeDefinition 单一声明源设计
 
-> **状态**: 设计完成（review 修订版）
+> **状态**: 已实现（前端 NodeDefinition 单一声明源，2026-05-02）
 > **日期**: 2026-05-02
 > **动机**: commit `cc59350` 将 AI 编排器节点类型清单集中化到 `workflow-node-capabilities.ts`，但 humanLoop 节点暴露了机制缺口——前端仍有多处分散的 switch/map 需要手动同步。本次重构将 `NodeDefinition` 推为前端节点唯一的声明源，新增普通节点 = 写一个 `index.ts` + 加入 `ALL_DEFS`。
 > **关联**: `docs/superpowers/specs/2026-05-02-node-type-contract-design.md`
@@ -17,7 +17,7 @@
 
 以下路径自动响应，避免新增节点时漏同步：
 
-- 类型识别（`normalizeNodeKind` / `isKnownNodeKind`）
+- 类型识别（`normalizeNodeKind` / `isKnownEditorNodeType`）
 - 默认标签（`getFallbackNodeLabel`）
 - 配置规范化（`normalizeNodeConfig`）
 - FlowGram 动态输出端口（兼容旧名 `getLogicNodeBranchDefinitions`）
@@ -33,6 +33,14 @@
 - 节点需要全新的 glyph / 颜色时，仍需修改 `FlowgramNodeGlyph.tsx` / `FlowgramCanvas.tsx`
 - 节点引入新的连接协议类型时，仍需扩展连接匹配逻辑
 - Rust 侧节点注册、能力位图、pin schema、合约测试不在本设计内
+
+## 实施记录（2026-05-02）
+
+- `nodes/shared.ts` 已退回类型、常量、纯 helper，不再持有 `DEF_MAP` 或节点分发表。
+- `flowgram-node-library.ts` 持有 `ALL_DEFS` / `DEF_MAP`，并派生 `NazhNodeKind`、palette、catalog、normalize、输出端口与 routing branch 查询。
+- 各 `nodes/<kind>/index.ts` 已补齐本节点的 `palette` / `ai` / `getOutputPorts` / `getRoutingBranches` 声明，`normalizeConfig` 迁回节点定义自身。
+- `PluginPanel`、AI 节点目录、AI sourcePortId 提示、FlowGram 业务节点识别已改为走 registry-derived API。
+- `modbusRead` 只声明 named outputs，不再出现在 AI routing branch 提示里；`if` / `switch` / `tryCatch` / `loop` / `humanLoop` 才声明运行时路由分支。
 
 ## 模块边界
 
@@ -159,20 +167,22 @@ const DEF_MAP: ReadonlyMap<NazhNodeKind, KnownNodeDefinition> =
 `flowgram-node-library.ts` 导出：
 
 ```ts
-export function isKnownNodeKind(value: unknown): value is NazhNodeKind {
+export function isKnownEditorNodeType(value: unknown): value is NazhNodeKind {
   return typeof value === 'string' && DEF_MAP.has(value as NazhNodeKind);
 }
 
 export function normalizeNodeKind(value: unknown): NazhNodeKind {
-  return isKnownNodeKind(value) ? value : 'native';
+  return isKnownEditorNodeType(value) ? value : 'native';
 }
 
 export function getNodeDefinition(kind: NazhNodeKind): KnownNodeDefinition {
   return DEF_MAP.get(kind) ?? nativeDef;
 }
 
-export function getNodeCatalogInfo(kind: string): NodeCatalogInfo | null {
-  return isKnownNodeKind(kind) ? getNodeDefinition(kind).catalog : null;
+export function getNodeCatalogInfo(kind: string): NodeCatalogInfo {
+  return isKnownEditorNodeType(kind)
+    ? getNodeDefinition(kind).catalog
+    : { category: '其他', description: '运行时或第三方节点' };
 }
 ```
 
@@ -284,8 +294,10 @@ export function getLogicNodeBranchDefinitions(
 删除 `NODE_CATEGORY_MAP`，新增 registry-derived 查询：
 
 ```ts
-export function getNodeCatalogInfo(kind: string): NodeCatalogInfo | null {
-  return isKnownNodeKind(kind) ? getNodeDefinition(kind).catalog : null;
+export function getNodeCatalogInfo(kind: string): NodeCatalogInfo {
+  return isKnownEditorNodeType(kind)
+    ? getNodeDefinition(kind).catalog
+    : { category: '其他', description: '运行时或第三方节点' };
 }
 ```
 
@@ -373,7 +385,7 @@ function buildWorkflowAiSourcePortGuideText(): string {
 | 修改 | `web/src/lib/workflow-node-capabilities.ts` | 读取 `definition.ai`，删除 AI hint / hidden / editorOnly 静态表 |
 | 修改 | `web/src/lib/workflow-orchestrator.ts` | sourcePortId 指南改为读取 `getRoutingBranches` |
 | 修改 | `web/src/components/app/PluginPanel.tsx` | 改用 `getNodeCatalogInfo`，未知运行时节点落到 `其他` |
-| 修改 | `web/src/components/FlowgramCanvas.tsx` | `isBusinessFlowNode` 改用 `isKnownNodeKind` |
+| 修改 | `web/src/components/FlowgramCanvas.tsx` | `isBusinessFlowNode` 改用 `isKnownEditorNodeType` |
 | 修改 | 每个 `web/src/components/flowgram/nodes/*/index.ts` | 搬入 `normalizeConfig` 逻辑，声明 palette / ai / output ports / routing branches |
 | 修改 | `web/src/main.tsx` | 调用 `validateNodeRegistry()` |
 | 修改 | 受影响测试 | 增加 registry contract test，更新 normalize / palette / AI guide 断言 |
@@ -383,7 +395,7 @@ function buildWorkflowAiSourcePortGuideText(): string {
 1. **收紧模块边界**：把 `NodeSeed` / `NodeDefinition` 改成泛型基础类型；`shared.ts` 仍保留旧函数，先不改行为。
 2. **补 definition 字段**：各节点加 `palette` / `ai` / `getOutputPorts` / `getRoutingBranches`，先让测试覆盖新字段。
 3. **迁移配置规范化**：逐个节点把 `normalizeConfig` 从全局函数搬回 definition。
-4. **建立 registry-derived API**：在 `flowgram-node-library.ts` 派生 `NazhNodeKind`，实现 `isKnownNodeKind`、`normalizeNodeKind`、`normalizeNodeConfig`、`getNodeCatalogInfo`、端口查询。
+4. **建立 registry-derived API**：在 `flowgram-node-library.ts` 派生 `NazhNodeKind`，实现 `isKnownEditorNodeType`、`normalizeNodeKind`、`normalizeNodeConfig`、`getNodeCatalogInfo`、端口查询。
 5. **替换消费端**：更新 palette、PluginPanel、AI catalog、orchestrator sourcePortId 指南、FlowgramCanvas 白名单。
 6. **清理旧表**：删除 `NODE_CATEGORY_MAP`、`NODE_AI_USAGE_HINTS`、AI hidden/editorOnly Set、`shared.ts` 中的 registry-derived 函数。
 7. **验收**：跑 `npm --prefix web run test`，重点覆盖 registry contract、palette、AI guide、flowgram-to-nazh；前端改动后再跑 `npm --prefix web run build`。

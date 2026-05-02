@@ -6,8 +6,11 @@ import ReactDOM from 'react-dom/client';
 
 import App from './App';
 import { AppErrorBoundary } from './components/app/AppErrorBoundary';
+import { validateNodeRegistry } from './components/flowgram/flowgram-node-library';
 import { installDesktopShellGuards } from './lib/tauri';
 import './styles.css';
+
+validateNodeRegistry();
 
 const cleanupDesktopShellGuards = installDesktopShellGuards();
 

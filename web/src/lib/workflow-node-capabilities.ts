@@ -1,7 +1,5 @@
 import {
-  buildDefaultNodeSeed,
   getAllNodeDefinitions,
-  normalizeNodeConfig,
   type NazhNodeKind,
 } from '../components/flowgram/flowgram-node-library';
 import type {
@@ -27,6 +25,7 @@ export interface WorkflowAiNodeCapability {
   defaultConfig: JsonValue;
   aiVisible: boolean;
   editorOnly: boolean;
+  usageHint?: string;
   runtimeCapabilities: string[];
   inputPins?: PinDefinition[];
   outputPins?: PinDefinition[];
@@ -35,40 +34,6 @@ export interface WorkflowAiNodeCapability {
 export interface WorkflowAiNodeCatalog {
   nodes: WorkflowAiNodeCapability[];
 }
-
-const AI_HIDDEN_NODE_KINDS = new Set<NazhNodeKind>([
-  'subgraphInput',
-  'subgraphOutput',
-]);
-
-const AI_EDITOR_ONLY_NODE_KINDS = new Set<NazhNodeKind>(['subgraph']);
-
-const NODE_AI_USAGE_HINTS: Partial<Record<NazhNodeKind, string>> = {
-  timer: 'config 可含 interval_ms, immediate, inject。',
-  native: 'config 可含 message，用于本地注入或透传。',
-  code:
-    'config 必须含 script；脚本输入变量是 payload，可用 ai_complete("prompt"), rand(min, max), now_ms(), from_json(text), to_json(value), is_blank(text)。',
-  if: 'config 必须含 script；下游边 sourcePortId 只能是 true / false。',
-  switch:
-    'config 必须含 script 与 branches，branches 形如 [{key, label}]；下游边 sourcePortId 必须对应 branch key 或 default。',
-  tryCatch: 'config 必须含 script；下游边 sourcePortId 只能是 try / catch。',
-  loop: 'config 必须含 script；下游边 sourcePortId 只能是 body / done。',
-  serialTrigger: '串口触发；通常不填写 connectionId，等待用户后续绑定。',
-  modbusRead:
-    'Modbus 读取；config 可含 unit_id, register, quantity, register_type, base_value, amplitude；通常不填写 connectionId。',
-  mqttClient:
-    'MQTT 发布或订阅；config.mode 为 publish 或 subscribe，通常不填写 connectionId。',
-  httpClient:
-    'HTTP/Webhook 发送；config 可含 body_mode, title_template, body_template；通常不填写 connectionId。',
-  barkPush:
-    'Bark 推送；config 可含 title_template, subtitle_template, body_template, level；通常不填写 connectionId。',
-  sqlWriter: 'SQLite 写入；config 可含 database_path, table。',
-  debugConsole: '调试输出；config 可含 label, pretty。',
-  humanLoop:
-    '人工审批节点；暂停工作流等待人工 approve/reject 响应。config 可含 title（审批标题）, description（审批说明）, form_schema（结构化表单，数组，每项含 type/name/label/required），approval_timeout_ms（超时毫秒，null=无限等待），default_action（超时默认动作：autoApprove / autoReject）。',
-  subgraph:
-    '编辑器容器节点，不直接进入 Rust Runner。使用 upsert_subgraph 创建，blocks 内放普通业务节点，系统自动加入 subgraphInput/subgraphOutput 桥接节点并在部署前展平。',
-};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -130,16 +95,17 @@ function normalizeRuntimePins(
 function buildLocalCatalog(): WorkflowAiNodeCatalog {
   return {
     nodes: getAllNodeDefinitions().map((definition) => {
-      const defaultSeed = buildDefaultNodeSeed(definition.kind);
-      const defaultConfig = normalizeNodeConfig(definition.kind, defaultSeed.config);
+      const defaultSeed = definition.buildDefaultSeed();
+      const defaultConfig = definition.normalizeConfig(defaultSeed.config);
 
       return {
         kind: definition.kind,
         category: definition.catalog.category,
         description: definition.catalog.description,
         defaultConfig: toJsonValue(defaultConfig),
-        aiVisible: !AI_HIDDEN_NODE_KINDS.has(definition.kind),
-        editorOnly: AI_EDITOR_ONLY_NODE_KINDS.has(definition.kind),
+        aiVisible: definition.ai?.visible !== false,
+        editorOnly: definition.ai?.editorOnly === true,
+        ...(definition.ai?.hint ? { usageHint: definition.ai.hint } : {}),
         runtimeCapabilities: [],
       };
     }),
@@ -255,9 +221,8 @@ export function buildWorkflowAiNodeGuideText(
       if (outputs) {
         sections.push(`输出 [${outputs}]`);
       }
-      const hint = NODE_AI_USAGE_HINTS[node.kind];
-      if (hint) {
-        sections.push(hint);
+      if (node.usageHint) {
+        sections.push(node.usageHint);
       }
       if (node.editorOnly) {
         sections.push('editorOnly=true');

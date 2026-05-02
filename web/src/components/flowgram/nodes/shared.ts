@@ -1,32 +1,4 @@
-import type {
-  FlowNodeJSON,
-  WorkflowNodeJSON,
-  WorkflowNodeRegistry,
-} from '@flowgram.ai/free-layout-editor';
-
-export type NazhNodeKind =
-  | 'native'
-  | 'code'
-  | 'timer'
-  | 'serialTrigger'
-  | 'modbusRead'
-  | 'mqttClient'
-  | 'if'
-  | 'switch'
-  | 'tryCatch'
-  | 'loop'
-  | 'httpClient'
-  | 'barkPush'
-  | 'sqlWriter'
-  | 'debugConsole'
-  | 'subgraph'
-  | 'subgraphInput'
-  | 'subgraphOutput'
-  | 'c2f'
-  | 'minutesSince'
-  | 'lookup'
-  | 'humanLoop';
-export type NazhNodeDisplayType = NazhNodeKind;
+export type NazhNodeDisplayType = string;
 
 export interface FlowgramLogicBranch {
   key: string;
@@ -48,9 +20,9 @@ export interface FlowgramScriptAiConfig {
   timeoutMs?: number;
 }
 
-export interface NodeSeed {
+export interface NodeSeed<K extends string = string> {
   idPrefix: string;
-  kind: NazhNodeKind;
+  kind: K;
   displayType?: NazhNodeDisplayType;
   label: string;
   connectionId?: string | null;
@@ -119,34 +91,16 @@ export interface NodeCatalogInfo {
   description: string;
 }
 
-interface FlowgramNodeData {
-  label?: string;
-  nodeType?: NazhNodeKind;
-  displayType?: NazhNodeDisplayType;
-  connectionId?: string | null;
-  timeoutMs?: number | null;
-  config?: {
-    message?: string;
-    script?: string;
-    ai?: FlowgramScriptAiConfig;
-    branches?: FlowgramLogicBranch[];
-    body_mode?: string;
-    body_template?: string;
-    title_template?: string;
-    content_mode?: string;
-    level?: string;
-    badge?: string | number;
-    sound?: string;
-    icon?: string;
-    group?: string;
-    url?: string;
-    copy?: string;
-    image?: string;
-    auto_copy?: boolean;
-    call?: boolean;
-    archive_mode?: string;
-    [key: string]: unknown;
-  };
+export interface NodePaletteMetadata {
+  visible?: boolean;
+  title?: string;
+  badge?: string;
+}
+
+export interface NodeAiMetadata {
+  visible?: boolean;
+  editorOnly?: boolean;
+  hint?: string;
 }
 
 export const STANDARD_NODE_SIZE = {
@@ -210,42 +164,6 @@ export function normalizePositiveIntegerValue(value: unknown): number | undefine
   }
 
   return Math.round(value);
-}
-
-export function normalizeNodeKind(value: unknown): NazhNodeKind {
-  switch (value) {
-    case 'code':
-      return 'code';
-    case 'timer':
-    case 'serialTrigger':
-    case 'modbusRead':
-    case 'mqttClient':
-    case 'httpClient':
-    case 'barkPush':
-    case 'sqlWriter':
-    case 'debugConsole':
-    case 'if':
-    case 'switch':
-    case 'tryCatch':
-    case 'loop':
-      return value;
-    case 'subgraph':
-    case 'subgraphInput':
-    case 'subgraphOutput':
-      return value;
-    case 'c2f':
-    case 'minutesSince':
-    case 'lookup':
-    case 'humanLoop':
-      return value;
-    case 'native':
-    default:
-      return 'native';
-  }
-}
-
-function normalizeDisplayType(value: unknown, fallback: NazhNodeKind): NazhNodeDisplayType {
-  return normalizeNodeKind(value ?? fallback);
 }
 
 export function normalizeTimeoutValue(value: unknown): number | null {
@@ -403,103 +321,6 @@ export function normalizeHttpBodyMode(
   }
 }
 
-export function resolveDefaultConnectionId(
-  nodeType: NazhNodeKind,
-  connectionDefaults: FlowgramConnectionDefaults,
-): string | null {
-  switch (nodeType) {
-    case 'native':
-      return connectionDefaults.any;
-    case 'modbusRead':
-      return connectionDefaults.modbus;
-    case 'serialTrigger':
-      return connectionDefaults.serial;
-    case 'mqttClient':
-      return connectionDefaults.mqtt;
-    case 'httpClient':
-      return connectionDefaults.http;
-    case 'barkPush':
-      return connectionDefaults.bark;
-    default:
-      return null;
-  }
-}
-
-export function resolveNodeData(
-  seed: NodeSeed,
-  fallbackLabel: string,
-  connectionDefaults: FlowgramConnectionDefaults,
-): Required<FlowgramNodeData> {
-  const connectionId =
-    seed.connectionId === undefined
-      ? resolveDefaultConnectionId(seed.kind, connectionDefaults)
-      : seed.connectionId;
-  const label = resolveNodeDisplayLabel(seed.kind, seed.label || fallbackLabel);
-
-  return {
-    label,
-    nodeType: seed.kind,
-    displayType: normalizeDisplayType(seed.displayType, seed.kind),
-    connectionId,
-    timeoutMs: seed.timeoutMs ?? null,
-    config: normalizeNodeConfig(seed.kind, seed.config),
-  };
-}
-
-export function buildPaletteNodeJson(
-  seed: NodeSeed,
-  connectionDefaults: FlowgramConnectionDefaults,
-  baseJson?: Partial<WorkflowNodeJSON>,
-): Partial<WorkflowNodeJSON> {
-  const fallbackLabel = resolveNodeDisplayLabel(seed.kind, seed.label);
-  const baseData = isRecord(baseJson?.data) ? (baseJson.data as Record<string, unknown>) : {};
-  const nextData = resolveNodeData(seed, fallbackLabel, connectionDefaults);
-
-  return {
-    ...baseJson,
-    type: seed.kind,
-    data: {
-      ...baseData,
-      ...nextData,
-      config: {
-        ...(isRecord(baseData.config) ? baseData.config : {}),
-        ...nextData.config,
-      },
-    },
-  };
-}
-
-export function normalizeFlowgramNodeJson(
-  json: FlowNodeJSON,
-  connectionDefaults: FlowgramConnectionDefaults,
-): FlowNodeJSON {
-  const rawData = isRecord(json.data) ? (json.data as FlowgramNodeData) : {};
-  const nodeType = normalizeNodeKind(rawData.nodeType ?? json.type);
-  const fallbackLabel = resolveNodeDisplayLabel(nodeType);
-  const rawConfig = rawData.config;
-  const normalizedConfig = normalizeNodeConfig(nodeType, rawConfig);
-
-  return {
-    ...json,
-    type: nodeType,
-    data: {
-      ...rawData,
-      label:
-        typeof rawData.label === 'string' && rawData.label.trim()
-          ? rawData.label.trim()
-          : fallbackLabel,
-      nodeType,
-      displayType: normalizeDisplayType(rawData.displayType, nodeType),
-      connectionId:
-        rawData.connectionId === undefined
-          ? resolveDefaultConnectionId(nodeType, connectionDefaults)
-          : rawData.connectionId ?? null,
-      timeoutMs: normalizeTimeoutValue(rawData.timeoutMs),
-      config: normalizedConfig,
-    },
-  };
-}
-
 export function parseTimeoutMs(value: string): number | null {
   const normalized = value.trim();
   if (!normalized) {
@@ -508,108 +329,6 @@ export function parseTimeoutMs(value: string): number | null {
 
   const numeric = Number(normalized);
   return normalizeTimeoutValue(numeric);
-}
-
-/**
- * 获取节点的"具名输出端口"定义（FlowGram 动态端口列表）。
- *
- * 历史上仅服务 if / switch / tryCatch / loop 这类"逻辑分支"节点——函数名
- * 仍以 logic / branch 命名以保持向后兼容。ADR-0014 Phase 2 起，本函数也用于
- * 声明协议节点的多输出引脚（如 modbusRead 的 `out` Exec + `latest` Data），
- * 让 portId 受控匹配 Rust 端 pin id，使 pin-validator 的连接期 PinKind 校验
- * 真正生效；rename 到更中性的命名留待 Phase 5 视觉打磨统一收口。
- */
-export function getLogicNodeBranchDefinitions(
-  nodeType: unknown,
-  config: unknown,
-): FlowgramLogicBranch[] {
-  switch (nodeType) {
-    case 'if':
-      return IF_BRANCHES;
-    case 'tryCatch':
-      return TRYCATCH_BRANCHES;
-    case 'loop':
-      return [];
-    case 'switch': {
-      const normalizedConfig = isRecord(config) ? config : {};
-      const branches = normalizeSwitchBranches(normalizedConfig.branches);
-      return [...branches, ...DEFAULT_SWITCH_BRANCHES];
-    }
-    case 'modbusRead':
-      return [
-        { key: 'out', label: 'out' },
-        { key: 'latest', label: 'latest' },
-      ];
-    default:
-      return [];
-  }
-}
-
-export function getFallbackNodeLabel(kind: NazhNodeKind): string {
-  switch (kind) {
-    case 'timer':
-      return 'Timer Node';
-    case 'serialTrigger':
-      return 'Serial Trigger';
-    case 'modbusRead':
-      return 'Modbus Read';
-    case 'mqttClient':
-      return 'MQTT Client';
-    case 'code':
-      return 'Code Node';
-    case 'if':
-      return 'IF Node';
-    case 'switch':
-      return 'Switch Node';
-    case 'tryCatch':
-      return 'TryCatch Node';
-    case 'loop':
-      return 'Loop Node';
-    case 'httpClient':
-      return 'HTTP Client';
-    case 'barkPush':
-      return 'Bark Push';
-    case 'sqlWriter':
-      return 'SQL Writer';
-    case 'debugConsole':
-      return 'Debug Console';
-    case 'subgraph':
-      return 'Subgraph';
-    case 'subgraphInput':
-      return 'Input';
-    case 'subgraphOutput':
-      return 'Output';
-    case 'c2f':
-      return 'C→F';
-    case 'minutesSince':
-      return '距今分钟';
-    case 'humanLoop':
-      return '审批节点';
-    case 'native':
-    default:
-      return 'Native Node';
-  }
-}
-
-export function resolveNodeDisplayLabel(
-  nodeType: unknown,
-  label?: unknown,
-): string {
-  if (typeof label === 'string' && label.trim()) {
-    return label.trim();
-  }
-
-  const knownKind = normalizeNodeKind(nodeType);
-  if (
-    knownKind === 'native' &&
-    typeof nodeType === 'string' &&
-    nodeType.trim() &&
-    nodeType !== 'native'
-  ) {
-    return nodeType.trim();
-  }
-
-  return getFallbackNodeLabel(knownKind);
 }
 
 export interface NodeValidation {
@@ -631,14 +350,18 @@ export interface NodeValidationContext {
   usesManagedConnection: boolean;
 }
 
-export interface NodeDefinition {
-  kind: NazhNodeKind;
+export interface NodeDefinition<K extends string = string> {
+  kind: K;
   catalog: NodeCatalogInfo;
   fallbackLabel: string;
+  palette?: NodePaletteMetadata;
+  ai?: NodeAiMetadata;
   requiresConnection?: boolean;
   fieldValidators?: Partial<Record<keyof import('./settings-shared').SelectedNodeDraft, import('./settings-shared').FieldValidator>>;
-  buildDefaultSeed(): NodeSeed;
+  buildDefaultSeed(): NodeSeed<K>;
   normalizeConfig(config: unknown): NodeSeed['config'];
+  getOutputPorts?(config: unknown): FlowgramLogicBranch[];
+  getRoutingBranches?(config: unknown): FlowgramLogicBranch[];
   getNodeSize(): { width: number; height: number };
   buildRegistryMeta(): {
     defaultExpanded: boolean;
@@ -653,241 +376,4 @@ export interface NodeDefinition {
     wrapperStyle?: Record<string, string>;
   };
   validate(ctx: NodeValidationContext): NodeValidation[];
-}
-
-export function normalizeNodeConfig(
-  nodeType: NazhNodeKind,
-  config: unknown,
-): NodeSeed['config'] {
-  const rawConfig = isRecord(config) ? config : {};
-
-  if (nodeType === 'native') {
-    return {
-      ...rawConfig,
-      message: typeof rawConfig.message === 'string' ? rawConfig.message : '',
-    };
-  }
-
-  if (nodeType === 'timer') {
-    return {
-      ...rawConfig,
-      interval_ms:
-        typeof rawConfig.interval_ms === 'number' && Number.isFinite(rawConfig.interval_ms)
-          ? Math.max(1, Math.round(rawConfig.interval_ms))
-          : 5000,
-      immediate: rawConfig.immediate !== false,
-      inject: isRecord(rawConfig.inject) ? rawConfig.inject : {},
-    };
-  }
-
-  if (nodeType === 'serialTrigger') {
-    return {
-      inject: isRecord(rawConfig.inject) ? rawConfig.inject : {},
-    };
-  }
-
-  if (nodeType === 'modbusRead') {
-    return {
-      ...rawConfig,
-      unit_id:
-        typeof rawConfig.unit_id === 'number' && Number.isFinite(rawConfig.unit_id)
-          ? Math.max(1, Math.round(rawConfig.unit_id))
-          : 1,
-      register:
-        typeof rawConfig.register === 'number' && Number.isFinite(rawConfig.register)
-          ? Math.max(1, Math.round(rawConfig.register))
-          : 40001,
-      quantity:
-        typeof rawConfig.quantity === 'number' && Number.isFinite(rawConfig.quantity)
-          ? Math.max(1, Math.round(rawConfig.quantity))
-          : 1,
-      register_type:
-        typeof rawConfig.register_type === 'string' ? rawConfig.register_type : 'holding',
-      base_value:
-        typeof rawConfig.base_value === 'number' && Number.isFinite(rawConfig.base_value)
-          ? rawConfig.base_value
-          : 64,
-      amplitude:
-        typeof rawConfig.amplitude === 'number' && Number.isFinite(rawConfig.amplitude)
-          ? rawConfig.amplitude
-          : 6,
-    };
-  }
-
-  if (nodeType === 'mqttClient') {
-    return {
-      ...rawConfig,
-      mode: rawConfig.mode === 'subscribe' ? 'subscribe' : 'publish',
-      topic: typeof rawConfig.topic === 'string' ? rawConfig.topic : '',
-      qos: [0, 1, 2].includes(rawConfig.qos as number) ? rawConfig.qos : 0,
-      payload_template: typeof rawConfig.payload_template === 'string' ? rawConfig.payload_template : '',
-    };
-  }
-
-  if (nodeType === 'switch') {
-    return {
-      ...rawConfig,
-      script: typeof rawConfig.script === 'string' ? rawConfig.script : 'payload["route"]',
-      branches: normalizeSwitchBranches(rawConfig.branches),
-    };
-  }
-
-  if (nodeType === 'loop') {
-    return {
-      ...rawConfig,
-      script: typeof rawConfig.script === 'string' ? rawConfig.script : '[payload]',
-    };
-  }
-
-  if (nodeType === 'httpClient') {
-    const legacyUrl = typeof rawConfig.url === 'string' ? rawConfig.url : '';
-    const {
-      url: _unusedUrl,
-      method: _unusedMethod,
-      headers: _unusedHeaders,
-      webhook_kind: rawWebhookKind,
-      content_type: _unusedContentType,
-      request_timeout_ms: _unusedRequestTimeoutMs,
-      at_mobiles: _unusedAtMobiles,
-      at_all: _unusedAtAll,
-      ...restConfig
-    } = rawConfig;
-    const webhookKind =
-      typeof rawWebhookKind === 'string' && rawWebhookKind.trim()
-        ? rawWebhookKind
-        : inferHttpWebhookKind(legacyUrl);
-    const bodyMode = normalizeHttpBodyMode(rawConfig.body_mode, webhookKind);
-
-    return {
-      ...restConfig,
-      body_mode: bodyMode,
-      title_template:
-        typeof rawConfig.title_template === 'string'
-          ? rawConfig.title_template
-          : DEFAULT_HTTP_ALARM_TITLE_TEMPLATE,
-      body_template:
-        typeof rawConfig.body_template === 'string'
-          ? rawConfig.body_template
-          : bodyMode === 'dingtalk_markdown'
-            ? DEFAULT_HTTP_ALARM_BODY_TEMPLATE
-            : '',
-    };
-  }
-
-  if (nodeType === 'barkPush') {
-    const {
-      server_url: _unusedServerUrl,
-      device_key: _unusedDeviceKey,
-      request_timeout_ms: _unusedRequestTimeoutMs,
-      ...restConfig
-    } = rawConfig;
-
-    return {
-      ...restConfig,
-      content_mode: rawConfig.content_mode === 'markdown' ? 'markdown' : 'body',
-      title_template:
-        typeof rawConfig.title_template === 'string'
-          ? rawConfig.title_template
-          : DEFAULT_BARK_TITLE_TEMPLATE,
-      subtitle_template:
-        typeof rawConfig.subtitle_template === 'string' ? rawConfig.subtitle_template : '',
-      body_template:
-        typeof rawConfig.body_template === 'string'
-          ? rawConfig.body_template
-          : DEFAULT_BARK_BODY_TEMPLATE,
-      level:
-        rawConfig.level === 'critical' ||
-        rawConfig.level === 'timeSensitive' ||
-        rawConfig.level === 'passive'
-          ? rawConfig.level
-          : 'active',
-      badge:
-        typeof rawConfig.badge === 'number'
-          ? String(rawConfig.badge)
-          : typeof rawConfig.badge === 'string'
-            ? rawConfig.badge
-            : '',
-      sound: typeof rawConfig.sound === 'string' ? rawConfig.sound : '',
-      icon: typeof rawConfig.icon === 'string' ? rawConfig.icon : '',
-      group: typeof rawConfig.group === 'string' ? rawConfig.group : '',
-      url: typeof rawConfig.url === 'string' ? rawConfig.url : '',
-      copy: typeof rawConfig.copy === 'string' ? rawConfig.copy : '',
-      image: typeof rawConfig.image === 'string' ? rawConfig.image : '',
-      auto_copy: rawConfig.auto_copy === true,
-      call: rawConfig.call === true,
-      archive_mode:
-        rawConfig.archive_mode === 'archive' || rawConfig.archive_mode === 'skip'
-          ? rawConfig.archive_mode
-          : 'inherit',
-    };
-  }
-
-  if (nodeType === 'sqlWriter') {
-    return {
-      ...rawConfig,
-      database_path:
-        typeof rawConfig.database_path === 'string' ? rawConfig.database_path : './nazh-local.sqlite3',
-      table: typeof rawConfig.table === 'string' ? rawConfig.table : 'workflow_logs',
-    };
-  }
-
-  if (nodeType === 'debugConsole') {
-    return {
-      ...rawConfig,
-      label: typeof rawConfig.label === 'string' ? rawConfig.label : '',
-      pretty: rawConfig.pretty !== false,
-    };
-  }
-
-  if (nodeType === 'subgraph') {
-    return {
-      ...rawConfig,
-      parameterBindings: isRecord(rawConfig.parameterBindings)
-        ? rawConfig.parameterBindings
-        : {},
-    };
-  }
-
-  if (nodeType === 'subgraphInput' || nodeType === 'subgraphOutput') {
-    return {
-      ...rawConfig,
-    };
-  }
-
-  if (nodeType === 'code') {
-    const { ai: _unusedAi, ...restConfig } = rawConfig;
-    const ai = normalizeScriptAiConfig(rawConfig.ai);
-
-    return {
-      ...restConfig,
-      script: typeof rawConfig.script === 'string' ? rawConfig.script : 'payload',
-      ...(ai ? { ai } : {}),
-    };
-  }
-
-  if (nodeType === 'c2f' || nodeType === 'minutesSince') {
-    return { ...rawConfig };
-  }
-
-  if (nodeType === 'humanLoop') {
-    return {
-      ...rawConfig,
-      title: typeof rawConfig.title === 'string' ? rawConfig.title : '',
-      description: typeof rawConfig.description === 'string' ? rawConfig.description : '',
-      form_schema: Array.isArray(rawConfig.form_schema) ? rawConfig.form_schema : [],
-      approval_timeout_ms:
-        typeof rawConfig.approval_timeout_ms === 'number' && Number.isFinite(rawConfig.approval_timeout_ms)
-          ? Math.max(0, Math.round(rawConfig.approval_timeout_ms))
-          : null,
-      default_action:
-        rawConfig.default_action === 'autoApprove' || rawConfig.default_action === 'autoReject'
-          ? rawConfig.default_action
-          : 'autoReject',
-    };
-  }
-
-  return {
-    ...rawConfig,
-    script: typeof rawConfig.script === 'string' ? rawConfig.script : 'payload',
-  };
 }

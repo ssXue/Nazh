@@ -1,14 +1,19 @@
-import { type NodeDefinition, type NodeSeed, type NodeValidationContext, type NodeValidation, normalizeNodeConfig } from '../shared';
+import { type NodeDefinition, type NodeSeed, type NodeValidationContext, type NodeValidation, isRecord, normalizeScriptAiConfig } from '../shared';
 
-export const definition: NodeDefinition = {
-  kind: 'code',
+export const definition = {
+  kind: 'code' as const,
   catalog: { category: '脚本执行', description: '沙箱化脚本执行节点' },
   fallbackLabel: 'Code Node',
+  palette: { title: 'Code Node', badge: 'Code' },
+  ai: {
+    hint:
+      'config 必须含 script；脚本输入变量是 payload，可用 ai_complete("prompt"), rand(min, max), now_ms(), from_json(text), to_json(value), is_blank(text)。',
+  },
 
   buildDefaultSeed(): NodeSeed {
     return {
       idPrefix: 'code_node',
-      kind: 'code',
+      kind: 'code' as const,
       label: '',
       timeoutMs: 1000,
       config: { script: 'payload' },
@@ -16,7 +21,15 @@ export const definition: NodeDefinition = {
   },
 
   normalizeConfig(config: unknown): NodeSeed['config'] {
-    return normalizeNodeConfig('code', config);
+    const rawConfig = isRecord(config) ? config : {};
+    const { ai: _unusedAi, ...restConfig } = rawConfig;
+    const ai = normalizeScriptAiConfig(rawConfig.ai);
+
+    return {
+      ...restConfig,
+      script: typeof rawConfig.script === 'string' ? rawConfig.script : 'payload',
+      ...(ai ? { ai } : {}),
+    };
   },
 
   getNodeSize() {
@@ -48,4 +61,4 @@ export const definition: NodeDefinition = {
     }
     return result;
   },
-};
+} satisfies NodeDefinition;

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 
 import type { NodeTypeEntry } from '../../types';
 import { hasTauriRuntime, listNodeTypes } from '../../lib/tauri';
-import { NODE_CATEGORIES, NODE_CATEGORY_MAP } from '../flowgram/flowgram-node-library';
+import { NODE_CATEGORIES, getNodeCatalogInfo } from '../flowgram/flowgram-node-library';
 import {
   NODE_CAPABILITY_LABELS,
   capabilityNames,
@@ -40,11 +40,11 @@ export function PluginPanel({ isTauriRuntime }: PluginPanelProps) {
 
         const displayEntries: PluginDisplayEntry[] = response.types.map(
           (nodeType: NodeTypeEntry) => {
-            const meta = NODE_CATEGORY_MAP[nodeType.name];
+            const meta = getNodeCatalogInfo(nodeType.name);
             return {
               name: nodeType.name,
-              category: meta?.category ?? '其他',
-              description: meta?.description ?? '',
+              category: meta.category,
+              description: meta.description,
               capabilities: capabilityNames(nodeType.capabilities),
             };
           },

@@ -7,7 +7,8 @@ import {
   type NodeSeed,
   type NodeValidationContext,
   type NodeValidation,
-  normalizeNodeConfig,
+  LOOP_BRANCHES,
+  isRecord,
 } from '../shared';
 
 /** 桥接节点尺寸 */
@@ -37,15 +38,20 @@ function computeLoopContainerSize() {
   };
 }
 
-export const definition: NodeDefinition = {
-  kind: 'loop',
+export const definition = {
+  kind: 'loop' as const,
   catalog: { category: '流程控制', description: '循环迭代与逐项分发' },
   fallbackLabel: 'Loop Node',
+  palette: { title: 'Loop 迭代', badge: 'Loop' },
+  ai: {
+    hint:
+      'config 必须含 script；script 返回数组作为迭代输入；下游边 sourcePortId 只能是 body / done。',
+  },
 
   buildDefaultSeed(): NodeSeed {
     return {
       idPrefix: 'loop_node',
-      kind: 'loop',
+      kind: 'loop' as const,
       label: '',
       timeoutMs: 1000,
       config: { script: '[payload]' },
@@ -53,7 +59,19 @@ export const definition: NodeDefinition = {
   },
 
   normalizeConfig(config: unknown): NodeSeed['config'] {
-    return normalizeNodeConfig('loop', config);
+    const rawConfig = isRecord(config) ? config : {};
+    return {
+      ...rawConfig,
+      script: typeof rawConfig.script === 'string' ? rawConfig.script : '[payload]',
+    };
+  },
+
+  getOutputPorts() {
+    return [];
+  },
+
+  getRoutingBranches() {
+    return LOOP_BRANCHES;
   },
 
   getNodeSize() {
@@ -90,4 +108,4 @@ export const definition: NodeDefinition = {
   validate(_ctx: NodeValidationContext): NodeValidation[] {
     return [];
   },
-};
+} satisfies NodeDefinition;

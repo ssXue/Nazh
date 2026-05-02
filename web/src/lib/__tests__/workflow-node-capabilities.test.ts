@@ -28,7 +28,8 @@ describe('workflow-node-capabilities', () => {
 
     const guide = buildWorkflowAiNodeGuideText(catalog);
     expect(guide).toContain('subgraph');
-    expect(guide).toContain('upsert_subgraph');
+    expect(guide).toContain('editorOnly=true');
+    expect(guide).toContain('编辑器容器节点');
     expect(guide).toContain('封装子拓扑');
     expect(guide).toContain('配置键');
   });

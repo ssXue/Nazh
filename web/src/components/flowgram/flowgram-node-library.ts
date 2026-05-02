@@ -1,31 +1,24 @@
 import type {
+  FlowNodeJSON,
+  WorkflowNodeJSON,
   WorkflowNodeRegistry,
 } from '@flowgram.ai/free-layout-editor';
 
 export type {
-  NazhNodeKind,
-  NazhNodeDisplayType,
   FlowgramLogicBranch,
   FlowgramScriptAiConfig,
   NodeSeed,
+  NodeCatalogInfo,
+  NodeDefinition,
   FlowgramPaletteItem,
   FlowgramPaletteSection,
   FlowgramConnectionDefaults,
 } from './nodes/shared';
 
 export {
-  normalizeNodeKind,
-  normalizeNodeConfig,
-  normalizeFlowgramNodeJson,
-  buildPaletteNodeJson,
-  getLogicNodeBranchDefinitions,
   parseTimeoutMs,
   inferHttpWebhookKind,
   normalizeHttpBodyMode,
-  resolveNodeData,
-  resolveDefaultConnectionId,
-  getFallbackNodeLabel,
-  resolveNodeDisplayLabel,
   IF_BRANCHES,
   TRYCATCH_BRANCHES,
   LOOP_BRANCHES,
@@ -36,23 +29,27 @@ export {
   DEFAULT_BARK_BODY_TEMPLATE,
 } from './nodes/shared';
 
-export { NODE_CATEGORIES, NODE_CATEGORY_MAP } from './nodes/catalog';
+export { NODE_CATEGORIES } from './nodes/catalog';
 export type { NodeCategory } from './nodes/catalog';
 
 import type {
-  NazhNodeKind,
+  FlowgramLogicBranch,
   NodeSeed,
+  NodeCatalogInfo,
+  NodeDefinition,
   FlowgramConnectionDefaults,
+  FlowgramPaletteItem,
   FlowgramPaletteSection,
 } from './nodes/shared';
 import {
-  normalizeNodeKind,
-  buildPaletteNodeJson,
+  isRecord,
+  normalizeTimeoutValue,
   DEFAULT_HTTP_ALARM_TITLE_TEMPLATE,
   DEFAULT_HTTP_ALARM_BODY_TEMPLATE,
   DEFAULT_BARK_TITLE_TEMPLATE,
   DEFAULT_BARK_BODY_TEMPLATE,
 } from './nodes/shared';
+import { NODE_CATEGORIES } from './nodes/catalog';
 
 import { definition as nativeDef } from './nodes/native';
 import { definition as codeDef } from './nodes/code';
@@ -76,30 +73,280 @@ import { definition as lookupDef } from './nodes/lookup';
 import { definition as humanLoopDef } from './nodes/humanLoop';
 import { definition as minutesSinceDef } from './nodes/minutesSince';
 
+interface FlowgramNodeData {
+  label?: string;
+  nodeType?: string;
+  displayType?: unknown;
+  connectionId?: string | null;
+  timeoutMs?: number | null;
+  config?: {
+    message?: string;
+    script?: string;
+    branches?: FlowgramLogicBranch[];
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
 const ALL_DEFS = [
   nativeDef, codeDef, timerDef, serialTriggerDef, modbusReadDef, mqttClientDef,
   ifDef, switchDef, tryCatchDef, loopDef,
   httpClientDef, barkPushDef, sqlWriterDef, debugConsoleDef,
   subgraphDef, subgraphInputDef, subgraphOutputDef,
   c2fDef, minutesSinceDef, lookupDef, humanLoopDef,
-];
+] as const satisfies readonly NodeDefinition[];
 
-const DEF_MAP = new Map(ALL_DEFS.map((d) => [d.kind, d]));
-const EDITOR_ONLY_NODE_TYPES = new Set<string>(['subgraph']);
-
-export type KnownEditorNodeType = NazhNodeKind;
+export type KnownEditorNodeType = (typeof ALL_DEFS)[number]['kind'];
+export type NazhNodeKind = KnownEditorNodeType;
+export type NazhNodeDisplayType = NazhNodeKind;
 export type RuntimeNodeType = string;
+
+const NODE_DEFS: readonly NodeDefinition[] = ALL_DEFS;
+const DEF_MAP = new Map<NazhNodeKind, NodeDefinition>(
+  NODE_DEFS.map((definition) => [definition.kind as NazhNodeKind, definition]),
+);
 
 export function isKnownEditorNodeType(value: unknown): value is KnownEditorNodeType {
   return typeof value === 'string' && DEF_MAP.has(value as NazhNodeKind);
 }
 
 export function isEditorOnlyNodeType(value: unknown): boolean {
-  return typeof value === 'string' && EDITOR_ONLY_NODE_TYPES.has(value);
+  return isKnownEditorNodeType(value) && DEF_MAP.get(value)?.ai?.editorOnly === true;
 }
 
 export function preserveNodeType(value: unknown, fallback: RuntimeNodeType): RuntimeNodeType {
   return typeof value === 'string' && value.trim() ? value : fallback;
+}
+
+export function normalizeNodeKind(value: unknown): NazhNodeKind {
+  return isKnownEditorNodeType(value) ? value : 'native';
+}
+
+function normalizeDisplayType(value: unknown, fallback: NazhNodeKind): NazhNodeDisplayType {
+  return normalizeNodeKind(value ?? fallback);
+}
+
+export function getFallbackNodeLabel(kind: NazhNodeKind): string {
+  return DEF_MAP.get(kind)?.fallbackLabel ?? nativeDef.fallbackLabel;
+}
+
+export function resolveNodeDisplayLabel(
+  nodeType: unknown,
+  label?: unknown,
+): string {
+  if (typeof label === 'string' && label.trim()) {
+    return label.trim();
+  }
+
+  if (isKnownEditorNodeType(nodeType)) {
+    return getFallbackNodeLabel(nodeType);
+  }
+
+  if (typeof nodeType === 'string' && nodeType.trim() && nodeType !== 'native') {
+    return nodeType.trim();
+  }
+
+  return nativeDef.fallbackLabel;
+}
+
+export function normalizeNodeConfig(
+  nodeType: NazhNodeKind,
+  config: unknown,
+): NodeSeed['config'] {
+  return (DEF_MAP.get(nodeType) ?? nativeDef).normalizeConfig(config);
+}
+
+export function resolveDefaultConnectionId(
+  nodeType: NazhNodeKind,
+  connectionDefaults: FlowgramConnectionDefaults,
+): string | null {
+  switch (nodeType) {
+    case 'native':
+      return connectionDefaults.any;
+    case 'modbusRead':
+      return connectionDefaults.modbus;
+    case 'serialTrigger':
+      return connectionDefaults.serial;
+    case 'mqttClient':
+      return connectionDefaults.mqtt;
+    case 'httpClient':
+      return connectionDefaults.http;
+    case 'barkPush':
+      return connectionDefaults.bark;
+    default:
+      return null;
+  }
+}
+
+export function resolveNodeData(
+  seed: NodeSeed,
+  fallbackLabel: string,
+  connectionDefaults: FlowgramConnectionDefaults,
+): Required<FlowgramNodeData> {
+  const connectionId =
+    seed.connectionId === undefined
+      ? resolveDefaultConnectionId(seed.kind as NazhNodeKind, connectionDefaults)
+      : seed.connectionId;
+  const label = resolveNodeDisplayLabel(seed.kind, seed.label || fallbackLabel);
+
+  return {
+    label,
+    nodeType: seed.kind,
+    displayType: normalizeDisplayType(seed.displayType, seed.kind as NazhNodeKind),
+    connectionId,
+    timeoutMs: seed.timeoutMs ?? null,
+    config: normalizeNodeConfig(seed.kind as NazhNodeKind, seed.config),
+  };
+}
+
+export function buildPaletteNodeJson(
+  seed: NodeSeed,
+  connectionDefaults: FlowgramConnectionDefaults,
+  baseJson?: Partial<WorkflowNodeJSON>,
+): Partial<WorkflowNodeJSON> {
+  const fallbackLabel = resolveNodeDisplayLabel(seed.kind, seed.label);
+  const baseData = isRecord(baseJson?.data) ? (baseJson.data as Record<string, unknown>) : {};
+  const nextData = resolveNodeData(seed, fallbackLabel, connectionDefaults);
+
+  return {
+    ...baseJson,
+    type: seed.kind,
+    data: {
+      ...baseData,
+      ...nextData,
+      config: {
+        ...(isRecord(baseData.config) ? baseData.config : {}),
+        ...nextData.config,
+      },
+    },
+  };
+}
+
+export function normalizeFlowgramNodeJson(
+  json: FlowNodeJSON,
+  connectionDefaults: FlowgramConnectionDefaults,
+): FlowNodeJSON {
+  const rawData = isRecord(json.data) ? (json.data as FlowgramNodeData) : {};
+  const nodeType = normalizeNodeKind(rawData.nodeType ?? json.type);
+  const fallbackLabel = resolveNodeDisplayLabel(nodeType);
+  const normalizedConfig = normalizeNodeConfig(nodeType, rawData.config);
+
+  return {
+    ...json,
+    type: nodeType,
+    data: {
+      ...rawData,
+      label:
+        typeof rawData.label === 'string' && rawData.label.trim()
+          ? rawData.label.trim()
+          : fallbackLabel,
+      nodeType,
+      displayType: normalizeDisplayType(rawData.displayType, nodeType),
+      connectionId:
+        rawData.connectionId === undefined
+          ? resolveDefaultConnectionId(nodeType, connectionDefaults)
+          : rawData.connectionId ?? null,
+      timeoutMs: normalizeTimeoutValue(rawData.timeoutMs),
+      config: normalizedConfig,
+    },
+  };
+}
+
+export function getFlowgramOutputPorts(
+  nodeType: unknown,
+  config: unknown,
+): FlowgramLogicBranch[] {
+  const kind = normalizeNodeKind(nodeType);
+  return DEF_MAP.get(kind)?.getOutputPorts?.(config) ?? [];
+}
+
+export function getRoutingBranchDefinitions(
+  nodeType: unknown,
+  config: unknown,
+): FlowgramLogicBranch[] {
+  const kind = normalizeNodeKind(nodeType);
+  return DEF_MAP.get(kind)?.getRoutingBranches?.(config) ?? [];
+}
+
+export function getLogicNodeBranchDefinitions(
+  nodeType: unknown,
+  config: unknown,
+): FlowgramLogicBranch[] {
+  return getFlowgramOutputPorts(nodeType, config);
+}
+
+export function getNodeCatalogInfo(nodeType: unknown): NodeCatalogInfo {
+  if (isKnownEditorNodeType(nodeType)) {
+    return DEF_MAP.get(nodeType)?.catalog ?? nativeDef.catalog;
+  }
+
+  return {
+    category: '其他',
+    description: '运行时或第三方节点',
+  };
+}
+
+function validateUniqueBranchKeys(
+  errors: string[],
+  kind: string,
+  source: string,
+  branches: FlowgramLogicBranch[],
+): void {
+  const seen = new Set<string>();
+  for (const branch of branches) {
+    if (!branch.key.trim()) {
+      errors.push(`${kind}.${source} 含空 branch key`);
+      continue;
+    }
+    if (seen.has(branch.key)) {
+      errors.push(`${kind}.${source} 重复 branch key: ${branch.key}`);
+    }
+    seen.add(branch.key);
+  }
+}
+
+export function validateNodeRegistry(
+  definitions: readonly NodeDefinition[] = NODE_DEFS,
+): void {
+  const errors: string[] = [];
+  const seenKinds = new Set<string>();
+  const categories = new Set<string>(NODE_CATEGORIES);
+
+  for (const def of definitions) {
+    if (seenKinds.has(def.kind)) {
+      errors.push(`重复节点 kind: ${def.kind}`);
+    }
+    seenKinds.add(def.kind);
+
+    if (!def.fallbackLabel.trim()) {
+      errors.push(`${def.kind} 缺少 fallbackLabel`);
+    }
+    if (!def.catalog.description.trim()) {
+      errors.push(`${def.kind} 缺少 catalog.description`);
+    }
+    if (!categories.has(def.catalog.category)) {
+      errors.push(`${def.kind} catalog.category 非法: ${def.catalog.category}`);
+    }
+
+    const seed = def.buildDefaultSeed();
+    if (seed.kind !== def.kind) {
+      errors.push(`${def.kind} buildDefaultSeed().kind=${seed.kind}`);
+    }
+
+    if (def.palette?.visible === false && def.ai?.visible !== false) {
+      errors.push(`${def.kind} 已隐藏 palette，但 AI catalog 未显式隐藏`);
+    }
+    if (def.ai?.editorOnly === true && def.ai.visible === false) {
+      errors.push(`${def.kind} 同时声明 editorOnly 与 AI hidden`);
+    }
+
+    validateUniqueBranchKeys(errors, def.kind, 'outputs', def.getOutputPorts?.(seed.config) ?? []);
+    validateUniqueBranchKeys(errors, def.kind, 'routingBranches', def.getRoutingBranches?.(seed.config) ?? []);
+  }
+
+  if (errors.length > 0) {
+    throw new Error(`NodeDefinition 注册表不合法：\n${errors.map((error) => `- ${error}`).join('\n')}`);
+  }
 }
 
 export function getDefaultHttpAlarmTitleTemplate(): string {
@@ -119,8 +366,8 @@ export function getNodeDefinition(kind: NazhNodeKind) {
   return DEF_MAP.get(kind);
 }
 
-export function getAllNodeDefinitions() {
-  return [...ALL_DEFS];
+export function getAllNodeDefinitions(): NodeDefinition<NazhNodeKind>[] {
+  return [...NODE_DEFS] as NodeDefinition<NazhNodeKind>[];
 }
 
 export function buildDefaultNodeSeed(kind: NazhNodeKind): NodeSeed {
@@ -201,7 +448,7 @@ function buildLoopPaletteJson(
 export function createFlowgramNodeRegistries(
   connectionDefaults: FlowgramConnectionDefaults,
 ): WorkflowNodeRegistry[] {
-  return ALL_DEFS.map((def) => ({
+  return NODE_DEFS.map((def) => ({
     type: def.kind,
     meta: def.buildRegistryMeta(),
     onAdd: () => {
@@ -226,50 +473,30 @@ export function getDefaultFlowgramNodeRegistry(type: string): WorkflowNodeRegist
 }
 
 export function getFlowgramPaletteSections(): FlowgramPaletteSection[] {
+  const sections = NODE_CATEGORIES.map((category): FlowgramPaletteSection | null => {
+    const items = NODE_DEFS
+      .filter((def) => def.catalog.category === category && def.palette?.visible !== false)
+      .map((def): FlowgramPaletteItem => ({
+        key: `blank-${def.kind}`,
+        title: def.palette?.title ?? def.fallbackLabel,
+        description: def.catalog.description,
+        badge: def.palette?.badge ?? def.fallbackLabel,
+        seed: def.buildDefaultSeed(),
+      }));
+
+    if (items.length === 0) {
+      return null;
+    }
+
+    return {
+      key: category,
+      title: category,
+      items,
+    };
+  }).filter((section): section is FlowgramPaletteSection => section !== null);
+
   return [
-    {
-      key: 'blank',
-      title: '基础节点',
-      items: [
-        { key: 'blank-timer', title: 'Timer', description: timerDef.catalog.description, badge: 'Timer', seed: timerDef.buildDefaultSeed() },
-        { key: 'blank-serial', title: 'Serial Trigger', description: serialTriggerDef.catalog.description, badge: 'Serial', seed: serialTriggerDef.buildDefaultSeed() },
-        { key: 'blank-modbus', title: 'Modbus Read', description: modbusReadDef.catalog.description, badge: 'Modbus', seed: modbusReadDef.buildDefaultSeed() },
-        { key: 'blank-mqtt', title: 'MQTT Client', description: mqttClientDef.catalog.description, badge: 'MQTT', seed: mqttClientDef.buildDefaultSeed() },
-        { key: 'blank-code', title: 'Code Node', description: codeDef.catalog.description, badge: 'Code', seed: codeDef.buildDefaultSeed() },
-        { key: 'blank-http', title: 'HTTP Client', description: httpClientDef.catalog.description, badge: 'HTTP', seed: httpClientDef.buildDefaultSeed() },
-        { key: 'blank-bark', title: 'Bark Push', description: barkPushDef.catalog.description, badge: 'Bark', seed: barkPushDef.buildDefaultSeed() },
-        { key: 'blank-sql', title: 'SQL Writer', description: sqlWriterDef.catalog.description, badge: 'SQL', seed: sqlWriterDef.buildDefaultSeed() },
-        { key: 'blank-debug', title: 'Debug Console', description: debugConsoleDef.catalog.description, badge: 'Debug', seed: debugConsoleDef.buildDefaultSeed() },
-        { key: 'blank-native', title: 'Native', description: nativeDef.catalog.description, badge: 'Native', seed: nativeDef.buildDefaultSeed() },
-      ],
-    },
-    {
-      key: 'logic',
-      title: '逻辑节点',
-      items: [
-        { key: 'blank-if', title: 'IF 条件', description: ifDef.catalog.description, badge: 'IF', seed: ifDef.buildDefaultSeed() },
-        { key: 'blank-switch', title: 'Switch 分流', description: switchDef.catalog.description, badge: 'Switch', seed: switchDef.buildDefaultSeed() },
-        { key: 'blank-try-catch', title: 'Try 捕获', description: tryCatchDef.catalog.description, badge: 'Try', seed: tryCatchDef.buildDefaultSeed() },
-        { key: 'blank-loop', title: 'Loop 迭代', description: loopDef.catalog.description, badge: 'Loop', seed: loopDef.buildDefaultSeed() },
-        { key: 'blank-human-loop', title: '审批节点', description: humanLoopDef.catalog.description, badge: '审批', seed: humanLoopDef.buildDefaultSeed() },
-      ],
-    },
-    {
-      key: 'subgraph',
-      title: '子图封装',
-      items: [
-        { key: 'blank-subgraph', title: 'Subgraph', description: subgraphDef.catalog.description, badge: 'Subgraph', seed: subgraphDef.buildDefaultSeed() },
-      ],
-    },
-    {
-      key: 'pure',
-      title: '纯计算',
-      items: [
-        { key: 'blank-c2f', title: 'C→F 转换', description: c2fDef.catalog.description, badge: 'C→F', seed: c2fDef.buildDefaultSeed() },
-        { key: 'blank-minutes-since', title: '距今分钟', description: minutesSinceDef.catalog.description, badge: '分钟', seed: minutesSinceDef.buildDefaultSeed() },
-        { key: 'blank-lookup', title: '表查找', description: lookupDef.catalog.description, badge: '查找', seed: lookupDef.buildDefaultSeed() },
-      ],
-    },
+    ...sections,
     {
       key: 'templates',
       title: '预设模板',

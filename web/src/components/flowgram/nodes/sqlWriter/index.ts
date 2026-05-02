@@ -1,9 +1,11 @@
-import { type NodeDefinition, type NodeSeed, type NodeValidationContext, type NodeValidation, normalizeNodeConfig } from '../shared';
+import { type NodeDefinition, type NodeSeed, type NodeValidationContext, type NodeValidation, isRecord } from '../shared';
 
-export const definition: NodeDefinition = {
-  kind: 'sqlWriter',
+export const definition = {
+  kind: 'sqlWriter' as const,
   catalog: { category: '持久化', description: '将当前 payload 持久化到本地 SQLite 表' },
   fallbackLabel: 'SQL Writer',
+  palette: { title: 'SQL Writer', badge: 'SQL' },
+  ai: { hint: 'SQLite 写入节点；config 可含 database_path 与 table。' },
 
   fieldValidators: {
     sqlDatabasePath: v => !v.trim() ? { message: '数据库路径为空。', tone: 'warning' } : null,
@@ -13,7 +15,7 @@ export const definition: NodeDefinition = {
   buildDefaultSeed(): NodeSeed {
     return {
       idPrefix: 'sql_writer',
-      kind: 'sqlWriter',
+      kind: 'sqlWriter' as const,
       label: '',
       timeoutMs: 1500,
       config: { database_path: './nazh-local.sqlite3', table: 'workflow_logs' },
@@ -21,7 +23,13 @@ export const definition: NodeDefinition = {
   },
 
   normalizeConfig(config: unknown): NodeSeed['config'] {
-    return normalizeNodeConfig('sqlWriter', config);
+    const rawConfig = isRecord(config) ? config : {};
+    return {
+      ...rawConfig,
+      database_path:
+        typeof rawConfig.database_path === 'string' ? rawConfig.database_path : './nazh-local.sqlite3',
+      table: typeof rawConfig.table === 'string' ? rawConfig.table : 'workflow_logs',
+    };
   },
 
   getNodeSize() {
@@ -35,4 +43,4 @@ export const definition: NodeDefinition = {
   validate(_ctx: NodeValidationContext): NodeValidation[] {
     return [];
   },
-};
+} satisfies NodeDefinition;

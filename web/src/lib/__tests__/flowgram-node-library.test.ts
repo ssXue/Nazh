@@ -3,9 +3,14 @@ import type { WorkflowNodeJSON } from '@flowgram.ai/free-layout-editor';
 
 import {
   createFlowgramNodeRegistries,
+  getFlowgramPaletteSections,
+  getNodeCatalogInfo,
   normalizeFlowgramNodeJson,
   normalizeNodeKind,
   normalizeNodeConfig,
+  getLogicNodeBranchDefinitions,
+  getRoutingBranchDefinitions,
+  validateNodeRegistry,
   type FlowgramConnectionDefaults,
 } from '../../components/flowgram/flowgram-node-library';
 
@@ -190,6 +195,45 @@ describe('normalizeNodeKind', () => {
   it('未知类型回退到 native', () => {
     expect(normalizeNodeKind('rhai')).toBe('native');
     expect(normalizeNodeKind('unknown')).toBe('native');
+  });
+});
+
+describe('NodeDefinition registry', () => {
+  it('启动期注册表校验通过', () => {
+    expect(() => validateNodeRegistry()).not.toThrow();
+  });
+
+  it('palette 从定义派生并隐藏子图桥接节点', () => {
+    const sections = getFlowgramPaletteSections();
+    const items = sections.flatMap((section) => section.items);
+    const keys = items.map((item) => item.seed.kind);
+
+    expect(keys).toContain('timer');
+    expect(keys).toContain('humanLoop');
+    expect(keys).not.toContain('subgraphInput');
+    expect(keys).not.toContain('subgraphOutput');
+  });
+
+  it('PluginPanel catalog 对第三方运行时节点落到其他分类', () => {
+    expect(getNodeCatalogInfo('opencv/detect')).toEqual({
+      category: '其他',
+      description: '运行时或第三方节点',
+    });
+    expect(getNodeCatalogInfo('timer')).toMatchObject({
+      category: '硬件接口',
+    });
+  });
+
+  it('区分具名输出端口和运行时路由分支', () => {
+    expect(getLogicNodeBranchDefinitions('modbusRead', {})).toEqual([
+      { key: 'out', label: 'out' },
+      { key: 'latest', label: 'latest' },
+    ]);
+    expect(getRoutingBranchDefinitions('modbusRead', {})).toEqual([]);
+    expect(getRoutingBranchDefinitions('humanLoop', {})).toEqual([
+      { key: 'approve', label: 'Approve', fixed: true },
+      { key: 'reject', label: 'Reject', fixed: true },
+    ]);
   });
 });
 

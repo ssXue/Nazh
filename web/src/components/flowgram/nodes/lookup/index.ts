@@ -1,16 +1,18 @@
-import { type NodeDefinition, type NodeSeed, type NodeValidationContext, type NodeValidation, normalizeNodeConfig } from '../shared';
+import { type NodeDefinition, type NodeSeed, type NodeValidationContext, type NodeValidation, isRecord } from '../shared';
 
 const LOOKUP_DEFAULT_CONFIG = { table: {}, default: null } as unknown as NodeSeed['config'];
 
-export const definition: NodeDefinition = {
-  kind: 'lookup',
+export const definition = {
+  kind: 'lookup' as const,
   catalog: { category: '纯计算', description: '配置驱动表查找（pure-form，输入 key 标量 → 查表 → 输出 value）' },
   fallbackLabel: '表查找',
+  palette: { title: '表查找', badge: '查找' },
+  ai: { hint: '纯计算节点；config 可含 table 与 default。' },
 
   buildDefaultSeed(): NodeSeed {
     return {
       idPrefix: 'lookup',
-      kind: 'lookup',
+      kind: 'lookup' as const,
       label: '',
       timeoutMs: null,
       config: LOOKUP_DEFAULT_CONFIG,
@@ -18,7 +20,8 @@ export const definition: NodeDefinition = {
   },
 
   normalizeConfig(config: unknown): NodeSeed['config'] {
-    return normalizeNodeConfig('lookup', config);
+    const rawConfig = isRecord(config) ? config : {};
+    return { ...rawConfig };
   },
 
   getNodeSize() {
@@ -32,4 +35,4 @@ export const definition: NodeDefinition = {
   validate(_ctx: NodeValidationContext): NodeValidation[] {
     return [];
   },
-};
+} satisfies NodeDefinition;

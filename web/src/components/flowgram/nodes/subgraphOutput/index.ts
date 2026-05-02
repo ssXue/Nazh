@@ -3,21 +3,23 @@ import {
   type NodeSeed,
   type NodeValidationContext,
   type NodeValidation,
-  normalizeNodeConfig,
+  isRecord,
 } from '../shared';
 
-export const definition: NodeDefinition = {
-  kind: 'subgraphOutput',
+export const definition = {
+  kind: 'subgraphOutput' as const,
   catalog: {
     category: '子图封装',
     description: '子图内部桥接出口',
   },
   fallbackLabel: 'Output',
+  palette: { visible: false },
+  ai: { visible: false },
 
   buildDefaultSeed(): NodeSeed {
     return {
       idPrefix: 'sg_out',
-      kind: 'subgraphOutput',
+      kind: 'subgraphOutput' as const,
       label: '',
       timeoutMs: null,
       config: {},
@@ -25,7 +27,8 @@ export const definition: NodeDefinition = {
   },
 
   normalizeConfig(config: unknown): NodeSeed['config'] {
-    return normalizeNodeConfig('subgraphOutput', config);
+    const rawConfig = isRecord(config) ? config : {};
+    return { ...rawConfig };
   },
 
   getNodeSize() {
@@ -45,4 +48,4 @@ export const definition: NodeDefinition = {
   validate(_ctx: NodeValidationContext): NodeValidation[] {
     return [];
   },
-};
+} satisfies NodeDefinition;

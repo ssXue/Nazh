@@ -24,6 +24,9 @@ describe('buildWorkflowOrchestrationPrompt', () => {
     expect(messages[0].content).toContain('JSON Lines');
     expect(messages[0].content).toContain('不要等全部设计完再统一输出');
     expect(messages[0].content).toContain('timer');
+    expect(messages[0].content).toContain('switch: sourcePortId 使用该节点 config.branches[].key');
+    expect(messages[0].content).toContain('humanLoop: sourcePortId 只能是 approve / reject');
+    expect(messages[0].content).not.toContain('modbusRead: sourcePortId');
     expect(messages[1].content).toContain('create（从空白开始编排新工作流）');
     expect(messages[1].content).toContain('做一个定时采集并记录 SQLite 的温度工作流');
   });

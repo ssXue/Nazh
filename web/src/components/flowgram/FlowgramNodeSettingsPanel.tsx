@@ -15,6 +15,7 @@ import {
   parseTimeoutMs,
   resolveNodeDisplayLabel,
   type FlowgramLogicBranch,
+  type NazhNodeKind,
   getNodeDefinition,
 } from './flowgram-node-library';
 import type { NodeValidationContext } from './nodes/shared';
@@ -430,7 +431,7 @@ function FlowgramNodeSettingsPanel({
       nextDiagnostics.push({ tone: 'danger', message: '脚本为空。', field: 'script' });
     }
 
-    const nodeDef = getNodeDefinition(draft.nodeType as import('./nodes/shared').NazhNodeKind);
+    const nodeDef = getNodeDefinition(draft.nodeType as NazhNodeKind);
     if (nodeDef) {
       if (nodeDef.fieldValidators) {
         for (const [field, validator] of Object.entries(nodeDef.fieldValidators)) {

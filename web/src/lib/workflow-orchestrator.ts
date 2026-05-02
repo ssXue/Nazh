@@ -13,6 +13,7 @@ import type {
 import {
   buildDefaultNodeSeed,
   createFlowgramNodeRegistries,
+  getAllNodeDefinitions,
   normalizeNodeConfig,
   resolveNodeDisplayLabel,
   type NazhNodeKind,
@@ -532,6 +533,25 @@ function buildExistingGraphSummary(draft: WorkflowOrchestrationDraft): string {
   );
 }
 
+function buildWorkflowAiSourcePortGuideText(): string {
+  return getAllNodeDefinitions()
+    .map((definition) => {
+      const seed = definition.buildDefaultSeed();
+      const branches = definition.getRoutingBranches?.(seed.config) ?? [];
+      if (branches.length === 0) {
+        return null;
+      }
+
+      if (definition.kind === 'switch') {
+        return '- switch: sourcePortId 使用该节点 config.branches[].key；兜底分支使用 default。';
+      }
+
+      return `- ${definition.kind}: sourcePortId 只能是 ${branches.map((branch) => branch.key).join(' / ')}。`;
+    })
+    .filter((line): line is string => line !== null)
+    .join('\n');
+}
+
 export function buildWorkflowOrchestrationPrompt(options: {
   mode: WorkflowOrchestrationMode;
   requirement: string;
@@ -542,6 +562,7 @@ export function buildWorkflowOrchestrationPrompt(options: {
     mode === 'edit' && baseDraft
       ? buildExistingGraphSummary(baseDraft)
       : '当前从空白工作流开始。';
+  const sourcePortGuideText = buildWorkflowAiSourcePortGuideText();
 
   const userPrompt = `任务模式：${mode === 'create' ? 'create（从空白开始编排新工作流）' : 'edit（基于当前工作流流式修改）'}
 
@@ -573,7 +594,7 @@ ${PROTOCOL_REQUIREMENTS_TEXT}
 
 注意：
 - nodeType 只能从 ${getWorkflowAiAllowedNodeKinds().join(', ')} 中选择
-- switch / if / tryCatch / loop 的 sourcePortId 要合法
+${sourcePortGuideText}
 - code 节点脚本只输出 Rhai 可执行逻辑，不要使用未声明 API
 - 对于工业场景，优先给出可以直接继续编辑和绑定连接的稳定草图
 - 如果需求不清晰，优先从最小可运行链路开始，再补上分支和输出

@@ -1,14 +1,27 @@
-import { type NodeDefinition, type NodeSeed, type NodeValidationContext, type NodeValidation, normalizeNodeConfig } from '../shared';
+import {
+  type NodeDefinition,
+  type NodeSeed,
+  type NodeValidationContext,
+  type NodeValidation,
+  DEFAULT_SWITCH_BRANCHES,
+  isRecord,
+  normalizeSwitchBranches,
+} from '../shared';
 
-export const definition: NodeDefinition = {
-  kind: 'switch',
+export const definition = {
+  kind: 'switch' as const,
   catalog: { category: '流程控制', description: '多路分支路由' },
   fallbackLabel: 'Switch Node',
+  palette: { title: 'Switch 分流', badge: 'Switch' },
+  ai: {
+    hint:
+      'config 必须含 script 与 branches；script 返回值匹配 branches[].key，兜底分支 sourcePortId 使用 default。',
+  },
 
   buildDefaultSeed(): NodeSeed {
     return {
       idPrefix: 'switch_node',
-      kind: 'switch',
+      kind: 'switch' as const,
       label: '',
       timeoutMs: 1000,
       config: {
@@ -22,7 +35,22 @@ export const definition: NodeDefinition = {
   },
 
   normalizeConfig(config: unknown): NodeSeed['config'] {
-    return normalizeNodeConfig('switch', config);
+    const rawConfig = isRecord(config) ? config : {};
+    return {
+      ...rawConfig,
+      script: typeof rawConfig.script === 'string' ? rawConfig.script : 'payload["route"]',
+      branches: normalizeSwitchBranches(rawConfig.branches),
+    };
+  },
+
+  getOutputPorts(config: unknown) {
+    const rawConfig = isRecord(config) ? config : {};
+    return [...normalizeSwitchBranches(rawConfig.branches), ...DEFAULT_SWITCH_BRANCHES];
+  },
+
+  getRoutingBranches(config: unknown) {
+    const rawConfig = isRecord(config) ? config : {};
+    return [...normalizeSwitchBranches(rawConfig.branches), ...DEFAULT_SWITCH_BRANCHES];
   },
 
   getNodeSize() {
@@ -45,4 +73,4 @@ export const definition: NodeDefinition = {
     }
     return result;
   },
-};
+} satisfies NodeDefinition;

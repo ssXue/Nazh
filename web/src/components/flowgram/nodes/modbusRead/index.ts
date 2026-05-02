@@ -1,10 +1,15 @@
-import { type NodeDefinition, type NodeSeed, type NodeValidationContext, type NodeValidation, normalizeNodeConfig } from '../shared';
+import { type NodeDefinition, type NodeSeed, type NodeValidationContext, type NodeValidation, isRecord } from '../shared';
 import { parsePositiveInteger, parseFiniteNumber } from '../settings-shared';
 
-export const definition: NodeDefinition = {
-  kind: 'modbusRead',
+export const definition = {
+  kind: 'modbusRead' as const,
   catalog: { category: '硬件接口', description: '读取 Modbus 寄存器并将遥测数据写入 payload' },
   fallbackLabel: 'Modbus Read',
+  palette: { title: 'Modbus Read', badge: 'Modbus' },
+  ai: {
+    hint:
+      'Modbus 读取；config 可含 unit_id, register, quantity, register_type, base_value, amplitude；通常不填写 connectionId。',
+  },
 
   fieldValidators: {
     modbusUnitId: v => parsePositiveInteger(v) === null ? 'Modbus Unit ID 必须是大于 0 的整数。' : null,
@@ -17,7 +22,7 @@ export const definition: NodeDefinition = {
   buildDefaultSeed(): NodeSeed {
     return {
       idPrefix: 'modbus_read',
-      kind: 'modbusRead',
+      kind: 'modbusRead' as const,
       label: '',
       timeoutMs: 1000,
       config: {
@@ -32,7 +37,39 @@ export const definition: NodeDefinition = {
   },
 
   normalizeConfig(config: unknown): NodeSeed['config'] {
-    return normalizeNodeConfig('modbusRead', config);
+    const rawConfig = isRecord(config) ? config : {};
+    return {
+      ...rawConfig,
+      unit_id:
+        typeof rawConfig.unit_id === 'number' && Number.isFinite(rawConfig.unit_id)
+          ? Math.max(1, Math.round(rawConfig.unit_id))
+          : 1,
+      register:
+        typeof rawConfig.register === 'number' && Number.isFinite(rawConfig.register)
+          ? Math.max(1, Math.round(rawConfig.register))
+          : 40001,
+      quantity:
+        typeof rawConfig.quantity === 'number' && Number.isFinite(rawConfig.quantity)
+          ? Math.max(1, Math.round(rawConfig.quantity))
+          : 1,
+      register_type:
+        typeof rawConfig.register_type === 'string' ? rawConfig.register_type : 'holding',
+      base_value:
+        typeof rawConfig.base_value === 'number' && Number.isFinite(rawConfig.base_value)
+          ? rawConfig.base_value
+          : 64,
+      amplitude:
+        typeof rawConfig.amplitude === 'number' && Number.isFinite(rawConfig.amplitude)
+          ? rawConfig.amplitude
+          : 6,
+    };
+  },
+
+  getOutputPorts() {
+    return [
+      { key: 'out', label: 'out' },
+      { key: 'latest', label: 'latest' },
+    ];
   },
 
   getNodeSize() {
@@ -54,4 +91,4 @@ export const definition: NodeDefinition = {
   validate(_ctx: NodeValidationContext): NodeValidation[] {
     return [];
   },
-};
+} satisfies NodeDefinition;

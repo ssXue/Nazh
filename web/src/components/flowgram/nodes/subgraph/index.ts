@@ -7,7 +7,7 @@ import {
   type NodeSeed,
   type NodeValidationContext,
   type NodeValidation,
-  normalizeNodeConfig,
+  isRecord,
 } from '../shared';
 
 /** 桥接节点尺寸 */
@@ -37,18 +37,20 @@ function computeContainerSize() {
   };
 }
 
-export const definition: NodeDefinition = {
-  kind: 'subgraph',
+export const definition = {
+  kind: 'subgraph' as const,
   catalog: {
     category: '子图封装',
     description: '封装子拓扑为单节点，支持嵌套和参数化',
   },
   fallbackLabel: 'Subgraph',
+  palette: { title: 'Subgraph', badge: 'Subgraph' },
+  ai: { editorOnly: true, hint: '编辑器容器节点，不应作为运行时节点输出到工作流。' },
 
   buildDefaultSeed(): NodeSeed {
     return {
       idPrefix: 'subgraph',
-      kind: 'subgraph',
+      kind: 'subgraph' as const,
       label: '',
       timeoutMs: null,
       config: {
@@ -58,7 +60,13 @@ export const definition: NodeDefinition = {
   },
 
   normalizeConfig(config: unknown): NodeSeed['config'] {
-    return normalizeNodeConfig('subgraph', config);
+    const rawConfig = isRecord(config) ? config : {};
+    return {
+      ...rawConfig,
+      parameterBindings: isRecord(rawConfig.parameterBindings)
+        ? rawConfig.parameterBindings
+        : {},
+    };
   },
 
   getNodeSize() {
@@ -95,4 +103,4 @@ export const definition: NodeDefinition = {
   validate(_ctx: NodeValidationContext): NodeValidation[] {
     return [];
   },
-};
+} satisfies NodeDefinition;
