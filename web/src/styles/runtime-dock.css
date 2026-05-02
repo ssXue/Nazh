@@ -265,6 +265,34 @@
   max-height: 200px;
 }
 
+/* ── 载荷编辑面板 ── */
+
+.runtime-dock__payload-badge {
+  font-size: var(--font-caption);
+  color: var(--muted);
+  background: var(--surface-elevated);
+  border: 1px solid var(--line-faint);
+  border-radius: 6px;
+  padding: 2px 8px;
+}
+
+.runtime-dock__panel-body--payload {
+  padding: 6px;
+}
+
+.runtime-dock__payload-editor {
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 6px;
+  border: 1px solid var(--line-faint);
+  background: var(--surface-muted);
+}
+
+.runtime-dock__payload-editor > * {
+  height: 100%;
+}
+
 /* ── 连接面板（表格）────────────────────────── */
 
 .runtime-dock__conn-summary {

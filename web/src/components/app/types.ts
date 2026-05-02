@@ -19,7 +19,6 @@ export type SidebarSection =
   | 'runtime'
   | 'connections'
   | 'plugins'
-  | 'payload'
   | 'logs'
   | 'ai'
   | 'settings'
@@ -48,12 +47,6 @@ export interface SidebarNavProps {
   onToggleCollapsed: () => void;
 }
 
-export interface PayloadPanelProps {
-  payloadText: string;
-  deployInfo: DeployResponse | null;
-  onPayloadTextChange: (value: string) => void;
-}
-
 export interface LogsPanelProps {
   eventFeed: RuntimeLogEntry[];
   appErrors: AppErrorRecord[];
@@ -76,6 +69,12 @@ export interface RuntimeDockProps {
   onToggleCollapsed: () => void;
   /** 当前活跃部署的 workflow_id，用于变量面板。null 时面板显示占位。 */
   activeWorkflowId: string | null;
+  /** 测试载荷文本（JSON）。 */
+  payloadText: string;
+  /** 当前部署信息。null 时载荷面板显示"等待部署"。 */
+  deployInfo: DeployResponse | null;
+  /** 载荷文本变更回调。 */
+  onPayloadTextChange: (value: string) => void;
 }
 
 export interface SettingsPanelProps {

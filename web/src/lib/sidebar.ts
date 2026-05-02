@@ -1,7 +1,6 @@
 //! 侧栏导航配置构建。
 
 import type { SidebarSectionConfig } from '../components/app/types';
-import type { DeployResponse } from '../types';
 import { hasTauriRuntime } from './tauri';
 
 /** 根据当前运行时状态构建侧栏导航区段配置列表。 */
@@ -11,7 +10,6 @@ export function buildSidebarSections(
   globalConnectionCount: number,
   logCount: number,
   boardCount: number,
-  deployInfo: DeployResponse | null,
   activeBoardName: string | null,
 ): SidebarSectionConfig[] {
   return [
@@ -44,12 +42,6 @@ export function buildSidebarSections(
       group: 'main',
       label: '插件管理',
       badge: '节点类型',
-    },
-    {
-      key: 'payload',
-      group: 'main',
-      label: '测试载荷',
-      badge: activeBoardName ? (deployInfo ? '可发送' : '待部署') : '未进入工程',
     },
     {
       key: 'logs',

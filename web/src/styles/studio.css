@@ -614,8 +614,7 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
   overflow: hidden;
 }
 
-.studio-content__panel--editor .code-editor--workspace,
-.studio-content__panel--editor .code-editor--payload {
+.studio-content__panel--editor .code-editor--workspace {
   min-height: 0;
   flex: 1;
 }

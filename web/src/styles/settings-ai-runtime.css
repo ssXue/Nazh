@@ -1378,10 +1378,6 @@
   flex: 0 0 auto;
 }
 
-.code-editor--payload {
-  min-height: 96px;
-}
-
 .code-editor.is-invalid {
   border-color: var(--danger-border);
 }

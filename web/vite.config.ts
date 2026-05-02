@@ -28,6 +28,9 @@ function vendorChunk(id: string): string | undefined {
 export default defineConfig({
   plugins: [react()],
   clearScreen: false,
+  resolve: {
+    dedupe: ['@codemirror/state', '@codemirror/view'],
+  },
   build: {
     chunkSizeWarningLimit: 6500,
     rollupOptions: {

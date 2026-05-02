@@ -24,7 +24,6 @@ import { BoardWorkspace, type BoardWorkspaceHandle } from './BoardWorkspace';
 import { BoardsPanel, type BoardItem } from './BoardsPanel';
 import { DashboardPanel } from './DashboardPanel';
 import { LogsPanel } from './LogsPanel';
-import { PayloadPanel } from './PayloadPanel';
 import { PluginPanel } from './PluginPanel';
 import { RuntimeManagerPanel } from './RuntimeManagerPanel';
 import { ScrollSurface } from './ScrollSurface';
@@ -266,6 +265,9 @@ export function StudioContentRouter({
               appErrors: engine.appErrors,
               results: engine.results,
               activeWorkflowId: currentBoardDeployInfo?.workflowId ?? null,
+              payloadText,
+              deployInfo: currentBoardDeployInfo,
+              onPayloadTextChange,
             }}
             onToggleRuntimeDockCollapsed={() =>
               engine.setIsRuntimeDockCollapsed((current) => !current)
@@ -340,22 +342,6 @@ export function StudioContentRouter({
           <ScrollSurface className="panel studio-content__panel studio-content__panel--scroll">
             <PluginPanel isTauriRuntime={isTauriRuntime} />
           </ScrollSurface>
-        </section>
-      );
-    case 'payload':
-      if (!activeBoard) {
-        return <ProjectGate title="测试载荷" onNavigateToBoards={() => onSectionChange('boards')} />;
-      }
-
-      return (
-        <section className="studio-content studio-content--panel">
-          <div className="panel studio-content__panel studio-content__panel--editor">
-            <PayloadPanel
-              payloadText={payloadText}
-              deployInfo={currentBoardDeployInfo}
-              onPayloadTextChange={onPayloadTextChange}
-            />
-          </div>
         </section>
       );
     case 'logs':

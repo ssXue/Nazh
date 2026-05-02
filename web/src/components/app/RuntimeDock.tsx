@@ -10,6 +10,7 @@ import {
   PlusIcon,
   XCloseIcon,
 } from './AppIcons';
+import { JsonCodeEditor } from '@flowgram.ai/form-materials';
 import {
   buildEventFeedPlainText,
   buildRuntimeConsoleEntries,
@@ -30,11 +31,12 @@ function normalizeResultPayload(payload: unknown): Record<string, unknown> | unk
   return { value: payload };
 }
 
-type RuntimeDockPanel = 'events' | 'results' | 'connections' | 'variables';
+type RuntimeDockPanel = 'events' | 'results' | 'payload' | 'connections' | 'variables';
 
 const runtimeDockTabs: Array<{ id: RuntimeDockPanel; label: string; title: string }> = [
   { id: 'events', label: '事件', title: '执行事件流' },
   { id: 'results', label: '结果', title: '结果载荷' },
+  { id: 'payload', label: '载荷', title: '测试载荷' },
   { id: 'connections', label: '连接', title: '连接资源' },
   { id: 'variables', label: '变量', title: '运行时变量' },
 ];
@@ -50,7 +52,7 @@ function createColumnId(): string {
 }
 
 function RuntimeDockTabIcon({ panel }: { panel: RuntimeDockPanel }) {
-  if (panel === 'results') {
+  if (panel === 'results' || panel === 'payload') {
     return <PayloadIcon width={14} height={14} />;
   }
 
@@ -78,6 +80,9 @@ export function RuntimeDock({
   isCollapsed,
   onToggleCollapsed,
   activeWorkflowId,
+  payloadText,
+  deployInfo,
+  onPayloadTextChange,
 }: RuntimeDockProps) {
   const logViewportRef = useRef<HTMLDivElement | null>(null);
   const [hasCopiedEventFeed, setHasCopiedEventFeed] = useState(false);
@@ -107,10 +112,11 @@ export function RuntimeDock({
     () => ({
       events: runtimeConsoleEntries.length,
       results: results.length,
+      payload: deployInfo ? 1 : 0,
       connections: connectionPreview.length,
       variables: variableCount,
     }),
-    [runtimeConsoleEntries.length, results.length, connectionPreview.length, variableCount],
+    [runtimeConsoleEntries.length, results.length, deployInfo, connectionPreview.length, variableCount],
   );
 
   const isMultiColumn = columns.length > 1;
@@ -381,6 +387,9 @@ export function RuntimeDock({
                   activeWorkflowId={activeWorkflowId}
                   onVariableCountChange={setVariableCount}
                   isCollapsed={isCollapsed}
+                  payloadText={payloadText}
+                  deployInfo={deployInfo}
+                  onPayloadTextChange={onPayloadTextChange}
                 />
               </div>
 
@@ -413,6 +422,9 @@ interface DockPanelContentProps {
   activeWorkflowId: RuntimeDockProps['activeWorkflowId'];
   onVariableCountChange: (count: number) => void;
   isCollapsed: boolean;
+  payloadText: string;
+  deployInfo: RuntimeDockProps['deployInfo'];
+  onPayloadTextChange: RuntimeDockProps['onPayloadTextChange'];
 }
 
 function DockPanelContent({
@@ -428,6 +440,9 @@ function DockPanelContent({
   activeWorkflowId,
   onVariableCountChange,
   isCollapsed,
+  payloadText,
+  deployInfo,
+  onPayloadTextChange,
 }: DockPanelContentProps) {
   if (panel === 'events') {
     return (
@@ -533,6 +548,10 @@ function DockPanelContent({
     );
   }
 
+  if (panel === 'payload') {
+    return <PayloadEditorPanel payloadText={payloadText} deployInfo={deployInfo} onPayloadTextChange={onPayloadTextChange} themeMode={themeMode} />;
+  }
+
   if (panel === 'connections') {
     return <ConnectionTable connections={connectionPreview} />;
   }
@@ -548,6 +567,34 @@ function DockPanelContent({
           workflowId={activeWorkflowId}
           onVariableCountChange={onVariableCountChange}
         />
+      </div>
+    </section>
+  );
+}
+
+// ── 载荷编辑面板 ──
+
+function PayloadEditorPanel({
+  payloadText,
+  deployInfo,
+  onPayloadTextChange,
+  themeMode,
+}: {
+  payloadText: string;
+  deployInfo: RuntimeDockProps['deployInfo'];
+  onPayloadTextChange: RuntimeDockProps['onPayloadTextChange'];
+  themeMode: RuntimeDockProps['themeMode'];
+}) {
+  return (
+    <section className="runtime-dock__panel is-active" role="tabpanel">
+      <div className="runtime-dock__panel-header">
+        <h3>测试载荷</h3>
+        <span className="runtime-dock__payload-badge">{deployInfo ? '已可发送' : '等待部署'}</span>
+      </div>
+      <div className="runtime-dock__panel-body runtime-dock__panel-body--payload">
+        <div className="runtime-dock__payload-editor">
+          <JsonCodeEditor value={payloadText} onChange={onPayloadTextChange} theme={themeMode} />
+        </div>
       </div>
     </section>
   );

@@ -472,7 +472,6 @@ function App() {
     engine.connections.length,
     engine.eventFeed.length + engine.appErrors.length,
     boardItems.length,
-    currentBoardDeployInfo,
     activeBoard?.name ?? null,
   );
   function renderRestoreDialog() {
