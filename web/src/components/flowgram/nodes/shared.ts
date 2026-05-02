@@ -234,6 +234,7 @@ export function normalizeNodeKind(value: unknown): NazhNodeKind {
       return value;
     case 'c2f':
     case 'minutesSince':
+    case 'lookup':
       return value;
     case 'native':
     default:

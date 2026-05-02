@@ -42,7 +42,6 @@ function RuntimeDockTabIcon({ panel }: { panel: RuntimeDockPanel }) {
   }
 
   if (panel === 'variables') {
-    // 暂复用 PayloadIcon；后续可替换为专属变量图标
     return <PayloadIcon width={14} height={14} />;
   }
 
