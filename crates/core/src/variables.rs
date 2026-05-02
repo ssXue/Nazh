@@ -49,6 +49,8 @@ pub struct VariableDeclaration {
 pub struct TypedVariable {
     pub value: Value,
     pub variable_type: PinType,
+    /// 部署时的声明初值，`reset()` 恢复到此值。
+    pub initial: Value,
     pub updated_at: DateTime<Utc>,
     pub updated_by: Option<String>,
     /// 变更通知 channel。`set()` / `compare_and_swap()` 写入时发送 `(timestamp, value)`。
@@ -71,6 +73,7 @@ impl Clone for TypedVariable {
         Self {
             value: self.value.clone(),
             variable_type: self.variable_type.clone(),
+            initial: self.initial.clone(),
             updated_at: self.updated_at,
             updated_by: self.updated_by.clone(),
             watch_tx: self.watch_tx.clone(),
@@ -93,6 +96,8 @@ impl TypedVariable {
 pub struct TypedVariableSnapshot {
     pub value: Value,
     pub variable_type: PinType,
+    /// 部署时的声明初值，前端用于"重置"按钮。
+    pub initial: Value,
     /// RFC3339 时间戳。
     pub updated_at: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -105,6 +110,7 @@ impl From<TypedVariable> for TypedVariableSnapshot {
         Self {
             value: var.value,
             variable_type: var.variable_type,
+            initial: var.initial,
             updated_at: var.updated_at.to_rfc3339(),
             updated_by: var.updated_by,
         }
@@ -171,6 +177,7 @@ impl WorkflowVariables {
                 TypedVariable {
                     value: declaration.initial.clone(),
                     variable_type: declaration.variable_type.clone(),
+                    initial: declaration.initial.clone(),
                     updated_at: Utc::now(),
                     updated_by: None,
                     watch_tx,
@@ -309,6 +316,20 @@ impl WorkflowVariables {
         self.try_emit_changed(name, event_payload);
 
         Ok(())
+    }
+
+    /// 将变量重置为声明初值。语义上等价于 `set(name, initial, updated_by)`。
+    ///
+    /// # Errors
+    ///
+    /// - `UnknownVariable` — 变量未声明。
+    pub fn reset(&self, name: &str, updated_by: Option<&str>) -> Result<(), EngineError> {
+        let initial = self
+            .inner
+            .get(name)
+            .map(|entry| entry.value().initial.clone())
+            .ok_or_else(|| EngineError::unknown_variable(name))?;
+        self.set(name, initial, updated_by)
     }
 
     /// 原子比较交换：当前值与 `expected` 相等时写入 `new`。
@@ -949,5 +970,65 @@ mod tests {
 
         rx.changed().await.expect("watch 应收到通知");
         assert!(rx.borrow().is_none(), "删除后 watch 值应为 None");
+    }
+
+    #[test]
+    fn reset_恢复到声明初值() {
+        let vars = vars_with("counter", PinType::Integer, Value::from(0_i64));
+        vars.set("counter", Value::from(42_i64), Some("node-A"))
+            .unwrap();
+        assert_eq!(vars.get_value("counter"), Some(Value::from(42_i64)));
+
+        vars.reset("counter", Some("ipc")).unwrap();
+        assert_eq!(
+            vars.get_value("counter"),
+            Some(Value::from(0_i64)),
+            "reset 后应恢复到初值 0"
+        );
+        assert_eq!(
+            vars.get("counter").unwrap().updated_by.as_deref(),
+            Some("ipc")
+        );
+    }
+
+    #[test]
+    fn reset_未声明变量返回_unknownvariable() {
+        let vars = WorkflowVariables::empty();
+        let err = vars.reset("nope", None).unwrap_err();
+        assert!(
+            matches!(err, EngineError::UnknownVariable { ref name } if name == "nope"),
+            "reset 不存在的变量应返回 UnknownVariable"
+        );
+    }
+
+    #[tokio::test]
+    async fn reset_值变化时发_variablechanged_事件() {
+        use tokio::sync::mpsc;
+
+        let (tx, mut rx) = mpsc::channel(8);
+        let mut decls = HashMap::new();
+        decls.insert(
+            "x".to_owned(),
+            VariableDeclaration {
+                variable_type: PinType::Integer,
+                initial: Value::from(10_i64),
+            },
+        );
+        let vars = WorkflowVariables::from_declarations(&decls).unwrap();
+        vars.set_event_sender("wf-1".to_owned(), tx);
+
+        // 先改成 99，再 reset 回 10
+        vars.set("x", Value::from(99_i64), None).unwrap();
+        let _ = rx.recv().await;
+        vars.reset("x", Some("ipc")).unwrap();
+
+        let event = rx.recv().await.expect("reset 应触发事件");
+        match event {
+            crate::ExecutionEvent::VariableChanged { value, name, .. } => {
+                assert_eq!(name, "x");
+                assert_eq!(value, Value::from(10_i64));
+            }
+            other => panic!("expected VariableChanged, got {other:?}"),
+        }
     }
 }
