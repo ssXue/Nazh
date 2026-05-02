@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use std::{
     io::{Read, Write},
     net::TcpListener,
@@ -1007,9 +1009,9 @@ async fn timer_node_injects_trigger_metadata() {
             Some(first_output) => {
                 assert_eq!(first_output.payload["seed"], json!("keep"));
                 assert_eq!(first_output.payload["source"], json!("timer"));
-                assert_eq!(first_output.metadata["timer"]["node_id"], json!("tick"));
-                assert_eq!(first_output.metadata["timer"]["interval_ms"], json!(2_500));
-                assert_eq!(first_output.metadata["timer"]["immediate"], json!(true));
+                assert_eq!(first_output.metadata.as_ref().unwrap()["timer"]["node_id"], json!("tick"));
+                assert_eq!(first_output.metadata.as_ref().unwrap()["timer"]["interval_ms"], json!(2_500));
+                assert_eq!(first_output.metadata.as_ref().unwrap()["timer"]["immediate"], json!(true));
             }
             None => panic!("timer node should produce one output"),
         },
@@ -1074,14 +1076,14 @@ async fn serial_trigger_node_normalizes_ascii_and_hex_frames() {
                     json!("52 46 49 44 2D 34 32")
                 );
                 assert_eq!(
-                    first_output.metadata["serial"]["node_id"],
+                    first_output.metadata.as_ref().unwrap()["serial"]["node_id"],
                     json!("scan_input")
                 );
                 assert_eq!(
-                    first_output.metadata["serial"]["port_path"],
+                    first_output.metadata.as_ref().unwrap()["serial"]["port_path"],
                     json!("/dev/tty.mock")
                 );
-                assert_eq!(first_output.metadata["serial"]["encoding"], json!("hex"));
+                assert_eq!(first_output.metadata.as_ref().unwrap()["serial"]["encoding"], json!("hex"));
             }
             None => panic!("serial trigger node should produce one output"),
         },
@@ -1111,9 +1113,9 @@ async fn modbus_read_node_emits_simulated_values() {
     match result {
         Ok(execution) => match execution.first() {
             Some(first_output) => {
-                assert_eq!(first_output.metadata["modbus"]["simulated"], json!(true));
-                assert_eq!(first_output.metadata["modbus"]["register"], json!(40_001));
-                assert_eq!(first_output.metadata["modbus"]["quantity"], json!(2));
+                assert_eq!(first_output.metadata.as_ref().unwrap()["modbus"]["simulated"], json!(true));
+                assert_eq!(first_output.metadata.as_ref().unwrap()["modbus"]["register"], json!(40_001));
+                assert_eq!(first_output.metadata.as_ref().unwrap()["modbus"]["quantity"], json!(2));
                 assert!(
                     first_output.payload["values"].as_array().map(Vec::len) == Some(2),
                     "modbus read node should output two simulated values",
@@ -1246,7 +1248,7 @@ async fn http_client_node_posts_payload_and_records_response() {
     match result {
         Ok(execution) => match execution.first() {
             Some(first_output) => {
-                assert_eq!(first_output.metadata["http"]["status"], json!(200));
+                assert_eq!(first_output.metadata.as_ref().unwrap()["http"]["status"], json!(200));
                 assert_eq!(first_output.payload["http_response"]["ok"], json!(true));
                 assert_eq!(
                     first_output.payload["http_response"]["channel"],
@@ -1413,13 +1415,13 @@ async fn http_alarm_node_renders_dingtalk_markdown_body() {
     match result {
         Ok(execution) => match execution.first() {
             Some(first_output) => {
-                assert_eq!(first_output.metadata["http"]["status"], json!(200));
+                assert_eq!(first_output.metadata.as_ref().unwrap()["http"]["status"], json!(200));
                 assert_eq!(
-                    first_output.metadata["http"]["webhook_kind"],
+                    first_output.metadata.as_ref().unwrap()["http"]["webhook_kind"],
                     json!("dingtalk")
                 );
                 assert_eq!(
-                    first_output.metadata["http"]["body_mode"],
+                    first_output.metadata.as_ref().unwrap()["http"]["body_mode"],
                     json!("dingtalk_markdown")
                 );
                 assert_eq!(first_output.payload["http_response"]["errcode"], json!(0));
@@ -1458,7 +1460,7 @@ async fn sql_writer_node_persists_payload_into_sqlite() {
         Ok(execution) => match execution.first() {
             Some(first_output) => {
                 assert_eq!(
-                    first_output.metadata["sql_writer"]["table"],
+                    first_output.metadata.as_ref().unwrap()["sql_writer"]["table"],
                     json!("workflow_logs")
                 );
             }
@@ -1499,11 +1501,11 @@ async fn debug_console_node_marks_payload_and_passes_through() {
             Some(first_output) => {
                 assert_eq!(first_output.payload["status"], json!("ok"));
                 assert_eq!(
-                    first_output.metadata["debug_console"]["label"],
+                    first_output.metadata.as_ref().unwrap()["debug_console"]["label"],
                     json!("tap")
                 );
                 assert_eq!(
-                    first_output.metadata["debug_console"]["pretty"],
+                    first_output.metadata.as_ref().unwrap()["debug_console"]["pretty"],
                     json!(false)
                 );
             }
@@ -1543,7 +1545,7 @@ async fn mqtt_subscribe_node_normalizes_incoming_message() {
     match result {
         Ok(execution) => match execution.first() {
             Some(first_output) => {
-                assert_eq!(first_output.metadata["mqtt"]["mode"], json!("subscribe"));
+                assert_eq!(first_output.metadata.as_ref().unwrap()["mqtt"]["mode"], json!("subscribe"));
                 assert_eq!(first_output.payload["mqtt_topic"], json!("sensors/temp"));
                 assert_eq!(first_output.payload["temperature"], json!(42.5));
                 assert_eq!(first_output.payload["humidity"], json!(65));

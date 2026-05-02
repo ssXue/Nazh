@@ -50,8 +50,8 @@ pub use plugin::{
 pub use tokio_util::sync::CancellationToken;
 pub use uuid::Uuid;
 pub use variables::{
-    TypedVariable, TypedVariableSnapshot, VariableDeclaration, WorkflowVariables,
-    pin_type_matches_value,
+    TypedVariable, TypedVariableSnapshot, VariableDeclaration, WorkflowVariableEvent,
+    WorkflowVariables, emit_variable_event, pin_type_matches_value,
 };
 
 /// ts-rs 类型导出入口。仅在 `ts-export` feature 启用时编译。

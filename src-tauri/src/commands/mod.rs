@@ -8,4 +8,6 @@ pub(crate) mod project_library;
 pub(crate) mod runtime;
 pub(crate) mod serial;
 pub(crate) mod variables;
-pub(crate) mod workflow;
+pub(crate) mod workflow_deploy;
+pub(crate) mod workflow_dispatch;
+pub(crate) mod workflow_undeploy;

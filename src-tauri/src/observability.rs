@@ -344,31 +344,8 @@ impl ObservabilityStore {
                 ),
                 false,
             ),
-            // VariableChanged 不写入可观测性日志：Task 4（Tauri shell drain 循环）会把它
-            // 单独转发到 workflow://variable-changed。此处仅返回一个 sentinel entry 以满足
-            // 函数签名 Result<ObservabilityEntry, String>——caller 用 `let _ = ...` 静默丢弃，
-            // 不调用 append_jsonl，不持久化。kind 用 "_skip" 后缀提醒未来读者本条目不入库。
-            ExecutionEvent::VariableChanged { .. } => {
-                return Ok(self.build_entry(ObservabilityEntryDraft::execution(
-                    "info",
-                    "variable_changed_skip",
-                    "variables".to_owned(),
-                    "VariableChanged 不持久化（Task 4 转发）".to_owned(),
-                    String::new(),
-                    now,
-                )));
-            }
-            // ADR-0012 Phase 3：变量删除与 VariableChanged 同理，不入可观测性日志。
-            ExecutionEvent::VariableDeleted { .. } => {
-                return Ok(self.build_entry(ObservabilityEntryDraft::execution(
-                    "info",
-                    "variable_deleted_skip",
-                    "variables".to_owned(),
-                    "VariableDeleted 不持久化（独立事件通道转发）".to_owned(),
-                    String::new(),
-                    now,
-                )));
-            }
+            // 变量事件已从 ExecutionEvent 中拆出到独立的 WorkflowVariableEvent 通道
+            // （B1-R0-01/B1-R0-05），不再经过可观测性日志路径。
             // ADR-0016：边级观测事件不持久化到可观测性日志——
             // 它们通过 workflow://node-status 实时流向前端。
             ExecutionEvent::EdgeTransmitSummary(_) | ExecutionEvent::BackpressureDetected(_) => {

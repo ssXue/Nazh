@@ -183,13 +183,13 @@ impl NodeTrait for LoopNode {
         for (index, item) in items.into_iter().enumerate() {
             outputs.push(NodeOutput {
                 payload: with_loop_state(payload.clone(), "body", Some(index), item_count, item),
-                metadata: Map::new(),
+                metadata: None,
                 dispatch: NodeDispatch::Route(vec!["body".to_owned()]),
             });
         }
         outputs.push(NodeOutput {
             payload: with_loop_state(payload, "done", None, item_count, None),
-            metadata: Map::new(),
+            metadata: None,
             dispatch: NodeDispatch::Route(vec!["done".to_owned()]),
         });
         Ok(NodeExecution::from_outputs(outputs))

@@ -48,7 +48,7 @@ use connections::SharedConnectionManager;
 use nazh_core::{
     ArenaDataStore, CancellationToken, ContextRef, DataStore, EngineError, NodeHandle,
     NodeLifecycleContext, NodeRegistry, NodeTrait, OutputCache, PinKind, RuntimeResources,
-    SharedResources,
+    SharedResources, WorkflowVariableEvent,
 };
 
 /// 校验、实例化并将工作流图部署为并发 Tokio 任务。
@@ -77,7 +77,7 @@ pub async fn deploy_workflow(
 
 /// 校验、实例化并将工作流图部署为并发 Tokio 任务，并可选注入 AI 服务。
 ///
-/// `workflow_id` 由调用方传入，用于 [`ExecutionEvent::VariableChanged`] 事件的
+/// `workflow_id` 由调用方传入，用于 [`WorkflowVariableEvent::Changed`] 事件的
 /// `workflow_id` 字段。Tauri shell 经 `derive_workflow_id` 派生后传入，保证与
 /// `DesktopWorkflow.workflow_id` 对齐；引擎内部调用 / 测试可传 `None`，
 /// 此时按 `graph.name > "anonymous"` 顺序 fallback。
@@ -180,8 +180,12 @@ pub async fn deploy_workflow_with_ai_and_variable_overrides<S: BuildHasher>(
     let (event_tx, event_rx) = mpsc::channel(event_capacity);
     let (result_tx, result_rx) = mpsc::channel(event_capacity);
 
-    // ADR-0012 Phase 2：注入事件通道，让 set/CAS 在值变化时通过 ExecutionEvent::VariableChanged
-    // 流向 Tauri shell drain loop（Task 4 转发到 workflow://variable-changed）。
+    // B1-R0-01/B1-R0-05：变量控制事件走独立通道，与执行可观测事件分离。
+    let (var_event_tx, var_event_rx) = mpsc::channel::<WorkflowVariableEvent>(event_capacity);
+
+    // ADR-0012 Phase 2：注入变量事件通道，让 set/CAS 在值变化时通过
+    // WorkflowVariableEvent::Changed 流向 Tauri shell drain loop
+    //（Task 4 转发到 workflow://variable-changed）。
     //
     // 必须在 resource_bag 装配和节点 on_deploy 启动之前完成注入——
     // 节点 on_deploy 期间的写入若 event_sink 尚未就绪将静默丢失事件。
@@ -193,7 +197,7 @@ pub async fn deploy_workflow_with_ai_and_variable_overrides<S: BuildHasher>(
     let workflow_id_for_events = workflow_id
         .or_else(|| graph.name.clone())
         .unwrap_or_else(|| "anonymous".to_owned());
-    workflow_variables.set_event_sender(workflow_id_for_events, event_tx.clone());
+    workflow_variables.set_event_sender(workflow_id_for_events, var_event_tx);
 
     let mut resource_bag = RuntimeResources::new()
         .with_resource(connection_manager.clone())
@@ -461,6 +465,7 @@ pub async fn deploy_workflow_with_ai_and_variable_overrides<S: BuildHasher>(
         },
         streams: WorkflowStreams {
             event_rx,
+            var_event_rx,
             result_rx,
             store,
         },

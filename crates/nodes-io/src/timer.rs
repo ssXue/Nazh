@@ -104,7 +104,7 @@ impl NodeTrait for TimerNode {
         }
 
         Ok(NodeExecution::broadcast(Value::Object(payload_map))
-            .with_metadata(self.timer_metadata()))
+            .with_metadata(Some(self.timer_metadata())))
     }
 
     async fn on_deploy(&self, ctx: NodeLifecycleContext) -> Result<LifecycleGuard, EngineError> {

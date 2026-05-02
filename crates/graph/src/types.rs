@@ -13,7 +13,7 @@ use connections::ConnectionDefinition;
 use nazh_core::{
     CancellationToken, ContextRef, DataStore, EngineError, ExecutionEvent, LifecycleGuard,
     OutputCache, PinKind, SharedResources, VariableDeclaration, WorkflowContext,
-    WorkflowNodeDefinition,
+    WorkflowNodeDefinition, WorkflowVariableEvent,
 };
 use serde::{Deserialize, Deserializer, Serialize};
 use tokio::sync::mpsc;
@@ -94,6 +94,8 @@ pub struct WorkflowIngress {
 /// 已部署工作流的事件流和结果流接收端。
 pub struct WorkflowStreams {
     pub(crate) event_rx: mpsc::Receiver<ExecutionEvent>,
+    /// 变量控制事件接收端（独立通道，B1-R0-01/B1-R0-05）。
+    pub(crate) var_event_rx: mpsc::Receiver<WorkflowVariableEvent>,
     pub(crate) result_rx: mpsc::Receiver<ContextRef>,
     pub(crate) store: Arc<dyn DataStore>,
 }
@@ -265,6 +267,11 @@ impl WorkflowStreams {
         self.event_rx.recv().await
     }
 
+    /// 从变量控制事件流中取出下一个 [`WorkflowVariableEvent`]。
+    pub async fn next_var_event(&mut self) -> Option<WorkflowVariableEvent> {
+        self.var_event_rx.recv().await
+    }
+
     /// 从结果流中取出下一个 [`ContextRef`]，从 [`DataStore`] 重建为 [`WorkflowContext`]。
     pub async fn next_result(&mut self) -> Option<WorkflowContext> {
         let ctx_ref = self.result_rx.recv().await?;
@@ -285,10 +292,11 @@ impl WorkflowStreams {
         self,
     ) -> (
         mpsc::Receiver<ExecutionEvent>,
+        mpsc::Receiver<WorkflowVariableEvent>,
         mpsc::Receiver<ContextRef>,
         Arc<dyn DataStore>,
     ) {
-        (self.event_rx, self.result_rx, self.store)
+        (self.event_rx, self.var_event_rx, self.result_rx, self.store)
     }
 }
 
@@ -302,6 +310,11 @@ impl WorkflowDeployment {
 
     pub async fn next_event(&mut self) -> Option<ExecutionEvent> {
         self.streams.next_event().await
+    }
+
+    /// 从变量控制事件流中取出下一个 [`WorkflowVariableEvent`]（独立通道）。
+    pub async fn next_var_event(&mut self) -> Option<WorkflowVariableEvent> {
+        self.streams.next_var_event().await
     }
 
     pub async fn next_result(&mut self) -> Option<WorkflowContext> {

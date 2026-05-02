@@ -21,6 +21,9 @@ use crate::error::EngineError;
 ///
 /// DAG 工作流和线性流水线共享同一事件类型，
 /// 前端只需注册一个事件监听器即可处理所有执行模式。
+///
+/// **变量控制事件**（变更/删除）已迁出到 [`WorkflowVariableEvent`](crate::WorkflowVariableEvent)，
+/// 走独立事件通道（B1-R0-01/B1-R0-05 关注点分离）。本枚举仅包含执行可观测性事件。
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
 pub enum ExecutionEvent {
@@ -38,24 +41,6 @@ pub enum ExecutionEvent {
     Output { stage: String, trace_id: Uuid },
     /// 整条流水线执行完毕（仅线性流水线模式下发出）。
     Finished { trace_id: Uuid },
-    /// 工作流变量值变更（ADR-0012 Phase 2，write-on-change 语义）。
-    ///
-    /// 仅当 `set` / `compare_and_swap` 检测到 `entry.value != new` 时 emit；
-    /// 写入相同值不触发本事件（避免轮询脚本制造事件刷屏）。
-    /// `updated_at` 是 RFC3339 字符串，保持与 [`TypedVariableSnapshot`](crate::TypedVariableSnapshot) 一致；
-    /// `updated_by` 是写入方 `node_id`（IPC 写入时为 `Some("ipc")` / 类似哨兵）。
-    /// `workflow_id` 由 emit 路径在事件构造时注入——`WorkflowVariables` 自身不持有
-    /// 所属 workflow 的 id，调用方（`set` / `compare_and_swap` 的 emit 闭包）负责传入。
-    VariableChanged {
-        workflow_id: String,
-        name: String,
-        value: serde_json::Value,
-        updated_at: String,
-        #[cfg_attr(feature = "ts-export", ts(optional))]
-        updated_by: Option<String>,
-    },
-    /// 工作流变量被删除（ADR-0012 Phase 3）。
-    VariableDeleted { workflow_id: String, name: String },
     /// 边传输汇总（ADR-0016，默认 100ms 窗口）。
     EdgeTransmitSummary(EdgeTransmitSummary),
     /// 背压告警（ADR-0016，下游 channel 接近容量上限）。
@@ -147,20 +132,8 @@ enum ExecutionEventSerde {
     Finished {
         trace_id: Uuid,
     },
-    VariableChanged {
-        workflow_id: String,
-        name: String,
-        value: serde_json::Value,
-        updated_at: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        updated_by: Option<String>,
-    },
     EdgeTransmitSummary(EdgeTransmitSummary),
     BackpressureDetected(BackpressureDetected),
-    VariableDeleted {
-        workflow_id: String,
-        name: String,
-    },
 }
 
 impl From<&ExecutionEvent> for ExecutionEventSerde {
@@ -191,29 +164,12 @@ impl From<&ExecutionEvent> for ExecutionEventSerde {
             ExecutionEvent::Finished { trace_id } => Self::Finished {
                 trace_id: *trace_id,
             },
-            ExecutionEvent::VariableChanged {
-                workflow_id,
-                name,
-                value,
-                updated_at,
-                updated_by,
-            } => Self::VariableChanged {
-                workflow_id: workflow_id.clone(),
-                name: name.clone(),
-                value: value.clone(),
-                updated_at: updated_at.clone(),
-                updated_by: updated_by.clone(),
-            },
             ExecutionEvent::EdgeTransmitSummary(summary) => {
                 Self::EdgeTransmitSummary(summary.clone())
             }
             ExecutionEvent::BackpressureDetected(detected) => {
                 Self::BackpressureDetected(detected.clone())
             }
-            ExecutionEvent::VariableDeleted { workflow_id, name } => Self::VariableDeleted {
-                workflow_id: workflow_id.clone(),
-                name: name.clone(),
-            },
         }
     }
 }
@@ -242,25 +198,9 @@ impl From<ExecutionEventSerde> for ExecutionEvent {
             },
             ExecutionEventSerde::Output { stage, trace_id } => Self::Output { stage, trace_id },
             ExecutionEventSerde::Finished { trace_id } => Self::Finished { trace_id },
-            ExecutionEventSerde::VariableChanged {
-                workflow_id,
-                name,
-                value,
-                updated_at,
-                updated_by,
-            } => Self::VariableChanged {
-                workflow_id,
-                name,
-                value,
-                updated_at,
-                updated_by,
-            },
             ExecutionEventSerde::EdgeTransmitSummary(summary) => Self::EdgeTransmitSummary(summary),
             ExecutionEventSerde::BackpressureDetected(detected) => {
                 Self::BackpressureDetected(detected)
-            }
-            ExecutionEventSerde::VariableDeleted { workflow_id, name } => {
-                Self::VariableDeleted { workflow_id, name }
             }
         }
     }
@@ -431,64 +371,6 @@ mod tests {
                 metadata: None,
             })
         );
-    }
-}
-
-#[cfg(test)]
-#[allow(clippy::unwrap_used)]
-mod variable_changed_tests {
-    use super::*;
-
-    #[test]
-    fn variable_changed_往返序列化() {
-        let event = ExecutionEvent::VariableChanged {
-            workflow_id: "wf-1".to_owned(),
-            name: "setpoint".to_owned(),
-            value: serde_json::json!(25.5),
-            updated_at: "2026-04-27T10:00:00+00:00".to_owned(),
-            updated_by: Some("node-A".to_owned()),
-        };
-        let json = serde_json::to_string(&event).unwrap();
-        let restored: ExecutionEvent = serde_json::from_str(&json).unwrap();
-        assert_eq!(event, restored);
-    }
-
-    #[test]
-    fn variable_changed_value_为嵌套对象时往返序列化() {
-        let event = ExecutionEvent::VariableChanged {
-            workflow_id: "wf-1".to_owned(),
-            name: "config".to_owned(),
-            value: serde_json::json!({"threshold": 10, "tags": ["a", "b"]}),
-            updated_at: "2026-04-27T10:00:00+00:00".to_owned(),
-            updated_by: None,
-        };
-        let json = serde_json::to_string(&event).unwrap();
-        // 顺带验证 skip_serializing_if = "Option::is_none"：updated_by 字段不应出现
-        assert!(
-            !json.contains("updated_by"),
-            "updated_by = None 时不应出现在序列化输出，实际：{json}"
-        );
-        let restored: ExecutionEvent = serde_json::from_str(&json).unwrap();
-        assert_eq!(event, restored);
-    }
-
-    #[test]
-    fn variable_changed_updated_by_缺省时反序列化为_none() {
-        let json = serde_json::json!({
-            "VariableChanged": {
-                "workflow_id": "wf-1",
-                "name": "x",
-                "value": 1,
-                "updated_at": "2026-04-27T10:00:00+00:00"
-            }
-        });
-        let restored: ExecutionEvent = serde_json::from_value(json).unwrap();
-        match restored {
-            ExecutionEvent::VariableChanged { updated_by, .. } => {
-                assert!(updated_by.is_none(), "updated_by 缺省应为 None");
-            }
-            other => panic!("expected VariableChanged, got {other:?}"),
-        }
     }
 }
 

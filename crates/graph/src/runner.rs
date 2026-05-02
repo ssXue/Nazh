@@ -215,7 +215,9 @@ pub(crate) async fn run_node(
         match result {
             Ok(output) => {
                 let mut send_error = None;
-                let mut merged_metadata = serde_json::Map::new();
+                // 合并元数据：`None` = 无节点产出元数据；有节点返回 `Some(_)` 时升级为 `Some(Map)`。
+                // 约定（B1-R0-02）：`None` 不升级为 `Some(empty)`，`Some(empty)` 不降级为 `None`。
+                let mut merged_metadata: Option<serde_json::Map<String, serde_json::Value>> = None;
 
                 for node_output in output.outputs {
                     // Data + Reactive 缓存写（不 push）。Reactive = Data（写缓存）+ Exec（推 ContextRef），
@@ -267,8 +269,13 @@ pub(crate) async fn run_node(
                             .collect::<Vec<_>>(),
                     };
 
-                    for (key, value) in node_output.metadata {
-                        merged_metadata.insert(key, value);
+                    // 合并节点输出元数据到事件级 metadata。
+                    // `None` → 跳过；`Some(Map)` → 逐 key 合并。
+                    if let Some(meta) = node_output.metadata {
+                        let merged = merged_metadata.get_or_insert_with(serde_json::Map::new);
+                        for (key, value) in meta {
+                            merged.insert(key, value);
+                        }
                     }
 
                     let consumer_count = if matching_targets.is_empty() {
@@ -355,11 +362,7 @@ pub(crate) async fn run_node(
                     ExecutionEvent::Completed(nazh_core::CompletedExecutionEvent {
                         stage: node_id.clone(),
                         trace_id,
-                        metadata: if merged_metadata.is_empty() {
-                            None
-                        } else {
-                            Some(merged_metadata)
-                        },
+                        metadata: merged_metadata,
                     }),
                 );
             }

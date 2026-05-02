@@ -482,7 +482,7 @@ impl NodeTrait for HttpClientNode {
             connection_guard.mark_success();
         }
 
-        Ok(NodeExecution::broadcast(Value::Object(payload_map)).with_metadata(metadata))
+        Ok(NodeExecution::broadcast(Value::Object(payload_map)).with_metadata(Some(metadata)))
     }
 }
 

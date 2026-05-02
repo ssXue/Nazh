@@ -363,9 +363,9 @@ impl NodeTrait for ModbusReadNode {
             }
 
             return Ok(
-                NodeExecution::broadcast(Value::Object(payload_map)).with_metadata(Map::from_iter(
+                NodeExecution::broadcast(Value::Object(payload_map)).with_metadata(Some(Map::from_iter(
                     [("modbus".to_owned(), Value::Object(modbus_meta))],
-                )),
+                ))),
             );
         }
 
@@ -382,7 +382,7 @@ impl NodeTrait for ModbusReadNode {
             }),
         )]);
 
-        Ok(NodeExecution::broadcast(result).with_metadata(metadata))
+        Ok(NodeExecution::broadcast(result).with_metadata(Some(metadata)))
     }
 }
 

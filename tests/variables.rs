@@ -5,9 +5,9 @@
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use nazh_engine::{
-    ExecutionEvent, NodeRegistry, PinType, RuntimeResources, VariableDeclaration, WorkflowContext,
-    WorkflowGraph, WorkflowVariables, deploy_workflow_with_ai, shared_connection_manager,
-    standard_registry,
+    NodeRegistry, PinType, RuntimeResources, VariableDeclaration,
+    WorkflowContext, WorkflowGraph, WorkflowVariableEvent, WorkflowVariables,
+    deploy_workflow_with_ai, shared_connection_manager, standard_registry,
 };
 use serde_json::json;
 use tokio::time::timeout;
@@ -171,11 +171,11 @@ async fn 部署后写变量触发_variablechanged_事件() {
     vars.set("setpoint", json!(42.0), Some("test"))
         .expect("写入应成功");
 
-    // 期望在 1 秒内收到 VariableChanged；空 DAG 几乎无干扰事件。
+    // 期望在 1 秒内收到 WorkflowVariableEvent::Changed；空 DAG 几乎无干扰事件。
     let received_change = timeout(Duration::from_secs(1), async {
         loop {
-            match deployment.next_event().await {
-                Some(ExecutionEvent::VariableChanged {
+            match deployment.next_var_event().await {
+                Some(WorkflowVariableEvent::Changed {
                     workflow_id,
                     name,
                     value,
@@ -196,7 +196,7 @@ async fn 部署后写变量触发_variablechanged_事件() {
     .await;
     assert!(
         matches!(received_change, Ok(true)),
-        "未在 1s 内收到 VariableChanged"
+        "未在 1s 内收到 WorkflowVariableEvent::Changed"
     );
 
     deployment.shutdown().await;

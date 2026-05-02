@@ -126,9 +126,9 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            commands::workflow::deploy_workflow,
-            commands::workflow::dispatch_payload,
-            commands::workflow::undeploy_workflow,
+            commands::workflow_deploy::deploy_workflow,
+            commands::workflow_dispatch::dispatch_payload,
+            commands::workflow_undeploy::undeploy_workflow,
             commands::connections::list_connections,
             commands::catalog::list_node_types,
             commands::catalog::describe_node_pins,

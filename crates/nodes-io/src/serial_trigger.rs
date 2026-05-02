@@ -321,7 +321,7 @@ impl NodeTrait for SerialTriggerNode {
             &received_at,
         );
 
-        Ok(NodeExecution::broadcast(Value::Object(payload_map)).with_metadata(metadata))
+        Ok(NodeExecution::broadcast(Value::Object(payload_map)).with_metadata(Some(metadata)))
     }
 
     async fn on_deploy(&self, ctx: NodeLifecycleContext) -> Result<LifecycleGuard, EngineError> {

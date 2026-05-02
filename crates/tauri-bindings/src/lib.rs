@@ -10,6 +10,7 @@
 use std::collections::HashMap;
 
 use nazh_core::{NodeRegistry, PinDefinition, TypedVariableSnapshot};
+use nazh_engine::ConnectionDefinition;
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "ts-export")]
@@ -286,8 +287,8 @@ pub struct DeleteGlobalVariableRequest {
 
 /// `workflow://variable-changed` 事件载荷（ADR-0012 Phase 2）。
 ///
-/// 与 `ExecutionEvent::VariableChanged` 字段一致，但走独立 ts-rs 导出路径——
-/// 前端订阅时类型直接就位，不必从 `ExecutionEvent` 联合中分支。
+/// 由 Tauri shell 的变量事件 drain 循环从 [`nazh_core::WorkflowVariableEvent::Changed`]
+/// 直接构造——不再从 `ExecutionEvent` 分支（B1-R0-01/B1-R0-05）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
 #[serde(rename_all = "camelCase")]
@@ -320,43 +321,6 @@ pub struct ReactiveUpdatePayload {
     pub pin_id: String,
     pub value: serde_json::Value,
     pub updated_at: String,
-}
-
-/// 将 [`nazh_core::ExecutionEvent::VariableChanged`] 消耗式转换为 [`VariableChangedPayload`]。
-///
-/// drain loop 中用 `matches!` 提前判断 variant 后调用——消耗 owned event 避免 clone。
-/// 其他 variant 返回 `None`（仅作安全网，正常路径不会到达）。
-pub fn variable_changed_payload(
-    event: nazh_core::ExecutionEvent,
-) -> Option<VariableChangedPayload> {
-    match event {
-        nazh_core::ExecutionEvent::VariableChanged {
-            workflow_id,
-            name,
-            value,
-            updated_at,
-            updated_by,
-        } => Some(VariableChangedPayload {
-            workflow_id,
-            name,
-            value,
-            updated_at,
-            updated_by,
-        }),
-        _ => None,
-    }
-}
-
-/// 将 [`nazh_core::ExecutionEvent::VariableDeleted`] 消耗式转换为 [`VariableDeletedPayload`]。
-pub fn variable_deleted_payload(
-    event: nazh_core::ExecutionEvent,
-) -> Option<VariableDeletedPayload> {
-    match event {
-        nazh_core::ExecutionEvent::VariableDeleted { workflow_id, name } => {
-            Some(VariableDeletedPayload { workflow_id, name })
-        }
-        _ => None,
-    }
 }
 
 /// `snapshot_workflow_variables` 命令的请求。
@@ -400,6 +364,385 @@ pub fn list_node_types_response(registry: &NodeRegistry) -> ListNodeTypesRespons
     }
 }
 
+// ── 运行时 IPC 类型（从 src-tauri/src/runtime.rs 迁入） ──────────
+
+/// 调度队列背压策略。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub enum RuntimeBackpressureStrategy {
+    #[default]
+    Block,
+    RejectNewest,
+}
+
+/// 工作流运行时策略（队列容量 / 背压 / 重试）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowRuntimePolicy {
+    pub manual_queue_capacity: usize,
+    pub trigger_queue_capacity: usize,
+    pub manual_backpressure_strategy: RuntimeBackpressureStrategy,
+    pub trigger_backpressure_strategy: RuntimeBackpressureStrategy,
+    pub max_retry_attempts: u32,
+    pub initial_retry_backoff_ms: u64,
+    pub max_retry_backoff_ms: u64,
+}
+
+impl Default for WorkflowRuntimePolicy {
+    fn default() -> Self {
+        Self {
+            manual_queue_capacity: 64,
+            trigger_queue_capacity: 256,
+            manual_backpressure_strategy: RuntimeBackpressureStrategy::Block,
+            trigger_backpressure_strategy: RuntimeBackpressureStrategy::RejectNewest,
+            max_retry_attempts: 3,
+            initial_retry_backoff_ms: 150,
+            max_retry_backoff_ms: 2_000,
+        }
+    }
+}
+
+/// 工作流运行时策略输入（所有字段可选，缺省用默认值填充）。
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowRuntimePolicyInput {
+    #[serde(default)]
+    pub manual_queue_capacity: Option<usize>,
+    #[serde(default)]
+    pub trigger_queue_capacity: Option<usize>,
+    #[serde(default)]
+    pub manual_backpressure_strategy: Option<RuntimeBackpressureStrategy>,
+    #[serde(default)]
+    pub trigger_backpressure_strategy: Option<RuntimeBackpressureStrategy>,
+    #[serde(default)]
+    pub max_retry_attempts: Option<u32>,
+    #[serde(default)]
+    pub initial_retry_backoff_ms: Option<u64>,
+    #[serde(default)]
+    pub max_retry_backoff_ms: Option<u64>,
+}
+
+impl WorkflowRuntimePolicy {
+    /// 从可选的输入构建 `WorkflowRuntimePolicy`，缺失字段用默认值填充。
+    pub fn from_input(input: Option<WorkflowRuntimePolicyInput>) -> Self {
+        let defaults = Self::default();
+        let Some(input) = input else {
+            return defaults;
+        };
+
+        Self {
+            manual_queue_capacity: input
+                .manual_queue_capacity
+                .map_or(defaults.manual_queue_capacity, normalize_queue_capacity),
+            trigger_queue_capacity: input
+                .trigger_queue_capacity
+                .map_or(defaults.trigger_queue_capacity, normalize_queue_capacity),
+            manual_backpressure_strategy: input
+                .manual_backpressure_strategy
+                .unwrap_or(defaults.manual_backpressure_strategy),
+            trigger_backpressure_strategy: input
+                .trigger_backpressure_strategy
+                .unwrap_or(defaults.trigger_backpressure_strategy),
+            max_retry_attempts: input
+                .max_retry_attempts
+                .map_or(defaults.max_retry_attempts, |value| value.min(8)),
+            initial_retry_backoff_ms: input
+                .initial_retry_backoff_ms
+                .map_or(defaults.initial_retry_backoff_ms, |value| {
+                    value.clamp(25, 5_000)
+                }),
+            max_retry_backoff_ms: input
+                .max_retry_backoff_ms
+                .map_or(defaults.max_retry_backoff_ms, |value| {
+                    value.clamp(100, 30_000)
+                }),
+        }
+    }
+}
+
+fn normalize_queue_capacity(value: usize) -> usize {
+    value.clamp(1, 4_096)
+}
+
+/// 调度队列指标快照。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct DispatchLaneSnapshot {
+    pub depth: usize,
+    pub accepted: u64,
+    pub retried: u64,
+    pub dead_lettered: u64,
+}
+
+/// 已部署工作流的运行时摘要（`list_runtime_workflows` / `set_active_runtime_workflow`）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeWorkflowSummary {
+    pub workflow_id: String,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub project_id: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub project_name: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub environment_id: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub environment_name: Option<String>,
+    pub deployed_at: String,
+    pub node_count: usize,
+    pub edge_count: usize,
+    pub root_nodes: Vec<String>,
+    pub active: bool,
+    pub policy: WorkflowRuntimePolicy,
+    pub manual_lane: DispatchLaneSnapshot,
+    pub trigger_lane: DispatchLaneSnapshot,
+}
+
+/// 死信记录（`list_dead_letters`）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct DeadLetterRecord {
+    pub id: String,
+    pub timestamp: String,
+    pub workflow_id: String,
+    pub lane: String,
+    pub source: String,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub target_node_id: Option<String>,
+    pub trace_id: String,
+    pub attempts: u32,
+    pub reason: String,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub project_id: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub project_name: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub environment_id: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub environment_name: Option<String>,
+    pub payload: serde_json::Value,
+}
+
+// ── 可观测性 IPC 类型（从 src-tauri/src/observability.rs 迁入） ────
+
+/// 可观测性上下文输入（`deploy_workflow` 参数之一）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ObservabilityContextInput {
+    pub workspace_path: String,
+    pub project_id: String,
+    pub project_name: String,
+    pub environment_id: String,
+    pub environment_name: String,
+    #[serde(default)]
+    pub deployment_source: String,
+}
+
+/// 可观测性条目。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ObservabilityEntry {
+    pub id: String,
+    pub timestamp: String,
+    pub level: String,
+    pub category: String,
+    pub source: String,
+    pub message: String,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub detail: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub trace_id: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub node_id: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub duration_ms: Option<u64>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub project_id: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub project_name: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub environment_id: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub environment_name: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub data: Option<serde_json::Value>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub event_kind: Option<String>,
+}
+
+/// 告警投递记录。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct AlertDeliveryRecord {
+    pub id: String,
+    pub timestamp: String,
+    pub trace_id: String,
+    pub node_id: String,
+    pub project_id: String,
+    pub project_name: String,
+    pub environment_id: String,
+    pub environment_name: String,
+    pub url: String,
+    pub method: String,
+    pub status: u16,
+    pub success: bool,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub webhook_kind: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub body_mode: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub request_timeout_ms: Option<u64>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub requested_at: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub request_body_preview: Option<String>,
+}
+
+/// 可观测性 trace 摘要。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ObservabilityTraceSummary {
+    pub trace_id: String,
+    pub status: String,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub started_at: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub last_seen_at: Option<String>,
+    pub total_events: usize,
+    pub node_count: usize,
+    pub output_count: usize,
+    pub failure_count: usize,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub total_duration_ms: Option<u64>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub last_node_id: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub project_name: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub environment_name: Option<String>,
+}
+
+/// `query_observability` IPC 命令的响应。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ObservabilityQueryResult {
+    pub entries: Vec<ObservabilityEntry>,
+    pub traces: Vec<ObservabilityTraceSummary>,
+    pub alerts: Vec<AlertDeliveryRecord>,
+    pub audits: Vec<ObservabilityEntry>,
+}
+
+// ── 串口 IPC 类型（从 src-tauri/src/commands/serial.rs 迁入） ──────
+
+/// 串口设备信息（`list_serial_ports`）。
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct SerialPortInfo {
+    pub path: String,
+    pub port_type: String,
+    pub description: String,
+}
+
+/// 串口连接测试结果（`test_serial_connection`）。
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct TestSerialResult {
+    pub ok: bool,
+    pub message: String,
+}
+
+// ── 部署会话 IPC 类型（从 src-tauri/src/commands/deployment_session.rs 迁入） ──
+
+/// 持久化部署会话条目。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct PersistedDeploymentSession {
+    pub version: u8,
+    pub project_id: String,
+    pub project_name: String,
+    pub environment_id: String,
+    pub environment_name: String,
+    pub deployed_at: String,
+    pub runtime_ast_text: String,
+    pub runtime_connections: Vec<ConnectionDefinition>,
+}
+
+/// 持久化部署会话集合（文件格式）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct PersistedDeploymentSessionCollection {
+    pub version: u8,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub active_project_id: Option<String>,
+    pub sessions: Vec<PersistedDeploymentSession>,
+}
+
+/// 持久化部署会话状态。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct PersistedDeploymentSessionState {
+    pub version: u8,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub active_project_id: Option<String>,
+    pub sessions: Vec<PersistedDeploymentSession>,
+}
+
+/// 连接定义加载结果（`load_connection_definitions`）。
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ConnectionDefinitionsLoadResult {
+    pub definitions: Vec<ConnectionDefinition>,
+    pub file_exists: bool,
+}
+
 /// 触发本 crate 与所有依赖 crate 的 ts-rs 导出。
 ///
 /// 集中入口避免新增类型时漏导出；CI 通过 `git diff --exit-code -- web/src/generated/`
@@ -441,6 +784,34 @@ pub fn export_all() -> Result<(), ts_rs::ExportError> {
     ListGlobalVariablesRequest::export(&cfg)?;
     ListGlobalVariablesResponse::export(&cfg)?;
     DeleteGlobalVariableRequest::export(&cfg)?;
+    ReactiveUpdatePayload::export(&cfg)?;
+
+    // 运行时类型（从 src-tauri 迁入）
+    RuntimeBackpressureStrategy::export(&cfg)?;
+    WorkflowRuntimePolicy::export(&cfg)?;
+    WorkflowRuntimePolicyInput::export(&cfg)?;
+    DispatchLaneSnapshot::export(&cfg)?;
+    RuntimeWorkflowSummary::export(&cfg)?;
+    DeadLetterRecord::export(&cfg)?;
+
+    // 可观测性类型（从 src-tauri 迁入）
+    ObservabilityContextInput::export(&cfg)?;
+    ObservabilityEntry::export(&cfg)?;
+    AlertDeliveryRecord::export(&cfg)?;
+    ObservabilityTraceSummary::export(&cfg)?;
+    ObservabilityQueryResult::export(&cfg)?;
+
+    // 串口类型（从 src-tauri 迁入）
+    SerialPortInfo::export(&cfg)?;
+    TestSerialResult::export(&cfg)?;
+
+    // 部署会话类型（从 src-tauri 迁入）
+    PersistedDeploymentSession::export(&cfg)?;
+    PersistedDeploymentSessionCollection::export(&cfg)?;
+    PersistedDeploymentSessionState::export(&cfg)?;
+
+    // 连接类型（从 src-tauri 迁入）
+    ConnectionDefinitionsLoadResult::export(&cfg)?;
 
     trim_typescript_trailing_whitespace(cfg.out_dir())?;
     Ok(())

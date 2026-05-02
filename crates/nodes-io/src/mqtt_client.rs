@@ -351,7 +351,7 @@ impl NodeTrait for MqttClientNode {
                 metadata.insert(key, value);
             }
 
-            return Ok(NodeExecution::broadcast(result).with_metadata(metadata));
+            return Ok(NodeExecution::broadcast(result).with_metadata(Some(metadata)));
         }
 
         // 发布模式：必须绑定连接资源
@@ -379,7 +379,7 @@ impl NodeTrait for MqttClientNode {
         metadata.insert(key, value);
         guard.mark_success();
 
-        Ok(NodeExecution::broadcast(payload).with_metadata(metadata))
+        Ok(NodeExecution::broadcast(payload).with_metadata(Some(metadata)))
     }
 
     async fn on_deploy(&self, ctx: NodeLifecycleContext) -> Result<LifecycleGuard, EngineError> {

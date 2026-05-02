@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use nazh_engine::{ContextRef, DataStore, ExecutionEvent, WorkflowContext};
+use nazh_engine::{ContextRef, DataStore, ExecutionEvent, WorkflowContext, WorkflowVariableEvent};
 use serde::Serialize;
 use store::Store;
 use tauri::{AppHandle, Emitter};
@@ -22,19 +22,34 @@ struct ScopedWorkflowResult {
     result: WorkflowContext,
 }
 
-pub(crate) fn spawn_execution_event_forwarder(
+/// 变量控制事件 drain 循环。
+///
+/// 将 [`WorkflowVariableEvent`] 转发到 Tauri 前端事件通道
+/// `workflow://variable-changed` / `workflow://variable-deleted`，
+/// 同时持久化到 Store（ADR-0022）。
+pub(crate) fn spawn_variable_event_forwarder(
     app: AppHandle,
-    workflow_id: String,
-    mut event_rx: mpsc::Receiver<ExecutionEvent>,
-    observability: Option<SharedObservabilityStore>,
+    _workflow_id: String,
+    mut var_event_rx: mpsc::Receiver<WorkflowVariableEvent>,
     store: Arc<Store>,
 ) -> tauri::async_runtime::JoinHandle<()> {
     tauri::async_runtime::spawn(async move {
-        while let Some(event) = event_rx.recv().await {
-            // ADR-0012 Phase 2：变量变更使用独立事件通道，避免前端从节点状态流中过滤。
-            // ADR-0022：同时持久化到 Store。
-            if matches!(event, ExecutionEvent::VariableChanged { .. }) {
-                if let Some(payload) = tauri_bindings::variable_changed_payload(event) {
+        while let Some(event) = var_event_rx.recv().await {
+            match event {
+                WorkflowVariableEvent::Changed {
+                    workflow_id,
+                    name,
+                    value,
+                    updated_at,
+                    updated_by,
+                } => {
+                    let payload = tauri_bindings::VariableChangedPayload {
+                        workflow_id,
+                        name,
+                        value,
+                        updated_at,
+                        updated_by,
+                    };
                     if let Err(error) = app.emit("workflow://variable-changed", &payload) {
                         tracing::warn!(?error, "workflow://variable-changed 事件转发失败");
                     }
@@ -59,22 +74,34 @@ pub(crate) fn spawn_execution_event_forwarder(
                         tracing::debug!(?error, "变量历史记录写入失败");
                     }
                 }
-                continue;
-            }
-
-            // ADR-0012 Phase 3：变量删除走独立事件通道。
-            if matches!(event, ExecutionEvent::VariableDeleted { .. }) {
-                if let Some(payload) = tauri_bindings::variable_deleted_payload(event) {
-                    if let Err(error) = store.delete_variable(&payload.workflow_id, &payload.name) {
+                WorkflowVariableEvent::Deleted {
+                    workflow_id,
+                    name,
+                } => {
+                    if let Err(error) = store.delete_variable(&workflow_id, &name) {
                         tracing::debug!(?error, "变量持久化删除失败");
                     }
+                    let payload = tauri_bindings::VariableDeletedPayload {
+                        workflow_id,
+                        name,
+                    };
                     if let Err(error) = app.emit("workflow://variable-deleted", payload) {
                         tracing::warn!(?error, "workflow://variable-deleted 事件转发失败");
                     }
                 }
-                continue;
             }
+        }
+    })
+}
 
+pub(crate) fn spawn_execution_event_forwarder(
+    app: AppHandle,
+    workflow_id: String,
+    mut event_rx: mpsc::Receiver<ExecutionEvent>,
+    observability: Option<SharedObservabilityStore>,
+) -> tauri::async_runtime::JoinHandle<()> {
+    tauri::async_runtime::spawn(async move {
+        while let Some(event) = event_rx.recv().await {
             if let Some(store) = &observability {
                 let _ = store.record_execution_event(&event).await;
             }

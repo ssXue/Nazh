@@ -156,11 +156,23 @@ pub enum NodeDispatch {
 ///
 /// 包含变换后的 payload、执行元数据和分发策略。Runner 负责将 payload
 /// 写入 [`DataStore`] 并生成 [`ContextRef`] 发往下游，元数据通过事件通道独立传递。
+///
+/// ## `metadata` 空值语义
+///
+/// - `None`：节点未产出元数据（默认），合并到 [`CompletedExecutionEvent`](crate::CompletedExecutionEvent)
+///   时保持 `None`——表示"无元数据可报"。
+/// - `Some(empty_map)`：节点**显式**声明"有元数据字段，但本次执行无内容"——极少使用，
+///   合并到事件时保持 `Some(empty)`。
+/// - `Some(non_empty_map)`：正常的元数据（如 `"timer" → {...}`）。
+///
+/// Runner 合并时的约定：`None` 不升级为 `Some(empty)`，`Some(empty)` 也不降级为 `None`。
 #[derive(Debug, Clone)]
 pub struct NodeOutput {
     pub payload: Value,
-    /// 节点执行元数据（如 `"timer"` → `{...}`），通过事件通道传递，不进入 payload。
-    pub metadata: Map<String, Value>,
+    /// 节点执行元数据（如 `"timer"` → `{...}`)，通过事件通道传递，不进入 payload。
+    ///
+    /// `None` = 无元数据（默认）；`Some(Map)` = 有元数据（可能为空 map）。
+    pub metadata: Option<Map<String, Value>>,
     pub dispatch: NodeDispatch,
 }
 
@@ -176,7 +188,7 @@ impl NodeExecution {
         Self {
             outputs: vec![NodeOutput {
                 payload,
-                metadata: Map::new(),
+                metadata: None,
                 dispatch: NodeDispatch::Broadcast,
             }],
         }
@@ -191,7 +203,7 @@ impl NodeExecution {
         Self {
             outputs: vec![NodeOutput {
                 payload,
-                metadata: Map::new(),
+                metadata: None,
                 dispatch: NodeDispatch::Route(ports.into_iter().map(Into::into).collect()),
             }],
         }
@@ -205,16 +217,20 @@ impl NodeExecution {
     /// 为所有输出附加执行元数据（Builder 模式）。
     ///
     /// 元数据键使用不带下划线的名称（如 `"timer"`）。
+    /// 传入 `Some(Map)` 设置元数据；传入 `None` 不覆盖（保持原值）。
     #[must_use]
     #[allow(clippy::needless_pass_by_value)]
-    pub fn with_metadata(mut self, metadata: Map<String, Value>) -> Self {
+    pub fn with_metadata(mut self, metadata: Option<Map<String, Value>>) -> Self {
+        let Some(metadata) = metadata else {
+            return self;
+        };
         let last = self.outputs.len().saturating_sub(1);
         for (i, output) in self.outputs.iter_mut().enumerate() {
             if i == last {
-                output.metadata = metadata;
+                output.metadata = Some(metadata);
                 return self;
             }
-            output.metadata.clone_from(&metadata);
+            output.metadata = Some(metadata.clone());
         }
         self
     }

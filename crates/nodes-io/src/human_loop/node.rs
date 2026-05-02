@@ -141,7 +141,7 @@ impl HumanLoopNode {
             ResponseAction::Approved => "approve",
             ResponseAction::Rejected => "reject",
         };
-        Ok(NodeExecution::route(payload, [route_target]).with_metadata(meta))
+        Ok(NodeExecution::route(payload, [route_target]).with_metadata(Some(meta)))
     }
 
     fn handle_timeout(
@@ -162,7 +162,7 @@ impl HumanLoopNode {
                     "autoApprove",
                     Some(Value::Object(form_defaults)),
                 );
-                Ok(NodeExecution::route(payload, ["approve"]).with_metadata(meta))
+                Ok(NodeExecution::route(payload, ["approve"]).with_metadata(Some(meta)))
             }
             DefaultAction::AutoReject => Err(EngineError::invalid_graph(format!(
                 "审批 `{approval_id}` 超时，默认拒绝"

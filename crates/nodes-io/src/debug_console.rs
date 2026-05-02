@@ -78,6 +78,6 @@ impl NodeTrait for DebugConsoleNode {
             }),
         )]);
 
-        Ok(NodeExecution::broadcast(Value::Object(payload_map)).with_metadata(metadata))
+        Ok(NodeExecution::broadcast(Value::Object(payload_map)).with_metadata(Some(metadata)))
     }
 }

@@ -9,10 +9,12 @@
 //! - **生命周期与部署同步**：`Arc<WorkflowVariables>` 由 `build_workflow_variables`
 //!   构造（在 `src/graph/variables_init.rs`），注入 `NodeLifecycleContext` +
 //!   `SharedResources`，部署撤销时随 Drop 释放。
-//! - **写即变更事件（Phase 2）**：通过 [`WorkflowVariables::set_event_sender`] 注入事件通道后，
-//!   `set` / `compare_and_swap` 检测到值变化时 `try_send` 一条
-//!   [`ExecutionEvent::VariableChanged`](crate::ExecutionEvent::VariableChanged)。
+//! - **写即变更事件（Phase 2）**：通过 [`WorkflowVariables::set_event_sender`] 注入独立
+//!   事件通道后，`set` / `compare_and_swap` 检测到值变化时 `try_send` 一条
+//!   [`WorkflowVariableEvent::Changed`]。
 //!   值未变化时不发事件，避免轮询脚本制造事件刷屏。
+//!   变量事件走独立通道（[`WorkflowVariableEvent`]），不混入执行可观测事件
+//!   [`ExecutionEvent`](crate::ExecutionEvent)（B1-R0-01/B1-R0-05 关注点分离）。
 //!
 //! ## 不包含（Phase 1 范围外）
 //!
@@ -25,11 +27,53 @@ use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tokio::sync::{OnceCell, watch};
+use tokio::sync::{OnceCell, mpsc, watch};
 #[cfg(feature = "ts-export")]
 use ts_rs::TS;
 
 use crate::{EngineError, PinType};
+
+/// 工作流变量控制事件（从执行事件中分离，B1-R0-01/B1-R0-05）。
+///
+/// 变量控制属于配置平面（ADR-0012），与执行可观测性（节点状态、边传输等）是不同的关注点。
+/// 本类型拥有独立的事件通道，通过 Tauri shell 独立转发到
+/// `workflow://variable-changed` / `workflow://variable-deleted` 前端事件。
+#[derive(Debug, Clone, PartialEq)]
+pub enum WorkflowVariableEvent {
+    /// 变量值变更（ADR-0012 Phase 2，write-on-change 语义）。
+    ///
+    /// 仅当 `set` / `compare_and_swap` 检测到 `entry.value != new` 时 emit；
+    /// 写入相同值不触发本事件（避免轮询脚本制造事件刷屏）。
+    Changed {
+        workflow_id: String,
+        name: String,
+        value: Value,
+        updated_at: String,
+        updated_by: Option<String>,
+    },
+    /// 变量被删除（ADR-0012 Phase 3）。
+    Deleted {
+        workflow_id: String,
+        name: String,
+    },
+}
+
+/// 非阻塞发送变量控制事件。
+///
+/// 使用 `try_send`（非阻塞），保证变量写入不阻塞。
+/// 通道满或关闭时通过 `tracing::error!` 报告——事件丢失即丢帧，不可接受。
+pub fn emit_variable_event(tx: &mpsc::Sender<WorkflowVariableEvent>, event: WorkflowVariableEvent) {
+    if let Err(err) = tx.try_send(event) {
+        match err {
+            mpsc::error::TrySendError::Full(dropped) => {
+                tracing::error!(?dropped, "变量事件通道已满，事件被丢弃");
+            }
+            mpsc::error::TrySendError::Closed(dropped) => {
+                tracing::error!(?dropped, "变量事件通道已关闭，事件消费者可能已崩溃");
+            }
+        }
+    }
+}
 
 /// 工作流变量的声明：类型 + 初值。
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -120,10 +164,11 @@ impl From<TypedVariable> for TypedVariableSnapshot {
 /// `WorkflowVariables` 内部用于发送变量变更事件的接收端描述。
 ///
 /// `workflow_id` 在注入时固定，避免事件构造时重复传参。
+/// 使用独立的 [`WorkflowVariableEvent`] 通道而非共享执行事件通道（B1-R0-01/B1-R0-05）。
 #[derive(Debug)]
 struct EventSink {
     workflow_id: String,
-    sender: tokio::sync::mpsc::Sender<crate::ExecutionEvent>,
+    sender: mpsc::Sender<WorkflowVariableEvent>,
 }
 
 /// 工作流级共享变量存储。
@@ -134,7 +179,7 @@ struct EventSink {
 #[derive(Debug)]
 pub struct WorkflowVariables {
     inner: DashMap<String, TypedVariable>,
-    /// ADR-0012 Phase 2：事件发送通道（注入一次）。
+    /// ADR-0012 Phase 2：变量事件发送通道（注入一次）。
     /// 未注入时 `set` / `compare_and_swap` 仍正常工作但不发事件。
     event_sink: OnceCell<EventSink>,
 }
@@ -214,18 +259,18 @@ impl WorkflowVariables {
         self.inner.get(name).map(|entry| entry.value().subscribe())
     }
 
-    /// 注入事件通道。仅可调用一次；重复调用通过 `tracing::warn!` 报告并忽略。
+    /// 注入变量事件通道。仅可调用一次；重复调用通过 `tracing::warn!` 报告并忽略。
     ///
     /// 设计为 `&self`（非 `&mut`）以便在 `Arc<WorkflowVariables>` 构造完成后注入——
     /// deploy 流程是 `let vars = Arc::new(build_workflow_variables(...)?);` 后再
-    /// `vars.set_event_sender(workflow_id, event_tx)`。
+    /// `vars.set_event_sender(workflow_id, var_event_tx)`。
     ///
     /// 调用方（如 deploy.rs）必须在节点 `on_deploy` 启动之前完成此注入；否则
     /// 节点在注入间隙的写入会因 `event_sink == None` 而漏发事件。
     pub fn set_event_sender(
         &self,
         workflow_id: String,
-        sender: tokio::sync::mpsc::Sender<crate::ExecutionEvent>,
+        sender: mpsc::Sender<WorkflowVariableEvent>,
     ) {
         if self
             .event_sink
@@ -240,7 +285,7 @@ impl WorkflowVariables {
     }
 
     /// 内部 helper：在 entry 借用已 drop 之后，按 `event_payload` 与 `event_sink` 决定是否 emit
-    /// `VariableChanged`。`name` 仅用于事件构造与失败日志的上下文。
+    /// [`WorkflowVariableEvent::Changed`]。`name` 仅用于事件构造与失败日志的上下文。
     ///
     /// 调用约定：调用方必须**已经** drop 了 `DashMap` 的 `&mut Entry` 借用——本函数不做
     /// 锁守卫，假设 caller 已让 shard 锁释放。
@@ -251,7 +296,7 @@ impl WorkflowVariables {
         let Some(sink) = self.event_sink.get() else {
             return;
         };
-        let event = crate::ExecutionEvent::VariableChanged {
+        let event = WorkflowVariableEvent::Changed {
             workflow_id: sink.workflow_id.clone(),
             name: name.to_owned(),
             value,
@@ -259,14 +304,14 @@ impl WorkflowVariables {
             updated_by,
         };
         if let Err(error) = sink.sender.try_send(event) {
-            tracing::debug!(?error, ?name, "VariableChanged 事件 try_send 失败");
+            tracing::debug!(?error, ?name, "WorkflowVariableEvent::Changed try_send 失败");
         }
     }
 
     /// 类型化写入。`updated_by` 一般是节点 id；为 `None` 表示外部接入（IPC、初始化）。
     ///
     /// 值变化时（`entry.value != value`）向已注入的事件通道发送
-    /// [`ExecutionEvent::VariableChanged`](crate::ExecutionEvent::VariableChanged)；
+    /// [`WorkflowVariableEvent::Changed`]；
     /// 值未变化或未注入通道时静默跳过。
     ///
     /// # Errors
@@ -337,7 +382,7 @@ impl WorkflowVariables {
     /// 返回 `true` 表示交换成功，`false` 表示当前值不匹配（保持不变）。
     /// 类型不匹配仍返回 `Err`——CAS 不绕过类型校验。
     /// 交换成功且值变化时向已注入的事件通道发送
-    /// [`ExecutionEvent::VariableChanged`](crate::ExecutionEvent::VariableChanged)。
+    /// [`WorkflowVariableEvent::Changed`]。
     ///
     /// # Errors
     ///
@@ -395,19 +440,19 @@ impl WorkflowVariables {
     ///
     /// 变量不存在时返回 `None`（不发事件、不报错）。
     /// 移除后 `watch_tx` 发送 `None` 通知订阅者变量已消失；
-    /// 同时向已注入的事件通道发送 [`ExecutionEvent::VariableDeleted`]。
+    /// 同时向已注入的事件通道发送 [`WorkflowVariableEvent::Deleted`]。
     #[must_use]
     pub fn remove(&self, name: &str) -> Option<TypedVariable> {
         let (_, removed) = self.inner.remove(name)?;
         let _ = removed.watch_tx.send(None);
         let sink = self.event_sink.get();
         if let Some(sink) = sink {
-            let event = crate::ExecutionEvent::VariableDeleted {
+            let event = WorkflowVariableEvent::Deleted {
                 workflow_id: sink.workflow_id.clone(),
                 name: name.to_owned(),
             };
             if let Err(error) = sink.sender.try_send(event) {
-                tracing::debug!(?error, ?name, "VariableDeleted 事件 try_send 失败");
+                tracing::debug!(?error, ?name, "WorkflowVariableEvent::Deleted try_send 失败");
             }
         }
         Some(removed)
@@ -620,8 +665,6 @@ mod tests {
 
     #[tokio::test]
     async fn set_值变化时发_variablechanged_事件() {
-        use tokio::sync::mpsc;
-
         let (tx, mut rx) = mpsc::channel(8);
         let mut decls = HashMap::new();
         decls.insert(
@@ -638,7 +681,7 @@ mod tests {
 
         let event = rx.recv().await.expect("应收到事件");
         match event {
-            crate::ExecutionEvent::VariableChanged {
+            WorkflowVariableEvent::Changed {
                 workflow_id,
                 name,
                 value,
@@ -650,13 +693,12 @@ mod tests {
                 assert_eq!(value, Value::from(1_i64));
                 assert_eq!(updated_by.as_deref(), Some("node-A"));
             }
-            other => panic!("expected VariableChanged, got {other:?}"),
+            other @ WorkflowVariableEvent::Deleted { .. } => panic!("expected Changed, got {other:?}"),
         }
     }
 
     #[tokio::test]
     async fn set_值未变化时不发事件() {
-        use tokio::sync::mpsc;
         use tokio::time::{Duration, timeout};
 
         let (tx, mut rx) = mpsc::channel(8);
@@ -681,8 +723,6 @@ mod tests {
 
     #[tokio::test]
     async fn cas_成功且值变化时发事件() {
-        use tokio::sync::mpsc;
-
         let (tx, mut rx) = mpsc::channel(8);
         let mut decls = HashMap::new();
         decls.insert(
@@ -703,13 +743,12 @@ mod tests {
         let event = rx.recv().await.expect("应收到事件");
         assert!(matches!(
             event,
-            crate::ExecutionEvent::VariableChanged { .. }
+            WorkflowVariableEvent::Changed { .. }
         ));
     }
 
     #[tokio::test]
     async fn cas_失败时不发事件() {
-        use tokio::sync::mpsc;
         use tokio::time::{Duration, timeout};
 
         let (tx, mut rx) = mpsc::channel(8);
@@ -753,9 +792,8 @@ mod tests {
 
     #[test]
     fn set_event_sender_重复注入时第二个_sender_被忽略() {
-        use tokio::sync::mpsc;
-        let (tx1, _rx1) = mpsc::channel::<crate::ExecutionEvent>(1);
-        let (tx2, _rx2) = mpsc::channel::<crate::ExecutionEvent>(1);
+        let (tx1, _rx1) = mpsc::channel::<WorkflowVariableEvent>(1);
+        let (tx2, _rx2) = mpsc::channel::<WorkflowVariableEvent>(1);
         let vars = WorkflowVariables::empty();
         vars.set_event_sender("wf-1".to_owned(), tx1);
         // 第二次注入应被忽略并 tracing::warn!，但函数本身不 panic 不返回错误
@@ -766,7 +804,6 @@ mod tests {
 
     #[tokio::test]
     async fn cas_成功但_new_等于_expected_时不发事件() {
-        use tokio::sync::mpsc;
         use tokio::time::{Duration, timeout};
 
         let (tx, mut rx) = mpsc::channel(8);
@@ -911,8 +948,6 @@ mod tests {
 
     #[tokio::test]
     async fn remove_成功时发_variabledeleted_事件() {
-        use tokio::sync::mpsc;
-
         let (tx, mut rx) = mpsc::channel(8);
         let mut decls = HashMap::new();
         decls.insert(
@@ -929,17 +964,16 @@ mod tests {
 
         let event = rx.recv().await.expect("应收到事件");
         match event {
-            crate::ExecutionEvent::VariableDeleted { workflow_id, name } => {
+            WorkflowVariableEvent::Deleted { workflow_id, name } => {
                 assert_eq!(workflow_id, "wf-1");
                 assert_eq!(name, "x");
             }
-            other => panic!("expected VariableDeleted, got {other:?}"),
+            other @ WorkflowVariableEvent::Changed { .. } => panic!("expected Deleted, got {other:?}"),
         }
     }
 
     #[tokio::test]
     async fn remove_不存在的变量不发事件() {
-        use tokio::sync::mpsc;
         use tokio::time::{Duration, timeout};
 
         let (tx, mut rx) = mpsc::channel(8);
@@ -1003,8 +1037,6 @@ mod tests {
 
     #[tokio::test]
     async fn reset_值变化时发_variablechanged_事件() {
-        use tokio::sync::mpsc;
-
         let (tx, mut rx) = mpsc::channel(8);
         let mut decls = HashMap::new();
         decls.insert(
@@ -1024,11 +1056,11 @@ mod tests {
 
         let event = rx.recv().await.expect("reset 应触发事件");
         match event {
-            crate::ExecutionEvent::VariableChanged { value, name, .. } => {
+            WorkflowVariableEvent::Changed { value, name, .. } => {
                 assert_eq!(name, "x");
                 assert_eq!(value, Value::from(10_i64));
             }
-            other => panic!("expected VariableChanged, got {other:?}"),
+            other @ WorkflowVariableEvent::Deleted { .. } => panic!("expected Changed, got {other:?}"),
         }
     }
 }

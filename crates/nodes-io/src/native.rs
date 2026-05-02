@@ -89,6 +89,6 @@ impl NodeTrait for NativeNode {
             "原生节点执行"
         );
 
-        Ok(NodeExecution::broadcast(result).with_metadata(metadata))
+        Ok(NodeExecution::broadcast(result).with_metadata(Some(metadata)))
     }
 }
