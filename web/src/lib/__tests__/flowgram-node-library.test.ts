@@ -220,7 +220,7 @@ describe('NodeDefinition registry', () => {
       description: '运行时或第三方节点',
     });
     expect(getNodeCatalogInfo('timer')).toMatchObject({
-      category: '硬件接口',
+      category: '流程控制',
     });
   });
 

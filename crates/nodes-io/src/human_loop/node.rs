@@ -157,7 +157,11 @@ impl HumanLoopNode {
                         form_defaults.insert(name, default);
                     }
                 }
-                let meta = Self::timeout_metadata(approval_id, "autoApprove", Some(Value::Object(form_defaults)));
+                let meta = Self::timeout_metadata(
+                    approval_id,
+                    "autoApprove",
+                    Some(Value::Object(form_defaults)),
+                );
                 Ok(NodeExecution::route(payload, ["approve"]).with_metadata(meta))
             }
             DefaultAction::AutoReject => Err(EngineError::invalid_graph(format!(
@@ -196,7 +200,11 @@ impl HumanLoopNode {
         Map::from_iter([("human_loop".to_owned(), Value::Object(m))])
     }
 
-    fn timeout_metadata(approval_id: Uuid, action: &str, form_defaults: Option<Value>) -> Map<String, Value> {
+    fn timeout_metadata(
+        approval_id: Uuid,
+        action: &str,
+        form_defaults: Option<Value>,
+    ) -> Map<String, Value> {
         let mut m = Map::new();
         m.insert("approval_id".to_owned(), json!(approval_id.to_string()));
         m.insert("action".to_owned(), json!(action));
