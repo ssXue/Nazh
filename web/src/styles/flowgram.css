@@ -7,7 +7,7 @@
   min-height: 0;
   overflow: visible;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius-none);
   background: transparent;
   box-shadow: none;
   backdrop-filter: none;
@@ -15,7 +15,7 @@
 }
 
 .runtime-pill {
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 0.34rem 0.62rem;
   font-size: var(--font-caption);
   letter-spacing: 0.08em;
@@ -63,7 +63,7 @@
   min-height: 0;
   height: 100%;
   overflow: hidden;
-  border-radius: 0;
+  border-radius: var(--radius-none);
   border: 0;
   background:
     linear-gradient(var(--flowgram-canvas-grid) 1px, transparent 1px),
@@ -136,7 +136,7 @@ html[data-theme='dark'] .flowgram-host {
 
 .flowgram-panel {
   border: 1px solid var(--line-soft);
-  border-radius: var(--panel-radius, 10px);
+  border-radius: var(--radius-md);
   padding: 12px;
   background: var(--panel);
   box-shadow: var(--shadow-low);
@@ -179,7 +179,7 @@ html[data-theme='dark'] .flowgram-host {
 .flowgram-form select {
   width: 100%;
   border: 1px solid var(--line-strong);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   padding: 0.58rem 0.68rem;
   background: var(--panel);
   color: var(--text);
@@ -212,7 +212,7 @@ html[data-theme='dark'] .flowgram-host {
 .hitl-field-row select,
 .hitl-field-row input {
   border: 1px solid var(--line-strong);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   padding: 0.3rem 0.42rem;
   background: var(--panel);
   color: var(--text);
@@ -226,7 +226,7 @@ html[data-theme='dark'] .flowgram-host {
   cursor: pointer;
   font-size: 0.85rem;
   padding: 2px;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
 }
 
 .hitl-field-row__remove:hover {
@@ -236,7 +236,7 @@ html[data-theme='dark'] .flowgram-host {
 
 .hitl-field-list__add {
   border: 1px dashed var(--line-strong);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--muted);
   font-size: var(--font-caption1, 0.75rem);
@@ -267,7 +267,7 @@ html[data-theme='dark'] .flowgram-host {
 
 .hitl-field-option input {
   border: 1px solid var(--line-strong);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   padding: 0.2rem 0.36rem;
   background: var(--panel);
   color: var(--text);
@@ -343,7 +343,7 @@ html[data-theme='dark'] .flowgram-host {
   min-height: 42px;
   box-sizing: border-box;
   border: 1px solid var(--line-faint);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   padding: 7px 8px;
   background: color-mix(in srgb, var(--flowgram-canvas-bg) 88%, var(--text) 6%);
   color: var(--text);
@@ -398,7 +398,7 @@ html[data-theme='dark'] .flowgram-host {
   min-height: 32px;
   height: 32px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--toolbar-text);
   cursor: pointer;
@@ -448,7 +448,7 @@ html[data-theme='dark'] .flowgram-host {
   min-width: 136px;
   padding: 6px;
   border: 1px solid var(--toolbar-border);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: var(--panel-strong);
   box-shadow: var(--shadow-medium);
   backdrop-filter: blur(16px);
@@ -462,7 +462,7 @@ html[data-theme='dark'] .flowgram-host {
   transform: translateX(-50%);
   padding: 6px;
   border: 1px solid var(--toolbar-border);
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   background: var(--panel-strong);
   box-shadow: var(--shadow-medium);
   backdrop-filter: blur(16px);
@@ -482,7 +482,7 @@ html[data-theme='dark'] .flowgram-host {
   min-height: 32px;
   padding: 0 10px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text);
   font-size: var(--font-subheadline);
@@ -534,7 +534,7 @@ html[data-theme='dark'] .flowgram-host {
   height: 32px;
   padding: 0 12px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--toolbar-text);
   font-size: var(--font-subheadline);
@@ -593,7 +593,7 @@ html[data-theme='dark'] .flowgram-host {
   flex: 0 0 auto;
   width: 30px;
   height: 30px;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: var(--surface-muted);
   color: var(--muted);
 }
@@ -718,7 +718,7 @@ html[data-theme='dark'] .flowgram-host {
   overflow-y: auto;
   overscroll-behavior: contain;
   border: 1px solid var(--line-strong);
-  border-radius: var(--panel-radius, 10px);
+  border-radius: var(--radius-md);
   background: var(--bg);
   box-shadow: 0 18px 40px rgba(15, 23, 42, 0.12);
   padding: 12px;
@@ -749,7 +749,7 @@ html[data-theme='dark'] .flowgram-host {
   gap: 10px;
   width: 100%;
   border: 1px solid var(--panel-border);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   padding: 10px 12px;
   background: var(--panel);
   color: var(--text);
@@ -764,7 +764,7 @@ html[data-theme='dark'] .flowgram-host {
   flex: 0 0 auto;
   width: 28px;
   height: 28px;
-  border-radius: 9px;
+  border-radius: var(--radius-sm);
   background: var(--surface-muted);
   color: var(--muted);
 }
@@ -796,7 +796,7 @@ html[data-theme='dark'] .flowgram-host {
   justify-self: end;
   min-height: 28px;
   padding: 0.38rem 0.72rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
 }
 
 .flowgram-settings-host {
@@ -810,7 +810,7 @@ html[data-theme='dark'] .flowgram-host {
   pointer-events: auto;
   width: min(332px, 100%);
   height: 100%;
-  border-radius: var(--panel-radius, 10px);
+  border-radius: var(--radius-md);
   border: 1px solid var(--line-strong);
   background: var(--panel);
   box-shadow: 0 18px 40px rgba(15, 23, 42, 0.12);
@@ -910,7 +910,7 @@ html[data-theme='dark'] .flowgram-floating-panel--node {
   align-items: center;
   gap: 6px;
   padding: 0.15rem 0.5rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-muted);
   color: var(--muted);
   font-size: var(--font-caption);
@@ -921,7 +921,7 @@ html[data-theme='dark'] .flowgram-floating-panel--node {
   display: inline-flex;
   align-items: center;
   padding: 0.15rem 0.5rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-muted);
   color: var(--muted);
   font-size: var(--font-caption);
@@ -935,7 +935,7 @@ html[data-theme='dark'] .flowgram-floating-panel--node {
 
 .flowgram-node-badge {
   display: inline-flex;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 0.15rem 0.42rem;
   background: var(--surface-muted);
   color: var(--muted);
@@ -982,7 +982,7 @@ html[data-theme='dark'] .flowgram-floating-panel--node {
   position: relative;
   width: 36px;
   height: 20px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: none;
   padding: 0;
   background: var(--line-strong);
@@ -1000,7 +1000,7 @@ html[data-theme='dark'] .flowgram-floating-panel--node {
   left: 2px;
   width: 16px;
   height: 16px;
-  border-radius: 50%;
+  border-radius: var(--radius-circle);
   background: #fff;
   transition: transform 160ms ease;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
@@ -1086,7 +1086,7 @@ html[data-theme='dark'] .flowgram-floating-panel--node {
   display: inline-flex;
   align-items: center;
   min-height: 28px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 0 0.7rem;
   background: var(--surface-muted);
   border: 1px solid var(--line-soft);
@@ -1103,7 +1103,7 @@ html[data-theme='dark'] .flowgram-floating-panel--node {
 
 .flowgram-stats article {
   border: 1px solid var(--line-soft);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   padding: 8px 10px;
   background: var(--panel);
   box-shadow: var(--shadow-low);
@@ -1127,7 +1127,7 @@ html[data-theme='dark'] .flowgram-floating-panel--node {
 }
 
 .flowgram-note {
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   padding: 8px 10px;
   line-height: 1.45;
   font-size: var(--font-subheadline);
@@ -1170,7 +1170,7 @@ html[data-theme='dark'] .flowgram-floating-panel--node {
   gap: 8px;
   min-height: 0;
   border: 1px solid var(--line-soft);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   padding: 10px;
   background: var(--panel);
   box-shadow: var(--shadow-low);
@@ -1201,7 +1201,7 @@ html[data-theme='dark'] .flowgram-floating-panel--node {
   align-items: center;
   min-height: 24px;
   padding: 0.22rem 0.52rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid var(--line-soft);
   background: var(--surface-muted);
   color: var(--muted);
@@ -1212,7 +1212,7 @@ html[data-theme='dark'] .flowgram-floating-panel--node {
   min-height: 0;
   height: 100%;
   overflow: hidden;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   border: 1px solid var(--line-faint);
   background: var(--surface-muted);
 }
@@ -1226,7 +1226,7 @@ html[data-theme='dark'] .flowgram-floating-panel--node {
   place-items: center;
   min-height: 0;
   height: 100%;
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   border: 1px dashed var(--line-dashed);
   color: var(--muted);
 }
@@ -1251,7 +1251,7 @@ html[data-theme='dark'] .flowgram-floating-panel--node {
   align-items: center;
   min-height: 24px;
   max-width: 220px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 0.3rem 0.58rem;
   background: var(--overlay-surface);
   border: 1px solid var(--line-strong);
@@ -1266,7 +1266,7 @@ html[data-theme='dark'] .flowgram-floating-panel--node {
 .flowgram-card {
   width: 214px;
   box-sizing: border-box;
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   border: 1px solid var(--panel-border);
   background: color-mix(in srgb, var(--flowgram-canvas-bg) 60%, var(--panel-strong));
   backdrop-filter: blur(16px) saturate(140%);
@@ -1283,7 +1283,7 @@ html[data-theme='dark'] .flowgram-floating-panel--node {
 .flowgram-card--loop {
   width: 100%;
   height: 100%;
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   overflow: hidden;
   border-color: color-mix(in srgb, var(--accent) 35%, var(--panel-border));
 }
@@ -1325,7 +1325,7 @@ html[data-theme='dark'] .flowgram-card--loop .sub-canvas-border::before {
 .flowgram-card--bridge {
   width: 48px;
   height: 48px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1393,14 +1393,14 @@ html[data-theme='dark'] .flowgram-card--loop .sub-canvas-border::before {
   flex: 0 0 auto;
   width: 24px;
   height: 24px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--surface-muted);
   color: var(--muted);
 }
 
 .flowgram-card__type {
   display: inline-flex;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 0.22rem 0.46rem;
   background: var(--surface-muted);
   color: var(--muted);
@@ -1469,7 +1469,7 @@ html[data-theme='dark'] .flowgram-card--loop .sub-canvas-border::before {
 }
 
 .flowgram-card__runtime {
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 0.18rem 0.46rem;
   font-size: var(--font-caption);
   letter-spacing: 0.06em;
@@ -1521,7 +1521,7 @@ html[data-theme='dark'] .flowgram-card--loop .sub-canvas-border::before {
   position: relative;
   gap: 10px;
   min-height: 26px;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   padding: 0 18px 0 8px;
   background: var(--surface-muted);
 }
@@ -1541,7 +1541,7 @@ html[data-theme='dark'] .flowgram-card--loop .sub-canvas-border::before {
   height: 14px;
   margin-right: 0;
   transform: translateY(-50%);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 2px solid var(--panel-strong);
   background: var(--surface-elevated);
   box-shadow: 0 0 0 1px var(--line-soft);
@@ -1710,7 +1710,7 @@ html[data-theme='dark'] .flowgram-card--loop .sub-canvas-border::before {
 
 .rail-card {
   border: 1px solid var(--line-soft);
-  border-radius: var(--panel-radius, 10px);
+  border-radius: var(--radius-md);
   padding: 8px 10px;
   background: var(--panel);
   box-shadow: var(--shadow-low);
@@ -1764,7 +1764,7 @@ html[data-theme='dark'] .flowgram-card--loop .sub-canvas-border::before {
 
 .feed pre {
   margin: 0;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   padding: 10px 12px;
   background: var(--surface-muted);
   color: var(--text-soft);
@@ -1885,14 +1885,14 @@ html[data-theme='dark'] .flowgram-card--loop .sub-canvas-border::before {
  * 头部绿色 + 圆角胶囊形——一眼区分"表达式节点"与"触发链节点"。
  * 后续 Phase 5 还会按 capability 给 Trigger / Branching 着色，本 Phase 只覆盖 Pure。 */
 .flowgram-card--pure-form {
-  border-radius: 18px !important;
+  border-radius: var(--radius-xl) !important;
   border-color: var(--pin-float, #2fb75f) !important;
 }
 
 .flowgram-card--pure-form .flowgram-card__topline {
   background: linear-gradient(180deg, #2fb75f 0%, #258a47 100%);
   color: #ffffff;
-  border-radius: 14px 14px 0 0;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
   margin: -8px -8px 4px -8px;
   padding: 4px 8px;
 }

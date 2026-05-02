@@ -167,7 +167,7 @@ export function ApprovalQueue() {
           style={{
             background: '#1a1a2e',
             border: '1px solid #333',
-            borderRadius: 6,
+            borderRadius: 'var(--radius-sm)',
             overflow: 'hidden',
           }}
         >

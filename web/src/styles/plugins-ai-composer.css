@@ -25,7 +25,7 @@
 .plugin-panel__card {
   background: var(--surface-muted);
   border: 1px solid var(--line-soft);
-  border-radius: var(--button-radius);
+  border-radius: var(--radius-sm);
   padding: 10px 12px;
   transition: border-color 0.15s;
 }
@@ -63,7 +63,7 @@
   font-size: 10px;
   line-height: 1;
   padding: 3px 6px;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   border: 1px solid var(--border, rgba(0, 0, 0, 0.08));
   background: var(--bg-subtle, rgba(0, 0, 0, 0.03));
   color: var(--text-soft);
@@ -153,7 +153,7 @@
   gap: 10px;
   padding: 18px 18px 16px;
   border: 1px solid var(--line-soft);
-  border-radius: 18px;
+  border-radius: var(--radius-xl);
   background: linear-gradient(180deg, var(--dialog-surface-strong), var(--dialog-surface));
   box-shadow:
     0 20px 44px rgba(0, 0, 0, 0.1),
@@ -179,7 +179,7 @@
   resize: vertical;
   padding: 8px 10px;
   border: 1px solid var(--line-soft);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: var(--surface);
   color: var(--text);
   font-family: inherit;
@@ -208,7 +208,7 @@
   min-height: 32px;
   padding: 0 12px;
   border: 1px solid var(--line-soft);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: var(--panel-strong);
   color: var(--text);
   box-shadow: none;
@@ -245,7 +245,7 @@
   margin: 0;
   padding: 10px 12px;
   border: 1px solid var(--panel-border);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--panel);
   max-height: 260px;
   overflow-y: auto;
@@ -275,7 +275,7 @@
 /* --- AI 思考过程展示 --- */
 .flowgram-ai-dialog__thinking {
   border: 1px solid var(--line-faint);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--surface-muted) 60%, transparent);
 }
 
@@ -366,7 +366,7 @@
   gap: 12px;
   padding: 18px;
   border: 1px solid var(--line-soft);
-  border-radius: 20px;
+  border-radius: var(--radius-xl);
   background: linear-gradient(180deg, var(--dialog-surface-strong), var(--dialog-surface));
   box-shadow:
     0 20px 44px rgba(0, 0, 0, 0.1),
@@ -407,7 +407,7 @@
 .workflow-orchestrator-dialog__chip {
   min-height: 24px;
   padding: 0 10px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid color-mix(in srgb, var(--line-soft) 78%, transparent);
   background: color-mix(in srgb, var(--surface-muted) 94%, transparent);
   color: var(--text-soft);
@@ -438,7 +438,7 @@
   resize: vertical;
   padding: 10px 12px;
   border: 1px solid var(--line-soft);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: var(--surface);
   color: var(--text);
   font-family: inherit;
@@ -462,7 +462,7 @@
   gap: 8px;
   padding: 12px 13px;
   border: 1px solid var(--line-faint);
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--surface-muted) 78%, transparent);
 }
 
@@ -490,7 +490,7 @@
 .workflow-orchestrator-dialog__summary-metrics span {
   min-height: 22px;
   padding: 0 9px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid color-mix(in srgb, var(--line-soft) 74%, transparent);
   background: var(--surface);
   color: var(--text-soft);
@@ -501,7 +501,7 @@
 .workflow-orchestrator-dialog__notice {
   padding: 10px 12px;
   border: 1px solid var(--line-soft);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--surface-muted) 78%, transparent);
   font-size: var(--font-callout);
   line-height: 1.45;
@@ -548,7 +548,7 @@
   align-items: center;
   padding: 10px 12px;
   border: 1px solid var(--line-faint);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--surface-muted) 72%, transparent);
 }
 
@@ -573,7 +573,7 @@
   justify-items: center;
   padding: 24px 18px;
   border: 1px dashed var(--line-soft);
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--surface-muted) 74%, transparent);
   text-align: center;
 }
@@ -590,7 +590,7 @@
 .workflow-orchestrator-dialog__thinking,
 .workflow-orchestrator-dialog__raw {
   border: 1px solid var(--line-faint);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--surface-muted) 62%, transparent);
 }
 
@@ -637,7 +637,7 @@
   min-height: 34px;
   padding: 0 14px;
   border: 1px solid var(--line-soft);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: var(--panel-strong);
   color: var(--text);
   box-shadow: none;

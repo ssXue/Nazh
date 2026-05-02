@@ -277,7 +277,7 @@ function buildFlowgramExportFileName(
 
 const FLOWGRAM_BUTTON_STYLE: CSSProperties = {
   border: '0',
-  borderRadius: '8px',
+  borderRadius: 'var(--radius-sm)',
   cursor: 'pointer',
   padding: '0',
   minHeight: 32,
@@ -316,7 +316,7 @@ const FLOWGRAM_TOOLS_SECTION_STYLE: CSSProperties = {
   minHeight: 40,
   padding: '0 4px',
   border: '1px solid var(--toolbar-border)',
-  borderRadius: 10,
+  borderRadius: 'var(--radius-md)',
   background: 'var(--panel-strong)',
   boxShadow: 'var(--shadow-low)',
   backdropFilter: 'blur(16px)',
@@ -329,7 +329,7 @@ const FLOWGRAM_ZOOM_STYLE: CSSProperties = {
   height: 24,
   minHeight: 24,
   padding: '0 6px',
-  borderRadius: 8,
+  borderRadius: 'var(--radius-sm)',
   border: '1px solid var(--toolbar-border)',
   background: 'var(--surface-muted)',
   color: 'var(--toolbar-text)',

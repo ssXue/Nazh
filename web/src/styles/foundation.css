@@ -59,9 +59,17 @@
   --panel-elevated: var(--panel-strong);
   --surface-panel: var(--panel);
   --surface: var(--bg);
-  --window-radius: 12px;
-  --panel-radius: 10px;
-  --button-radius: 8px;
+  --radius-none: 0;
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-pill: 999px;
+  --radius-circle: 50%;
+  --window-radius: var(--radius-lg);
+  --panel-radius: var(--radius-md);
+  --button-radius: var(--radius-sm);
   --panel-padding: 14px;
   --connection-card-width: 348px;
   --layout-gap: clamp(10px, 1.2vw, 16px);
@@ -560,7 +568,7 @@ h3 {
 
 .hero__runtime {
   width: fit-content;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 0.28rem 0.56rem;
   font-size: var(--font-caption);
   letter-spacing: 0.08em;

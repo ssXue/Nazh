@@ -16,9 +16,17 @@
   --grid-line: rgba(110, 124, 143, 0.08);
   --toolbar-bg: rgba(255, 255, 255, 0.5);
   --toolbar-border: rgba(255, 255, 255, 0.54);
-  --window-radius: 14px;
-  --panel-radius: 26px;
-  --button-radius: 18px;
+  --radius-none: 0;
+  --radius-xs: 6px;
+  --radius-sm: 12px;
+  --radius-md: 20px;
+  --radius-lg: 24px;
+  --radius-xl: 28px;
+  --radius-pill: 999px;
+  --radius-circle: 50%;
+  --window-radius: var(--radius-lg);
+  --panel-radius: var(--radius-md);
+  --button-radius: var(--radius-sm);
   --layout-gap: 18px;
   --panel-padding: 18px;
   --shadow-low:
@@ -96,7 +104,7 @@ button:hover {
 
 .panel {
   border-color: var(--panel-border);
-  border-radius: var(--panel-radius);
+  border-radius: var(--radius-md);
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.24), transparent 38%),
     linear-gradient(180deg, var(--panel-strong), var(--panel));
@@ -116,7 +124,7 @@ button:hover {
   display: block;
   height: 100%;
   min-height: 0;
-  border-radius: var(--window-radius);
+  border-radius: var(--radius-lg);
   overflow: hidden;
 }
 
@@ -153,7 +161,7 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
   overflow: visible;
   padding: 14px;
   border: 1px solid var(--panel-border);
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.24), transparent 36%),
     linear-gradient(180deg, var(--panel-strong), var(--sidebar-surface));
@@ -175,7 +183,7 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
   justify-content: center;
   width: 42px;
   height: 42px;
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   background: rgba(var(--accent-rgb), 0.12);
   border: 1px solid rgba(var(--accent-rgb), 0.16);
 }
@@ -216,7 +224,7 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
 .studio-nav__button.is-active {
   min-height: 54px;
   padding: 8px 10px;
-  border-radius: 18px;
+  border-radius: var(--radius-xl);
 }
 
 .studio-nav__button {
@@ -241,7 +249,7 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
 .studio-nav__icon {
   width: 32px;
   height: 32px;
-  border-radius: 11px;
+  border-radius: var(--radius-sm);
 }
 
 .studio-nav__footer {
@@ -254,17 +262,17 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
   width: 34px;
   height: 34px;
   min-height: 34px;
-  border-radius: 12px;
+  border-radius: var(--radius-sm);
   background: rgba(255, 255, 255, 0.26);
 }
 
 .studio-nav-user {
-  border-radius: 20px;
+  border-radius: var(--radius-xl);
   background: rgba(255, 255, 255, 0.18);
 }
 
 .studio-nav-user__avatar {
-  border-radius: 12px;
+  border-radius: var(--radius-sm);
 }
 
 .studio-content {
@@ -304,7 +312,7 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
 .studio-content--panel > .panel {
   min-height: 0;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius-none);
   background: transparent;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
@@ -338,7 +346,7 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
   height: 100%;
   overflow: hidden;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius-none);
   background: var(--bg);
   box-shadow: none;
 }
@@ -384,7 +392,7 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
   min-height: 0;
   padding: 0;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius-none);
   background: transparent;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
@@ -417,7 +425,7 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
   display: inline-flex;
   align-items: center;
   min-height: 22px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 0 9px;
   border: 1px solid var(--line-soft);
   background: rgba(255, 255, 255, 0.26);
@@ -443,7 +451,7 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
   position: relative;
   border: 0;
   border-top: 1px solid var(--line-soft);
-  border-radius: 0;
+  border-radius: var(--radius-none);
   background: var(--bg);
   box-shadow: none;
   padding: 0;
@@ -473,7 +481,7 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
   align-items: center;
   padding: 18px 24px;
   border: 1px solid var(--line-soft);
-  border-radius: 22px;
+  border-radius: var(--radius-xl);
   background:
     radial-gradient(circle at top right, rgba(var(--accent-rgb), 0.14), transparent 24%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.18), transparent 36%),
@@ -514,7 +522,7 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
   position: relative;
   width: 76px;
   height: 76px;
-  border-radius: 50%;
+  border-radius: var(--radius-circle);
   background: conic-gradient(
     rgba(var(--accent-rgb), 0.6) var(--dashboard-gauge-progress),
     var(--surface-muted) var(--dashboard-gauge-progress),
@@ -528,7 +536,7 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
   position: absolute;
   width: 58px;
   height: 58px;
-  border-radius: 50%;
+  border-radius: var(--radius-circle);
   background: var(--panel);
 }
 
@@ -567,7 +575,7 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
   display: grid;
   gap: 3px;
   padding: 10px 8px;
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   background: rgba(255, 255, 255, 0.1);
   text-align: center;
 }
@@ -610,7 +618,7 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
   min-height: 200px;
   padding: 14px;
   border: 1px solid var(--line-soft);
-  border-radius: 20px;
+  border-radius: var(--radius-xl);
   background: rgba(255, 255, 255, 0.14);
 }
 
@@ -640,7 +648,7 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
   gap: 2px;
   padding: 8px 12px;
   border: 1px solid var(--line-faint);
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   background: rgba(255, 255, 255, 0.12);
 }
 
@@ -668,7 +676,7 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
   padding: 10px 14px;
   text-align: left;
   border: 0;
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.18), transparent 36%),
     rgba(var(--accent-rgb), 0.1);
@@ -729,7 +737,7 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
   }
 
   .studio-navrail {
-    border-radius: 24px;
+    border-radius: var(--radius-xl);
   }
 
   .studio-content {
@@ -768,7 +776,7 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
     width: auto;
     margin-top: 12px;
     border-left: 0;
-    border-radius: 22px;
+    border-radius: var(--radius-xl);
     padding: 10px;
   }
 

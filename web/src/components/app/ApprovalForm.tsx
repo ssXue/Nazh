@@ -53,14 +53,14 @@ export function ApprovalForm({ formSchema, onSubmit, onReject, disabled }: Appro
               max={field.max}
               onChange={(e) => updateField(field.name, e.target.value === '' ? null : Number(e.target.value))}
               disabled={disabled}
-              style={{ flex: 1, background: '#1a1a1a', border: '1px solid #333', borderRadius: 4, padding: '2px 6px', color: '#eee', fontSize: 12 }}
+              style={{ flex: 1, background: '#1a1a1a', border: '1px solid #333', borderRadius: 'var(--radius-xs)', padding: '2px 6px', color: '#eee', fontSize: 12 }}
             />
           ) : field.type === 'select' ? (
             <select
               value={String(formData[field.name] ?? '')}
               onChange={(e) => updateField(field.name, e.target.value)}
               disabled={disabled}
-              style={{ flex: 1, background: '#1a1a1a', border: '1px solid #333', borderRadius: 4, padding: '2px 6px', color: '#eee', fontSize: 12 }}
+              style={{ flex: 1, background: '#1a1a1a', border: '1px solid #333', borderRadius: 'var(--radius-xs)', padding: '2px 6px', color: '#eee', fontSize: 12 }}
             >
               <option value="">--</option>
               {field.options?.map((opt) => (
@@ -73,7 +73,7 @@ export function ApprovalForm({ formSchema, onSubmit, onReject, disabled }: Appro
               value={String(formData[field.name] ?? '')}
               onChange={(e) => updateField(field.name, e.target.value)}
               disabled={disabled}
-              style={{ flex: 1, background: '#1a1a1a', border: '1px solid #333', borderRadius: 4, padding: '2px 6px', color: '#eee', fontSize: 12 }}
+              style={{ flex: 1, background: '#1a1a1a', border: '1px solid #333', borderRadius: 'var(--radius-xs)', padding: '2px 6px', color: '#eee', fontSize: 12 }}
             />
           )}
           {field.unit && <span style={{ fontSize: 11, color: '#888' }}>{field.unit}</span>}
@@ -87,21 +87,21 @@ export function ApprovalForm({ formSchema, onSubmit, onReject, disabled }: Appro
           onChange={(e) => setComment(e.target.value)}
           placeholder="审批意见（可选）"
           disabled={disabled}
-          style={{ flex: 1, background: '#1a1a1a', border: '1px solid #333', borderRadius: 4, padding: '2px 6px', color: '#eee', fontSize: 12 }}
+          style={{ flex: 1, background: '#1a1a1a', border: '1px solid #333', borderRadius: 'var(--radius-xs)', padding: '2px 6px', color: '#eee', fontSize: 12 }}
         />
       </div>
       <div style={{ display: 'flex', gap: 8, marginTop: 8, justifyContent: 'flex-end' }}>
         <button
           onClick={() => onReject(comment)}
           disabled={disabled}
-          style={{ padding: '4px 12px', background: '#5c2020', border: '1px solid #833', borderRadius: 4, color: '#f88', cursor: disabled ? 'not-allowed' : 'pointer', fontSize: 12 }}
+          style={{ padding: '4px 12px', background: '#5c2020', border: '1px solid #833', borderRadius: 'var(--radius-xs)', color: '#f88', cursor: disabled ? 'not-allowed' : 'pointer', fontSize: 12 }}
         >
           拒绝
         </button>
         <button
           onClick={() => onSubmit(formData, comment)}
           disabled={disabled}
-          style={{ padding: '4px 12px', background: '#1a5c1a', border: '1px solid #383', borderRadius: 4, color: '#8f8', cursor: disabled ? 'not-allowed' : 'pointer', fontSize: 12 }}
+          style={{ padding: '4px 12px', background: '#1a5c1a', border: '1px solid #383', borderRadius: 'var(--radius-xs)', color: '#8f8', cursor: disabled ? 'not-allowed' : 'pointer', fontSize: 12 }}
         >
           通过
         </button>

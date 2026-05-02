@@ -7,7 +7,7 @@
   gap: 0;
   overflow: hidden;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius-none);
   background: transparent;
   box-shadow: none;
   padding: 0;
@@ -34,7 +34,7 @@
   min-width: 20px;
   padding: 0;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius-none);
   background: transparent;
   color: transparent;
   cursor: pointer;
@@ -80,7 +80,7 @@
   padding: 0 12px;
   border: 0;
   border-bottom: 2px solid transparent;
-  border-radius: 0;
+  border-radius: var(--radius-none);
   background: transparent;
   color: var(--text-soft);
   box-shadow: none;
@@ -111,7 +111,7 @@
   min-width: 16px;
   height: 16px;
   padding: 0 4px;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   background: var(--surface-muted);
   color: var(--muted);
   font-size: 10px;
@@ -175,7 +175,7 @@
 
 .runtime-dock__panel {
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius-none);
   background: transparent;
   padding: 0;
   min-height: 0;
@@ -226,7 +226,7 @@
   height: 24px;
   min-height: 24px;
   padding: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -272,7 +272,7 @@
   color: var(--muted);
   background: var(--surface-elevated);
   border: 1px solid var(--line-faint);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   padding: 2px 8px;
 }
 
@@ -284,7 +284,7 @@
   min-height: 0;
   height: 100%;
   overflow: hidden;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--line-faint);
   background: var(--surface-muted);
 }
@@ -306,7 +306,7 @@
 .runtime-dock__conn-summary em {
   font-style: normal;
   padding: 1px 5px;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   font-size: 10px;
 }
 
@@ -368,7 +368,7 @@
   padding: 4px 8px;
   border: 0;
   border-bottom: 1px solid var(--line-faint);
-  border-radius: 0;
+  border-radius: var(--radius-none);
   background: transparent;
   color: var(--text);
   cursor: pointer;
@@ -395,7 +395,7 @@
   display: inline-block;
   width: 8px;
   height: 8px;
-  border-radius: 50%;
+  border-radius: var(--radius-circle);
 }
 
 .conn-table__phase--ok i {
@@ -505,7 +505,7 @@
   flex: 1;
   overflow: auto;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius-none);
   background: transparent;
   color: var(--text);
   font-family:
@@ -569,7 +569,7 @@
   align-items: center;
   min-height: 16px;
   padding: 0 5px;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   background: var(--danger-soft);
   color: var(--danger-ink);
   font-size: 10px;
@@ -606,7 +606,7 @@
   overflow: hidden;
   padding: 6px 10px;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius-none);
   background: transparent;
 }
 
@@ -666,7 +666,7 @@
   min-height: 0;
   overflow: auto;
   padding: 6px 8px;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   background: var(--surface-muted);
   border: 1px solid var(--line-faint);
   font-family:
@@ -767,7 +767,7 @@
   height: 18px;
   padding: 0;
   border: 0;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   background: transparent;
   color: var(--muted);
   cursor: pointer;
@@ -834,7 +834,7 @@
   gap: 12px;
   padding: 22px;
   border: 1px solid var(--line-soft);
-  border-radius: 18px;
+  border-radius: var(--radius-xl);
   background: var(--panel-strong);
   box-shadow: var(--shadow-medium);
 }
@@ -866,7 +866,7 @@
 .app-error-boundary__stack {
   margin: 0;
   padding: 12px 14px;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: var(--surface-muted);
   color: var(--text-soft);
   overflow: auto;
@@ -902,7 +902,7 @@
   position: relative;
   width: min(360px, calc(100vw - 48px));
   border: 1px solid var(--line-strong);
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   background: var(--panel-strong);
   box-shadow: 0 24px 48px rgba(15, 23, 42, 0.2);
   backdrop-filter: blur(16px);
@@ -924,7 +924,7 @@
   justify-content: center;
   min-width: 22px;
   height: 22px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--danger-soft);
   color: var(--danger-ink);
   font-size: 0.7rem;
