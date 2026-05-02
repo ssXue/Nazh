@@ -7,6 +7,10 @@ import type { JsonValue } from "./serde_json/JsonValue";
  */
 export type TypedVariableSnapshot = { value: JsonValue, variableType: PinType,
 /**
+ * 部署时的声明初值，前端用于"重置"按钮。
+ */
+initial: JsonValue,
+/**
  * RFC3339 时间戳。
  */
 updatedAt: string, updatedBy?: string, };
