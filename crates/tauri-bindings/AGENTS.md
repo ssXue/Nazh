@@ -27,6 +27,7 @@ crates/tauri-bindings/src/
 - `NodeTypeEntry` / `ListNodeTypesResponse` — `src/lib.rs:59+`
 - `SnapshotWorkflowVariablesRequest` / `SnapshotWorkflowVariablesResponse` — ADR-0012 Phase 1 引入，供 `snapshot_workflow_variables` IPC 命令序列化；包含对 `TypedVariableSnapshot` / `VariableDeclaration`（来自 `nazh-core`，ADR-0012 Phase 1 引入）的透传
 - `SetWorkflowVariableRequest` / `SetWorkflowVariableResponse`（ADR-0012 Phase 2）— 供 `set_workflow_variable` IPC 命令序列化；`Response` 含写入后读回的 `TypedVariableSnapshot`（类型不匹配 / 变量未声明通过 `Err(String)` 上抛）
+- `DeleteWorkflowVariableRequest` / `ResetWorkflowVariableRequest` / `QueryVariableHistoryRequest` / `SetGlobalVariableRequest` / `GetGlobalVariableRequest` / `ListGlobalVariablesRequest` / `DeleteGlobalVariableRequest` 及对应响应类型（ADR-0012 Phase 3 / ADR-0022）— 供变量删除、重置、历史查询与全局变量 CRUD IPC 命令序列化
 - `VariableChangedPayload`（ADR-0012 Phase 2）— `workflow://variable-changed` 事件载荷；包含 `workflow_id` / `name` / `value` / `updated_at` / `updated_by`；`updated_by` 加 `#[serde(skip_serializing_if = "Option::is_none")]` 与 ts(optional) 契约对齐
 - `list_node_types_response(&NodeRegistry)` — `src/lib.rs:85`
 - `export_all()`（仅 `ts-export` feature） — `src/lib.rs:107`

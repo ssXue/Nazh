@@ -154,6 +154,136 @@ pub struct DeleteWorkflowVariableResponse {
     pub removed_snapshot: Option<TypedVariableSnapshot>,
 }
 
+/// `reset_workflow_variable` 命令的请求（ADR-0012 Phase 3）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ResetWorkflowVariableRequest {
+    pub workflow_id: String,
+    pub name: String,
+}
+
+/// `reset_workflow_variable` 命令的响应（ADR-0012 Phase 3）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ResetWorkflowVariableResponse {
+    pub snapshot: TypedVariableSnapshot,
+}
+
+/// `query_variable_history` 命令的请求（ADR-0012 Phase 3）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct QueryVariableHistoryRequest {
+    pub workflow_id: String,
+    pub name: String,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub limit: Option<u32>,
+}
+
+/// 历史记录条目（ADR-0012 Phase 3）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryEntryPayload {
+    pub value: serde_json::Value,
+    pub updated_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub updated_by: Option<String>,
+}
+
+/// `query_variable_history` 命令的响应（ADR-0012 Phase 3）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct QueryVariableHistoryResponse {
+    pub entries: Vec<HistoryEntryPayload>,
+}
+
+/// `set_global_variable` 命令的请求（ADR-0012 Phase 3）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct SetGlobalVariableRequest {
+    pub namespace: String,
+    pub key: String,
+    pub value: serde_json::Value,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub var_type: Option<String>,
+}
+
+/// 全局变量快照（ADR-0012 Phase 3）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct GlobalVariableSnapshot {
+    pub namespace: String,
+    pub key: String,
+    pub value: serde_json::Value,
+    pub var_type: String,
+    pub updated_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub updated_by: Option<String>,
+}
+
+/// `set_global_variable` 命令的响应（ADR-0012 Phase 3）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct SetGlobalVariableResponse {
+    pub snapshot: GlobalVariableSnapshot,
+}
+
+/// `get_global_variable` 命令的请求（ADR-0012 Phase 3）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct GetGlobalVariableRequest {
+    pub namespace: String,
+    pub key: String,
+}
+
+/// `get_global_variable` 命令的响应（ADR-0012 Phase 3）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct GetGlobalVariableResponse {
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub snapshot: Option<GlobalVariableSnapshot>,
+}
+
+/// `list_global_variables` 命令的请求（ADR-0012 Phase 3）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ListGlobalVariablesRequest {
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub namespace: Option<String>,
+}
+
+/// `list_global_variables` 命令的响应（ADR-0012 Phase 3）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ListGlobalVariablesResponse {
+    pub variables: Vec<GlobalVariableSnapshot>,
+}
+
+/// `delete_global_variable` 命令的请求（ADR-0012 Phase 3）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteGlobalVariableRequest {
+    pub namespace: String,
+    pub key: String,
+}
+
 /// `workflow://variable-changed` 事件载荷（ADR-0012 Phase 2）。
 ///
 /// 与 `ExecutionEvent::VariableChanged` 字段一致，但走独立 ts-rs 导出路径——
@@ -298,6 +428,19 @@ pub fn export_all() -> Result<(), ts_rs::ExportError> {
     VariableDeletedPayload::export(&cfg)?;
     DeleteWorkflowVariableRequest::export(&cfg)?;
     DeleteWorkflowVariableResponse::export(&cfg)?;
+    ResetWorkflowVariableRequest::export(&cfg)?;
+    ResetWorkflowVariableResponse::export(&cfg)?;
+    QueryVariableHistoryRequest::export(&cfg)?;
+    QueryVariableHistoryResponse::export(&cfg)?;
+    HistoryEntryPayload::export(&cfg)?;
+    SetGlobalVariableRequest::export(&cfg)?;
+    SetGlobalVariableResponse::export(&cfg)?;
+    GlobalVariableSnapshot::export(&cfg)?;
+    GetGlobalVariableRequest::export(&cfg)?;
+    GetGlobalVariableResponse::export(&cfg)?;
+    ListGlobalVariablesRequest::export(&cfg)?;
+    ListGlobalVariablesResponse::export(&cfg)?;
+    DeleteGlobalVariableRequest::export(&cfg)?;
 
     trim_typescript_trailing_whitespace(cfg.out_dir())?;
     Ok(())
