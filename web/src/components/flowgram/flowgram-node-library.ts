@@ -85,6 +85,22 @@ const ALL_DEFS = [
 ];
 
 const DEF_MAP = new Map(ALL_DEFS.map((d) => [d.kind, d]));
+const EDITOR_ONLY_NODE_TYPES = new Set<string>(['subgraph']);
+
+export type KnownEditorNodeType = NazhNodeKind;
+export type RuntimeNodeType = string;
+
+export function isKnownEditorNodeType(value: unknown): value is KnownEditorNodeType {
+  return typeof value === 'string' && DEF_MAP.has(value as NazhNodeKind);
+}
+
+export function isEditorOnlyNodeType(value: unknown): boolean {
+  return typeof value === 'string' && EDITOR_ONLY_NODE_TYPES.has(value);
+}
+
+export function preserveNodeType(value: unknown, fallback: RuntimeNodeType): RuntimeNodeType {
+  return typeof value === 'string' && value.trim() ? value : fallback;
+}
 
 export function getDefaultHttpAlarmTitleTemplate(): string {
   return DEFAULT_HTTP_ALARM_TITLE_TEMPLATE;

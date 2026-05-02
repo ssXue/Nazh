@@ -78,6 +78,58 @@ describe('toNazhWorkflowGraph', () => {
     }
   });
 
+  it('未知运行时节点往返保存时保留原始 nodeType', () => {
+    const graph: WorkflowGraph = {
+      nodes: {
+        camera: {
+          type: 'opencv/detect',
+          config: { model: 'surface-defect-v1' },
+        },
+        sink: {
+          type: 'debugConsole',
+          config: { label: 'plugin-output' },
+        },
+      },
+      edges: [{ from: 'camera', to: 'sink' }],
+    } as WorkflowGraph;
+
+    const flowgramJson = toFlowgramWorkflowJson(graph);
+    const result = toNazhWorkflowGraph(flowgramJson, graph);
+
+    expect(result.nodes.camera?.type).toBe('opencv/detect');
+    expect(result.nodes.camera?.config).toEqual({ model: 'surface-defect-v1' });
+    expect(result.edges).toEqual([{ from: 'camera', to: 'sink' }]);
+  });
+
+  it('显式带 nodeType 的未知编辑器节点会保存为运行时节点', () => {
+    const graph = baseGraph();
+    const flowgramJson = toFlowgramWorkflowJson(graph);
+    const pluginNode = {
+      id: 'detector',
+      type: 'opencv/detect',
+      meta: { position: { x: 500, y: 160 } },
+      data: {
+        label: '缺陷检测',
+        nodeType: 'opencv/detect',
+        config: { model: 'surface-defect-v1' },
+      },
+    };
+    const augmented = {
+      ...flowgramJson,
+      nodes: [...flowgramJson.nodes, pluginNode],
+      edges: [
+        ...flowgramJson.edges,
+        { sourceNodeID: 'a', targetNodeID: 'detector' },
+      ],
+    };
+
+    const result = toNazhWorkflowGraph(augmented, graph);
+
+    expect(result.nodes.detector?.type).toBe('opencv/detect');
+    expect(result.nodes.detector?.config).toEqual({ model: 'surface-defect-v1' });
+    expect(result.edges).toContainEqual({ from: 'a', to: 'detector' });
+  });
+
   it('保存 Code Node 时会保留为统一的 code 类型', () => {
     const graph: WorkflowGraph = {
       nodes: {

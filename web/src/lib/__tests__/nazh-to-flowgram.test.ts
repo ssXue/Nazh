@@ -116,6 +116,23 @@ describe('toFlowgramWorkflowJson', () => {
     expect((node?.data as { label?: string } | undefined)?.label).toBe('Loop Node');
   });
 
+  it('未知运行时节点显示为原始 nodeType 而不是 Native', () => {
+    const graph: WorkflowGraph = {
+      nodes: {
+        detector: { type: 'opencv/detect', config: { model: 'surface-defect-v1' } },
+      },
+      edges: [],
+    } as WorkflowGraph;
+
+    const result = toFlowgramWorkflowJson(graph);
+    const node = result.nodes.find((item) => item.id === 'detector');
+    const data = node?.data as { label?: string; nodeType?: string; displayType?: string } | undefined;
+
+    expect(data?.label).toBe('opencv/detect');
+    expect(data?.nodeType).toBe('opencv/detect');
+    expect(data?.displayType).toBe('opencv/detect');
+  });
+
   it('单节点无边图，边列表为空', () => {
     const graph: WorkflowGraph = {
       nodes: {

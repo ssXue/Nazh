@@ -1,6 +1,6 @@
 # nodeType 宏观契约设计
 
-> **状态**: 设计完成，待实施
+> **状态**: 部分实施（2026-05-02：前端保存路径保留未知 runtime nodeType）
 > **日期**: 2026-05-02
 > **动机**: `nodeType` 同时出现在 Rust `WorkflowNodeDefinition::type`、`NodeRegistry` 注册键、Tauri `list_node_types` / `describe_node_pins`、FlowGram `data.nodeType`、AI 编排协议 `upsert_node.nodeType`、模板 seed 与前端节点库中。若不先定义它的宏观语义，局部重构会把“运行时身份 / 编辑器形态 / 图标皮肤 / AI 可见性 / pin schema”混成一个概念，长期维护成本会继续上升。
 
@@ -284,3 +284,7 @@ export function resolveDisplayType(value: unknown): KnownEditorNodeType | 'unkno
 - 保留图标、颜色、复杂 settings 表单的局部硬编码，避免过度 schema 化
 
 后续如果要把本设计升级为强制架构不变量，应补一份 ADR，并把精简版契约写入 root `AGENTS.md` / 相关 crate `AGENTS.md`。
+
+## 实施进展
+
+- 2026-05-02：已在前端引入 `KnownEditorNodeType` / `RuntimeNodeType` 边界 helper；`toNazhWorkflowGraph()` 改为保留显式 `data.nodeType` 的未知 runtime 节点，不再要求所有业务节点都存在于前端 `ALL_DEFS`；未知节点的默认显示名回退为原始 nodeType，而不是 `Native Node`。

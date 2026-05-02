@@ -599,7 +599,17 @@ export function resolveNodeDisplayLabel(
     return label.trim();
   }
 
-  return getFallbackNodeLabel(normalizeNodeKind(nodeType));
+  const knownKind = normalizeNodeKind(nodeType);
+  if (
+    knownKind === 'native' &&
+    typeof nodeType === 'string' &&
+    nodeType.trim() &&
+    nodeType !== 'native'
+  ) {
+    return nodeType.trim();
+  }
+
+  return getFallbackNodeLabel(knownKind);
 }
 
 export interface NodeValidation {

@@ -3,7 +3,9 @@ import type { WorkflowJSON as FlowgramWorkflowJSON } from '@flowgram.ai/free-lay
 import { layoutGraph } from './graph';
 import { stripNodeLocalAiConfig } from './workflow-ai';
 import {
-  getAllNodeDefinitions,
+  isEditorOnlyNodeType,
+  isKnownEditorNodeType,
+  preserveNodeType,
   resolveNodeDisplayLabel,
 } from '../components/flowgram/flowgram-node-library';
 import type { WorkflowGraph, WorkflowNodeDefinition } from '../types';
@@ -31,12 +33,6 @@ const SUBGRAPH_OUTPUT_TYPE = 'subgraphOutput';
  * 用户手动给节点起 id 时不应包含 `/`，否则会被误判为展平副本。 */
 const SUBGRAPH_ID_SEPARATOR = '/';
 
-const FLOWGRAM_BUSINESS_NODE_TYPES = new Set<string>(
-  getAllNodeDefinitions()
-    .map((definition) => definition.kind)
-    .filter((kind) => kind !== SUBGRAPH_CONTAINER_TYPE),
-);
-
 function isFlattenedNode(node: FlowgramWorkflowJSON['nodes'][number]): boolean {
   return node.id.includes(SUBGRAPH_ID_SEPARATOR);
 }
@@ -49,17 +45,18 @@ function hasOwnKey<T extends object>(value: T, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(value, key);
 }
 
-function isBusinessNodeType(type: unknown): boolean {
-  return typeof type === 'string' && FLOWGRAM_BUSINESS_NODE_TYPES.has(type);
+function readRuntimeNodeType(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value : null;
 }
 
 function isBusinessNode(node: FlowgramWorkflowJSON['nodes'][number]): boolean {
-  if (isBusinessNodeType(node.type)) {
-    return true;
+  const rawData = isRecord(node.data) ? node.data : {};
+  const explicitNodeType = readRuntimeNodeType(rawData.nodeType);
+  if (explicitNodeType) {
+    return !isEditorOnlyNodeType(explicitNodeType);
   }
 
-  const rawData = isRecord(node.data) ? node.data : {};
-  return isBusinessNodeType(rawData.nodeType);
+  return isKnownEditorNodeType(node.type) && !isEditorOnlyNodeType(node.type);
 }
 
 function buildEdgeKey(edge: FlowgramWorkflowJSON['edges'][number]): string {
@@ -76,7 +73,7 @@ function buildBaseFlowgramWorkflowJson(graph: WorkflowGraph): FlowgramWorkflowJS
         x: 44 + positionedNode.layer * 320,
         y: 40 + positionedNode.row * 196,
       };
-      const nodeType = definition?.type ?? 'unknown';
+      const nodeType = preserveNodeType(definition?.type, 'unknown');
       const config = definition?.config ?? {};
       const data: FlowgramNodeData = {
         label: resolveNodeDisplayLabel(nodeType),
@@ -425,9 +422,11 @@ export function toNazhWorkflowGraph(
     const hasConnectionId = hasOwnKey(rawData, 'connectionId');
     const hasConfig = hasOwnKey(rawData, 'config');
     const hasTimeoutMs = hasOwnKey(rawData, 'timeoutMs');
-    const nodeType = String(
-      (hasNodeType ? rawData.nodeType : undefined) ?? previousNode?.type ?? node.type,
-    );
+    const nodeType =
+      readRuntimeNodeType(hasNodeType ? rawData.nodeType : undefined) ??
+      readRuntimeNodeType(previousNode?.type) ??
+      readRuntimeNodeType(node.type) ??
+      'unknown';
     const nextConfig = hasConfig
       ? ((rawData.config as WorkflowNodeDefinition['config']) ?? {})
       : previousNode?.config ?? {};
