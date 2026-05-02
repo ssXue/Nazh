@@ -577,10 +577,6 @@ function FlowgramNodeSettingsPanel({
 
       <div className="flowgram-form">
         <label>
-          <span>节点 ID</span>
-          <input value={draft.id} readOnly />
-        </label>
-        <label>
           <span>显示名称</span>
           <input value={draft.label} onChange={(event) => updateDraft({ label: event.target.value })} />
         </label>
