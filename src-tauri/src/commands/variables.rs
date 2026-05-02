@@ -1,9 +1,14 @@
 use std::sync::Arc;
 
+use chrono::Utc;
 use tauri::State;
 use tauri_bindings::{
-    DeleteWorkflowVariableRequest, DeleteWorkflowVariableResponse, SetWorkflowVariableRequest,
-    SetWorkflowVariableResponse, SnapshotWorkflowVariablesRequest,
+    DeleteGlobalVariableRequest, DeleteWorkflowVariableRequest, DeleteWorkflowVariableResponse,
+    GetGlobalVariableRequest, GetGlobalVariableResponse, GlobalVariableSnapshot,
+    HistoryEntryPayload, ListGlobalVariablesRequest, ListGlobalVariablesResponse,
+    QueryVariableHistoryRequest, QueryVariableHistoryResponse, ResetWorkflowVariableRequest,
+    ResetWorkflowVariableResponse, SetGlobalVariableRequest, SetGlobalVariableResponse,
+    SetWorkflowVariableRequest, SetWorkflowVariableResponse, SnapshotWorkflowVariablesRequest,
     SnapshotWorkflowVariablesResponse,
 };
 
@@ -100,4 +105,141 @@ pub(crate) async fn delete_workflow_variable(
     let removed = vars.remove(&request.name);
     let removed_snapshot = removed.map(Into::into);
     Ok(DeleteWorkflowVariableResponse { removed_snapshot })
+}
+
+/// IPC 重置命令：将变量恢复到声明初值（ADR-0012 Phase 3）。
+///
+/// 等价于以初值调用 `set_workflow_variable`，但前端无需知道初值——
+/// 后端 `TypedVariable.initial` 保存了部署时的声明初值。
+#[tauri::command]
+pub(crate) async fn reset_workflow_variable(
+    state: State<'_, DesktopState>,
+    request: ResetWorkflowVariableRequest,
+) -> Result<ResetWorkflowVariableResponse, String> {
+    let vars = resolve_workflow_variables(&state, &request.workflow_id).await?;
+    vars.reset(&request.name, Some("ipc"))
+        .map_err(|err| err.to_string())?;
+
+    let snapshot = vars
+        .get(&request.name)
+        .ok_or_else(|| format!("变量 `{}` 重置后未能读回", request.name))?
+        .into();
+
+    Ok(ResetWorkflowVariableResponse { snapshot })
+}
+
+/// 查询变量变更历史（ADR-0012 Phase 3）。
+#[tauri::command]
+pub(crate) async fn query_variable_history(
+    state: State<'_, DesktopState>,
+    request: QueryVariableHistoryRequest,
+) -> Result<QueryVariableHistoryResponse, String> {
+    #[allow(clippy::expect_used)]
+    let store = state.store.read().expect("Store 读锁").clone();
+    let limit = request.limit.map_or(100, |n| n as usize);
+    let entries = store
+        .query_latest(&request.workflow_id, &request.name, limit)
+        .map_err(|err| err.to_string())?;
+    Ok(QueryVariableHistoryResponse {
+        entries: entries
+            .into_iter()
+            .map(|e| HistoryEntryPayload {
+                value: e.value,
+                updated_at: e.updated_at,
+                updated_by: e.updated_by,
+            })
+            .collect(),
+    })
+}
+
+/// 设置全局变量（ADR-0012 Phase 3）。
+#[tauri::command]
+pub(crate) async fn set_global_variable(
+    state: State<'_, DesktopState>,
+    request: SetGlobalVariableRequest,
+) -> Result<SetGlobalVariableResponse, String> {
+    #[allow(clippy::expect_used)]
+    let store = state.store.read().expect("Store 读锁").clone();
+    let var_type = request.var_type.as_deref().unwrap_or("Any");
+    let updated_at = Utc::now().to_rfc3339();
+    store
+        .upsert_global(
+            &request.namespace,
+            &request.key,
+            &request.value,
+            var_type,
+            &updated_at,
+            Some("ipc"),
+        )
+        .map_err(|err| err.to_string())?;
+    let snapshot = GlobalVariableSnapshot {
+        namespace: request.namespace,
+        key: request.key,
+        value: request.value,
+        var_type: var_type.to_owned(),
+        updated_at,
+        updated_by: Some("ipc".to_owned()),
+    };
+    Ok(SetGlobalVariableResponse { snapshot })
+}
+
+/// 获取单个全局变量（ADR-0012 Phase 3）。
+#[tauri::command]
+pub(crate) async fn get_global_variable(
+    state: State<'_, DesktopState>,
+    request: GetGlobalVariableRequest,
+) -> Result<GetGlobalVariableResponse, String> {
+    #[allow(clippy::expect_used)]
+    let store = state.store.read().expect("Store 读锁").clone();
+    let snapshot = store
+        .load_global(&request.namespace, &request.key)
+        .map_err(|err| err.to_string())?
+        .map(|g| GlobalVariableSnapshot {
+            namespace: g.namespace,
+            key: g.key,
+            value: g.value,
+            var_type: g.var_type,
+            updated_at: g.updated_at,
+            updated_by: g.updated_by,
+        });
+    Ok(GetGlobalVariableResponse { snapshot })
+}
+
+/// 列出全局变量（ADR-0012 Phase 3）。
+#[tauri::command]
+pub(crate) async fn list_global_variables(
+    state: State<'_, DesktopState>,
+    request: ListGlobalVariablesRequest,
+) -> Result<ListGlobalVariablesResponse, String> {
+    #[allow(clippy::expect_used)]
+    let store = state.store.read().expect("Store 读锁").clone();
+    let globals = store
+        .list_globals(request.namespace.as_deref())
+        .map_err(|err| err.to_string())?;
+    Ok(ListGlobalVariablesResponse {
+        variables: globals
+            .into_iter()
+            .map(|g| GlobalVariableSnapshot {
+                namespace: g.namespace,
+                key: g.key,
+                value: g.value,
+                var_type: g.var_type,
+                updated_at: g.updated_at,
+                updated_by: g.updated_by,
+            })
+            .collect(),
+    })
+}
+
+/// 删除全局变量（ADR-0012 Phase 3）。
+#[tauri::command]
+pub(crate) async fn delete_global_variable(
+    state: State<'_, DesktopState>,
+    request: DeleteGlobalVariableRequest,
+) -> Result<(), String> {
+    #[allow(clippy::expect_used)]
+    let store = state.store.read().expect("Store 读锁").clone();
+    store
+        .delete_global(&request.namespace, &request.key)
+        .map_err(|err| err.to_string())
 }

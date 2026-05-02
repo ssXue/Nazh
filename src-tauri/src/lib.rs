@@ -14,6 +14,8 @@ mod workspace;
 
 use ai::AiConfigFile;
 use state::DesktopState;
+use std::sync::Arc;
+use store::Store;
 use tauri::{Manager, State};
 #[cfg(target_os = "windows")]
 use window_vibrancy::apply_blur;
@@ -56,6 +58,35 @@ fn apply_window_glass(window: &tauri::WebviewWindow) {
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn apply_window_glass(_window: &tauri::WebviewWindow) {}
 
+fn init_persistent_store(app: &tauri::App) {
+    // 初始化文件持久化 Store，替换 Default 提供的内存 Store
+    let state: State<'_, DesktopState> = app.state();
+    if let Ok(data_dir) = app.path().app_local_data_dir() {
+        match std::fs::create_dir_all(&data_dir) {
+            Ok(()) => {
+                let store_path = data_dir.join("store.sqlite3");
+                match Store::open(&store_path) {
+                    Ok(file_store) => match state.store.write() {
+                        Ok(mut store) => {
+                            *store = Arc::new(file_store);
+                            tracing::info!(path = ?store_path, "持久化 Store 已打开");
+                        }
+                        Err(error) => {
+                            tracing::warn!(?error, "Store 写锁 poisoned，继续使用内存 Store");
+                        }
+                    },
+                    Err(error) => {
+                        tracing::warn!(?error, "无法打开持久化 Store，继续使用内存 Store");
+                    }
+                }
+            }
+            Err(error) => {
+                tracing::warn!(?error, path = ?data_dir, "无法创建持久化 Store 目录，继续使用内存 Store");
+            }
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     init_tracing();
@@ -68,6 +99,8 @@ pub fn run() {
             } else {
                 tracing::warn!("未找到主窗口，跳过玻璃效果初始化");
             }
+
+            init_persistent_store(app);
 
             let app_handle = app.handle().clone();
             let state: State<'_, DesktopState> = app.state();
@@ -102,6 +135,12 @@ pub fn run() {
             commands::variables::snapshot_workflow_variables,
             commands::variables::set_workflow_variable,
             commands::variables::delete_workflow_variable,
+            commands::variables::reset_workflow_variable,
+            commands::variables::query_variable_history,
+            commands::variables::set_global_variable,
+            commands::variables::get_global_variable,
+            commands::variables::list_global_variables,
+            commands::variables::delete_global_variable,
             commands::runtime::list_runtime_workflows,
             commands::runtime::set_active_runtime_workflow,
             commands::runtime::list_dead_letters,

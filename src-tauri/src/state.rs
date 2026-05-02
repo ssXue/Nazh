@@ -2,6 +2,7 @@ use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use ai::{AiConfigFile, OpenAiCompatibleService};
 use nazh_engine::{ConnectionDefinition, shared_connection_manager};
+use store::Store;
 use tauri::{AppHandle, Manager};
 use tokio::{
     fs,
@@ -23,6 +24,8 @@ pub(crate) struct DesktopState {
     pub(crate) ai_config: Arc<RwLock<AiConfigFile>>,
     pub(crate) ai_service: Arc<OpenAiCompatibleService>,
     pub(crate) approval_registry: Arc<nazh_engine::ApprovalRegistry>,
+    /// 持久化存储。`setup` 阶段从内存 Store 替换为文件 Store。
+    pub(crate) store: std::sync::RwLock<Arc<Store>>,
 }
 
 impl Default for DesktopState {
@@ -36,6 +39,7 @@ impl Default for DesktopState {
             ai_config,
             ai_service,
             approval_registry: Arc::new(nazh_engine::ApprovalRegistry::new()),
+            store: std::sync::RwLock::new(Arc::new(Store::open_unpersisted())),
         }
     }
 }

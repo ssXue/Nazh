@@ -1,11 +1,12 @@
 use std::{
+    collections::HashMap,
     path::{Component, Path, PathBuf},
     sync::Arc,
 };
 
 use nazh_engine::{
     AiService, ConnectionDefinition, EngineError, RuntimeResources, WorkflowContext, WorkflowGraph,
-    WorkflowId, deploy_workflow_with_ai as deploy_workflow_graph,
+    WorkflowId, deploy_workflow_with_ai_and_variable_overrides as deploy_workflow_graph,
 };
 use serde_json::{Value, json};
 use tauri::{AppHandle, Emitter, State};
@@ -25,6 +26,39 @@ use crate::{
 
 const MAX_IPC_INPUT_BYTES: usize = 10 * 1024 * 1024;
 const SQL_WRITER_DEFAULT_DATABASE_PATH: &str = "./nazh-local.sqlite3";
+
+fn load_persisted_variable_overrides(
+    state: &DesktopState,
+    workflow_id: &str,
+) -> HashMap<String, Value> {
+    let store = match state.store.read() {
+        Ok(store) => Arc::clone(&store),
+        Err(error) => {
+            tracing::warn!(?error, "Store 读锁 poisoned，跳过变量恢复");
+            return HashMap::new();
+        }
+    };
+
+    match store.load_variables(workflow_id) {
+        Ok(persisted) => {
+            if !persisted.is_empty() {
+                tracing::info!(
+                    workflow_id = %workflow_id,
+                    count = persisted.len(),
+                    "已读取持久化变量覆盖值，准备在 on_deploy 前恢复"
+                );
+            }
+            persisted
+                .into_iter()
+                .map(|var| (var.key, var.value))
+                .collect()
+        }
+        Err(error) => {
+            tracing::debug!(?error, "从 Store 加载变量失败，跳过恢复");
+            HashMap::new()
+        }
+    }
+}
 
 #[tauri::command]
 #[allow(clippy::too_many_lines)]
@@ -111,6 +145,7 @@ pub(crate) async fn deploy_workflow(
     let extra_resources = RuntimeResources::new()
         .with_resource(Arc::clone(&state.approval_registry))
         .with_resource(WorkflowId(Arc::new(workflow_id.clone())));
+    let variable_overrides = load_persisted_variable_overrides(&state, &workflow_id);
     let deployment = match deploy_workflow_graph(
         graph,
         state.connection_manager.clone(),
@@ -118,6 +153,7 @@ pub(crate) async fn deploy_workflow(
         registry,
         Some(workflow_id.clone()),
         extra_resources,
+        variable_overrides,
     )
     .await
     {
@@ -172,6 +208,12 @@ pub(crate) async fn deploy_workflow(
         workflow_id.clone(),
         event_rx,
         observability_store.clone(),
+        {
+            #[allow(clippy::expect_used)]
+            {
+                state.store.read().expect("Store 读锁").clone()
+            }
+        },
     ));
 
     runtime_tasks.push(crate::events::spawn_result_forwarder(
@@ -197,12 +239,13 @@ pub(crate) async fn deploy_workflow(
                 root_nodes: root_nodes.clone(),
                 lifecycle_guards,
                 shutdown_token,
-                shared_resources,
+                shared_resources: shared_resources.clone(),
                 output_caches,
                 runtime_tasks,
             },
         );
     }
+
     {
         let mut active_workflow_id = state.active_workflow_id.lock().await;
         *active_workflow_id = Some(workflow_id.clone());
