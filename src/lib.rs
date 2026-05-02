@@ -50,8 +50,9 @@ pub use nodes_flow::{
 };
 
 pub use nodes_io::{
-    DebugConsoleNode, DebugConsoleNodeConfig, IoPlugin, NativeNode, NativeNodeConfig, TimerNode,
-    TimerNodeConfig,
+    ApprovalRegistry, DebugConsoleNode, DebugConsoleNodeConfig, HumanLoopNode, HumanLoopNodeConfig,
+    HumanLoopResponse, IoPlugin, NativeNode, NativeNodeConfig, PendingApprovalSummary,
+    ResponseAction, TimerNode, TimerNodeConfig, WorkflowId,
 };
 
 pub use nodes_pure::{C2fNode, LookupNode, LookupNodeConfig, MinutesSinceNode, PurePlugin};

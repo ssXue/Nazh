@@ -4,8 +4,8 @@ use std::{
 };
 
 use nazh_engine::{
-    AiService, ConnectionDefinition, EngineError, WorkflowContext, WorkflowGraph,
-    deploy_workflow_with_ai as deploy_workflow_graph,
+    AiService, ConnectionDefinition, EngineError, RuntimeResources, WorkflowContext, WorkflowGraph,
+    WorkflowId, deploy_workflow_with_ai as deploy_workflow_graph,
 };
 use serde_json::{Value, json};
 use tauri::{AppHandle, Emitter, State};
@@ -108,12 +108,16 @@ pub(crate) async fn deploy_workflow(
     let edge_count = graph.edges.len();
     let registry = shared_node_registry();
     let ai_service: Arc<dyn AiService> = state.ai_service.clone();
+    let extra_resources = RuntimeResources::new()
+        .with_resource(Arc::clone(&state.approval_registry))
+        .with_resource(WorkflowId(Arc::new(workflow_id.clone())));
     let deployment = match deploy_workflow_graph(
         graph,
         state.connection_manager.clone(),
         Some(ai_service),
         registry,
         Some(workflow_id.clone()),
+        extra_resources,
     )
     .await
     {
@@ -338,9 +342,13 @@ pub(crate) async fn undeploy_workflow(
     };
 
     let response = if let Some(mut workflow) = existing_workflow {
+        let aborted = workflow.shutdown_runtime().await;
+        state
+            .approval_registry
+            .cleanup_workflow(&target_workflow_id);
         UndeployResponse {
             had_workflow: true,
-            aborted_timer_count: workflow.shutdown_runtime().await,
+            aborted_timer_count: aborted,
             workflow_id: Some(target_workflow_id.clone()),
         }
     } else {

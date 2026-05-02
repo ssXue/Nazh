@@ -533,7 +533,11 @@ function isBusinessFlowNode(node: FlowNodeEntity | null): node is FlowNodeEntity
     nodeType === 'debugConsole' ||
     nodeType === 'subgraph' ||
     nodeType === 'subgraphInput' ||
-    nodeType === 'subgraphOutput'
+    nodeType === 'subgraphOutput' ||
+    nodeType === 'c2f' ||
+    nodeType === 'minutesSince' ||
+    nodeType === 'lookup' ||
+    nodeType === 'humanLoop'
   );
 }
 

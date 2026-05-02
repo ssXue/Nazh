@@ -24,7 +24,8 @@ export type NazhNodeKind =
   | 'subgraphOutput'
   | 'c2f'
   | 'minutesSince'
-  | 'lookup';
+  | 'lookup'
+  | 'humanLoop';
 export type NazhNodeDisplayType = NazhNodeKind;
 
 export interface FlowgramLogicBranch {
@@ -235,6 +236,7 @@ export function normalizeNodeKind(value: unknown): NazhNodeKind {
     case 'c2f':
     case 'minutesSince':
     case 'lookup':
+    case 'humanLoop':
       return value;
     case 'native':
     default:
@@ -581,6 +583,8 @@ export function getFallbackNodeLabel(kind: NazhNodeKind): string {
       return 'C→F';
     case 'minutesSince':
       return '距今分钟';
+    case 'humanLoop':
+      return '审批节点';
     case 'native':
     default:
       return 'Native Node';
@@ -853,6 +857,23 @@ export function normalizeNodeConfig(
 
   if (nodeType === 'c2f' || nodeType === 'minutesSince') {
     return { ...rawConfig };
+  }
+
+  if (nodeType === 'humanLoop') {
+    return {
+      ...rawConfig,
+      title: typeof rawConfig.title === 'string' ? rawConfig.title : '',
+      description: typeof rawConfig.description === 'string' ? rawConfig.description : '',
+      form_schema: Array.isArray(rawConfig.form_schema) ? rawConfig.form_schema : [],
+      approval_timeout_ms:
+        typeof rawConfig.approval_timeout_ms === 'number' && Number.isFinite(rawConfig.approval_timeout_ms)
+          ? Math.max(0, Math.round(rawConfig.approval_timeout_ms))
+          : null,
+      default_action:
+        rawConfig.default_action === 'autoApprove' || rawConfig.default_action === 'autoReject'
+          ? rawConfig.default_action
+          : 'autoReject',
+    };
   }
 
   return {

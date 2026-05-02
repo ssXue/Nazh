@@ -191,6 +191,89 @@ html[data-theme='dark'] .flowgram-host {
   min-height: 72px;
 }
 
+/* HITL 紧凑字段行编辑器 */
+.hitl-field-list {
+  display: grid;
+  gap: 6px;
+}
+
+.hitl-field-list > span {
+  color: var(--muted);
+  font-size: var(--font-subheadline);
+}
+
+.hitl-field-row {
+  display: grid;
+  grid-template-columns: 72px 1fr 1fr 28px;
+  gap: 4px;
+  align-items: center;
+}
+
+.hitl-field-row select,
+.hitl-field-row input {
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  padding: 0.3rem 0.42rem;
+  background: var(--panel);
+  color: var(--text);
+  font-size: var(--font-caption1, 0.75rem);
+}
+
+.hitl-field-row__remove {
+  border: none;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 2px;
+  border-radius: 4px;
+}
+
+.hitl-field-row__remove:hover {
+  color: var(--danger-ink, #e53e3e);
+  background: var(--danger-soft, #fff5f5);
+}
+
+.hitl-field-list__add {
+  border: 1px dashed var(--line-strong);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--font-caption1, 0.75rem);
+  padding: 4px 10px;
+  cursor: pointer;
+  justify-self: start;
+}
+
+.hitl-field-list__add:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* select 字段的选项子编辑器 */
+.hitl-field-options {
+  display: grid;
+  gap: 3px;
+  padding-left: 76px;
+  margin-bottom: 4px;
+}
+
+.hitl-field-option {
+  display: grid;
+  grid-template-columns: 1fr 1fr 28px;
+  gap: 4px;
+  align-items: center;
+}
+
+.hitl-field-option input {
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  padding: 0.2rem 0.36rem;
+  background: var(--panel);
+  color: var(--text);
+  font-size: var(--font-caption1, 0.75rem);
+}
+
 .flowgram-add-panel {
   display: flex;
   position: absolute;

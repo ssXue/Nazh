@@ -34,6 +34,7 @@ pub mod template;
 
 // 永远启用的轻量节点
 mod debug_console;
+mod human_loop;
 mod native;
 mod timer;
 
@@ -52,6 +53,11 @@ mod serial_trigger;
 mod sql_writer;
 
 pub use debug_console::{DebugConsoleNode, DebugConsoleNodeConfig};
+pub use human_loop::ApprovalRegistry;
+pub use human_loop::HumanLoopNode;
+pub use human_loop::HumanLoopNodeConfig;
+pub use human_loop::WorkflowId;
+pub use human_loop::registry::{HumanLoopResponse, PendingApprovalSummary, ResponseAction};
 pub use native::{NativeNode, NativeNodeConfig};
 pub use timer::{TimerNode, TimerNodeConfig};
 
@@ -93,12 +99,34 @@ impl Plugin for IoPlugin {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn register(&self, registry: &mut NodeRegistry) {
-        // 永远启用的节点：debug / native / timer
+        // 永远启用的节点：debug / native / timer / humanLoop
         registry.register_with_capabilities("timer", NodeCapabilities::TRIGGER, |def, _res| {
             let config: TimerNodeConfig = def.parse_config()?;
             Ok(Arc::new(TimerNode::new(def.id().to_owned(), config)))
         });
+
+        registry.register_with_capabilities(
+            "humanLoop",
+            NodeCapabilities::BRANCHING,
+            |def, res| {
+                let config: HumanLoopNodeConfig = def.parse_config()?;
+                let approval_registry = res.get::<Arc<ApprovalRegistry>>().ok_or_else(|| {
+                    EngineError::invalid_graph("ApprovalRegistry 未注入 RuntimeResources")
+                })?;
+                let workflow_id = res
+                    .get::<WorkflowId>()
+                    .map(|w| w.as_str().to_owned())
+                    .unwrap_or_default();
+                Ok(Arc::new(HumanLoopNode::new(
+                    def.id().to_owned(),
+                    config,
+                    approval_registry,
+                    workflow_id,
+                )))
+            },
+        );
 
         registry.register_with_capabilities(
             "debugConsole",

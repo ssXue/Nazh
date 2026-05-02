@@ -57,6 +57,14 @@ impl RuntimeResources {
             .and_then(|entry| entry.downcast_ref::<T>())
             .cloned()
     }
+
+    /// 合并另一个资源包的所有条目到自身（已有同类型键会被覆盖）。
+    pub fn merge(&mut self, mut other: RuntimeResources) {
+        let other_entries = std::mem::take(&mut other.entries);
+        for (type_id, resource) in other_entries {
+            self.entries.insert(type_id, resource);
+        }
+    }
 }
 
 /// 部署时传递给节点工厂的共享资源句柄。

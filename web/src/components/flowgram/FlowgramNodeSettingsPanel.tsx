@@ -60,6 +60,7 @@ import { SqlWriterNodeSettings } from './nodes/sqlWriter/settings';
 import { DebugConsoleNodeSettings } from './nodes/debugConsole/settings';
 import { LookupNodeSettings } from './nodes/lookup/settings';
 import { SubgraphNodeSettings } from './nodes/subgraph/settings';
+import { HumanLoopNodeSettings } from './nodes/humanLoop/settings';
 
 export interface FlowgramNodeSettingsPanelProps {
   nodeId: string;
@@ -165,6 +166,21 @@ function readNodeDraft(node: FlowNodeEntity): SelectedNodeDraft {
       const raw = config.default;
       return raw === null || raw === undefined ? '' : JSON.stringify(raw);
     })(),
+    hitlTitle: readString(config.title),
+    hitlDescription: readString(config.description),
+    hitlApprovalTimeoutSec: (() => {
+      const raw = config.approval_timeout_ms;
+      return typeof raw === 'number' && raw > 0 ? String(Math.round(raw / 1000)) : '';
+    })(),
+    hitlDefaultAction: (() => {
+      const raw = config.default_action;
+      return typeof raw === 'string' && ['autoApprove', 'autoReject'].includes(raw) ? raw : 'autoReject';
+    })(),
+    hitlFormSchemaJson: (() => {
+      const raw = config.form_schema;
+      if (Array.isArray(raw) && raw.length > 0) return JSON.stringify(raw, null, 2);
+      return '';
+    })(),
   };
 }
 
@@ -221,6 +237,22 @@ function buildNodeConfig(draft: SelectedNodeDraft, currentConfig: NodeConfigMap)
     return { ...currentConfig, table: draft.lookupTable, default: defaultVal };
   }
 
+  if (draft.nodeType === 'humanLoop') {
+    const timeoutSec = parsePositiveInteger(draft.hitlApprovalTimeoutSec);
+    return {
+      ...currentConfig,
+      title: draft.hitlTitle.trim() || null,
+      description: draft.hitlDescription.trim() || null,
+      approval_timeout_ms: timeoutSec != null ? timeoutSec * 1000 : null,
+      default_action: draft.hitlDefaultAction || 'autoReject',
+      form_schema: (() => {
+        const text = draft.hitlFormSchemaJson.trim();
+        if (!text) return [];
+        try { return JSON.parse(text); } catch { return []; }
+      })(),
+    };
+  }
+
   if (supportsScriptAi(draft.nodeType)) {
     const { ai: _ai, ...restConfig } = currentConfig;
     return { ...restConfig, script: draft.script };
@@ -265,6 +297,7 @@ const NODE_SETTINGS_MAP: Record<string, React.FC<NodeSettingsProps>> = {
   debugConsole: DebugConsoleNodeSettings,
   lookup: LookupNodeSettings,
   subgraph: SubgraphNodeSettings,
+  humanLoop: HumanLoopNodeSettings,
 };
 
 function FlowgramNodeSettingsPanel({

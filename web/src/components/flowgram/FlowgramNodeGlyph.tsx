@@ -39,7 +39,8 @@ export function normalizeFlowgramDisplayType(value: unknown): NazhNodeDisplayTyp
     value === 'subgraphOutput' ||
     value === 'c2f' ||
     value === 'minutesSince' ||
-    value === 'lookup'
+    value === 'lookup' ||
+    value === 'humanLoop'
   ) {
     return value;
   }
@@ -49,6 +50,8 @@ export function normalizeFlowgramDisplayType(value: unknown): NazhNodeDisplayTyp
 
 export function getFlowgramDisplayLabel(displayType: NazhNodeDisplayType): string {
   switch (displayType) {
+    case 'humanLoop':
+      return '审批';
     case 'timer':
       return 'Timer';
     case 'serialTrigger':
@@ -132,5 +135,7 @@ export function FlowgramNodeGlyph({
     case 'minutesSince':
     case 'lookup':
       return <NativeNodeIcon {...props} />;
+    case 'humanLoop':
+      return <IfNodeIcon {...props} />;
   }
 }

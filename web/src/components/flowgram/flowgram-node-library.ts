@@ -73,6 +73,7 @@ import { definition as subgraphInputDef } from './nodes/subgraphInput';
 import { definition as subgraphOutputDef } from './nodes/subgraphOutput';
 import { definition as c2fDef } from './nodes/c2f';
 import { definition as lookupDef } from './nodes/lookup';
+import { definition as humanLoopDef } from './nodes/humanLoop';
 import { definition as minutesSinceDef } from './nodes/minutesSince';
 
 const ALL_DEFS = [
@@ -80,7 +81,7 @@ const ALL_DEFS = [
   ifDef, switchDef, tryCatchDef, loopDef,
   httpClientDef, barkPushDef, sqlWriterDef, debugConsoleDef,
   subgraphDef, subgraphInputDef, subgraphOutputDef,
-  c2fDef, minutesSinceDef, lookupDef,
+  c2fDef, minutesSinceDef, lookupDef, humanLoopDef,
 ];
 
 const DEF_MAP = new Map(ALL_DEFS.map((d) => [d.kind, d]));
@@ -234,6 +235,7 @@ export function getFlowgramPaletteSections(): FlowgramPaletteSection[] {
         { key: 'blank-switch', title: 'Switch 分流', description: switchDef.catalog.description, badge: 'Switch', seed: switchDef.buildDefaultSeed() },
         { key: 'blank-try-catch', title: 'Try 捕获', description: tryCatchDef.catalog.description, badge: 'Try', seed: tryCatchDef.buildDefaultSeed() },
         { key: 'blank-loop', title: 'Loop 迭代', description: loopDef.catalog.description, badge: 'Loop', seed: loopDef.buildDefaultSeed() },
+        { key: 'blank-human-loop', title: '审批节点', description: humanLoopDef.catalog.description, badge: '审批', seed: humanLoopDef.buildDefaultSeed() },
       ],
     },
     {

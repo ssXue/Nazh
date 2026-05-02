@@ -41,4 +41,5 @@ export const NODE_CATEGORY_MAP: Record<
   subgraphOutput: { category: '子图封装', description: '子图展开后的出口桥接节点' },
   c2f: { category: '纯计算', description: '摄氏转华氏（pure-form，仅 Data 引脚）' },
   minutesSince: { category: '纯计算', description: '给定 RFC3339 时间戳返回距今分钟数（pure-form，仅 Data 引脚）' },
+  humanLoop: { category: '流程控制', description: '暂停工作流等待人工审批响应' },
 };

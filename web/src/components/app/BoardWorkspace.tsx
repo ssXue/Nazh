@@ -12,6 +12,7 @@ import type { ProjectEnvironmentDiff, ProjectRecord } from '../../lib/projects';
 import type { ConnectionRecord, WorkflowGraph } from '../../types';
 import type { RuntimeDockProps, ThemeMode } from './types';
 import { ProjectWorkspaceHeader } from './ProjectWorkspaceHeader';
+import { ApprovalOverlay } from './ApprovalOverlay';
 import { RuntimeDock } from './RuntimeDock';
 
 export type BoardWorkspaceHandle = FlowgramCanvasHandle;
@@ -111,6 +112,8 @@ export const BoardWorkspace = forwardRef<BoardWorkspaceHandle, BoardWorkspacePro
             exportTarget={flowgramExportTarget}
             actions={flowgramActions}
           />
+
+          <ApprovalOverlay />
 
           <RuntimeDock
             eventFeed={runtimeDock.eventFeed}

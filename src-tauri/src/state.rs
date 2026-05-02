@@ -22,6 +22,7 @@ pub(crate) struct DesktopState {
     pub(crate) active_workflow_id: Mutex<Option<String>>,
     pub(crate) ai_config: Arc<RwLock<AiConfigFile>>,
     pub(crate) ai_service: Arc<OpenAiCompatibleService>,
+    pub(crate) approval_registry: Arc<nazh_engine::ApprovalRegistry>,
 }
 
 impl Default for DesktopState {
@@ -34,6 +35,7 @@ impl Default for DesktopState {
             active_workflow_id: Mutex::new(None),
             ai_config,
             ai_service,
+            approval_registry: Arc::new(nazh_engine::ApprovalRegistry::new()),
         }
     }
 }

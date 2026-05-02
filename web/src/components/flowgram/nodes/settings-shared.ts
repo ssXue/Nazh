@@ -51,6 +51,11 @@ export interface SelectedNodeDraft {
   parameterBindings: Record<string, string | number | boolean>;
   lookupTable: Record<string, unknown>;
   lookupDefault: string;
+  hitlTitle: string;
+  hitlDescription: string;
+  hitlApprovalTimeoutSec: string;
+  hitlDefaultAction: string;
+  hitlFormSchemaJson: string;
 }
 
 export interface NodeValidation {

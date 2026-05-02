@@ -667,6 +667,32 @@ export async function onRuntimeWorkflowFocus(
   };
 }
 
+// ── HITL 审批 IPC ────────────────────────────────
+
+export async function respondHumanLoop(params: {
+  approvalId: string;
+  action: 'approved' | 'rejected';
+  formData: Record<string, unknown>;
+  comment?: string | null;
+  respondedBy?: string | null;
+}): Promise<void> {
+  return invoke<void>('respond_human_loop', {
+    approvalId: params.approvalId,
+    action: params.action,
+    formData: params.formData,
+    comment: params.comment ?? null,
+    respondedBy: params.respondedBy ?? null,
+  });
+}
+
+export async function listPendingApprovals(
+  workflowId?: string | null,
+): Promise<unknown[]> {
+  return invoke<unknown[]>('list_pending_approvals', {
+    workflowId: workflowId?.trim() ? workflowId.trim() : null,
+  });
+}
+
 // ── AI Copilot IPC 包装函数 ────────────────────────────────
 
 export async function loadAiConfig(): Promise<AiConfigView> {

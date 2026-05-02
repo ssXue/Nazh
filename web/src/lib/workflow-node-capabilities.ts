@@ -64,6 +64,8 @@ const NODE_AI_USAGE_HINTS: Partial<Record<NazhNodeKind, string>> = {
     'Bark 推送；config 可含 title_template, subtitle_template, body_template, level；通常不填写 connectionId。',
   sqlWriter: 'SQLite 写入；config 可含 database_path, table。',
   debugConsole: '调试输出；config 可含 label, pretty。',
+  humanLoop:
+    '人工审批节点；暂停工作流等待人工 approve/reject 响应。config 可含 title（审批标题）, description（审批说明）, form_schema（结构化表单，数组，每项含 type/name/label/required），approval_timeout_ms（超时毫秒，null=无限等待），default_action（超时默认动作：autoApprove / autoReject）。',
   subgraph:
     '编辑器容器节点，不直接进入 Rust Runner。使用 upsert_subgraph 创建，blocks 内放普通业务节点，系统自动加入 subgraphInput/subgraphOutput 桥接节点并在部署前展平。',
 };

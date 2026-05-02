@@ -16,6 +16,7 @@ nazh-core.workspace = true
 connections.workspace = true
 async-trait.workspace = true
 chrono.workspace = true
+dashmap.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true

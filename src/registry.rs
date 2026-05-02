@@ -42,6 +42,7 @@ mod tests {
             "barkPush",
             "sqlWriter",
             "debugConsole",
+            "humanLoop",
         ] {
             assert!(
                 types.contains(&expected),
@@ -51,12 +52,12 @@ mod tests {
     }
 
     #[test]
-    fn 两个插件合并后覆盖全部_19_种节点类型() {
+    fn 两个插件合并后覆盖全部_20_种节点类型() {
         let registry = standard_registry();
         assert_eq!(
             registry.registered_types().len(),
-            19,
-            "应注册 19 种节点类型"
+            20,
+            "应注册 20 种节点类型"
         );
     }
 
@@ -102,6 +103,7 @@ mod tests {
         expect("mqttClient", NodeCapabilities::NETWORK_IO);
         expect("barkPush", NodeCapabilities::NETWORK_IO);
         expect("sqlWriter", NodeCapabilities::FILE_IO);
+        expect("humanLoop", NodeCapabilities::BRANCHING);
     }
 
     #[test]

@@ -12,9 +12,10 @@ use nazh_engine::{
     DebugConsoleNodeConfig, EmptyPolicy, EngineError, HttpClientNode, HttpClientNodeConfig,
     ModbusReadNode, ModbusReadNodeConfig, MqttClientNode, MqttClientNodeConfig, MqttMode,
     NodeCapabilities, NodeDispatch, NodeExecution, NodeRegistry, NodeTrait, PinDefinition,
-    PinDirection, PinKind, PinType, SerialTriggerNode, SerialTriggerNodeConfig, SqlWriterNode,
-    SqlWriterNodeConfig, StreamChunk, TimerNode, TimerNodeConfig, WorkflowContext, WorkflowGraph,
-    deploy_workflow, deploy_workflow_with_ai, shared_connection_manager, standard_registry,
+    PinDirection, PinKind, PinType, RuntimeResources, SerialTriggerNode, SerialTriggerNodeConfig,
+    SqlWriterNode, SqlWriterNodeConfig, StreamChunk, TimerNode, TimerNodeConfig, WorkflowContext,
+    WorkflowGraph, deploy_workflow, deploy_workflow_with_ai, shared_connection_manager,
+    standard_registry,
 };
 use serde_json::json;
 use tokio::time::timeout;
@@ -268,6 +269,7 @@ async fn workflow_script_node_can_call_ai_complete() {
         Some(ai_service),
         &registry,
         None,
+        RuntimeResources::new(),
     )
     .await
     {
@@ -320,8 +322,15 @@ async fn workflow_rejects_script_ai_config_without_ai_service() {
     };
 
     let registry = standard_registry();
-    let result =
-        deploy_workflow_with_ai(graph, shared_connection_manager(), None, &registry, None).await;
+    let result = deploy_workflow_with_ai(
+        graph,
+        shared_connection_manager(),
+        None,
+        &registry,
+        None,
+        RuntimeResources::new(),
+    )
+    .await;
 
     match result {
         Ok(_) => panic!("workflow deployment should fail without ai service"),
@@ -368,6 +377,7 @@ async fn ai_complete_auto_parses_json_object_response() {
         Some(ai_service),
         &registry,
         None,
+        RuntimeResources::new(),
     )
     .await
     {
@@ -426,6 +436,7 @@ async fn ai_complete_keeps_plain_text_as_string() {
         Some(ai_service),
         &registry,
         None,
+        RuntimeResources::new(),
     )
     .await
     {
@@ -482,6 +493,7 @@ async fn ai_complete_auto_parses_json_array_response() {
         Some(ai_service),
         &registry,
         None,
+        RuntimeResources::new(),
     )
     .await
     {

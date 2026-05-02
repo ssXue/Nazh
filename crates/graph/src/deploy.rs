@@ -62,7 +62,15 @@ pub async fn deploy_workflow(
     connection_manager: SharedConnectionManager,
     registry: &NodeRegistry,
 ) -> Result<WorkflowDeployment, EngineError> {
-    deploy_workflow_with_ai(graph, connection_manager, None, registry, None).await
+    deploy_workflow_with_ai(
+        graph,
+        connection_manager,
+        None,
+        registry,
+        None,
+        RuntimeResources::new(),
+    )
+    .await
 }
 
 /// 校验、实例化并将工作流图部署为并发 Tokio 任务，并可选注入 AI 服务。
@@ -86,6 +94,7 @@ pub async fn deploy_workflow_with_ai(
     ai_service: Option<Arc<dyn AiService>>,
     registry: &NodeRegistry,
     workflow_id: Option<String>,
+    extra_resources: RuntimeResources,
 ) -> Result<WorkflowDeployment, EngineError> {
     tracing::info!(
         node_count = graph.nodes.len(),
@@ -144,6 +153,7 @@ pub async fn deploy_workflow_with_ai(
     if let Some(ai_service) = ai_service {
         resource_bag.insert(ai_service);
     }
+    resource_bag.merge(extra_resources);
     let shared_resources: SharedResources = Arc::new(resource_bag);
 
     // ---- 阶段 0.5：按拓扑序实例化节点 + Pin 类型校验 ----

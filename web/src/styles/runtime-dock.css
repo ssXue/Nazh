@@ -530,3 +530,69 @@
   font-size: var(--font-callout);
   line-height: 1.5;
 }
+
+/* ── 审批浮动弹窗 ─────────────────────────── */
+.approval-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: calc(var(--z-popup) + 30);
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.approval-overlay__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.25);
+  pointer-events: auto;
+}
+
+.approval-overlay__card {
+  position: relative;
+  width: min(360px, calc(100vw - 48px));
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  background: var(--panel-strong);
+  box-shadow: 0 24px 48px rgba(15, 23, 42, 0.2);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  padding: 16px;
+  pointer-events: auto;
+}
+
+.approval-overlay__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.approval-overlay__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--danger-soft);
+  color: var(--danger-ink);
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0 6px;
+}
+
+.approval-overlay__header strong {
+  font-size: var(--font-body);
+  flex: 1;
+}
+
+.approval-overlay__time {
+  color: var(--muted);
+  font-size: var(--font-caption);
+}
+
+.approval-overlay__queue {
+  color: var(--muted);
+  font-size: var(--font-caption);
+}

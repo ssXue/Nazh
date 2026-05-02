@@ -125,7 +125,9 @@ pub fn run() {
             commands::ai::save_ai_config,
             commands::ai::test_ai_provider,
             commands::ai::copilot_complete,
-            commands::ai::copilot_complete_stream
+            commands::ai::copilot_complete_stream,
+            commands::human_loop::respond_human_loop,
+            commands::human_loop::list_pending_approvals
         ]);
 
     if let Err(error) = builder.run(tauri::generate_context!()) {
