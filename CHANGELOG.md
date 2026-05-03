@@ -22,6 +22,7 @@
 - RFC-0004 Phase 4B：DSL 编译器 IPC（`compile_workflow_dsl` / `load_compiler_asset_snapshot`）+ 前端 DSL 编辑器（YAML textarea + 编译反馈 + 资产快照）
 - RFC-0004 Phase 4C：AI 编排控制台（`ai_generate_workflow_dsl` / `ai_generate_workflow_dsl_stream`）— 从自然语言目标生成 Workflow DSL + 自动编译 + 不确定项标记
 - RFC-0004 Phase 5：安全编译器 6 条规则（`compile_with_safety()`）— 单位一致性、量程边界、前置条件可达性、状态机完整性、危险动作审批、机械互锁 + IPC 透传安全诊断
+- ADR-0021 画布导入闭环：AI 编排控制台编译成功后可点击"导入画布"按钮，自动创建工程并导航到画布页渲染 WorkflowGraph
 
 ## [0.1.0] — 2025-xx-xx
 

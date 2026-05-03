@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 
 import { useDslOrchestrator } from '../../hooks/use-dsl-orchestrator';
 import type { DslOrchestrationPhase } from '../../hooks/use-dsl-orchestrator';
-import { AiIcon, FileYamlIcon, RunActionIcon } from './AppIcons';
+import { AiIcon, FileYamlIcon, RunActionIcon, CanvasIcon } from './AppIcons';
 
 interface AiOrchestrationConsoleProps {
   isTauriRuntime: boolean;
@@ -33,13 +33,6 @@ export function AiOrchestrationConsole({
   useEffect(() => {
     void loadAssets();
   }, [loadAssets]);
-
-  // 编译成功时通知外部
-  useEffect(() => {
-    if (state.phase === 'ready' && state.compiledGraph && onGraphReady) {
-      onGraphReady(state.compiledGraph);
-    }
-  }, [state.phase, state.compiledGraph, onGraphReady]);
 
   const handleSubmit = async () => {
     if (!goalInput.trim()) return;
@@ -225,6 +218,17 @@ export function AiOrchestrationConsole({
               </pre>
             </details>
           </div>
+        )}
+
+        {state.phase === 'ready' && state.compiledGraph && onGraphReady && (
+          <button
+            type="button"
+            className="ai-orchestration__btn ai-orchestration__btn--primary"
+            onClick={() => onGraphReady(state.compiledGraph!)}
+          >
+            <CanvasIcon width={14} height={14} />
+            导入画布
+          </button>
         )}
 
         {/* 状态指示 */}

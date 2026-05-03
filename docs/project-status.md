@@ -52,7 +52,7 @@
 **已完成 4A/4B/4C**（2026-05-03）。AI 生成管道对接：
 - 4A：设备/能力 AI 结构化提取提案 — `extract_device_proposal` / `extract_device_proposal_stream`（JSON 输出含 uncertainties + warnings）+ 前端 proposal 流程
 - 4B：DSL 编译器 IPC — `compile_workflow_dsl` / `load_compiler_asset_snapshot` + 前端 DSL 编辑器（YAML textarea + 编译反馈 + 资产快照）
-- 4C：AI 编排控制台 — `ai_generate_workflow_dsl` / `ai_generate_workflow_dsl_stream`（NL 目标 → Workflow DSL + 自动编译 + 不确定项标记）+ 前端三栏编排页面 + `use-dsl-orchestrator` hook
+- 4C：AI 编排控制台 — `ai_generate_workflow_dsl` / `ai_generate_workflow_dsl_stream`（NL 目标 → Workflow DSL + 自动编译 + 不确定项标记）+ 前端三栏编排页面 + `use-dsl-orchestrator` hook + "导入画布"按钮（ADR-0021 闭环）
 - 4D 已完成：安全编译器对接（随 Phase 5 一起完成）
 
 ## RFC-0004 Phase 5

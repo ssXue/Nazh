@@ -95,6 +95,7 @@ interface StudioContentRouterProps {
   onStopDeploy: () => Promise<void>;
   onAiConfigSave: (update: AiConfigUpdate) => Promise<void>;
   onAiProviderTest: (draft: AiProviderDraft) => Promise<void>;
+  onImportDslToCanvas: (graphJson: Record<string, unknown>) => void;
 }
 
 function ProjectGate({
@@ -182,6 +183,7 @@ export function StudioContentRouter({
   onStopDeploy,
   onAiConfigSave,
   onAiProviderTest,
+  onImportDslToCanvas,
 }: StudioContentRouterProps) {
   switch (section) {
     case 'dashboard':
@@ -385,6 +387,7 @@ export function StudioContentRouter({
               <AiOrchestrationConsole
                 isTauriRuntime={isTauriRuntime}
                 onStatusMessage={engine.setStatusMessage}
+                onGraphReady={onImportDslToCanvas}
               />
             </ScrollSurface>
           </section>
