@@ -177,7 +177,16 @@ pub fn run() {
             commands::devices::extract_device_from_text_stream,
             commands::devices::generate_pin_schema,
             commands::devices::save_device_asset_sources,
-            commands::devices::load_device_asset_sources
+            commands::devices::load_device_asset_sources,
+            commands::capabilities::list_capabilities,
+            commands::capabilities::load_capability,
+            commands::capabilities::save_capability,
+            commands::capabilities::delete_capability,
+            commands::capabilities::list_capability_versions,
+            commands::capabilities::load_capability_version,
+            commands::capabilities::generate_capabilities_from_device_cmd,
+            commands::capabilities::save_capability_sources,
+            commands::capabilities::load_capability_sources
         ]);
 
     if let Err(error) = builder.run(tauri::generate_context!()) {

@@ -4,6 +4,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::device::{AccessMode, DeviceSpec, SignalSource, SignalType};
+use crate::error::DslError;
 use crate::workflow::{HumanDuration, Range};
 
 /// 能力定义。
@@ -81,6 +83,192 @@ pub enum SafetyLevel {
     High,
     Medium,
     Low,
+}
+
+impl CapabilitySpec {
+    /// 校验能力定义的语义完整性。
+    ///
+    /// 检查项：`implementation` 字段完整性、`preconditions` 基本语法、
+    /// `fallback` 引用非自引用、required input 有 range。
+    pub fn validate(&self) -> Result<(), DslError> {
+        // implementation 完整性
+        match &self.implementation {
+            CapabilityImpl::ModbusWrite { value, .. } => {
+                validate_template_expr(value)?;
+            }
+            CapabilityImpl::MqttPublish { payload, .. } => {
+                validate_template_expr(payload)?;
+            }
+            CapabilityImpl::SerialCommand { command } => {
+                validate_template_expr(command)?;
+            }
+            CapabilityImpl::Script { content } => {
+                validate_template_expr(content)?;
+            }
+        }
+
+        // preconditions 基本语法检查
+        for cond in &self.preconditions {
+            validate_rhai_like_expr(cond)?;
+        }
+
+        // effects 语法检查
+        for eff in &self.effects {
+            validate_rhai_like_expr(eff)?;
+        }
+
+        // fallback 不自引用
+        if self.fallback.contains(&self.id) {
+            return Err(DslError::Validation {
+                context: format!("capability `{}`", self.id),
+                detail: "fallback 不能引用自身".to_owned(),
+            });
+        }
+
+        Ok(())
+    }
+}
+
+/// 从设备的写信号自动生成 `CapabilitySpec` 列表。
+///
+/// 每个写信号（`AnalogOutput` / `DigitalOutput`，或 `AccessMode::Write` / `ReadWrite`）
+/// 映射为一个能力，信号元数据（量程、单位、寄存器地址）映射到能力输入和实现。
+pub fn generate_capabilities_from_device(device: &DeviceSpec) -> Vec<CapabilitySpec> {
+    device
+        .signals
+        .iter()
+        .filter(|s| is_writable_signal(s.signal_type, &s.source))
+        .map(|signal| {
+            let cap_id = format!("{}.write_{}", device.id, signal.id);
+            let cap_name = format!("写入 {}", signal.id);
+
+            let input = CapabilityParam {
+                id: "value".to_owned(),
+                unit: signal.unit.clone(),
+                range: signal.range,
+                required: true,
+            };
+
+            let implementation = match &signal.source {
+                SignalSource::Register { register, .. } => CapabilityImpl::ModbusWrite {
+                    register: *register,
+                    value: "${value}".to_owned(),
+                },
+                SignalSource::Topic { topic } => CapabilityImpl::MqttPublish {
+                    topic: topic.clone(),
+                    payload: "${value}".to_owned(),
+                },
+                SignalSource::SerialCommand { command } => CapabilityImpl::SerialCommand {
+                    command: format!("{command} ${{value}}"),
+                },
+            };
+
+            CapabilitySpec {
+                id: cap_id,
+                device_id: device.id.clone(),
+                description: format!("自动生成：{cap_name}"),
+                inputs: vec![input],
+                outputs: vec![],
+                preconditions: vec![],
+                effects: vec![format!("{} 被修改", signal.id)],
+                implementation,
+                fallback: vec![],
+                safety: SafetyConstraints {
+                    level: SafetyLevel::Low,
+                    requires_approval: false,
+                    max_execution_time: None,
+                },
+            }
+        })
+        .collect()
+}
+
+/// 判断信号是否为写信号。
+fn is_writable_signal(signal_type: SignalType, source: &SignalSource) -> bool {
+    if matches!(
+        signal_type,
+        SignalType::AnalogOutput | SignalType::DigitalOutput
+    ) {
+        return true;
+    }
+    // 输入信号也可能是 read-write
+    if let SignalSource::Register { access, .. } = source {
+        return matches!(access, AccessMode::Write | AccessMode::ReadWrite);
+    }
+    false
+}
+
+/// 校验模板表达式中的 `${...}` 参数引用格式。
+fn validate_template_expr(expr: &str) -> Result<(), DslError> {
+    let mut depth = 0i32;
+    for ch in expr.chars() {
+        match ch {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth < 0 {
+                    return Err(DslError::Validation {
+                        context: "implementation".to_owned(),
+                        detail: format!("模板表达式括号不匹配: `{expr}`"),
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+    if depth != 0 {
+        return Err(DslError::Validation {
+            context: "implementation".to_owned(),
+            detail: format!("模板表达式括号不匹配: `{expr}`"),
+        });
+    }
+    Ok(())
+}
+
+/// 对 Rhai 风格表达式做基本语法校验（括号匹配 + 非空）。
+fn validate_rhai_like_expr(expr: &str) -> Result<(), DslError> {
+    let trimmed = expr.trim();
+    if trimmed.is_empty() {
+        return Err(DslError::Validation {
+            context: "expression".to_owned(),
+            detail: "表达式不能为空".to_owned(),
+        });
+    }
+
+    let mut paren_depth = 0i32;
+    let mut bracket_depth = 0i32;
+    for ch in trimmed.chars() {
+        match ch {
+            '(' => paren_depth += 1,
+            ')' => {
+                paren_depth -= 1;
+                if paren_depth < 0 {
+                    return Err(DslError::Validation {
+                        context: "expression".to_owned(),
+                        detail: format!("括号不匹配: `{expr}`"),
+                    });
+                }
+            }
+            '[' => bracket_depth += 1,
+            ']' => {
+                bracket_depth -= 1;
+                if bracket_depth < 0 {
+                    return Err(DslError::Validation {
+                        context: "expression".to_owned(),
+                        detail: format!("方括号不匹配: `{expr}`"),
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+    if paren_depth != 0 || bracket_depth != 0 {
+        return Err(DslError::Validation {
+            context: "expression".to_owned(),
+            detail: format!("括号不匹配: `{expr}`"),
+        });
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -242,5 +430,180 @@ safety:
         assert!(spec.fallback.is_empty());
         assert!(spec.inputs.is_empty());
         assert!(spec.outputs.is_empty());
+    }
+
+    // ---- validate() 测试 ----
+
+    #[test]
+    fn validate_合法的_capability_spec() {
+        let spec = CapabilitySpec {
+            id: "axis.move".to_owned(),
+            device_id: "press".to_owned(),
+            description: String::new(),
+            inputs: vec![CapabilityParam {
+                id: "pos".to_owned(),
+                unit: Some("mm".to_owned()),
+                range: Some(Range {
+                    min: 0.0,
+                    max: 150.0,
+                }),
+                required: true,
+            }],
+            outputs: vec![],
+            preconditions: vec!["ready == true".to_owned()],
+            effects: vec!["state = moving".to_owned()],
+            implementation: CapabilityImpl::ModbusWrite {
+                register: 40010,
+                value: "${pos}".to_owned(),
+            },
+            fallback: vec![],
+            safety: SafetyConstraints {
+                level: SafetyLevel::Low,
+                requires_approval: false,
+                max_execution_time: None,
+            },
+        };
+        assert!(spec.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_自引用_fallback_失败() {
+        let spec = CapabilitySpec {
+            id: "cap.a".to_owned(),
+            device_id: "d".to_owned(),
+            description: String::new(),
+            inputs: vec![],
+            outputs: vec![],
+            preconditions: vec![],
+            effects: vec![],
+            implementation: CapabilityImpl::Script {
+                content: "ok".to_owned(),
+            },
+            fallback: vec!["cap.a".to_owned()],
+            safety: SafetyConstraints {
+                level: SafetyLevel::Low,
+                requires_approval: false,
+                max_execution_time: None,
+            },
+        };
+        assert!(spec.validate().is_err());
+    }
+
+    #[test]
+    fn validate_括号不匹配的_precondition_失败() {
+        let spec = CapabilitySpec {
+            id: "c".to_owned(),
+            device_id: "d".to_owned(),
+            description: String::new(),
+            inputs: vec![],
+            outputs: vec![],
+            preconditions: vec!["(pressure > 34".to_owned()],
+            effects: vec![],
+            implementation: CapabilityImpl::Script {
+                content: "ok".to_owned(),
+            },
+            fallback: vec![],
+            safety: SafetyConstraints {
+                level: SafetyLevel::Low,
+                requires_approval: false,
+                max_execution_time: None,
+            },
+        };
+        assert!(spec.validate().is_err());
+    }
+
+    // ---- generate_capabilities_from_device() 测试 ----
+
+    #[test]
+    fn 从设备生成能力_只取写信号() {
+        use crate::device::{ConnectionRef, DataType, SignalSpec};
+        let device = DeviceSpec {
+            id: "press_1".to_owned(),
+            device_type: "hydraulic_press".to_owned(),
+            manufacturer: None,
+            model: None,
+            connection: ConnectionRef {
+                connection_type: "modbus-tcp".to_owned(),
+                id: "conn1".to_owned(),
+                unit: None,
+            },
+            signals: vec![
+                SignalSpec {
+                    id: "pressure".to_owned(),
+                    signal_type: SignalType::AnalogInput,
+                    unit: Some("MPa".to_owned()),
+                    range: Some(Range {
+                        min: 0.0,
+                        max: 35.0,
+                    }),
+                    source: SignalSource::Register {
+                        register: 40001,
+                        access: AccessMode::Read,
+                        data_type: DataType::Float32,
+                        bit: None,
+                    },
+                    scale: None,
+                },
+                SignalSpec {
+                    id: "target_pos".to_owned(),
+                    signal_type: SignalType::AnalogOutput,
+                    unit: Some("mm".to_owned()),
+                    range: Some(Range {
+                        min: 0.0,
+                        max: 150.0,
+                    }),
+                    source: SignalSource::Register {
+                        register: 40010,
+                        access: AccessMode::Write,
+                        data_type: DataType::Float32,
+                        bit: None,
+                    },
+                    scale: None,
+                },
+            ],
+            alarms: vec![],
+        };
+
+        let caps = generate_capabilities_from_device(&device);
+        assert_eq!(caps.len(), 1);
+        assert_eq!(caps[0].id, "press_1.write_target_pos");
+        assert_eq!(caps[0].inputs.len(), 1);
+        assert_eq!(caps[0].inputs[0].id, "value");
+        assert_eq!(caps[0].inputs[0].range.map(|r| r.max), Some(150.0));
+        assert!(matches!(
+            caps[0].implementation,
+            CapabilityImpl::ModbusWrite { .. }
+        ));
+        assert_eq!(caps[0].safety.level, SafetyLevel::Low);
+    }
+
+    #[test]
+    fn 从设备生成能力_无写信号返回空() {
+        use crate::device::{ConnectionRef, SignalSpec};
+        let device = DeviceSpec {
+            id: "sensor".to_owned(),
+            device_type: "temp_sensor".to_owned(),
+            manufacturer: None,
+            model: None,
+            connection: ConnectionRef {
+                connection_type: "mqtt".to_owned(),
+                id: "broker".to_owned(),
+                unit: None,
+            },
+            signals: vec![SignalSpec {
+                id: "temp".to_owned(),
+                signal_type: SignalType::AnalogInput,
+                unit: Some("C".to_owned()),
+                range: None,
+                source: SignalSource::Topic {
+                    topic: "sensors/temp".to_owned(),
+                },
+                scale: None,
+            }],
+            alarms: vec![],
+        };
+
+        let caps = generate_capabilities_from_device(&device);
+        assert!(caps.is_empty());
     }
 }

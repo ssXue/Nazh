@@ -2,11 +2,12 @@
 
 ## 这是什么
 
-RFC-0004 Phase 0 + Phase 1 的实现。定义设备（Device）、能力（Capability）、工作流（Workflow）
-三种 DSL 的结构化类型（`*Spec` 系列），提供从 YAML 文本解析这些类型的 API，以及
-`SignalSpec` → `PinDefinition` 映射函数（Phase 1）。
+RFC-0004 Phase 0 + Phase 1 + Phase 2 的实现。定义设备（Device）、能力（Capability）、工作流（Workflow）
+三种 DSL 的结构化类型（`*Spec` 系列），提供从 YAML 文本解析这些类型的 API，
+`SignalSpec` → `PinDefinition` 映射函数（Phase 1），以及
+能力校验和从设备信号自动生成能力（Phase 2）。
 
-本 crate 是纯数据 + 解析层，不含编译逻辑、运行时依赖或协议驱动。
+本 crate 是纯数据 + 解析 + 校验层，不含编译逻辑、运行时依赖或协议驱动。
 
 ## 对外暴露
 
@@ -15,7 +16,7 @@ crates/dsl-core/src/
 ├── lib.rs          # re-exports
 ├── error.rs        # DslError (YamlParse / Validation / JsonSerialization)
 ├── device.rs       # DeviceSpec / SignalSpec / AlarmSpec / ConnectionRef / SignalSource / SignalType / AccessMode / DataType / AlarmSeverity
-├── capability.rs   # CapabilitySpec / CapabilityParam / CapabilityOutput / CapabilityImpl / SafetyConstraints / SafetyLevel
+├── capability.rs   # CapabilitySpec / CapabilityParam / CapabilityOutput / CapabilityImpl / SafetyConstraints / SafetyLevel + validate() + generate_capabilities_from_device()（Phase 2）
 ├── workflow.rs     # WorkflowSpec / StateSpec / TransitionSpec / ActionSpec / ActionTarget / Range / HumanDuration
 ├── parser.rs       # parse_device_yaml / parse_capability_yaml / parse_workflow_yaml
 └── pin_mapping.rs  # signal_to_pin_type / signal_to_direction / signal_id_to_label / signals_to_pin_definitions（Phase 1）

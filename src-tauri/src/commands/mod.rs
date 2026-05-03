@@ -1,4 +1,5 @@
 pub(crate) mod ai;
+pub(crate) mod capabilities;
 pub(crate) mod catalog;
 pub(crate) mod connections;
 pub(crate) mod deployment_session;

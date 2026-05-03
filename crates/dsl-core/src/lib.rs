@@ -12,7 +12,7 @@ pub mod workflow;
 
 pub use capability::{
     CapabilityImpl, CapabilityOutput, CapabilityParam, CapabilitySpec, SafetyConstraints,
-    SafetyLevel,
+    SafetyLevel, generate_capabilities_from_device,
 };
 pub use device::{
     AccessMode, AlarmSeverity, AlarmSpec, ConnectionRef, DataType, DeviceSpec, SignalSource,

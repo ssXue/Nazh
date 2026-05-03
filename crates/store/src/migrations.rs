@@ -78,6 +78,42 @@ const MIGRATIONS: &[(&str, &str)] = &[
             ON device_asset_sources(asset_id);
         ",
     ),
+    (
+        "003",
+        "
+        CREATE TABLE IF NOT EXISTS capability_assets (
+            id          TEXT PRIMARY KEY,
+            device_id   TEXT NOT NULL,
+            name        TEXT NOT NULL,
+            description TEXT,
+            version     INTEGER NOT NULL DEFAULT 1,
+            spec_json   TEXT NOT NULL,
+            created_at  TEXT NOT NULL,
+            updated_at  TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_capability_assets_device
+            ON capability_assets(device_id);
+
+        CREATE TABLE IF NOT EXISTS capability_versions (
+            capability_id   TEXT NOT NULL,
+            version         INTEGER NOT NULL,
+            spec_json       TEXT NOT NULL,
+            source_summary  TEXT,
+            created_at      TEXT NOT NULL,
+            PRIMARY KEY (capability_id, version)
+        );
+
+        CREATE TABLE IF NOT EXISTS capability_sources (
+            capability_id   TEXT NOT NULL,
+            field_path      TEXT NOT NULL,
+            source_text     TEXT NOT NULL,
+            confidence      REAL NOT NULL,
+            created_at      TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_capability_sources_capability
+            ON capability_sources(capability_id);
+        ",
+    ),
 ];
 
 /// 检查 `schema_version` 表，执行尚未应用的 migrations。

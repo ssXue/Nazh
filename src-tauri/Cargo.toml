@@ -37,4 +37,5 @@ ai.workspace = true
 uuid.workspace = true
 store.workspace = true
 nazh-dsl-core.workspace = true
+serde_yaml.workspace = true
 window-vibrancy = "0.7.1"
