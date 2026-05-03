@@ -27,12 +27,13 @@ use std::sync::Arc;
 use connections::SharedConnectionManager;
 use nazh_core::{
     EngineError, NodeCapabilities, NodeRegistry, Plugin, PluginManifest, SharedResources,
-    WorkflowNodeDefinition,
+    WorkflowNodeDefinition, WorkflowVariables,
 };
 
 pub mod template;
 
 // 永远启用的轻量节点
+mod capability_call;
 mod debug_console;
 mod human_loop;
 mod native;
@@ -52,6 +53,7 @@ mod serial_trigger;
 #[cfg(feature = "io-sql")]
 mod sql_writer;
 
+pub use capability_call::{CapabilityCallConfig, CapabilityCallNode, CapabilityImplSnapshot};
 pub use debug_console::{DebugConsoleNode, DebugConsoleNodeConfig};
 pub use human_loop::ApprovalRegistry;
 pub use human_loop::HumanLoopNode;
@@ -143,6 +145,23 @@ impl Plugin for IoPlugin {
             let cm = downcast_connection_manager(&res)?;
             Ok(Arc::new(NativeNode::new(def.id().to_owned(), config, cm)))
         });
+
+        // RFC-0004 Phase 3：DSL 编译器生成的通用能力调用节点。
+        registry.register_with_capabilities(
+            "capabilityCall",
+            NodeCapabilities::DEVICE_IO,
+            |def, res| {
+                let config: CapabilityCallConfig = def.parse_config()?;
+                let variables = res.get::<Arc<WorkflowVariables>>();
+                let cm = downcast_connection_manager(&res)?;
+                Ok(Arc::new(CapabilityCallNode::new(
+                    def.id().to_owned(),
+                    config,
+                    variables,
+                    cm,
+                )))
+            },
+        );
 
         // 协议相关节点：按 feature 注册。前端 `list_node_types` 会反映当前
         // 构建启用的节点集合，未启用的协议在前端 FlowGram 节点库中自动隐藏。

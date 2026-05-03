@@ -35,7 +35,7 @@ Nazh 面向**工业边缘侧的本地部署**场景：
 
 ## 工程架构
 
-### Cargo Workspace（13 个 package）
+### Cargo Workspace（15 个 package）
 
 Rust 引擎内核 + Tauri 桌面壳 + React/FlowGram.AI 可视化工作台。
 分层设计保证内核零协议依赖，所有 I/O 能力通过插件扩展。
@@ -53,7 +53,7 @@ flowchart TB
     end
 
     subgraph Shell["Tauri v2 桌面壳 (nazh-desktop)"]
-        S1["41 IPC 命令 · 6 workflow/copilot 事件通道"]
+        S1["61 IPC 命令 · 8 workflow/copilot 事件通道"]
         S2["运行时调度 · 部署会话 · 工程库文件"]
         S3["AI Provider 配置 · 观测日志 · 工程库文件"]
     end
@@ -82,7 +82,7 @@ flowchart TB
 
 - **Payload（业务数据）** 走 `DataStore`（`ArenaDataStore` 内存默认实现），通过 `ContextRef`（~64 字节）在 MPSC 通道传递
 - **Metadata（执行元数据：协议参数、连接信息、触发时刻）** 走 `ExecutionEvent::Completed` 事件通道，**不污染 payload**
-- **Configuration（未来共享状态）** 将通过 `WorkflowVariables` 承载
+- **Configuration（共享状态）** 走 `WorkflowVariables`（ADR-0012，已实施）
 
 ## 内置节点
 
@@ -95,15 +95,20 @@ flowchart TB
 | | tryCatch | 异常捕获处理 |
 | | loop | 迭代循环 |
 | | code | Rhai 脚本（支持自然语言生成） |
+| | stateMachine | 状态机子运行时（RFC-0004 Phase 3） |
 | **子图封装** | subgraphInput / subgraphOutput | 子图展开后的入口/出口桥接透传 |
 | **纯计算** | c2f | 摄氏转华氏（Data 引脚 pull 语义） |
 | | minutesSince | RFC3339 时间戳距今分钟数 |
+| | lookup | 查表纯函数节点 |
 | **I/O 操作** | modbusRead | Modbus TCP 寄存器读取 |
 | | httpClient | HTTP 请求 / Webhook |
 | | mqttClient | MQTT 消息发布 |
 | | sqlWriter | SQLite 本地存储 |
 | | barkPush | Bark iOS 推送 |
 | | debugConsole | 调试输出 |
+| | native | 原始字节流透传 |
+| | capabilityCall | 设备能力调用适配器（RFC-0004 Phase 3） |
+| | humanLoop | 人机交互审批节点 |
 
 ## AI 能力
 
@@ -166,7 +171,7 @@ cargo fetch --locked
 ## 项目结构
 
 ```text
-crates/          # Rust 引擎库、Store 与 IPC bindings（11 crates）
+crates/          # Rust 引擎库、DSL 编译器、Store 与 IPC bindings（13 crates）
 src/             # DAG 编排与标准注册表
 src-tauri/       # Tauri 桌面壳（workspace package）
 web/             # React + FlowGram.AI 前端

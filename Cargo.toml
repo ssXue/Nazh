@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "crates/core", "crates/pipeline", "crates/connections", "crates/scripting", "crates/nodes-flow", "crates/nodes-io", "crates/nodes-pure", "crates/ai", "crates/graph", "crates/store", "crates/dsl-core", "crates/tauri-bindings", "src-tauri"]
+members = [".", "crates/core", "crates/pipeline", "crates/connections", "crates/scripting", "crates/nodes-flow", "crates/nodes-io", "crates/nodes-pure", "crates/ai", "crates/graph", "crates/store", "crates/dsl-core", "crates/dsl-compiler", "crates/tauri-bindings", "src-tauri"]
 exclude = ["crates/nazh-core"]
 resolver = "2"
 
@@ -34,6 +34,7 @@ nodes-io = { path = "crates/nodes-io", default-features = false }
 nodes-pure = { path = "crates/nodes-pure" }
 nazh-graph = { path = "crates/graph" }
 nazh-dsl-core = { path = "crates/dsl-core" }
+dsl-compiler = { path = "crates/dsl-compiler" }
 store = { path = "crates/store" }
 tauri-bindings = { path = "crates/tauri-bindings" }
 arc-swap = "1"
@@ -133,8 +134,10 @@ io-notify = ["nodes-io/io-notify"]
 [dev-dependencies]
 async-trait.workspace = true
 chrono.workspace = true
+dsl-compiler.workspace = true
 nazh-dsl-core.workspace = true
 rusqlite.workspace = true
+serde_yaml.workspace = true
 store.workspace = true
 uuid.workspace = true
 

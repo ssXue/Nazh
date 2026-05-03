@@ -1,4 +1,4 @@
-//! Nazh 流程控制节点（Ring 1）：if / switch / loop / tryCatch / code。
+//! Nazh 流程控制节点（Ring 1）：if / switch / loop / tryCatch / code / stateMachine。
 
 use std::sync::Arc;
 
@@ -9,6 +9,7 @@ mod code_node;
 mod if_node;
 mod loop_node;
 mod passthrough;
+mod state_machine;
 mod switch_node;
 mod try_catch;
 
@@ -16,6 +17,9 @@ pub use code_node::{CodeNode, CodeNodeAiConfig, CodeNodeConfig};
 pub use if_node::{IfNode, IfNodeConfig};
 pub use loop_node::{LoopNode, LoopNodeConfig};
 pub use passthrough::PassthroughNode;
+pub use state_machine::{
+    StateConfig, StateMachineConfig, StateMachineNode, TimeoutRule, TransitionConfig,
+};
 pub use switch_node::{SwitchBranchConfig, SwitchNode, SwitchNodeConfig};
 pub use try_catch::{TryCatchNode, TryCatchNodeConfig};
 
@@ -110,6 +114,21 @@ impl Plugin for FlowPlugin {
             |def, _res| {
                 Ok(Arc::new(passthrough::PassthroughNode::from_definition(
                     def,
+                )?))
+            },
+        );
+
+        // RFC-0004 Phase 3：DSL 编译器生成的状态机节点。
+        registry.register_with_capabilities(
+            "stateMachine",
+            NodeCapabilities::BRANCHING,
+            |def, res| {
+                let config: StateMachineConfig = def.parse_config()?;
+                let variables = res.get::<Arc<WorkflowVariables>>();
+                Ok(Arc::new(StateMachineNode::new(
+                    def.id().to_owned(),
+                    config,
+                    variables,
                 )?))
             },
         );

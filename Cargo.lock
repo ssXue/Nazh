@@ -799,6 +799,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "dsl-compiler"
+version = "0.1.0"
+dependencies = [
+ "nazh-dsl-core",
+ "nazh-graph",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "dtoa"
 version = "1.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2314,6 +2326,7 @@ dependencies = [
  "chrono",
  "connections",
  "dashmap",
+ "dsl-compiler",
  "nazh-core",
  "nazh-dsl-core",
  "nazh-graph",
@@ -2325,6 +2338,7 @@ dependencies = [
  "scripting",
  "serde",
  "serde_json",
+ "serde_yaml",
  "store",
  "tokio",
  "tracing",
