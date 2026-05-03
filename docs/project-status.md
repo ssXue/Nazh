@@ -53,7 +53,20 @@
 - 4A：设备/能力 AI 结构化提取提案 — `extract_device_proposal` / `extract_device_proposal_stream`（JSON 输出含 uncertainties + warnings）+ 前端 proposal 流程
 - 4B：DSL 编译器 IPC — `compile_workflow_dsl` / `load_compiler_asset_snapshot` + 前端 DSL 编辑器（YAML textarea + 编译反馈 + 资产快照）
 - 4C：AI 编排控制台 — `ai_generate_workflow_dsl` / `ai_generate_workflow_dsl_stream`（NL 目标 → Workflow DSL + 自动编译 + 不确定项标记）+ 前端三栏编排页面 + `use-dsl-orchestrator` hook
-- 4D 待完成：多轮优化、安全编译器对接（待 Phase 5）
+- 4D 已完成：安全编译器对接（随 Phase 5 一起完成）
+
+## RFC-0004 Phase 5
+
+**已完成**（2026-05-03）。安全编译器 6 条规则全部就位：
+- `crates/dsl-compiler/src/safety.rs` — `SafetyDiagnostic` / `SafetyReport` / `DiagnosticLevel` 类型 + 6 条规则 + 单元测试
+- 规则 1 `unit_consistency`：单位一致性校验（Warning 级）
+- 规则 2 `range_boundary`：量程边界校验（Error/Warning 级）
+- 规则 3 `precondition_reachability`：前置条件可达性校验（Error/Warning 级）
+- 规则 4 `state_machine_completeness`：状态机完整性校验——不可达/死胡同/循环（Error/Warning 级）
+- 规则 5 `dangerous_action_approval`：危险动作审批校验（Warning 级）
+- 规则 6 `mechanical_interlock`：机械互锁校验（Warning 级）
+- `compile_with_safety()` 新增编译入口（原有 `compile()` 不变）
+- IPC 已集成：`compile_workflow_dsl` / `ai_generate_workflow_dsl` 透传安全诊断到前端
 
 ## ADR-0012 Phase 3
 

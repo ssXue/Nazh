@@ -8,6 +8,7 @@ use serde_json::{Map, Value};
 
 use crate::context::CompilerContext;
 use crate::error::CompileError;
+use crate::safety::{SafetyReport, run_safety_checks};
 use crate::validate::{determine_initial_state, validate_workflow_spec};
 
 /// 将 `WorkflowSpec` 编译为符合 `WorkflowGraph` serde 契约的 JSON。
@@ -35,6 +36,42 @@ pub fn compile(ctx: &CompilerContext, spec: &WorkflowSpec) -> Result<Value, Comp
     builder.build_edges();
     builder.build_variables();
     Ok(builder.build_output())
+}
+
+/// 编译 `WorkflowSpec` 并同时执行安全编译器校验（RFC-0004 Phase 5）。
+///
+/// 与 [`compile`] 相同的编译流程，额外在引用校验和语义校验成功后
+/// 运行安全编译器 6 条规则。安全诊断通过 [`SafetyReport`] 暴露。
+///
+/// 安全错误（`DiagnosticLevel::Error`）阻止编译产出 `WorkflowGraph` JSON。
+/// 安全警告（`DiagnosticLevel::Warning`）不阻止编译。
+pub fn compile_with_safety(
+    ctx: &CompilerContext,
+    spec: &WorkflowSpec,
+) -> Result<(Value, SafetyReport), CompileError> {
+    ctx.validate_references(spec)?;
+    validate_workflow_spec(spec)?;
+    let initial_state = determine_initial_state(spec)?;
+
+    // 安全编译器校验
+    let safety_report = run_safety_checks(ctx, spec, &initial_state);
+
+    // 安全错误阻止编译
+    if safety_report.has_errors() {
+        let error_count = safety_report.errors().count();
+        return Err(CompileError::CapabilityCall {
+            detail: format!("安全编译器校验失败，共 {error_count} 个错误"),
+        });
+    }
+
+    // 继续正常编译
+    let mut builder = GraphBuilder::new(ctx, spec, &initial_state);
+    builder.collect_actions();
+    builder.build_state_machine_node();
+    builder.build_capability_call_nodes()?;
+    builder.build_edges();
+    builder.build_variables();
+    Ok((builder.build_output(), safety_report))
 }
 
 // ---- 内部构建器 ----

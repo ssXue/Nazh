@@ -4,15 +4,15 @@
 
 use std::sync::Arc;
 
-use nazh_dsl_core::{parse_workflow_yaml, CapabilitySpec, DeviceSpec};
-use dsl_compiler::{compile, CompilerContext};
+use dsl_compiler::{CompilerContext, DiagnosticLevel, compile_with_safety};
+use nazh_dsl_core::{CapabilitySpec, DeviceSpec, parse_workflow_yaml};
 use nazh_engine::{AiCompletionRequest, AiGenerationParams, AiMessage, AiMessageRole, AiService};
 use serde::{Deserialize, Serialize};
 use store::Store;
 use tauri::{AppHandle, Emitter, State};
 
-use crate::state::DesktopState;
 use super::devices::UncertaintyItem;
+use crate::state::DesktopState;
 
 // ---- IPC 类型 ----
 
@@ -83,13 +83,26 @@ pub(crate) async fn compile_workflow_dsl(
         });
     }
 
-    // 编译
-    match compile(&ctx, &spec) {
-        Ok(graph_json) => Ok(CompileWorkflowResponse {
-            graph_json: Some(graph_json),
-            error: None,
-            diagnostics,
-        }),
+    // 编译（含安全编译器校验，RFC-0004 Phase 5）
+    match compile_with_safety(&ctx, &spec) {
+        Ok((graph_json, safety_report)) => {
+            let diagnostics = safety_report
+                .diagnostics
+                .iter()
+                .map(|d| DiagnosticItem {
+                    severity: match d.level {
+                        DiagnosticLevel::Error => "error".to_owned(),
+                        DiagnosticLevel::Warning => "warning".to_owned(),
+                    },
+                    message: format!("[{}] {}", d.rule, d.message),
+                })
+                .collect();
+            Ok(CompileWorkflowResponse {
+                graph_json: Some(graph_json),
+                error: None,
+                diagnostics,
+            })
+        }
         Err(e) => Ok(CompileWorkflowResponse {
             graph_json: None,
             error: Some(e.to_string()),
@@ -206,17 +219,30 @@ pub(crate) async fn ai_generate_workflow_dsl(
     let raw: RawAiProposal =
         serde_json::from_str(&json_text).map_err(|e| format!("AI 输出 JSON 结构无效: {e}"))?;
 
-    // 自动编译验证
+    // 自动编译验证（含安全编译器校验，RFC-0004 Phase 5）
     let compile_result = match parse_workflow_yaml(&raw.workflow_yaml) {
         Ok(spec) => {
             let ctx = CompilerContext::new(devices, capabilities);
             match ctx.validate_references(&spec) {
-                Ok(()) => match compile(&ctx, &spec) {
-                    Ok(graph_json) => Some(CompileWorkflowResponse {
-                        graph_json: Some(graph_json),
-                        error: None,
-                        diagnostics: vec![],
-                    }),
+                Ok(()) => match compile_with_safety(&ctx, &spec) {
+                    Ok((graph_json, safety_report)) => {
+                        let diagnostics = safety_report
+                            .diagnostics
+                            .iter()
+                            .map(|d| DiagnosticItem {
+                                severity: match d.level {
+                                    DiagnosticLevel::Error => "error".to_owned(),
+                                    DiagnosticLevel::Warning => "warning".to_owned(),
+                                },
+                                message: format!("[{}] {}", d.rule, d.message),
+                            })
+                            .collect();
+                        Some(CompileWorkflowResponse {
+                            graph_json: Some(graph_json),
+                            error: None,
+                            diagnostics,
+                        })
+                    }
                     Err(e) => Some(CompileWorkflowResponse {
                         graph_json: None,
                         error: Some(e.to_string()),
@@ -294,7 +320,10 @@ pub(crate) async fn ai_generate_workflow_dsl_stream(
 // ---- AI 辅助函数 ----
 
 /// 从设备和能力列表构建上下文描述文本（嵌入 prompt）。
-fn build_asset_context_description(devices: &[DeviceSpec], capabilities: &[CapabilitySpec]) -> String {
+fn build_asset_context_description(
+    devices: &[DeviceSpec],
+    capabilities: &[CapabilitySpec],
+) -> String {
     let mut lines: Vec<String> = vec![String::from("可用设备资产：")];
     for d in devices {
         lines.push(format!(

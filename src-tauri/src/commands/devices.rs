@@ -4,9 +4,7 @@
 
 use std::sync::Arc;
 
-use nazh_dsl_core::{
-    parse_capability_yaml, parse_device_yaml, signals_to_pin_definitions,
-};
+use nazh_dsl_core::{parse_capability_yaml, parse_device_yaml, signals_to_pin_definitions};
 use nazh_engine::{AiCompletionRequest, AiGenerationParams, AiMessage, AiMessageRole, AiService};
 use serde::{Deserialize, Serialize};
 use store::{
@@ -294,8 +292,9 @@ pub(crate) async fn extract_device_proposal(
 
     // 校验每个 capability_yaml 合法性（允许空列表）
     for (idx, cap_yaml) in raw.capability_yamls.iter().enumerate() {
-        parse_capability_yaml(cap_yaml)
-            .map_err(|e| format!("AI 生成的 capabilityYamls[{idx}] 不是合法 CapabilitySpec: {e}"))?;
+        parse_capability_yaml(cap_yaml).map_err(|e| {
+            format!("AI 生成的 capabilityYamls[{idx}] 不是合法 CapabilitySpec: {e}")
+        })?;
     }
 
     Ok(DeviceExtractionProposal {

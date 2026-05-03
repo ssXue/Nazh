@@ -171,7 +171,7 @@ cargo fetch --locked
 ## 项目结构
 
 ```text
-crates/          # Rust 引擎库、DSL 编译器、Store 与 IPC bindings（13 crates）
+crates/          # Rust 引擎库、DSL 编译器、Store 与 IPC bindings（15 crates）
 src/             # DAG 编排与标准注册表
 src-tauri/       # Tauri 桌面壳（workspace package）
 web/             # React + FlowGram.AI 前端

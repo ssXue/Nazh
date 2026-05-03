@@ -8,11 +8,14 @@
 pub mod context;
 pub mod error;
 pub mod output;
+pub mod safety;
 pub mod validate;
 
 pub use context::CompilerContext;
 pub use error::CompileError;
 pub use output::compile;
+pub use output::compile_with_safety;
+pub use safety::{DiagnosticLevel, SafetyDiagnostic, SafetyReport, run_safety_checks};
 
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used)]
