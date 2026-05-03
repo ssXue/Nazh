@@ -38,6 +38,21 @@ export interface FieldSource {
   confidence: number;
 }
 
+/** AI 抽取的不确定项（RFC-0004 Phase 4A）。 */
+export interface UncertaintyItem {
+  fieldPath: string;
+  guessedValue: string;
+  reason: string;
+}
+
+/** 设备 + 能力的结构化抽取提案（RFC-0004 Phase 4A）。 */
+export interface ExtractionProposal {
+  deviceYaml: string;
+  capabilityYamls: string[];
+  uncertainties: UncertaintyItem[];
+  warnings: string[];
+}
+
 async function invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   const { invoke: tauriInvoke } = await import('@tauri-apps/api/core');
   return tauriInvoke<T>(command, args);
@@ -101,6 +116,17 @@ export function useDeviceAssets() {
     [],
   );
 
+  const extractProposal = useCallback(
+    async (text: string, providerId?: string): Promise<ExtractionProposal> => {
+      if (!hasTauriRuntime()) throw new Error('需要 Tauri 运行时');
+      return invoke<ExtractionProposal>('extract_device_proposal', {
+        text,
+        providerId: providerId ?? null,
+      });
+    },
+    [],
+  );
+
   const generatePinSchema = useCallback(
     async (deviceId: string): Promise<PinSchemaEntry[]> => {
       if (!hasTauriRuntime()) return [];
@@ -145,6 +171,7 @@ export function useDeviceAssets() {
     saveAsset,
     deleteAsset,
     extractFromText,
+    extractProposal,
     generatePinSchema,
     loadSources,
     saveSources,

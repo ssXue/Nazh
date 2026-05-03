@@ -175,6 +175,8 @@ pub fn run() {
             commands::devices::load_asset_version,
             commands::devices::extract_device_from_text,
             commands::devices::extract_device_from_text_stream,
+            commands::devices::extract_device_proposal,
+            commands::devices::extract_device_proposal_stream,
             commands::devices::generate_pin_schema,
             commands::devices::save_device_asset_sources,
             commands::devices::load_device_asset_sources,

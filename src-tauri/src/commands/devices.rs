@@ -1,11 +1,14 @@
-//! 设备资产 IPC 命令域（RFC-0004 Phase 1）。
+//! 设备资产 IPC 命令域（RFC-0004 Phase 1 + Phase 4A）。
 //!
-//! 提供设备资产的 CRUD、AI 抽取和 Pin schema 生成命令。
+//! 提供设备资产的 CRUD、AI 抽取、结构化提案和 Pin schema 生成命令。
 
 use std::sync::Arc;
 
-use nazh_dsl_core::{parse_device_yaml, signals_to_pin_definitions};
+use nazh_dsl_core::{
+    parse_capability_yaml, parse_device_yaml, signals_to_pin_definitions,
+};
 use nazh_engine::{AiCompletionRequest, AiGenerationParams, AiMessage, AiMessageRole, AiService};
+use serde::{Deserialize, Serialize};
 use store::{
     AssetVersionSummary, DeviceAssetSummary, FieldSource, Store, StoredAssetVersion,
     StoredDeviceAsset,
@@ -209,6 +212,144 @@ pub(crate) async fn extract_device_from_text_stream(
     Ok(())
 }
 
+// ---- AI 结构化提案（RFC-0004 Phase 4A）----
+
+/// AI 抽取的不确定项。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UncertaintyItem {
+    /// 不确定字段路径（如 "signals[0].range"）。
+    pub field_path: String,
+    /// AI 的猜测值。
+    pub guessed_value: String,
+    /// 不确定原因。
+    pub reason: String,
+}
+
+/// 设备 + 能力的结构化抽取提案（RFC-0004 Phase 4A）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceExtractionProposal {
+    /// 抽取出的 `DeviceSpec` YAML。
+    pub device_yaml: String,
+    /// AI 同时推断的能力 YAML 列表（从写信号 + 说明书推断）。
+    pub capability_yamls: Vec<String>,
+    /// AI 标记的不确定项。
+    pub uncertainties: Vec<UncertaintyItem>,
+    /// AI 生成的警告。
+    pub warnings: Vec<String>,
+}
+
+/// AI proposal 的 JSON 输出结构（内部解析用）。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawExtractionProposal {
+    device_yaml: String,
+    #[serde(default)]
+    capability_yamls: Vec<String>,
+    #[serde(default)]
+    uncertainties: Vec<UncertaintyItem>,
+    #[serde(default)]
+    warnings: Vec<String>,
+}
+
+const PROPOSAL_SYSTEM_PROMPT: &str = "你是一个工业设备建模专家。从用户提供的说明书文本中抽取设备信息并推断设备能力。\
+    输出严格 JSON 格式，结构如下：\n\
+    {\"deviceYaml\": \"<DeviceSpec YAML 文本>\", \
+     \"capabilityYamls\": [\"<CapabilitySpec YAML 文本>\", ...], \
+     \"uncertainties\": [{\"fieldPath\": \"...\", \"guessedValue\": \"...\", \"reason\": \"...\"}], \
+     \"warnings\": [\"...\"]}\n\n\
+    规则：\n\
+    - deviceYaml 必须是合法的 DeviceSpec YAML\n\
+    - capabilityYamls 从写信号（analog_output / digital_output）推断底层操作能力，每个能力封装一个写信号\n\
+    - uncertainties 用于标记信息不完整或需要人工确认的字段\n\
+    - warnings 用于标记潜在安全问题或不一致\n\
+    - 只输出 JSON，不要解释";
+
+/// 从文本中 AI 抽取设备 + 能力的结构化提案。
+#[tauri::command]
+pub(crate) async fn extract_device_proposal(
+    state: State<'_, DesktopState>,
+    text: String,
+    provider_id: Option<String>,
+) -> Result<DeviceExtractionProposal, String> {
+    let request = build_proposal_request(&text, provider_id);
+
+    let response = state
+        .ai_service
+        .complete(request)
+        .await
+        .map_err(|e| format!("AI 结构化抽取失败: {e}"))?;
+
+    // 从 AI 响应中提取 JSON
+    let json_text = extract_json_from_response(&response.content);
+
+    // 解析 JSON 结构
+    let raw: RawExtractionProposal =
+        serde_json::from_str(&json_text).map_err(|e| format!("AI 输出 JSON 结构无效: {e}"))?;
+
+    // 校验 device_yaml 合法性
+    parse_device_yaml(&raw.device_yaml)
+        .map_err(|e| format!("AI 生成的 deviceYaml 不是合法 DeviceSpec: {e}"))?;
+
+    // 校验每个 capability_yaml 合法性（允许空列表）
+    for (idx, cap_yaml) in raw.capability_yamls.iter().enumerate() {
+        parse_capability_yaml(cap_yaml)
+            .map_err(|e| format!("AI 生成的 capabilityYamls[{idx}] 不是合法 CapabilitySpec: {e}"))?;
+    }
+
+    Ok(DeviceExtractionProposal {
+        device_yaml: raw.device_yaml,
+        capability_yamls: raw.capability_yamls,
+        uncertainties: raw.uncertainties,
+        warnings: raw.warnings,
+    })
+}
+
+/// 流式 AI 结构化抽取设备 + 能力提案。
+#[tauri::command]
+pub(crate) async fn extract_device_proposal_stream(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+    text: String,
+    provider_id: Option<String>,
+    stream_id: String,
+) -> Result<(), String> {
+    let request = build_proposal_request(&text, provider_id);
+    let service = Arc::clone(&state.ai_service);
+    let mut rx = service
+        .stream_complete(request)
+        .await
+        .map_err(|e| format!("启动 AI 流式结构化抽取失败: {e}"))?;
+
+    let event_name = format!("copilot://stream/{stream_id}");
+    tokio::spawn(async move {
+        while let Some(chunk_result) = rx.recv().await {
+            match chunk_result {
+                Ok(chunk) => {
+                    let is_done = chunk.done;
+                    let payload: serde_json::Value =
+                        serde_json::to_value(&chunk).unwrap_or_default();
+                    let _ = app.emit(&event_name, payload);
+                    if is_done {
+                        break;
+                    }
+                }
+                Err(error) => {
+                    let payload: serde_json::Value = serde_json::json!({
+                        "error": error.to_string(),
+                        "done": true
+                    });
+                    let _ = app.emit(&event_name, payload);
+                    break;
+                }
+            }
+        }
+    });
+
+    Ok(())
+}
+
 // ---- Pin Schema 生成 ----
 
 /// 从设备资产生成 Pin 声明列表。
@@ -350,4 +491,97 @@ fn extract_yaml_from_response(content: &str) -> String {
         return inner.trim().to_owned();
     }
     trimmed.to_owned()
+}
+
+/// 从 AI 响应中提取 JSON 内容（去除 markdown 代码块包裹）。
+fn extract_json_from_response(content: &str) -> String {
+    let trimmed = content.trim();
+    if let Some(stripped) = trimmed
+        .strip_prefix("```json")
+        .or_else(|| trimmed.strip_prefix("```"))
+        && let Some(inner) = stripped.strip_suffix("```")
+    {
+        return inner.trim().to_owned();
+    }
+    trimmed.to_owned()
+}
+
+/// 构建 AI 结构化提案请求。
+fn build_proposal_request(text: &str, provider_id: Option<String>) -> AiCompletionRequest {
+    AiCompletionRequest {
+        provider_id: provider_id.unwrap_or_default(),
+        model: None,
+        messages: vec![
+            AiMessage {
+                role: AiMessageRole::System,
+                content: PROPOSAL_SYSTEM_PROMPT.to_owned(),
+            },
+            AiMessage {
+                role: AiMessageRole::User,
+                content: build_proposal_prompt(text),
+            },
+        ],
+        params: AiGenerationParams {
+            temperature: Some(0.1),
+            max_tokens: Some(8192),
+            ..Default::default()
+        },
+        timeout_ms: None,
+    }
+}
+
+/// 构建 AI 结构化提案 prompt。
+fn build_proposal_prompt(text: &str) -> String {
+    format!(
+        "请从以下设备说明书中抽取设备信息和推断设备能力。\n\n\
+         DeviceSpec 结构参考：\n\
+         ```yaml\n\
+         id: <设备唯一标识>\n\
+         type: <设备类型>\n\
+         manufacturer: <厂商>\n\
+         model: <型号>\n\
+         connection:\n\
+           type: <modbus-tcp / mqtt / serial>\n\
+           id: <连接引用 ID>\n\
+           unit: <站号>\n\
+         signals:\n\
+           - id: <信号 ID>\n\
+             signal_type: <analog_input / analog_output / digital_input / digital_output>\n\
+             unit: <单位>\n\
+             range: [min, max]\n\
+             source:\n\
+               type: <register / topic / serial_command>\n\
+               register: <地址>\n\
+               data_type: <float32 / u16>\n\
+               access: <read / write / read_write>\n\
+         alarms:\n\
+           - id: <告警 ID>\n\
+             condition: <Rhai 表达式>\n\
+             severity: <info / warning / critical>\n\
+         ```\n\n\
+         CapabilitySpec 结构参考：\n\
+         ```yaml\n\
+         id: <能力 ID，格式 device.action>\n\
+         device_id: <关联设备 ID>\n\
+         description: <能力描述>\n\
+         inputs:\n\
+           - id: <参数 ID>\n\
+             unit: <单位>\n\
+             range: [min, max]\n\
+             required: true\n\
+         outputs:\n\
+           - id: <输出 ID>\n\
+             type: <bool / f64 / string>\n\
+         preconditions:\n\
+           - <Rhai 前置条件表达式>\n\
+         implementation:\n\
+           type: <modbus-write / mqtt-publish / serial-command>\n\
+           register: <目标寄存器>\n\
+           value: <值表达式，如 $param_id>\n\
+         safety:\n\
+           level: <high / medium / low>\n\
+           requires_approval: false\n\
+         ```\n\n\
+         说明书文本：\n---\n{text}\n---"
+    )
 }

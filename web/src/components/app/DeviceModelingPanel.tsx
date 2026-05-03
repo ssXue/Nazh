@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 
 import { hasTauriRuntime } from '../../lib/tauri';
 import { useDeviceAssets } from '../../hooks/use-device-assets';
-import type { DeviceAssetDetail } from '../../hooks/use-device-assets';
+import type { DeviceAssetDetail, ExtractionProposal } from '../../hooks/use-device-assets';
 import { useCapabilities } from '../../hooks/use-capabilities';
 import type { CapabilitySummary, CapabilityDetail, GeneratedCapability } from '../../hooks/use-capabilities';
 import {
@@ -31,7 +31,10 @@ export function DeviceModelingPanel({
     saveAsset,
     deleteAsset,
     extractFromText,
+    extractProposal,
   } = useDeviceAssets();
+
+  const { saveCapability } = useCapabilities();
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<DeviceAssetDetail | null>(null);
@@ -43,6 +46,9 @@ export function DeviceModelingPanel({
   const [extractedYaml, setExtractedYaml] = useState('');
   const [extracting, setExtracting] = useState(false);
   const [extractError, setExtractError] = useState<string | null>(null);
+
+  // 结构化提案状态（RFC-0004 Phase 4A）
+  const [proposal, setProposal] = useState<ExtractionProposal | null>(null);
 
   // 加载列表
   useEffect(() => {
@@ -81,28 +87,41 @@ export function DeviceModelingPanel({
     }
   };
 
-  // AI 抽取
+  // AI 结构化抽取（Phase 4A）
   const handleExtract = async () => {
     if (!importText.trim()) return;
     setExtracting(true);
     setExtractError(null);
     setExtractedYaml('');
+    setProposal(null);
     try {
-      const yaml = await extractFromText(importText);
-      setExtractedYaml(yaml);
-      onStatusMessage('AI 抽取完成');
+      const result = await extractProposal(importText);
+      setProposal(result);
+      setExtractedYaml(result.deviceYaml);
+      const msg = [
+        'AI 抽取完成',
+        result.uncertainties.length > 0 ? ` · ${result.uncertainties.length} 项待确认` : '',
+        result.warnings.length > 0 ? ` · ${result.warnings.length} 条警告` : '',
+      ].join('');
+      onStatusMessage(msg);
     } catch (error) {
-      setExtractError(`抽取失败: ${error}`);
+      // 降级到旧版纯 YAML 抽取
+      try {
+        const yaml = await extractFromText(importText);
+        setExtractedYaml(yaml);
+        onStatusMessage('AI 抽取完成（基础模式）');
+      } catch (fallbackError) {
+        setExtractError(`抽取失败: ${fallbackError}`);
+      }
     } finally {
       setExtracting(false);
     }
   };
 
-  // 保存抽取结果
+  // 保存抽取结果（设备 + 能力）
   const handleSaveExtracted = async () => {
     if (!extractedYaml) return;
     try {
-      // 从 YAML 中提取 id 和 type
       const idMatch = extractedYaml.match(/^id:\s*(.+)$/m);
       const typeMatch = extractedYaml.match(/^type:\s*(.+)$/m);
       const deviceId = idMatch?.[1]?.trim() ?? `device_${Date.now()}`;
@@ -111,6 +130,24 @@ export function DeviceModelingPanel({
 
       await saveAsset(deviceId, name, deviceType, extractedYaml);
       onStatusMessage(`设备 ${deviceId} 已保存`);
+
+      // 批量保存提案中的能力
+      if (proposal?.capabilityYamls.length) {
+        for (const capYaml of proposal.capabilityYamls) {
+          try {
+            const capIdMatch = capYaml.match(/^id:\s*(.+)$/m);
+            const capId = capIdMatch?.[1]?.trim() ?? `cap_${Date.now()}`;
+            const descMatch = capYaml.match(/^description:\s*(.+)$/m);
+            const desc = descMatch?.[1]?.trim() ?? capId;
+            await saveCapability(capId, deviceId, desc, desc, capYaml);
+          } catch {
+            // 单个能力保存失败不阻塞其余
+          }
+        }
+        onStatusMessage(`设备 ${deviceId} + ${proposal.capabilityYamls.length} 个能力已保存`);
+      }
+
+      setProposal(null);
       setExtractedYaml('');
       setImportText('');
       setViewMode('list');
@@ -189,10 +226,41 @@ export function DeviceModelingPanel({
                     className="device-modeling__import-save-btn"
                     onClick={() => void handleSaveExtracted()}
                   >
-                    保存
+                    保存{proposal?.capabilityYamls.length ? `（+${proposal.capabilityYamls.length} 能力）` : ''}
                   </button>
                 </div>
                 <pre className="device-modeling__import-yaml">{extractedYaml}</pre>
+                {proposal?.capabilityYamls.length ? (
+                  <details className="device-modeling__proposal-capabilities">
+                    <summary>推断能力 ({proposal.capabilityYamls.length})</summary>
+                    {proposal.capabilityYamls.map((cap, idx) => (
+                      <pre key={idx} className="device-modeling__import-yaml device-modeling__import-yaml--small">{cap}</pre>
+                    ))}
+                  </details>
+                ) : null}
+                {proposal?.uncertainties.length ? (
+                  <div className="device-modeling__proposal-uncertainties">
+                    <h4>待确认项 ({proposal.uncertainties.length})</h4>
+                    <ul>
+                      {proposal.uncertainties.map((u, idx) => (
+                        <li key={idx}>
+                          <code>{u.fieldPath}</code>：{u.guessedValue}
+                          <span className="device-modeling__proposal-reason">{u.reason}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+                {proposal?.warnings.length ? (
+                  <div className="device-modeling__proposal-warnings">
+                    <h4>警告 ({proposal.warnings.length})</h4>
+                    <ul>
+                      {proposal.warnings.map((w, idx) => (
+                        <li key={idx}>{w}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
               </div>
             )}
           </div>
