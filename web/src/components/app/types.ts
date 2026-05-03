@@ -18,6 +18,7 @@ export type SidebarSection =
   | 'boards'
   | 'runtime'
   | 'connections'
+  | 'devices'
   | 'plugins'
   | 'logs'
   | 'ai'

@@ -24,7 +24,7 @@
   --radius-xl: 28px;
   --radius-pill: 999px;
   --radius-circle: 50%;
-  --window-radius: var(--radius-lg);
+  --window-radius: var(--radius-sm);
   --panel-radius: var(--radius-md);
   --button-radius: var(--radius-sm);
   --layout-gap: 18px;

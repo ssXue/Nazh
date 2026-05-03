@@ -1,0 +1,412 @@
+/* ── 设备建模面板 ── */
+
+.device-modeling {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: 0;
+  height: 100%;
+  min-height: 0;
+}
+
+.device-modeling__list {
+  border-right: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.device-modeling__list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 16px 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.device-modeling__list-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.device-modeling__list-header h2 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.device-modeling__detail {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  padding: 20px 24px;
+}
+
+.device-modeling__detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.device-modeling__detail-header h2 {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0 0 4px;
+}
+
+.device-modeling__detail-type {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  margin-right: 8px;
+}
+
+.device-modeling__detail-version {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--color-bg-tertiary, #f0f0f0);
+  color: var(--color-text-secondary);
+}
+
+.device-modeling__section {
+  margin-bottom: 20px;
+}
+
+.device-modeling__section h3 {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0 0 8px;
+  color: var(--color-text-secondary);
+}
+
+/* ── 按钮 ── */
+
+.device-modeling__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 8px);
+  background: transparent;
+  box-shadow: none;
+  color: var(--color-text);
+  cursor: pointer;
+  font-size: inherit;
+  font-weight: inherit;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.device-modeling__btn:hover {
+  background: var(--color-bg-tertiary, rgba(0, 0, 0, 0.04));
+}
+
+.device-modeling__btn--primary {
+  border-color: var(--color-accent, #4f46e5);
+  color: var(--color-accent, #4f46e5);
+}
+
+.device-modeling__btn--primary:hover {
+  background: var(--color-accent, #4f46e5);
+  color: white;
+}
+
+.device-modeling__btn--danger:hover {
+  background: #fee2e2;
+  border-color: #fca5a5;
+  color: #dc2626;
+}
+
+/* ── 资产列表 ── */
+
+.device-modeling__assets {
+  list-style: none;
+  margin: 0;
+  padding: 8px;
+  overflow-y: auto;
+}
+
+.device-modeling__asset-item {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm, 8px);
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.device-modeling__asset-item:hover {
+  background: var(--color-bg-tertiary, rgba(0, 0, 0, 0.04));
+}
+
+.device-modeling__asset-item.is-active {
+  background: var(--color-accent-bg, rgba(79, 70, 229, 0.08));
+}
+
+.device-modeling__asset-name {
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 2px;
+}
+
+.device-modeling__asset-meta {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+/* ── 连接信息 ── */
+
+.device-modeling__connection {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ── 表格 ── */
+
+.device-modeling__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.device-modeling__table th {
+  text-align: left;
+  font-weight: 500;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.device-modeling__table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.device-modeling__table tbody tr:hover {
+  background: var(--color-bg-tertiary, rgba(0, 0, 0, 0.02));
+}
+
+/* ── 标签 ── */
+
+.device-modeling__tag {
+  display: inline-block;
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--color-bg-tertiary, #f0f0f0);
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono, monospace);
+}
+
+.device-modeling__mono {
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+}
+
+/* ── 告警级别 ── */
+
+.device-modeling__severity {
+  display: inline-block;
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+.device-modeling__severity--info {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.device-modeling__severity--warning {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.device-modeling__severity--critical {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+/* ── 元数据网格 ── */
+
+.device-modeling__meta-grid {
+  display: grid;
+  grid-template-columns: 80px 1fr;
+  gap: 4px 12px;
+  font-size: 12px;
+}
+
+.device-modeling__meta-grid span:nth-child(odd) {
+  color: var(--color-text-secondary);
+}
+
+/* ── 空状态 / 加载 ── */
+
+.device-modeling__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--color-text-secondary);
+  text-align: center;
+  padding: 40px;
+}
+
+.device-modeling__empty h2 {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0 0 8px;
+  color: var(--color-text);
+}
+
+.device-modeling__empty p {
+  font-size: 13px;
+  margin: 0;
+}
+
+.device-modeling__empty-list {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 16px;
+  color: var(--color-text-secondary);
+  text-align: center;
+}
+
+.device-modeling__empty-list p {
+  font-size: 13px;
+  margin: 8px 0 2px;
+}
+
+.device-modeling__empty-list span {
+  font-size: 11px;
+}
+
+.device-modeling__loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+}
+
+/* ── 导入面板 ── */
+
+.device-modeling__import {
+  padding: 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.device-modeling__import-textarea {
+  width: 100%;
+  min-height: 80px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 8px);
+  background: var(--color-bg-primary, white);
+  color: var(--color-text);
+  font-size: 12px;
+  font-family: var(--font-mono, monospace);
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.device-modeling__import-textarea:focus {
+  outline: none;
+  border-color: var(--color-accent, #4f46e5);
+}
+
+.device-modeling__import-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.device-modeling__import-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 14px;
+  border: none;
+  border-radius: var(--radius-sm, 8px);
+  background: var(--color-accent, #4f46e5);
+  box-shadow: none;
+  color: white;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.device-modeling__import-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.device-modeling__import-btn:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.device-modeling__import-error {
+  margin-top: 8px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm, 8px);
+  background: #fee2e2;
+  color: #dc2626;
+  font-size: 12px;
+}
+
+.device-modeling__import-result {
+  margin-top: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 8px);
+  overflow: hidden;
+}
+
+.device-modeling__import-result-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--color-bg-tertiary, #f0f0f0);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.device-modeling__import-save-btn {
+  margin-left: auto;
+  padding: 2px 8px;
+  border: 1px solid var(--color-accent, #4f46e5);
+  border-radius: 4px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--color-accent, #4f46e5);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.device-modeling__import-save-btn:hover {
+  background: var(--color-accent, #4f46e5);
+  color: white;
+}
+
+.device-modeling__import-yaml {
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 11px;
+  font-family: var(--font-mono, monospace);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 200px;
+  overflow-y: auto;
+  background: var(--color-bg-primary, white);
+}

@@ -786,3 +786,14 @@ export function XCloseIcon(props: IconProps) {
     </BaseIcon>
   );
 }
+
+export function DeviceIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <rect x="5" y="5" width="14" height="14" rx="3" />
+      <circle cx="9" cy="10" r="1.5" />
+      <circle cx="15" cy="10" r="1.5" />
+      <path d="M9 15h6" />
+    </BaseIcon>
+  );
+}

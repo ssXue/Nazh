@@ -67,7 +67,7 @@
   --radius-xl: 20px;
   --radius-pill: 999px;
   --radius-circle: 50%;
-  --window-radius: var(--radius-lg);
+  --window-radius: var(--radius-sm);
   --panel-radius: var(--radius-md);
   --button-radius: var(--radius-sm);
   --panel-padding: 14px;
@@ -629,5 +629,5 @@ h3 {
 
 .panel--connection-card {
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
 }

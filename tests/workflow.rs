@@ -1009,9 +1009,18 @@ async fn timer_node_injects_trigger_metadata() {
             Some(first_output) => {
                 assert_eq!(first_output.payload["seed"], json!("keep"));
                 assert_eq!(first_output.payload["source"], json!("timer"));
-                assert_eq!(first_output.metadata.as_ref().unwrap()["timer"]["node_id"], json!("tick"));
-                assert_eq!(first_output.metadata.as_ref().unwrap()["timer"]["interval_ms"], json!(2_500));
-                assert_eq!(first_output.metadata.as_ref().unwrap()["timer"]["immediate"], json!(true));
+                assert_eq!(
+                    first_output.metadata.as_ref().unwrap()["timer"]["node_id"],
+                    json!("tick")
+                );
+                assert_eq!(
+                    first_output.metadata.as_ref().unwrap()["timer"]["interval_ms"],
+                    json!(2_500)
+                );
+                assert_eq!(
+                    first_output.metadata.as_ref().unwrap()["timer"]["immediate"],
+                    json!(true)
+                );
             }
             None => panic!("timer node should produce one output"),
         },
@@ -1083,7 +1092,10 @@ async fn serial_trigger_node_normalizes_ascii_and_hex_frames() {
                     first_output.metadata.as_ref().unwrap()["serial"]["port_path"],
                     json!("/dev/tty.mock")
                 );
-                assert_eq!(first_output.metadata.as_ref().unwrap()["serial"]["encoding"], json!("hex"));
+                assert_eq!(
+                    first_output.metadata.as_ref().unwrap()["serial"]["encoding"],
+                    json!("hex")
+                );
             }
             None => panic!("serial trigger node should produce one output"),
         },
@@ -1113,9 +1125,18 @@ async fn modbus_read_node_emits_simulated_values() {
     match result {
         Ok(execution) => match execution.first() {
             Some(first_output) => {
-                assert_eq!(first_output.metadata.as_ref().unwrap()["modbus"]["simulated"], json!(true));
-                assert_eq!(first_output.metadata.as_ref().unwrap()["modbus"]["register"], json!(40_001));
-                assert_eq!(first_output.metadata.as_ref().unwrap()["modbus"]["quantity"], json!(2));
+                assert_eq!(
+                    first_output.metadata.as_ref().unwrap()["modbus"]["simulated"],
+                    json!(true)
+                );
+                assert_eq!(
+                    first_output.metadata.as_ref().unwrap()["modbus"]["register"],
+                    json!(40_001)
+                );
+                assert_eq!(
+                    first_output.metadata.as_ref().unwrap()["modbus"]["quantity"],
+                    json!(2)
+                );
                 assert!(
                     first_output.payload["values"].as_array().map(Vec::len) == Some(2),
                     "modbus read node should output two simulated values",
@@ -1248,7 +1269,10 @@ async fn http_client_node_posts_payload_and_records_response() {
     match result {
         Ok(execution) => match execution.first() {
             Some(first_output) => {
-                assert_eq!(first_output.metadata.as_ref().unwrap()["http"]["status"], json!(200));
+                assert_eq!(
+                    first_output.metadata.as_ref().unwrap()["http"]["status"],
+                    json!(200)
+                );
                 assert_eq!(first_output.payload["http_response"]["ok"], json!(true));
                 assert_eq!(
                     first_output.payload["http_response"]["channel"],
@@ -1415,7 +1439,10 @@ async fn http_alarm_node_renders_dingtalk_markdown_body() {
     match result {
         Ok(execution) => match execution.first() {
             Some(first_output) => {
-                assert_eq!(first_output.metadata.as_ref().unwrap()["http"]["status"], json!(200));
+                assert_eq!(
+                    first_output.metadata.as_ref().unwrap()["http"]["status"],
+                    json!(200)
+                );
                 assert_eq!(
                     first_output.metadata.as_ref().unwrap()["http"]["webhook_kind"],
                     json!("dingtalk")
@@ -1545,7 +1572,10 @@ async fn mqtt_subscribe_node_normalizes_incoming_message() {
     match result {
         Ok(execution) => match execution.first() {
             Some(first_output) => {
-                assert_eq!(first_output.metadata.as_ref().unwrap()["mqtt"]["mode"], json!("subscribe"));
+                assert_eq!(
+                    first_output.metadata.as_ref().unwrap()["mqtt"]["mode"],
+                    json!("subscribe")
+                );
                 assert_eq!(first_output.payload["mqtt_topic"], json!("sensors/temp"));
                 assert_eq!(first_output.payload["temperature"], json!(42.5));
                 assert_eq!(first_output.payload["humidity"], json!(65));

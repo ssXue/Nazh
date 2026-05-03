@@ -1,0 +1,153 @@
+import { useCallback, useState } from 'react';
+
+import { hasTauriRuntime } from '../lib/tauri';
+
+/** 设备资产摘要。 */
+export interface DeviceAssetSummary {
+  id: string;
+  name: string;
+  device_type: string;
+  version: number;
+  updated_at: string;
+}
+
+/** 设备资产详情。 */
+export interface DeviceAssetDetail {
+  id: string;
+  name: string;
+  device_type: string;
+  version: number;
+  spec_json: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Pin schema 条目。 */
+export interface PinSchemaEntry {
+  id: string;
+  label: string;
+  pin_type: string;
+  direction: string;
+  description: string | null;
+}
+
+/** AI 来源追溯记录。 */
+export interface FieldSource {
+  field_path: string;
+  source_text: string;
+  confidence: number;
+}
+
+async function invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  const { invoke: tauriInvoke } = await import('@tauri-apps/api/core');
+  return tauriInvoke<T>(command, args);
+}
+
+export function useDeviceAssets() {
+  const [assets, setAssets] = useState<DeviceAssetSummary[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadAssets = useCallback(async () => {
+    if (!hasTauriRuntime()) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const list = await invoke<DeviceAssetSummary[]>('list_device_assets');
+      setAssets(list);
+    } catch (err) {
+      setError(`加载设备列表失败: ${err}`);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const loadDetail = useCallback(async (id: string): Promise<DeviceAssetDetail | null> => {
+    if (!hasTauriRuntime()) return null;
+    return invoke<DeviceAssetDetail | null>('load_device_asset', { id });
+  }, []);
+
+  const saveAsset = useCallback(
+    async (id: string, name: string, deviceType: string, specYaml: string) => {
+      if (!hasTauriRuntime()) return;
+      await invoke('save_device_asset', {
+        id,
+        name,
+        deviceType,
+        specYaml,
+      });
+      await loadAssets();
+    },
+    [loadAssets],
+  );
+
+  const deleteAsset = useCallback(
+    async (id: string) => {
+      if (!hasTauriRuntime()) return;
+      await invoke('delete_device_asset', { id });
+      await loadAssets();
+    },
+    [loadAssets],
+  );
+
+  const extractFromText = useCallback(
+    async (text: string, providerId?: string): Promise<string> => {
+      if (!hasTauriRuntime()) throw new Error('需要 Tauri 运行时');
+      return invoke<string>('extract_device_from_text', {
+        text,
+        providerId: providerId ?? null,
+      });
+    },
+    [],
+  );
+
+  const generatePinSchema = useCallback(
+    async (deviceId: string): Promise<PinSchemaEntry[]> => {
+      if (!hasTauriRuntime()) return [];
+      return invoke<PinSchemaEntry[]>('generate_pin_schema', { deviceId });
+    },
+    [],
+  );
+
+  const loadSources = useCallback(
+    async (assetId: string): Promise<FieldSource[]> => {
+      if (!hasTauriRuntime()) return [];
+      return invoke<FieldSource[]>('load_device_asset_sources', { assetId });
+    },
+    [],
+  );
+
+  const saveSources = useCallback(
+    async (assetId: string, sources: FieldSource[]) => {
+      if (!hasTauriRuntime()) return;
+      await invoke('save_device_asset_sources', { assetId, sources });
+    },
+    [],
+  );
+
+  const listVersions = useCallback(
+    async (assetId: string) => {
+      if (!hasTauriRuntime()) return [];
+      return invoke<Array<{ version: number; created_at: string; source_summary: string | null }>>(
+        'list_asset_versions',
+        { assetId },
+      );
+    },
+    [],
+  );
+
+  return {
+    assets,
+    loading,
+    error,
+    loadAssets,
+    loadDetail,
+    saveAsset,
+    deleteAsset,
+    extractFromText,
+    generatePinSchema,
+    loadSources,
+    saveSources,
+    listVersions,
+  };
+}

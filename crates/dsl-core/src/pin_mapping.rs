@@ -1,7 +1,9 @@
-//! SignalSpec → PinDefinition 映射（RFC-0004 Phase 1）。
+//! `SignalSpec` → `PinDefinition` 映射（RFC-0004 Phase 1）。
 //!
 //! 将 Device DSL 的信号定义转换为引擎可消费的 Pin 声明，
 //! 用于设备操作节点自动生成端口 schema。
+
+use std::fmt::Write;
 
 use nazh_core::{EmptyPolicy, PinDefinition, PinDirection, PinKind, PinType};
 
@@ -59,28 +61,26 @@ pub fn signal_id_to_label(id: &str) -> String {
 /// - `direction` = 由 `signal_to_direction` 映射
 /// - `kind` = `Data`（设备信号是数据端口，不是控制流）
 /// - `required` = false（信号为可选端口）
-pub fn signals_to_pin_definitions(
-    signals: &[crate::device::SignalSpec],
-) -> Vec<PinDefinition> {
+pub fn signals_to_pin_definitions(signals: &[crate::device::SignalSpec]) -> Vec<PinDefinition> {
     signals
         .iter()
         .map(|signal| {
             let mut label = signal_id_to_label(&signal.id);
             if let Some(unit) = &signal.unit {
-                label.push_str(&format!(" ({unit})"));
+                let _ = write!(label, " ({unit})");
             }
 
             let mut description = None;
             if signal.range.is_some() || signal.scale.is_some() {
                 let mut desc = String::new();
                 if let Some(range) = &signal.range {
-                    desc.push_str(&format!("量程: [{}, {}]", range.min, range.max));
+                    let _ = write!(desc, "量程: [{}, {}]", range.min, range.max);
                 }
                 if let Some(scale) = &signal.scale {
                     if !desc.is_empty() {
                         desc.push_str("; ");
                     }
-                    desc.push_str(&format!("缩放: {scale}"));
+                    let _ = write!(desc, "缩放: {scale}");
                 }
                 description = Some(desc);
             }
@@ -126,15 +126,30 @@ mod tests {
 
     #[test]
     fn signal_type_映射_direction() {
-        assert_eq!(signal_to_direction(SignalType::AnalogInput), PinDirection::Input);
-        assert_eq!(signal_to_direction(SignalType::DigitalInput), PinDirection::Input);
-        assert_eq!(signal_to_direction(SignalType::AnalogOutput), PinDirection::Output);
-        assert_eq!(signal_to_direction(SignalType::DigitalOutput), PinDirection::Output);
+        assert_eq!(
+            signal_to_direction(SignalType::AnalogInput),
+            PinDirection::Input
+        );
+        assert_eq!(
+            signal_to_direction(SignalType::DigitalInput),
+            PinDirection::Input
+        );
+        assert_eq!(
+            signal_to_direction(SignalType::AnalogOutput),
+            PinDirection::Output
+        );
+        assert_eq!(
+            signal_to_direction(SignalType::DigitalOutput),
+            PinDirection::Output
+        );
     }
 
     #[test]
     fn signal_id_to_label_转换() {
-        assert_eq!(signal_id_to_label("hydraulic_pressure"), "Hydraulic Pressure");
+        assert_eq!(
+            signal_id_to_label("hydraulic_pressure"),
+            "Hydraulic Pressure"
+        );
         assert_eq!(signal_id_to_label("servo_ready"), "Servo Ready");
         assert_eq!(signal_id_to_label("pressure"), "Pressure");
     }

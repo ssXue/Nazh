@@ -4,7 +4,7 @@ use crate::{Store, StoreError};
 use rusqlite::params;
 
 /// 设备资产摘要（列表视图）。
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DeviceAssetSummary {
     pub id: String,
     pub name: String,
@@ -26,7 +26,7 @@ pub struct StoredDeviceAsset {
 }
 
 /// 设备资产版本记录。
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct StoredAssetVersion {
     pub asset_id: String,
     pub version: i64,
@@ -36,7 +36,7 @@ pub struct StoredAssetVersion {
 }
 
 /// 设备资产版本摘要。
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AssetVersionSummary {
     pub version: i64,
     pub created_at: String,
@@ -44,7 +44,7 @@ pub struct AssetVersionSummary {
 }
 
 /// AI 抽取来源追溯记录。
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct FieldSource {
     pub field_path: String,
     pub source_text: String,
@@ -162,7 +162,10 @@ impl Store {
     pub fn delete_device_asset(&self, id: &str) -> Result<(), StoreError> {
         let db = self.db();
         db.execute("DELETE FROM device_asset_sources WHERE asset_id = ?1", [id])?;
-        db.execute("DELETE FROM device_asset_versions WHERE asset_id = ?1", [id])?;
+        db.execute(
+            "DELETE FROM device_asset_versions WHERE asset_id = ?1",
+            [id],
+        )?;
         db.execute("DELETE FROM device_assets WHERE id = ?1", [id])?;
         Ok(())
     }
@@ -277,7 +280,7 @@ impl Store {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
     use serde_json::json;

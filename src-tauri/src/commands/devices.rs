@@ -1,0 +1,353 @@
+//! 设备资产 IPC 命令域（RFC-0004 Phase 1）。
+//!
+//! 提供设备资产的 CRUD、AI 抽取和 Pin schema 生成命令。
+
+use std::sync::Arc;
+
+use nazh_dsl_core::{parse_device_yaml, signals_to_pin_definitions};
+use nazh_engine::{AiCompletionRequest, AiGenerationParams, AiMessage, AiMessageRole, AiService};
+use store::{
+    AssetVersionSummary, DeviceAssetSummary, FieldSource, Store, StoredAssetVersion,
+    StoredDeviceAsset,
+};
+use tauri::{AppHandle, Emitter, State};
+
+use crate::state::DesktopState;
+
+// ---- IPC 响应类型 ----
+
+/// 设备资产完整详情（IPC 响应）。
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct DeviceAssetDetail {
+    pub id: String,
+    pub name: String,
+    pub device_type: String,
+    pub version: i64,
+    pub spec_json: serde_json::Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+impl From<StoredDeviceAsset> for DeviceAssetDetail {
+    fn from(value: StoredDeviceAsset) -> Self {
+        Self {
+            id: value.id,
+            name: value.name,
+            device_type: value.device_type,
+            version: value.version,
+            spec_json: value.spec_json,
+            created_at: value.created_at,
+            updated_at: value.updated_at,
+        }
+    }
+}
+
+/// Pin schema 条目（IPC 响应）。
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct PinSchemaEntry {
+    pub id: String,
+    pub label: String,
+    pub pin_type: String,
+    pub direction: String,
+    pub description: Option<String>,
+}
+
+// ---- CRUD 命令 ----
+
+/// 列出所有设备资产摘要。
+#[tauri::command]
+pub(crate) async fn list_device_assets(
+    state: State<'_, DesktopState>,
+) -> Result<Vec<DeviceAssetSummary>, String> {
+    let store = get_store(&state)?;
+    store
+        .list_device_assets()
+        .map_err(|e| format!("列出设备资产失败: {e}"))
+}
+
+/// 加载指定设备资产详情。
+#[tauri::command]
+pub(crate) async fn load_device_asset(
+    state: State<'_, DesktopState>,
+    id: String,
+) -> Result<Option<DeviceAssetDetail>, String> {
+    let store = get_store(&state)?;
+    store
+        .load_device_asset(&id)
+        .map_err(|e| format!("加载设备资产失败: {e}"))
+        .map(|opt| opt.map(DeviceAssetDetail::from))
+}
+
+/// 保存（或更新）设备资产。
+///
+/// 接收 YAML 格式的设备规格，解析校验后存储为 JSON。
+#[tauri::command]
+pub(crate) async fn save_device_asset(
+    state: State<'_, DesktopState>,
+    id: String,
+    name: String,
+    device_type: String,
+    spec_yaml: String,
+) -> Result<(), String> {
+    // 解析 YAML 校验合法性
+    let spec = parse_device_yaml(&spec_yaml).map_err(|e| format!("设备 DSL 解析失败: {e}"))?;
+    let spec_json = serde_json::to_value(&spec).map_err(|e| format!("设备规格序列化失败: {e}"))?;
+
+    let store = get_store(&state)?;
+    store
+        .save_device_asset(&id, &name, &device_type, &spec_json)
+        .map_err(|e| format!("保存设备资产失败: {e}"))
+}
+
+/// 删除设备资产及其版本历史。
+#[tauri::command]
+pub(crate) async fn delete_device_asset(
+    state: State<'_, DesktopState>,
+    id: String,
+) -> Result<(), String> {
+    let store = get_store(&state)?;
+    store
+        .delete_device_asset(&id)
+        .map_err(|e| format!("删除设备资产失败: {e}"))
+}
+
+// ---- 版本管理 ----
+
+/// 列出设备资产的所有版本摘要。
+#[tauri::command]
+pub(crate) async fn list_asset_versions(
+    state: State<'_, DesktopState>,
+    asset_id: String,
+) -> Result<Vec<AssetVersionSummary>, String> {
+    let store = get_store(&state)?;
+    store
+        .list_asset_versions(&asset_id)
+        .map_err(|e| format!("列出设备版本失败: {e}"))
+}
+
+/// 加载特定版本的设备资产。
+#[tauri::command]
+pub(crate) async fn load_asset_version(
+    state: State<'_, DesktopState>,
+    asset_id: String,
+    version: i64,
+) -> Result<Option<StoredAssetVersion>, String> {
+    let store = get_store(&state)?;
+    store
+        .load_asset_version(&asset_id, version)
+        .map_err(|e| format!("加载设备版本失败: {e}"))
+}
+
+// ---- AI 抽取 ----
+
+const EXTRACTION_SYSTEM_PROMPT: &str = "你是一个工业设备建模专家。从用户提供的说明书文本中抽取设备信息，\
+     输出 YAML 格式的 DeviceSpec。只输出 YAML，不要解释。";
+
+/// 从文本中 AI 抽取 `DeviceSpec` YAML。
+#[tauri::command]
+pub(crate) async fn extract_device_from_text(
+    state: State<'_, DesktopState>,
+    text: String,
+    provider_id: Option<String>,
+) -> Result<String, String> {
+    let request = build_extraction_request(&text, provider_id);
+
+    let response = state
+        .ai_service
+        .complete(request)
+        .await
+        .map_err(|e| format!("AI 抽取失败: {e}"))?;
+
+    // 校验输出是否为合法 DeviceSpec YAML
+    let yaml_text = extract_yaml_from_response(&response.content);
+    parse_device_yaml(&yaml_text).map_err(|e| format!("AI 输出不是合法的 DeviceSpec YAML: {e}"))?;
+
+    Ok(yaml_text)
+}
+
+/// 流式 AI 抽取 `DeviceSpec` YAML。
+#[tauri::command]
+pub(crate) async fn extract_device_from_text_stream(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+    text: String,
+    provider_id: Option<String>,
+    stream_id: String,
+) -> Result<(), String> {
+    let request = build_extraction_request(&text, provider_id);
+    let service = Arc::clone(&state.ai_service);
+    let mut rx = service
+        .stream_complete(request)
+        .await
+        .map_err(|e| format!("启动 AI 流式抽取失败: {e}"))?;
+
+    let event_name = format!("copilot://stream/{stream_id}");
+    tokio::spawn(async move {
+        while let Some(chunk_result) = rx.recv().await {
+            match chunk_result {
+                Ok(chunk) => {
+                    let is_done = chunk.done;
+                    let payload: serde_json::Value =
+                        serde_json::to_value(&chunk).unwrap_or_default();
+                    let _ = app.emit(&event_name, payload);
+                    if is_done {
+                        break;
+                    }
+                }
+                Err(error) => {
+                    let payload: serde_json::Value = serde_json::json!({
+                        "error": error.to_string(),
+                        "done": true
+                    });
+                    let _ = app.emit(&event_name, payload);
+                    break;
+                }
+            }
+        }
+    });
+
+    Ok(())
+}
+
+// ---- Pin Schema 生成 ----
+
+/// 从设备资产生成 Pin 声明列表。
+#[tauri::command]
+pub(crate) async fn generate_pin_schema(
+    state: State<'_, DesktopState>,
+    device_id: String,
+) -> Result<Vec<PinSchemaEntry>, String> {
+    let store = get_store(&state)?;
+    let asset = store
+        .load_device_asset(&device_id)
+        .map_err(|e| format!("加载设备资产失败: {e}"))?
+        .ok_or_else(|| format!("设备资产 `{device_id}` 不存在"))?;
+
+    // 从 JSON 反序列化为 DeviceSpec
+    let spec: nazh_dsl_core::DeviceSpec = serde_json::from_value(asset.spec_json)
+        .map_err(|e| format!("设备规格反序列化失败: {e}"))?;
+
+    let pin_defs = signals_to_pin_definitions(&spec.signals);
+    Ok(pin_defs
+        .into_iter()
+        .map(|pin| PinSchemaEntry {
+            id: pin.id,
+            label: pin.label,
+            pin_type: format!("{:?}", pin.pin_type).to_lowercase(),
+            direction: format!("{:?}", pin.direction).to_lowercase(),
+            description: pin.description,
+        })
+        .collect())
+}
+
+// ---- 来源追溯 ----
+
+/// 批量保存 AI 抽取来源追溯记录。
+#[tauri::command]
+pub(crate) async fn save_device_asset_sources(
+    state: State<'_, DesktopState>,
+    asset_id: String,
+    sources: Vec<FieldSource>,
+) -> Result<(), String> {
+    let store = get_store(&state)?;
+    store
+        .save_asset_sources(&asset_id, &sources)
+        .map_err(|e| format!("保存来源记录失败: {e}"))
+}
+
+/// 加载设备资产的来源追溯记录。
+#[tauri::command]
+pub(crate) async fn load_device_asset_sources(
+    state: State<'_, DesktopState>,
+    asset_id: String,
+) -> Result<Vec<FieldSource>, String> {
+    let store = get_store(&state)?;
+    store
+        .load_asset_sources(&asset_id)
+        .map_err(|e| format!("加载来源记录失败: {e}"))
+}
+
+// ---- 辅助函数 ----
+
+/// 获取 Store 的 Arc 引用。
+fn get_store(state: &State<'_, DesktopState>) -> Result<Arc<Store>, String> {
+    state
+        .store
+        .read()
+        .map(|guard| Arc::clone(&guard))
+        .map_err(|e| format!("Store 锁异常: {e}"))
+}
+
+/// 构建 AI 抽取请求。
+fn build_extraction_request(text: &str, provider_id: Option<String>) -> AiCompletionRequest {
+    AiCompletionRequest {
+        provider_id: provider_id.unwrap_or_default(),
+        model: None,
+        messages: vec![
+            AiMessage {
+                role: AiMessageRole::System,
+                content: EXTRACTION_SYSTEM_PROMPT.to_owned(),
+            },
+            AiMessage {
+                role: AiMessageRole::User,
+                content: build_extraction_prompt(text),
+            },
+        ],
+        params: AiGenerationParams {
+            temperature: Some(0.1),
+            max_tokens: Some(4096),
+            ..Default::default()
+        },
+        timeout_ms: None,
+    }
+}
+
+/// 构建 AI 抽取 prompt。
+fn build_extraction_prompt(text: &str) -> String {
+    format!(
+        "请从以下设备说明书中抽取设备信息，输出 YAML 格式的 DeviceSpec。\n\n\
+         DeviceSpec 结构参考：\n\
+         ```yaml\n\
+         id: <设备唯一标识>\n\
+         type: <设备类型>\n\
+         manufacturer: <厂商>  # 可选\n\
+         model: <型号>  # 可选\n\
+         connection:\n\
+           type: <协议类型，如 modbus-tcp / mqtt / serial>\n\
+           id: <连接引用 ID>\n\
+           unit: <站号>  # 可选\n\
+         signals:\n\
+           - id: <信号 ID>\n\
+             signal_type: <analog_input / analog_output / digital_input / digital_output>\n\
+             unit: <单位>  # 可选\n\
+             range: [min, max]  # 可选\n\
+             source:\n\
+               type: <register / topic / serial_command>\n\
+               register: <地址>  # register 类型\n\
+               data_type: <float32 / u16 / ...>\n\
+               access: <read / write / read_write>\n\
+               bit: <位号>  # 可选\n\
+         alarms:\n\
+           - id: <告警 ID>\n\
+             condition: <Rhai 条件表达式>\n\
+             severity: <info / warning / critical>\n\
+             action: <动作>  # 可选\n\
+         ```\n\n\
+         说明书文本：\n---\n{text}\n---"
+    )
+}
+
+/// 从 AI 响应中提取 YAML 内容（去除 markdown 代码块包裹）。
+fn extract_yaml_from_response(content: &str) -> String {
+    let trimmed = content.trim();
+    // 去除 ```yaml ... ``` 包裹
+    if let Some(stripped) = trimmed
+        .strip_prefix("```yaml")
+        .or_else(|| trimmed.strip_prefix("```yml"))
+        .or_else(|| trimmed.strip_prefix("```"))
+        && let Some(inner) = stripped.strip_suffix("```")
+    {
+        return inner.trim().to_owned();
+    }
+    trimmed.to_owned()
+}

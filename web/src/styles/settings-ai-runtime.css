@@ -815,10 +815,14 @@
   justify-content: center;
   width: 30px;
   height: 30px;
+  padding: 0;
   border: 1px solid color-mix(in srgb, var(--line-soft) 78%, transparent);
   border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--panel-elevated) 92%, transparent);
+  box-shadow: none;
   color: var(--text-primary);
+  font-size: inherit;
+  font-weight: inherit;
   transition:
     transform 180ms ease,
     border-color 180ms ease,

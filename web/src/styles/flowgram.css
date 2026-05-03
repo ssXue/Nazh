@@ -1758,7 +1758,7 @@ html[data-theme='dark'] .flowgram-card--loop .sub-canvas-border::before {
 .panel--connection-card > .connection-studio {
   min-height: 0;
   height: 100%;
-  overflow: auto;
+  overflow: visible;
   padding-right: 1px;
 }
 

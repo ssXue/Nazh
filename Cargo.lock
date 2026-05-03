@@ -2277,6 +2277,7 @@ version = "0.1.0"
 dependencies = [
  "ai",
  "chrono",
+ "nazh-dsl-core",
  "nazh-engine",
  "serde",
  "serde_json",
@@ -2313,6 +2314,7 @@ dependencies = [
  "connections",
  "dashmap",
  "nazh-core",
+ "nazh-dsl-core",
  "nazh-graph",
  "nodes-flow",
  "nodes-io",
@@ -2322,6 +2324,7 @@ dependencies = [
  "scripting",
  "serde",
  "serde_json",
+ "store",
  "tokio",
  "tracing",
  "ts-rs",

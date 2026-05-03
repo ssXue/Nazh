@@ -24,7 +24,7 @@
   min-width: 0;
   min-height: 0;
   overflow: auto;
-  padding: 2px 2px 4px;
+  padding: 4px;
 }
 
 .connection-toolbar {
@@ -45,18 +45,17 @@
   background: linear-gradient(180deg, var(--surface-elevated), var(--surface-muted));
   color: var(--text);
   text-align: left;
-  box-shadow: var(--shadow-low);
+  box-shadow: none;
   transition:
     border-color 160ms ease,
     background-color 160ms ease,
-    box-shadow 160ms ease,
     transform 160ms ease;
 }
 
 .connection-toolbar__button:hover {
   border-color: var(--accent-border);
   background: linear-gradient(180deg, var(--accent-soft), var(--panel));
-  box-shadow: var(--shadow-medium);
+  box-shadow: none;
   transform: translateY(-1px);
 }
 
@@ -118,11 +117,10 @@
   background:
     radial-gradient(circle at 18% 12%, var(--accent-soft), transparent 34%),
     linear-gradient(180deg, var(--panel-strong), var(--panel));
-  box-shadow: var(--shadow-low);
+  box-shadow: none;
   overflow: hidden;
   transition:
     border-color 180ms ease,
-    box-shadow 180ms ease,
     transform 180ms ease;
   z-index: var(--z-content);
 }
@@ -139,7 +137,7 @@
 }
 
 .connection-card:hover {
-  box-shadow: var(--shadow-medium);
+  box-shadow: none;
   transform: translateY(-1px);
 }
 

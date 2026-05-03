@@ -11,8 +11,8 @@ use nazh_engine::{ExecutionEvent, WorkflowContext};
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 use tauri_bindings::{
-    AlertDeliveryRecord, ObservabilityContextInput, ObservabilityEntry,
-    ObservabilityQueryResult, ObservabilityTraceSummary,
+    AlertDeliveryRecord, ObservabilityContextInput, ObservabilityEntry, ObservabilityQueryResult,
+    ObservabilityTraceSummary,
 };
 use tokio::sync::Mutex;
 use uuid::Uuid;

@@ -23,6 +23,7 @@ import { AiConfigPanel } from './AiConfigPanel';
 import { BoardWorkspace, type BoardWorkspaceHandle } from './BoardWorkspace';
 import { BoardsPanel, type BoardItem } from './BoardsPanel';
 import { DashboardPanel } from './DashboardPanel';
+import { DeviceModelingPanel } from './DeviceModelingPanel';
 import { LogsPanel } from './LogsPanel';
 import { PluginPanel } from './PluginPanel';
 import { RuntimeManagerPanel } from './RuntimeManagerPanel';
@@ -343,6 +344,19 @@ export function StudioContentRouter({
                 isLoading={!connectionLibrary.storage.isReady}
                 storageError={connectionLibrary.storage.error}
                 onStatusMessage={(msg) => engine.setStatusMessage(msg)}
+              />
+            </ScrollSurface>
+          </section>
+        </StrictStudioPanel>
+      );
+    case 'devices':
+      return (
+        <StrictStudioPanel>
+          <section className="studio-content studio-content--panel">
+            <ScrollSurface className="panel studio-content__panel studio-content__panel--scroll">
+              <DeviceModelingPanel
+                isTauriRuntime={isTauriRuntime}
+                onStatusMessage={engine.setStatusMessage}
               />
             </ScrollSurface>
           </section>

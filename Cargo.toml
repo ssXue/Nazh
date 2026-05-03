@@ -133,7 +133,9 @@ io-notify = ["nodes-io/io-notify"]
 [dev-dependencies]
 async-trait.workspace = true
 chrono.workspace = true
+nazh-dsl-core.workspace = true
 rusqlite.workspace = true
+store.workspace = true
 uuid.workspace = true
 
 [profile.release]

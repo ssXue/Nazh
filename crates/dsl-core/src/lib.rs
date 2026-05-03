@@ -19,8 +19,8 @@ pub use device::{
     SignalSpec, SignalType,
 };
 pub use error::DslError;
-pub use pin_mapping::{signal_to_direction, signal_to_pin_type, signals_to_pin_definitions};
 pub use parser::{parse_capability_yaml, parse_device_yaml, parse_workflow_yaml};
+pub use pin_mapping::{signal_to_direction, signal_to_pin_type, signals_to_pin_definitions};
 pub use workflow::{
     ActionSpec, ActionTarget, HumanDuration, Range, StateSpec, TransitionSpec, WorkflowSpec,
 };

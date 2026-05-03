@@ -52,10 +52,7 @@ pub enum WorkflowVariableEvent {
         updated_by: Option<String>,
     },
     /// 变量被删除（ADR-0012 Phase 3）。
-    Deleted {
-        workflow_id: String,
-        name: String,
-    },
+    Deleted { workflow_id: String, name: String },
 }
 
 /// 非阻塞发送变量控制事件。
@@ -304,7 +301,11 @@ impl WorkflowVariables {
             updated_by,
         };
         if let Err(error) = sink.sender.try_send(event) {
-            tracing::debug!(?error, ?name, "WorkflowVariableEvent::Changed try_send 失败");
+            tracing::debug!(
+                ?error,
+                ?name,
+                "WorkflowVariableEvent::Changed try_send 失败"
+            );
         }
     }
 
@@ -452,7 +453,11 @@ impl WorkflowVariables {
                 name: name.to_owned(),
             };
             if let Err(error) = sink.sender.try_send(event) {
-                tracing::debug!(?error, ?name, "WorkflowVariableEvent::Deleted try_send 失败");
+                tracing::debug!(
+                    ?error,
+                    ?name,
+                    "WorkflowVariableEvent::Deleted try_send 失败"
+                );
             }
         }
         Some(removed)
@@ -693,7 +698,9 @@ mod tests {
                 assert_eq!(value, Value::from(1_i64));
                 assert_eq!(updated_by.as_deref(), Some("node-A"));
             }
-            other @ WorkflowVariableEvent::Deleted { .. } => panic!("expected Changed, got {other:?}"),
+            other @ WorkflowVariableEvent::Deleted { .. } => {
+                panic!("expected Changed, got {other:?}")
+            }
         }
     }
 
@@ -741,10 +748,7 @@ mod tests {
         assert!(ok);
 
         let event = rx.recv().await.expect("应收到事件");
-        assert!(matches!(
-            event,
-            WorkflowVariableEvent::Changed { .. }
-        ));
+        assert!(matches!(event, WorkflowVariableEvent::Changed { .. }));
     }
 
     #[tokio::test]
@@ -968,7 +972,9 @@ mod tests {
                 assert_eq!(workflow_id, "wf-1");
                 assert_eq!(name, "x");
             }
-            other @ WorkflowVariableEvent::Changed { .. } => panic!("expected Deleted, got {other:?}"),
+            other @ WorkflowVariableEvent::Changed { .. } => {
+                panic!("expected Deleted, got {other:?}")
+            }
         }
     }
 
@@ -1060,7 +1066,9 @@ mod tests {
                 assert_eq!(name, "x");
                 assert_eq!(value, Value::from(10_i64));
             }
-            other @ WorkflowVariableEvent::Deleted { .. } => panic!("expected Changed, got {other:?}"),
+            other @ WorkflowVariableEvent::Deleted { .. } => {
+                panic!("expected Changed, got {other:?}")
+            }
         }
     }
 }

@@ -38,6 +38,12 @@ export function buildSidebarSections(
       badge: `${globalConnectionCount} 个`,
     },
     {
+      key: 'devices',
+      group: 'main',
+      label: '设备建模',
+      badge: hasTauriRuntime() ? 'Device DSL' : '预览态',
+    },
+    {
       key: 'plugins',
       group: 'main',
       label: '插件管理',

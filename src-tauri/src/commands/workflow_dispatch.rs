@@ -3,10 +3,7 @@ use serde_json::json;
 use tauri::State;
 use tauri_bindings::DispatchResponse;
 
-use crate::{
-    state::DesktopState,
-    util::stringify_error,
-};
+use crate::{state::DesktopState, util::stringify_error};
 
 #[tauri::command]
 pub(crate) async fn dispatch_payload(

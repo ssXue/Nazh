@@ -5,20 +5,19 @@ use std::{
 };
 
 use nazh_engine::{
-    AiService, ConnectionDefinition, EngineError, RuntimeResources, WorkflowGraph,
-    WorkflowId, deploy_workflow_with_ai_and_variable_overrides as deploy_workflow_graph,
+    AiService, ConnectionDefinition, EngineError, RuntimeResources, WorkflowGraph, WorkflowId,
+    deploy_workflow_with_ai_and_variable_overrides as deploy_workflow_graph,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tauri::{AppHandle, Emitter, State};
-use tauri_bindings::{DeployResponse, ObservabilityContextInput, WorkflowRuntimePolicy,
-    WorkflowRuntimePolicyInput};
+use tauri_bindings::{
+    DeployResponse, ObservabilityContextInput, WorkflowRuntimePolicy, WorkflowRuntimePolicyInput,
+};
 
 use crate::{
     observability::ObservabilityStore,
     registry::shared_node_registry,
-    runtime::{
-        DeadLetterSink, DesktopWorkflow, RuntimeWorkflowMetadata, create_dispatch_router,
-    },
+    runtime::{DeadLetterSink, DesktopWorkflow, RuntimeWorkflowMetadata, create_dispatch_router},
     state::DesktopState,
     util::stringify_error,
     workspace::resolve_project_workspace_dir,

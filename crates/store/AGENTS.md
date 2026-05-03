@@ -1,12 +1,14 @@
-# crates/store — 变量持久化 Ring 1 crate（ADR-0022）
+# crates/store — 持久化 Ring 1 crate（ADR-0022 + RFC-0004 Phase 1）
 
 ## 定位
 
-SQLite 持久化层，实现 RFC-0003 Phase 1 子集。存储三类数据：
+SQLite 持久化层，实现 RFC-0003 Phase 1 子集 + RFC-0004 设备资产存储。存储五类数据：
 
 - **工作流变量**：按 `workflow_id + key` 存储当前值与声明初值
 - **变量历史**：每次写入追加一条变更记录（时间序列）
 - **全局变量**：按 `namespace + key` 跨工作流共享
+- **设备资产**：按 `id` 存储设备 DSL 规格，自动版本化
+- **设备资产来源**：AI 抽取的字段级来源追溯
 
 Ring 1 crate，仅依赖 `rusqlite` / `serde` / `chrono` / `tracing`，不依赖 `nazh-core` 或任何其他 workspace crate。
 
@@ -17,8 +19,9 @@ pub struct Store { /* SQLite Connection，Mutex 保护 */ }
 
 impl Store {
     pub fn open(path: &Path) -> Result<Store, StoreError>;
-    pub fn open_unpersisted() -> Result<Store, StoreError>;  // 内存模式，不写盘
-    pub fn open_in_memory() -> Result<Store, StoreError>;    // 同 open_unpersisted
+    pub fn open_unpersisted() -> Store;                        // 内存模式，不写盘
+    #[cfg(test)]
+    pub fn open_in_memory() -> Result<Store, StoreError>;      // 同 open_unpersisted
 }
 
 // variables.rs
@@ -37,6 +40,22 @@ pub fn upsert_global(...) -> Result<(), StoreError>;
 pub fn load_global(namespace, key) -> Result<Option<StoredGlobalVariable>, StoreError>;
 pub fn list_globals(namespace?) -> Result<Vec<StoredGlobalVariable>, StoreError>;
 pub fn delete_global(namespace, key) -> Result<(), StoreError>;
+
+// device_assets.rs（RFC-0004 Phase 1）
+pub struct DeviceAssetSummary { id, name, device_type, version, updated_at }
+pub struct StoredDeviceAsset { id, name, device_type, version, spec_json, created_at, updated_at }
+pub struct StoredAssetVersion { asset_id, version, spec_json, source_summary, created_at }
+pub struct AssetVersionSummary { version, created_at, source_summary }
+pub struct FieldSource { field_path, source_text, confidence }
+
+pub fn save_device_asset(id, name, device_type, spec_json) -> Result<(), StoreError>;
+pub fn load_device_asset(id) -> Result<Option<StoredDeviceAsset>, StoreError>;
+pub fn list_device_assets() -> Result<Vec<DeviceAssetSummary>, StoreError>;
+pub fn delete_device_asset(id) -> Result<(), StoreError>;     // 级联删除版本+来源
+pub fn list_asset_versions(asset_id) -> Result<Vec<AssetVersionSummary>, StoreError>;
+pub fn load_asset_version(asset_id, version) -> Result<Option<StoredAssetVersion>, StoreError>;
+pub fn save_asset_sources(asset_id, sources: &[FieldSource]) -> Result<(), StoreError>;
+pub fn load_asset_sources(asset_id) -> Result<Vec<FieldSource>, StoreError>;
 ```
 
 ## 内部约定

@@ -166,7 +166,18 @@ pub fn run() {
             commands::ai::copilot_complete,
             commands::ai::copilot_complete_stream,
             commands::human_loop::respond_human_loop,
-            commands::human_loop::list_pending_approvals
+            commands::human_loop::list_pending_approvals,
+            commands::devices::list_device_assets,
+            commands::devices::load_device_asset,
+            commands::devices::save_device_asset,
+            commands::devices::delete_device_asset,
+            commands::devices::list_asset_versions,
+            commands::devices::load_asset_version,
+            commands::devices::extract_device_from_text,
+            commands::devices::extract_device_from_text_stream,
+            commands::devices::generate_pin_schema,
+            commands::devices::save_device_asset_sources,
+            commands::devices::load_device_asset_sources
         ]);
 
     if let Err(error) = builder.run(tauri::generate_context!()) {

@@ -2,8 +2,9 @@
 
 ## 这是什么
 
-RFC-0004 Phase 0 的实现。定义设备（Device）、能力（Capability）、工作流（Workflow）
-三种 DSL 的结构化类型（`*Spec` 系列），并提供从 YAML 文本解析这些类型的 API。
+RFC-0004 Phase 0 + Phase 1 的实现。定义设备（Device）、能力（Capability）、工作流（Workflow）
+三种 DSL 的结构化类型（`*Spec` 系列），提供从 YAML 文本解析这些类型的 API，以及
+`SignalSpec` → `PinDefinition` 映射函数（Phase 1）。
 
 本 crate 是纯数据 + 解析层，不含编译逻辑、运行时依赖或协议驱动。
 
@@ -16,7 +17,8 @@ crates/dsl-core/src/
 ├── device.rs       # DeviceSpec / SignalSpec / AlarmSpec / ConnectionRef / SignalSource / SignalType / AccessMode / DataType / AlarmSeverity
 ├── capability.rs   # CapabilitySpec / CapabilityParam / CapabilityOutput / CapabilityImpl / SafetyConstraints / SafetyLevel
 ├── workflow.rs     # WorkflowSpec / StateSpec / TransitionSpec / ActionSpec / ActionTarget / Range / HumanDuration
-└── parser.rs       # parse_device_yaml / parse_capability_yaml / parse_workflow_yaml
+├── parser.rs       # parse_device_yaml / parse_capability_yaml / parse_workflow_yaml
+└── pin_mapping.rs  # signal_to_pin_type / signal_to_direction / signal_id_to_label / signals_to_pin_definitions（Phase 1）
 ```
 
 ## 内部约定
@@ -26,6 +28,7 @@ crates/dsl-core/src/
 - `Range`（量程区间）YAML 表示为 `[min, max]` 数组，自定义反序列化为 `Range { min, max }`
 - `HumanDuration`（时长）YAML 表示为字符串（"30s"/"5m"/"1h"/"500ms"），自定义反序列化为毫秒数
 - `ActionTarget` 使用 `#[serde(flatten)]` 映射 `capability: <id>` / `action: <id>` 形式
+- `pin_mapping` 模块依赖 `nazh-core` 的 `PinDefinition` / `PinType` / `PinDirection` 等类型
 
 ## 修改本 crate 时
 
@@ -35,6 +38,6 @@ crates/dsl-core/src/
 
 ## 依赖约束
 
-仅依赖 `serde` + `serde_json` + `serde_yaml` + `thiserror`。
-**不得**依赖 `nazh-core` / `connections` / `scripting` / `nodes-*` / `ai` / `graph` / `store`——
-本 crate 是 Ring 1 中"零运行时依赖"的纯数据层。Phase 1+ 编译器 crate 按需引入 Ring 0 类型。
+依赖 `serde` + `serde_json` + `serde_yaml` + `thiserror` + `nazh-core`（Phase 1 pin_mapping）。
+**不得**依赖 `connections` / `scripting` / `nodes-*` / `ai` / `graph` / `store`——
+本 crate 是 Ring 1 中"零运行时依赖"的纯数据层（`nazh-core` 是 Ring 0 类型依赖）。

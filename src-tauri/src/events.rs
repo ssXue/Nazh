@@ -74,17 +74,11 @@ pub(crate) fn spawn_variable_event_forwarder(
                         tracing::debug!(?error, "变量历史记录写入失败");
                     }
                 }
-                WorkflowVariableEvent::Deleted {
-                    workflow_id,
-                    name,
-                } => {
+                WorkflowVariableEvent::Deleted { workflow_id, name } => {
                     if let Err(error) = store.delete_variable(&workflow_id, &name) {
                         tracing::debug!(?error, "变量持久化删除失败");
                     }
-                    let payload = tauri_bindings::VariableDeletedPayload {
-                        workflow_id,
-                        name,
-                    };
+                    let payload = tauri_bindings::VariableDeletedPayload { workflow_id, name };
                     if let Err(error) = app.emit("workflow://variable-deleted", payload) {
                         tracing::warn!(?error, "workflow://variable-deleted 事件转发失败");
                     }
