@@ -4,6 +4,7 @@ pub(crate) mod catalog;
 pub(crate) mod connections;
 pub(crate) mod deployment_session;
 pub(crate) mod devices;
+pub(crate) mod dsl_compiler;
 pub(crate) mod human_loop;
 pub(crate) mod observability;
 pub(crate) mod project_library;

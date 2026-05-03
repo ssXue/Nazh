@@ -44,6 +44,12 @@ export function buildSidebarSections(
       badge: hasTauriRuntime() ? 'Device DSL' : '预览态',
     },
     {
+      key: 'dsl-editor',
+      group: 'main',
+      label: 'DSL 编辑器',
+      badge: 'Workflow DSL',
+    },
+    {
       key: 'plugins',
       group: 'main',
       label: '插件管理',

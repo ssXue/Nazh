@@ -874,3 +874,37 @@ export async function copilotCompleteStream(
 
   throw new Error('AI 流式输出重试失败');
 }
+
+// ---- DSL 编译器（RFC-0004 Phase 4B）----
+
+export interface CompileWorkflowRequest {
+  workflowYaml: string;
+}
+
+export interface DiagnosticItem {
+  severity: string;
+  message: string;
+}
+
+export interface CompileWorkflowResponse {
+  graphJson: Record<string, unknown> | null;
+  error: string | null;
+  diagnostics: DiagnosticItem[];
+}
+
+export interface CompilerAssetSnapshot {
+  devices: Record<string, unknown>[];
+  capabilities: Record<string, unknown>[];
+}
+
+export async function compileWorkflowDsl(
+  request: CompileWorkflowRequest,
+): Promise<CompileWorkflowResponse> {
+  const { invoke } = await import('@tauri-apps/api/core');
+  return invoke<CompileWorkflowResponse>('compile_workflow_dsl', { request });
+}
+
+export async function loadCompilerAssetSnapshot(): Promise<CompilerAssetSnapshot> {
+  const { invoke } = await import('@tauri-apps/api/core');
+  return invoke<CompilerAssetSnapshot>('load_compiler_asset_snapshot');
+}

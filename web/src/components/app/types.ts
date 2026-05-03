@@ -19,6 +19,7 @@ export type SidebarSection =
   | 'runtime'
   | 'connections'
   | 'devices'
+  | 'dsl-editor'
   | 'plugins'
   | 'logs'
   | 'ai'

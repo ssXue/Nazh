@@ -2289,6 +2289,7 @@ version = "0.1.0"
 dependencies = [
  "ai",
  "chrono",
+ "dsl-compiler",
  "nazh-dsl-core",
  "nazh-engine",
  "serde",
