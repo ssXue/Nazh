@@ -25,6 +25,7 @@ import { BoardsPanel, type BoardItem } from './BoardsPanel';
 import { DashboardPanel } from './DashboardPanel';
 import { DeviceModelingPanel } from './DeviceModelingPanel';
 import { DslEditorPanel } from './DslEditorPanel';
+import { AiOrchestrationConsole } from './AiOrchestrationConsole';
 import { LogsPanel } from './LogsPanel';
 import { PluginPanel } from './PluginPanel';
 import { RuntimeManagerPanel } from './RuntimeManagerPanel';
@@ -369,6 +370,19 @@ export function StudioContentRouter({
           <section className="studio-content studio-content--panel">
             <ScrollSurface className="panel studio-content__panel studio-content__panel--scroll">
               <DslEditorPanel
+                isTauriRuntime={isTauriRuntime}
+                onStatusMessage={engine.setStatusMessage}
+              />
+            </ScrollSurface>
+          </section>
+        </StrictStudioPanel>
+      );
+    case 'ai-orchestration':
+      return (
+        <StrictStudioPanel>
+          <section className="studio-content studio-content--panel">
+            <ScrollSurface className="panel studio-content__panel studio-content__panel--scroll">
+              <AiOrchestrationConsole
                 isTauriRuntime={isTauriRuntime}
                 onStatusMessage={engine.setStatusMessage}
               />

@@ -1,0 +1,326 @@
+/* ── AI 编排控制台（RFC-0004 Phase 4C）── */
+
+.ai-orchestration {
+  display: grid;
+  grid-template-columns: 280px 1fr 240px;
+  gap: 0;
+  height: 100%;
+  min-height: 0;
+}
+
+.ai-orchestration__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--color-text-secondary);
+  gap: 8px;
+}
+
+.ai-orchestration__empty h2 {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.ai-orchestration__empty p {
+  font-size: 13px;
+  margin: 0;
+}
+
+/* 三栏通用 */
+.ai-orchestration__left,
+.ai-orchestration__center,
+.ai-orchestration__right {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.ai-orchestration__left {
+  border-right: 1px solid var(--color-border);
+}
+
+.ai-orchestration__right {
+  border-left: 1px solid var(--color-border);
+}
+
+.ai-orchestration__section {
+  padding: 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.ai-orchestration__section--flex {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.ai-orchestration__section h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0 0 12px;
+}
+
+.ai-orchestration__section h4 {
+  font-size: 12px;
+  font-weight: 600;
+  margin: 0 0 8px;
+  color: var(--color-text-secondary);
+}
+
+/* 目标输入 */
+.ai-orchestration__goal-input {
+  width: 100%;
+  min-height: 80px;
+  padding: 8px 10px;
+  font-size: 13px;
+  line-height: 1.5;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-bg-input);
+  color: var(--color-text);
+  resize: vertical;
+  font-family: inherit;
+}
+
+.ai-orchestration__goal-input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+.ai-orchestration__goal-input::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+/* 按钮 */
+.ai-orchestration__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.ai-orchestration__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.ai-orchestration__btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ai-orchestration__btn--primary {
+  background: var(--color-accent);
+  color: #fff;
+  border-color: var(--color-accent);
+}
+
+.ai-orchestration__btn--primary:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.ai-orchestration__btn--secondary {
+  margin-top: 8px;
+}
+
+/* 流式切换 */
+.ai-orchestration__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+/* 不确定项 */
+.ai-orchestration__uncertainties {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ai-orchestration__uncertainty {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  background: var(--color-bg-elevated);
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.ai-orchestration__uncertainty code {
+  font-size: 11px;
+  color: var(--color-accent);
+}
+
+.ai-orchestration__guess {
+  color: var(--color-text-secondary);
+}
+
+.ai-orchestration__reason {
+  color: var(--color-text-tertiary);
+}
+
+/* 警告 */
+.ai-orchestration__warnings {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ai-orchestration__warnings li {
+  font-size: 12px;
+  padding: 4px 8px;
+  background: color-mix(in srgb, var(--color-warning) 12%, transparent);
+  border-radius: 4px;
+  color: var(--color-warning);
+}
+
+/* YAML 编辑区 */
+.ai-orchestration__placeholder {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-tertiary);
+  font-size: 13px;
+}
+
+.ai-orchestration__stream-preview {
+  flex: 1;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-y: auto;
+  margin: 0;
+  padding: 8px;
+  background: var(--color-bg-elevated);
+  border-radius: 4px;
+}
+
+.ai-orchestration__yaml-editor {
+  flex: 1;
+  width: 100%;
+  min-height: 200px;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.6;
+  font-family: var(--font-mono, monospace);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-bg-input);
+  color: var(--color-text);
+  resize: vertical;
+}
+
+.ai-orchestration__yaml-editor:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+/* 编译错误 */
+.ai-orchestration__error {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: color-mix(in srgb, var(--color-error) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-error) 25%, transparent);
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.ai-orchestration__error strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--color-error);
+}
+
+.ai-orchestration__error pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 11px;
+}
+
+/* 右栏 */
+.ai-orchestration__asset-summary {
+  display: flex;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.ai-orchestration__graph-json {
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 300px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 8px;
+  background: var(--color-bg-elevated);
+  border-radius: 4px;
+}
+
+/* 状态指示 */
+.ai-orchestration__status {
+  padding: 12px 16px;
+  margin-top: auto;
+}
+
+.ai-orchestration__phase-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: 4px;
+}
+
+.ai-orchestration__phase-badge--idle {
+  background: var(--color-bg-elevated);
+  color: var(--color-text-tertiary);
+}
+
+.ai-orchestration__phase-badge--generating,
+.ai-orchestration__phase-badge--streaming,
+.ai-orchestration__phase-badge--compiling {
+  background: color-mix(in srgb, var(--color-accent) 15%, transparent);
+  color: var(--color-accent);
+}
+
+.ai-orchestration__phase-badge--ready {
+  background: color-mix(in srgb, var(--color-success) 15%, transparent);
+  color: var(--color-success);
+}
+
+.ai-orchestration__phase-badge--error {
+  background: color-mix(in srgb, var(--color-error) 12%, transparent);
+  color: var(--color-error);
+}

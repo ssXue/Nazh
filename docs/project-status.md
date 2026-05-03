@@ -47,6 +47,14 @@
 - 4 个一致性测试（`WorkflowGraph::from_json()` 守护 schema 漂移）+ 集成测试
 - 节点总数 22（+2），注册表合约测试已更新
 
+## RFC-0004 Phase 4
+
+**已完成 4A/4B/4C**（2026-05-03）。AI 生成管道对接：
+- 4A：设备/能力 AI 结构化提取提案 — `extract_device_proposal` / `extract_device_proposal_stream`（JSON 输出含 uncertainties + warnings）+ 前端 proposal 流程
+- 4B：DSL 编译器 IPC — `compile_workflow_dsl` / `load_compiler_asset_snapshot` + 前端 DSL 编辑器（YAML textarea + 编译反馈 + 资产快照）
+- 4C：AI 编排控制台 — `ai_generate_workflow_dsl` / `ai_generate_workflow_dsl_stream`（NL 目标 → Workflow DSL + 自动编译 + 不确定项标记）+ 前端三栏编排页面 + `use-dsl-orchestrator` hook
+- 4D 待完成：多轮优化、安全编译器对接（待 Phase 5）
+
 ## ADR-0012 Phase 3
 
 **已完成**（2026-05-03）。全部候选项已实施：reset/delete IPC、删除确认弹窗、React Testing Library + 组件测试、变量持久化 `crates/store/`（ADR-0022）、历史曲线 IPC + recharts 折线图、全局变量 CRUD + 前端面板。

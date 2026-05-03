@@ -18,6 +18,9 @@
 - ADR-0012 Phase 3：变量重置/删除/历史查询 IPC + 变量持久化 `crates/store/`（ADR-0022）+ 历史曲线 + 全局变量 CRUD + 删除确认弹窗
 - ADR-0022：`crates/store/` Ring 1 SQLite crate（变量快照 / 变更历史 / 全局变量 / schema 版本管理）
 - P1/P2 技术债批量偿还：变量事件独立通道（`WorkflowVariableEvent`）、`NodeOutput.metadata` 改 `Option<Map>`、Rhai `default_max_operations` 统一、`workflow.rs` 拆为三模块、前端大文件拆分、17 IPC 类型迁入 `tauri-bindings`
+- RFC-0004 Phase 4A：设备/能力 AI 结构化提取提案（`extract_device_proposal` / `extract_device_proposal_stream`）— JSON 输出含 uncertainties + warnings
+- RFC-0004 Phase 4B：DSL 编译器 IPC（`compile_workflow_dsl` / `load_compiler_asset_snapshot`）+ 前端 DSL 编辑器（YAML textarea + 编译反馈 + 资产快照）
+- RFC-0004 Phase 4C：AI 编排控制台（`ai_generate_workflow_dsl` / `ai_generate_workflow_dsl_stream`）— 从自然语言目标生成 Workflow DSL + 自动编译 + 不确定项标记
 
 ## [0.1.0] — 2025-xx-xx
 

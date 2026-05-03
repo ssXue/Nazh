@@ -20,6 +20,7 @@ export type SidebarSection =
   | 'connections'
   | 'devices'
   | 'dsl-editor'
+  | 'ai-orchestration'
   | 'plugins'
   | 'logs'
   | 'ai'

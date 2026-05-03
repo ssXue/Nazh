@@ -23,6 +23,7 @@ const SECTION_ICONS: Record<SidebarSection, typeof DashboardIcon> = {
   connections: ConnectionsIcon,
   devices: DeviceIcon,
   'dsl-editor': FileYamlIcon,
+  'ai-orchestration': AiIcon,
   plugins: ConnectionsIcon,
   logs: LogsIcon,
   ai: AiIcon,

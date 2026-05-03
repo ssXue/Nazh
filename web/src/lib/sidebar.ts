@@ -50,6 +50,12 @@ export function buildSidebarSections(
       badge: 'Workflow DSL',
     },
     {
+      key: 'ai-orchestration',
+      group: 'main',
+      label: 'AI 编排',
+      badge: hasTauriRuntime() ? 'AI 编排' : '预览态',
+    },
+    {
       key: 'plugins',
       group: 'main',
       label: '插件管理',

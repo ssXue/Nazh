@@ -53,7 +53,7 @@ flowchart TB
     end
 
     subgraph Shell["Tauri v2 桌面壳 (nazh-desktop)"]
-        S1["61 IPC 命令 · 8 workflow/copilot 事件通道"]
+        S1["67 IPC 命令 · 8 workflow/copilot 事件通道"]
         S2["运行时调度 · 部署会话 · 工程库文件"]
         S3["AI Provider 配置 · 观测日志 · 工程库文件"]
     end

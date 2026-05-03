@@ -908,3 +908,40 @@ export async function loadCompilerAssetSnapshot(): Promise<CompilerAssetSnapshot
   const { invoke } = await import('@tauri-apps/api/core');
   return invoke<CompilerAssetSnapshot>('load_compiler_asset_snapshot');
 }
+
+// ---- AI 编排生成（RFC-0004 Phase 4C）----
+
+export interface UncertaintyItem {
+  fieldPath: string;
+  guessedValue: string;
+  reason: string;
+}
+
+export interface AiWorkflowDslProposal {
+  workflowYaml: string;
+  uncertainties: UncertaintyItem[];
+  warnings: string[];
+  compileResult: CompileWorkflowResponse | null;
+}
+
+export async function aiGenerateWorkflowDsl(
+  goal: string,
+  providerId?: string | null,
+): Promise<AiWorkflowDslProposal> {
+  return invoke<AiWorkflowDslProposal>('ai_generate_workflow_dsl', {
+    goal,
+    providerId: providerId ?? null,
+  });
+}
+
+export async function aiGenerateWorkflowDslStream(
+  goal: string,
+  providerId: string | null,
+  streamId: string,
+): Promise<void> {
+  return invoke<void>('ai_generate_workflow_dsl_stream', {
+    goal,
+    providerId: providerId ?? null,
+    streamId,
+  });
+}
