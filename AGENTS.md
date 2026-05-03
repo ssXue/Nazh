@@ -8,7 +8,7 @@ It is read by both humans and AI agents (Claude Code, OpenCode, Cursor, etc.). `
 
 Nazh is an industrial-edge workflow orchestration engine with AI as a first-class capability. It connects device ingestion, data transformation, scripted logic, AI-assisted authoring, and a desktop operations UI into a single local runtime.
 
-Stack: **Rust engine (Cargo workspace, 11 packages) + Tauri v2 desktop shell + React 18 / FlowGram.AI canvas**.
+Stack: **Rust engine (Cargo workspace, 12 packages) + Tauri v2 desktop shell + React 18 / FlowGram.AI canvas**.
 
 Everything runs in one process — no HTTP/gRPC server, no external broker. AI features (script generation, thinking-mode completions, workflow composition) flow through the `AiService` trait in Ring 0 (`nazh_core::ai`); the OpenAI-compatible HTTP/SSE implementation lives in the `ai` crate (ADR-0019).
 
@@ -54,7 +54,7 @@ cargo deny check
 
 ### Three-Layer Stack
 
-1. **Rust Engine** — Cargo workspace rooted at `/` with 11 packages (see below). Public facade is the `nazh-engine` library crate at `src/lib.rs`.
+1. **Rust Engine** — Cargo workspace rooted at `/` with 12 packages (see below). Public facade is the `nazh-engine` library crate at `src/lib.rs`.
 2. **Tauri Shell** (`src-tauri/`) — Desktop app binary `nazh-desktop`. Exposes IPC commands to the frontend, bridges engine events to the UI, manages shell-side concerns (observability store, project library files, AI config, runtime dispatch queues, deployment session files).
 3. **React Frontend** (`web/`) — Vite + React 18 + TypeScript + FlowGram.AI. Communicates **exclusively** via Tauri `invoke` / `Window::emit` — no HTTP or gRPC.
 
@@ -74,6 +74,7 @@ crates/
   graph/             # Ring 1 — DAG 工作流编排：解析、校验、拓扑排序、部署与执行（ADR-0020）
   tauri-bindings/    # IPC — Tauri 命令请求/响应类型 + ts-rs 导出汇总（ADR-0017）
   store/              # Ring 1 — SQLite 持久化：变量 / 历史 / 全局变量（ADR-0022）
+  dsl-core/           # Ring 1 — 三段式 DSL 类型定义与 YAML 解析：Device / Capability / Workflow（RFC-0004）
 src/                 # Root facade crate `nazh-engine` — re-export + `standard_registry()`
 src-tauri/           # Tauri shell binary `nazh-desktop`
 web/                 # Frontend workspace

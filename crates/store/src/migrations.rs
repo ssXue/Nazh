@@ -3,9 +3,10 @@
 use rusqlite::Connection;
 
 /// 内联 SQL migrations，按版本号顺序执行。
-const MIGRATIONS: &[(&str, &str)] = &[(
-    "001",
-    "
+const MIGRATIONS: &[(&str, &str)] = &[
+    (
+        "001",
+        "
         CREATE TABLE IF NOT EXISTS schema_version (
             version    INTEGER PRIMARY KEY,
             applied_at TEXT NOT NULL
@@ -43,7 +44,41 @@ const MIGRATIONS: &[(&str, &str)] = &[(
             PRIMARY KEY (namespace, key)
         );
         ",
-)];
+    ),
+    (
+        "002",
+        "
+        CREATE TABLE IF NOT EXISTS device_assets (
+            id          TEXT PRIMARY KEY,
+            name        TEXT NOT NULL,
+            device_type TEXT NOT NULL,
+            version     INTEGER NOT NULL DEFAULT 1,
+            spec_json   TEXT NOT NULL,
+            created_at  TEXT NOT NULL,
+            updated_at  TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS device_asset_versions (
+            asset_id        TEXT NOT NULL,
+            version         INTEGER NOT NULL,
+            spec_json       TEXT NOT NULL,
+            source_summary  TEXT,
+            created_at      TEXT NOT NULL,
+            PRIMARY KEY (asset_id, version)
+        );
+
+        CREATE TABLE IF NOT EXISTS device_asset_sources (
+            asset_id    TEXT NOT NULL,
+            field_path  TEXT NOT NULL,
+            source_text TEXT NOT NULL,
+            confidence  REAL NOT NULL,
+            created_at  TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_device_asset_sources_asset
+            ON device_asset_sources(asset_id);
+        ",
+    ),
+];
 
 /// 检查 `schema_version` 表，执行尚未应用的 migrations。
 pub(crate) fn run(db: &Connection) -> Result<(), rusqlite::Error> {
