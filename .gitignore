@@ -88,3 +88,5 @@ examples/flowgram.ai-main.zip
 
 # Git worktrees
 .worktrees/
+# Added by code-review-graph
+.code-review-graph/

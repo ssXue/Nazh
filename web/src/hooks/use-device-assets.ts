@@ -151,6 +151,25 @@ export function useDeviceAssets() {
     [],
   );
 
+  const extractTextFromPdf = useCallback(
+    async (pdfBase64: string): Promise<string> => {
+      if (!hasTauriRuntime()) throw new Error('需要 Tauri 运行时');
+      return invoke<string>('extract_text_from_pdf', { pdfBase64 });
+    },
+    [],
+  );
+
+  const extractFromPdf = useCallback(
+    async (pdfBase64: string, providerId?: string): Promise<ExtractionProposal> => {
+      if (!hasTauriRuntime()) throw new Error('需要 Tauri 运行时');
+      return invoke<ExtractionProposal>('extract_device_from_pdf', {
+        pdfBase64,
+        providerId: providerId ?? null,
+      });
+    },
+    [],
+  );
+
   const listVersions = useCallback(
     async (assetId: string) => {
       if (!hasTauriRuntime()) return [];
@@ -176,5 +195,7 @@ export function useDeviceAssets() {
     loadSources,
     saveSources,
     listVersions,
+    extractTextFromPdf,
+    extractFromPdf,
   };
 }

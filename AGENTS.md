@@ -125,12 +125,12 @@ IPC boundary types are defined once in Rust and auto-generated to TypeScript via
 
 Workflow commands are split across `workflow_deploy.rs` / `workflow_dispatch.rs` / `workflow_undeploy.rs` (since 2026-05-03, was single `workflow.rs`). Other command domains remain in their respective files (`ai.rs`, `catalog.rs`, `connections.rs`, `variables.rs`, `devices.rs`, etc.).
 
-67 commands covering:
+69 commands covering:
 - workflow lifecycle/runtime: `deploy_workflow`, `dispatch_payload`, `undeploy_workflow`, `list_runtime_workflows`, `set_active_runtime_workflow`, `list_dead_letters`
 - node / pin catalog: `list_node_types`, `describe_node_pins`
 - workflow variables: `snapshot_workflow_variables`, `set_workflow_variable`, `delete_workflow_variable`, `reset_workflow_variable`, `query_variable_history`, `set_global_variable`, `get_global_variable`, `list_global_variables`, `delete_global_variable`
 - connections: `list_connections`, `load_connection_definitions`, `save_connection_definitions`
-- device assets（RFC-0004 Phase 1）: `list_device_assets`, `load_device_asset`, `save_device_asset`, `delete_device_asset`, `list_asset_versions`, `load_asset_version`, `extract_device_from_text`, `extract_device_from_text_stream`, `generate_pin_schema`, `save_device_asset_sources`, `load_device_asset_sources`
+- device assets（RFC-0004 Phase 1）: `list_device_assets`, `load_device_asset`, `save_device_asset`, `delete_device_asset`, `list_asset_versions`, `load_asset_version`, `extract_device_from_text`, `extract_device_from_text_stream`, `generate_pin_schema`, `save_device_asset_sources`, `load_device_asset_sources`, `extract_text_from_pdf`, `extract_device_from_pdf`
 - device AI extraction（RFC-0004 Phase 4A）: `extract_device_proposal`, `extract_device_proposal_stream`
 - DSL compiler（RFC-0004 Phase 4B）: `compile_workflow_dsl`, `load_compiler_asset_snapshot`
 - AI orchestration（RFC-0004 Phase 4C）: `ai_generate_workflow_dsl`, `ai_generate_workflow_dsl_stream`
@@ -404,3 +404,42 @@ Ambiguous match found for serviceIdentifier: FlowRendererRegistry
 ## Project Status
 
 → 详见 [`docs/project-status.md`](docs/project-status.md)（ADR 实施状态、技术债追踪、执行顺序）。
+
+<!-- code-review-graph MCP tools -->
+## MCP Tools: code-review-graph
+
+**IMPORTANT: This project has a knowledge graph. ALWAYS use the
+code-review-graph MCP tools BEFORE using Grep/Glob/Read to explore
+the codebase.** The graph is faster, cheaper (fewer tokens), and gives
+you structural context (callers, dependents, test coverage) that file
+scanning cannot.
+
+### When to use graph tools FIRST
+
+- **Exploring code**: `semantic_search_nodes` or `query_graph` instead of Grep
+- **Understanding impact**: `get_impact_radius` instead of manually tracing imports
+- **Code review**: `detect_changes` + `get_review_context` instead of reading entire files
+- **Finding relationships**: `query_graph` with callers_of/callees_of/imports_of/tests_for
+- **Architecture questions**: `get_architecture_overview` + `list_communities`
+
+Fall back to Grep/Glob/Read **only** when the graph doesn't cover what you need.
+
+### Key Tools
+
+| Tool | Use when |
+|------|----------|
+| `detect_changes` | Reviewing code changes — gives risk-scored analysis |
+| `get_review_context` | Need source snippets for review — token-efficient |
+| `get_impact_radius` | Understanding blast radius of a change |
+| `get_affected_flows` | Finding which execution paths are impacted |
+| `query_graph` | Tracing callers, callees, imports, tests, dependencies |
+| `semantic_search_nodes` | Finding functions/classes by name or keyword |
+| `get_architecture_overview` | Understanding high-level codebase structure |
+| `refactor_tool` | Planning renames, finding dead code |
+
+### Workflow
+
+1. The graph auto-updates on file changes (via hooks).
+2. Use `detect_changes` for code review.
+3. Use `get_affected_flows` to understand impact.
+4. Use `query_graph` pattern="tests_for" to check coverage.

@@ -14,6 +14,7 @@ use store::{
 use tauri::{AppHandle, Emitter, State};
 
 use crate::state::DesktopState;
+use base64::Engine;
 
 // ---- IPC 响应类型 ----
 
@@ -151,7 +152,8 @@ pub(crate) async fn extract_device_from_text(
     text: String,
     provider_id: Option<String>,
 ) -> Result<String, String> {
-    let request = build_extraction_request(&text, provider_id);
+    let resolved = resolve_provider_id(&state, provider_id).await?;
+    let request = build_extraction_request(&text, resolved);
 
     let response = state
         .ai_service
@@ -175,7 +177,8 @@ pub(crate) async fn extract_device_from_text_stream(
     provider_id: Option<String>,
     stream_id: String,
 ) -> Result<(), String> {
-    let request = build_extraction_request(&text, provider_id);
+    let resolved = resolve_provider_id(&state, provider_id).await?;
+    let request = build_extraction_request(&text, resolved);
     let service = Arc::clone(&state.ai_service);
     let mut rx = service
         .stream_complete(request)
@@ -271,29 +274,57 @@ pub(crate) async fn extract_device_proposal(
     text: String,
     provider_id: Option<String>,
 ) -> Result<DeviceExtractionProposal, String> {
-    let request = build_proposal_request(&text, provider_id);
+    let resolved = resolve_provider_id(&state, provider_id).await.map_err(|e| {
+        tracing::error!(error = %e, "解析 AI 提供商失败");
+        e
+    })?;
+    tracing::info!(
+        provider_id = %resolved,
+        text_len = text.len(),
+        "AI 结构化抽取开始（文本模式）"
+    );
+    let request = build_proposal_request(&text, resolved);
 
     let response = state
         .ai_service
         .complete(request)
         .await
-        .map_err(|e| format!("AI 结构化抽取失败: {e}"))?;
+        .map_err(|e| {
+            let msg = format!("AI 结构化抽取失败: {e}");
+            tracing::error!(error = %e, "AI completion 请求失败");
+            msg
+        })?;
 
-    // 从 AI 响应中提取 JSON
+    tracing::info!(
+        response_len = response.content.len(),
+        "AI 响应已收到，开始解析"
+    );
+
     let json_text = extract_json_from_response(&response.content);
 
-    // 解析 JSON 结构
     let raw: RawExtractionProposal =
-        serde_json::from_str(&json_text).map_err(|e| format!("AI 输出 JSON 结构无效: {e}"))?;
+        serde_json::from_str(&json_text).map_err(|e| {
+            let msg = format!("AI 输出 JSON 结构无效: {e}");
+            tracing::error!(
+                error = %e,
+                json_preview = %json_text.chars().take(500).collect::<String>(),
+                "AI 响应 JSON 反序列化失败"
+            );
+            msg
+        })?;
 
-    // 校验 device_yaml 合法性
     parse_device_yaml(&raw.device_yaml)
-        .map_err(|e| format!("AI 生成的 deviceYaml 不是合法 DeviceSpec: {e}"))?;
+        .map_err(|e| {
+            let msg = format!("AI 生成的 deviceYaml 不是合法 DeviceSpec: {e}");
+            tracing::error!(error = %e, yaml_preview = %raw.device_yaml.chars().take(300).collect::<String>(), "{}", msg);
+            msg
+        })?;
 
-    // 校验每个 capability_yaml 合法性（允许空列表）
     for (idx, cap_yaml) in raw.capability_yamls.iter().enumerate() {
         parse_capability_yaml(cap_yaml).map_err(|e| {
-            format!("AI 生成的 capabilityYamls[{idx}] 不是合法 CapabilitySpec: {e}")
+            let msg = format!("AI 生成的 capabilityYamls[{idx}] 不是合法 CapabilitySpec: {e}");
+            tracing::error!(error = %e, idx, "{}", msg);
+            msg
         })?;
     }
 
@@ -314,7 +345,8 @@ pub(crate) async fn extract_device_proposal_stream(
     provider_id: Option<String>,
     stream_id: String,
 ) -> Result<(), String> {
-    let request = build_proposal_request(&text, provider_id);
+    let resolved = resolve_provider_id(&state, provider_id).await?;
+    let request = build_proposal_request(&text, resolved);
     let service = Arc::clone(&state.ai_service);
     let mut rx = service
         .stream_complete(request)
@@ -407,6 +439,115 @@ pub(crate) async fn load_device_asset_sources(
         .map_err(|e| format!("加载来源记录失败: {e}"))
 }
 
+// ---- PDF 文本提取 ----
+
+/// 从 PDF 文件（base64 编码）中提取纯文本。
+#[tauri::command]
+pub(crate) async fn extract_text_from_pdf(
+    pdf_base64: String,
+) -> Result<String, String> {
+    let pdf_bytes = base64::engine::general_purpose::STANDARD
+        .decode(&pdf_base64)
+        .map_err(|e| format!("PDF base64 解码失败: {e}"))?;
+
+    tracing::info!(
+        "PDF 文本提取开始，文件大小 {} 字节",
+        pdf_bytes.len()
+    );
+
+    let text = pdf_extract::extract_text_from_mem(&pdf_bytes)
+        .map_err(|e| format!("PDF 文本提取失败: {e}"))?;
+
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return Err("PDF 文本提取结果为空，文件可能是扫描件或图片型 PDF".to_owned());
+    }
+
+    tracing::info!(
+        "PDF 文本提取完成，提取字符数 {}",
+        trimmed.len()
+    );
+
+    Ok(trimmed.to_owned())
+}
+
+/// 从 PDF 文件中提取文本并执行 AI 结构化抽取（一步到位）。
+#[tauri::command]
+pub(crate) async fn extract_device_from_pdf(
+    state: State<'_, DesktopState>,
+    pdf_base64: String,
+    provider_id: Option<String>,
+) -> Result<DeviceExtractionProposal, String> {
+    tracing::info!("PDF 设备抽取开始：先提取文本");
+
+    let text = extract_text_from_pdf(pdf_base64).await.map_err(|e| {
+        tracing::error!(error = %e, "PDF 文本提取失败");
+        e
+    })?;
+
+    let resolved = resolve_provider_id(&state, provider_id).await.map_err(|e| {
+        tracing::error!(error = %e, "解析 AI 提供商失败");
+        e
+    })?;
+    tracing::info!(
+        provider_id = %resolved,
+        text_len = text.len(),
+        "PDF 文本提取完成，开始 AI 结构化抽取"
+    );
+    let request = build_proposal_request(&text, resolved);
+
+    let response = state
+        .ai_service
+        .complete(request)
+        .await
+        .map_err(|e| {
+            let msg = format!("AI 结构化抽取失败: {e}");
+            tracing::error!(error = %e, "AI completion 请求失败");
+            msg
+        })?;
+
+    tracing::info!(
+        response_len = response.content.len(),
+        "AI 响应已收到，开始解析"
+    );
+
+    let json_text = extract_json_from_response(&response.content);
+    tracing::debug!(json_len = json_text.len(), "JSON 文本已提取，开始反序列化");
+
+    let raw: RawExtractionProposal =
+        serde_json::from_str(&json_text).map_err(|e| {
+            let msg = format!("AI 输出 JSON 结构无效: {e}");
+            tracing::error!(
+                error = %e,
+                json_preview = %json_text.chars().take(500).collect::<String>(),
+                "AI 响应 JSON 反序列化失败"
+            );
+            msg
+        })?;
+
+    parse_device_yaml(&raw.device_yaml)
+        .map_err(|e| {
+            let msg = format!("AI 生成的 deviceYaml 不是合法 DeviceSpec: {e}");
+            tracing::error!(error = %e, yaml_preview = %raw.device_yaml.chars().take(300).collect::<String>(), "{}", msg);
+            msg
+        })?;
+
+    for (idx, cap_yaml) in raw.capability_yamls.iter().enumerate() {
+        parse_capability_yaml(cap_yaml).map_err(|e| {
+            let msg = format!("AI 生成的 capabilityYamls[{idx}] 不是合法 CapabilitySpec: {e}");
+            tracing::error!(error = %e, idx, "{}", msg);
+            msg
+        })?;
+    }
+
+    Ok(DeviceExtractionProposal {
+        device_yaml: raw.device_yaml,
+        capability_yamls: raw.capability_yamls,
+        uncertainties: raw.uncertainties,
+        warnings: raw.warnings,
+    })
+}
+
 // ---- 辅助函数 ----
 
 /// 获取 Store 的 Arc 引用。
@@ -418,10 +559,28 @@ fn get_store(state: &State<'_, DesktopState>) -> Result<Arc<Store>, String> {
         .map_err(|e| format!("Store 锁异常: {e}"))
 }
 
+/// 解析有效的 `provider_id`：若传入为空则回退到配置中的活跃提供商。
+async fn resolve_provider_id(
+    state: &State<'_, DesktopState>,
+    provider_id: Option<String>,
+) -> Result<String, String> {
+    if let Some(id) = provider_id.filter(|s| !s.is_empty()) {
+        return Ok(id);
+    }
+    let config = state
+        .ai_config
+        .read()
+        .await;
+    config
+        .active_provider_id
+        .clone()
+        .ok_or_else(|| "未配置 AI 提供商，请先在设置中添加并启用一个提供商".to_owned())
+}
+
 /// 构建 AI 抽取请求。
-fn build_extraction_request(text: &str, provider_id: Option<String>) -> AiCompletionRequest {
+fn build_extraction_request(text: &str, provider_id: String) -> AiCompletionRequest {
     AiCompletionRequest {
-        provider_id: provider_id.unwrap_or_default(),
+        provider_id,
         model: None,
         messages: vec![
             AiMessage {
@@ -435,7 +594,7 @@ fn build_extraction_request(text: &str, provider_id: Option<String>) -> AiComple
         ],
         params: AiGenerationParams {
             temperature: Some(0.1),
-            max_tokens: Some(4096),
+            max_tokens: None,
             ..Default::default()
         },
         timeout_ms: None,
@@ -461,18 +620,30 @@ fn build_extraction_prompt(text: &str) -> String {
              signal_type: <analog_input / analog_output / digital_input / digital_output>\n\
              unit: <单位>  # 可选\n\
              range: [min, max]  # 可选\n\
-             source:\n\
-               type: <register / topic / serial_command>\n\
-               register: <地址>  # register 类型\n\
-               data_type: <float32 / u16 / ...>\n\
-               access: <read / write / read_write>\n\
+             source:  # 三种类型，必须提供对应字段\n\
+               # register 类型（Modbus）：\n\
+               type: register\n\
+               register: <地址，整数>\n\
+               data_type: <bool / u16 / i16 / u32 / i32 / f32 / f64>\n\
+               access: <read / write / read_write>  # 默认 read\n\
                bit: <位号>  # 可选\n\
+               # topic 类型（MQTT）：\n\
+               # type: topic\n\
+               # topic: <MQTT 主题路径>\n\
+               # serial_command 类型（串口）：\n\
+               # type: serial_command\n\
+               # command: <串口命令字符串>\n\
          alarms:\n\
            - id: <告警 ID>\n\
              condition: <Rhai 条件表达式>\n\
              severity: <info / warning / critical>\n\
              action: <动作>  # 可选\n\
          ```\n\n\
+         重要规则：\n\
+         - source.type 为 register 时必须提供 register 和 data_type 字段\n\
+         - source.type 为 topic 时必须提供 topic 字段\n\
+         - source.type 为 serial_command 时必须提供 command 字段\n\
+         - 如果说明书中未明确指定协议，优先使用 register 类型\n\n\
          说明书文本：\n---\n{text}\n---"
     )
 }
@@ -506,9 +677,9 @@ fn extract_json_from_response(content: &str) -> String {
 }
 
 /// 构建 AI 结构化提案请求。
-fn build_proposal_request(text: &str, provider_id: Option<String>) -> AiCompletionRequest {
+fn build_proposal_request(text: &str, provider_id: String) -> AiCompletionRequest {
     AiCompletionRequest {
-        provider_id: provider_id.unwrap_or_default(),
+        provider_id,
         model: None,
         messages: vec![
             AiMessage {
@@ -522,7 +693,7 @@ fn build_proposal_request(text: &str, provider_id: Option<String>) -> AiCompleti
         ],
         params: AiGenerationParams {
             temperature: Some(0.1),
-            max_tokens: Some(8192),
+            max_tokens: None,
             ..Default::default()
         },
         timeout_ms: None,
@@ -548,16 +719,28 @@ fn build_proposal_prompt(text: &str) -> String {
              signal_type: <analog_input / analog_output / digital_input / digital_output>\n\
              unit: <单位>\n\
              range: [min, max]\n\
-             source:\n\
-               type: <register / topic / serial_command>\n\
-               register: <地址>\n\
-               data_type: <float32 / u16>\n\
+             source:  # 三种类型，必须提供对应字段\n\
+               # register 类型（Modbus）：\n\
+               type: register\n\
+               register: <地址，整数>\n\
+               data_type: <bool / u16 / i16 / u32 / i32 / f32 / f64>\n\
                access: <read / write / read_write>\n\
+               # topic 类型（MQTT）：\n\
+               # type: topic\n\
+               # topic: <MQTT 主题路径>\n\
+               # serial_command 类型（串口）：\n\
+               # type: serial_command\n\
+               # command: <串口命令字符串>\n\
          alarms:\n\
            - id: <告警 ID>\n\
              condition: <Rhai 表达式>\n\
              severity: <info / warning / critical>\n\
          ```\n\n\
+         重要规则：\n\
+         - source.type 为 register 时必须提供 register 和 data_type 字段\n\
+         - source.type 为 topic 时必须提供 topic 字段\n\
+         - source.type 为 serial_command 时必须提供 command 字段\n\
+         - 如果说明书中未明确指定协议，优先使用 register 类型\n\n\
          CapabilitySpec 结构参考：\n\
          ```yaml\n\
          id: <能力 ID，格式 device.action>\n\

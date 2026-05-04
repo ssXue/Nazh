@@ -50,7 +50,7 @@ ts-rs 导出：`AiAgentSettings` / `AiConfigView` / `AiConfigUpdate` / `AiProvid
 
 ## 依赖约束
 
-- **允许**：`nazh-core`（trait + 类型源头）、`reqwest`（stream feature）、`serde`、`serde_json`、`futures-util`、`async-trait`、`tokio`、`ts-rs`（optional）
+- **允许**：`nazh-core`（trait + 类型源头）、`reqwest`（stream feature）、`serde`、`serde_json`、`futures-util`、`async-trait`、`tokio`、`tracing`、`ts-rs`（optional）
 - **禁止**：`connections`、`nodes-*`、`scripting`、`nodes-flow`——本 crate 是叶子节点，不向上反向依赖
 
 依赖图预期：`nazh-core` ← `ai`，`nazh-core` ← `scripting`，`nazh-core` ← `nodes-flow`。三者互不依赖。

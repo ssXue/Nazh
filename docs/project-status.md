@@ -1,4 +1,4 @@
-# Project Status（2026-05-03）
+# Project Status（2026-05-04）
 
 从 `AGENTS.md` 拆出的项目状态追踪。本文件随 ADR 落地、技术债偿还、路线图推进而更新。
 
@@ -54,6 +54,15 @@
 - 4B：DSL 编译器 IPC — `compile_workflow_dsl` / `load_compiler_asset_snapshot` + 前端 DSL 编辑器（YAML textarea + 编译反馈 + 资产快照）
 - 4C：AI 编排控制台 — `ai_generate_workflow_dsl` / `ai_generate_workflow_dsl_stream`（NL 目标 → Workflow DSL + 自动编译 + 不确定项标记）+ 前端三栏编排页面 + `use-dsl-orchestrator` hook + "导入画布"按钮（ADR-0021 闭环）
 - 4D 已完成：安全编译器对接（随 Phase 5 一起完成）
+
+## 设备建模页优化（2026-05-04）
+
+设备建模前端全面优化 + PDF 说明书录入支持：
+- **导入抽屉**：独立右侧滑入抽屉（`DeviceImportDrawer.tsx`），支持文本粘贴和 PDF 文件拖拽上传两种模式，多阶段进度条缓解等待焦虑
+- **PDF 文本提取**：Rust 后端 `pdf-extract` crate + base64 IPC 传输；新增 `extract_text_from_pdf` / `extract_device_from_pdf` 两个 IPC 命令
+- **设备列表优化**：卡片式列表 + 搜索过滤 + 类型徽章 + 空状态 CTA
+- **详情视图优化**：徽章行 + section 卡片 + 表格样式
+- **AI 抽取健壮性**：`resolve_provider_id()` 回退到 active_provider_id；AI 响应容错解析（`#[serde(default)]` + body preview）；`max_tokens: None` 尊重 per-provider 配置；`ai=info` 加入默认 tracing filter
 
 ## RFC-0004 Phase 5
 

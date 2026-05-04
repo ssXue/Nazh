@@ -226,20 +226,28 @@ struct ChatMessagePayload {
 
 #[derive(Debug, Deserialize)]
 struct ChatCompletionApiResponse {
+    #[serde(default)]
     choices: Vec<ChatChoice>,
     #[serde(default)]
     usage: Option<ChatUsage>,
+    #[serde(default)]
     model: String,
 }
 
 #[derive(Debug, Deserialize)]
 struct ChatChoice {
     message: ChatMessageResponse,
+    #[serde(default)]
+    #[allow(dead_code)]
+    finish_reason: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 struct ChatMessageResponse {
     content: String,
+    #[serde(default)]
+    #[allow(dead_code)]
+    reasoning_content: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -484,6 +492,14 @@ impl AiService for OpenAiCompatibleService {
         let model = request.model.as_deref().unwrap_or(&provider.default_model);
         let timeout_ms = request.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS);
 
+        tracing::info!(
+            provider = %request.provider_id,
+            model = %model,
+            messages = request.messages.len(),
+            timeout_ms,
+            "AI completion 请求发送"
+        );
+
         let body = build_chat_payload(
             model.to_owned(),
             build_chat_messages(&request.messages),
@@ -515,10 +531,24 @@ impl AiService for OpenAiCompatibleService {
             return Err(parse_api_error(status, &body));
         }
 
-        let chat_response: ChatCompletionApiResponse = response
-            .json()
+        // 先读取原始 body 再解析，便于诊断截断/格式问题
+        let body_text = response
+            .text()
             .await
             .map_err(|error| AiError::ResponseParseError(error.to_string()))?;
+        let chat_response: ChatCompletionApiResponse = serde_json::from_str(&body_text)
+            .map_err(|error| {
+                let preview = if body_text.len() > 200 {
+                    format!("{}...（共 {} 字节）", &body_text[..200], body_text.len())
+                } else {
+                    body_text.clone()
+                };
+                AiError::ResponseParseError(format!(
+                    "{error}；原始响应: {preview}；\
+                     常见原因：AI 输出超过 max_tokens 被截断导致 JSON 不完整，\
+                     或上游返回了非标准 OpenAI 格式"
+                ))
+            })?;
 
         let content = chat_response
             .choices
@@ -532,6 +562,13 @@ impl AiService for OpenAiCompatibleService {
             completion_tokens: u.completion_tokens,
             total_tokens: u.total_tokens,
         });
+
+        tracing::info!(
+            content_len = content.len(),
+            prompt_tokens = usage.as_ref().map_or(0, |u| u.prompt_tokens),
+            completion_tokens = usage.as_ref().map_or(0, |u| u.completion_tokens),
+            "AI completion 响应成功"
+        );
 
         Ok(AiCompletionResponse {
             content,

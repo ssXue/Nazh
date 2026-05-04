@@ -283,6 +283,27 @@ export function FileYamlIcon(props: IconProps) {
   );
 }
 
+export function FilePdfIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="M7 4h7l4 4v10a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" />
+      <path d="M14 4v4h4" />
+      <path d="M9 10h3" />
+      <path d="M9 13h6" />
+      <path d="M9 16h4" />
+    </BaseIcon>
+  );
+}
+
+export function SearchIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <circle cx="10.5" cy="10.5" r="6" />
+      <path d="m20 20-4.3-4.3" />
+    </BaseIcon>
+  );
+}
+
 export function MinimapIcon(props: IconProps) {
   return (
     <BaseIcon {...props}>

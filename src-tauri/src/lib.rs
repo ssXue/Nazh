@@ -29,7 +29,7 @@ fn init_tracing() {
     use tracing_subscriber::EnvFilter;
 
     let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("nazh_engine=info,nazh_desktop_lib=info"));
+        .unwrap_or_else(|_| EnvFilter::new("nazh_engine=info,nazh_desktop_lib=info,ai=info"));
 
     tracing_subscriber::fmt()
         .with_env_filter(filter)
@@ -88,6 +88,7 @@ fn init_persistent_store(app: &tauri::App) {
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+#[allow(clippy::too_many_lines)]
 pub fn run() {
     init_tracing();
 
@@ -180,6 +181,8 @@ pub fn run() {
             commands::devices::generate_pin_schema,
             commands::devices::save_device_asset_sources,
             commands::devices::load_device_asset_sources,
+            commands::devices::extract_text_from_pdf,
+            commands::devices::extract_device_from_pdf,
             commands::capabilities::list_capabilities,
             commands::capabilities::load_capability,
             commands::capabilities::save_capability,
