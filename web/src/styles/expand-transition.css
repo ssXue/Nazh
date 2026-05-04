@@ -60,7 +60,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: color-mix(in srgb, var(--panel) 80%, transparent);
+  background: color-mix(in srgb, var(--panel) 0%, transparent);
   backdrop-filter: blur(4px);
   animation: expand-overlay-enter 480ms cubic-bezier(0.16, 1, 0.3, 1);
   transform-origin: center center;

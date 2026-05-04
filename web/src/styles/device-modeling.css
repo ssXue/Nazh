@@ -192,6 +192,27 @@
   color: var(--danger-ink);
 }
 
+/* ── 详情弹窗（居中浮层） ── */
+
+.dm-detail-dialog {
+  width: 720px;
+  max-width: 92vw;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-lg, 16px);
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+}
+
+.dm-detail-dialog__body {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
 /* ── 详情头部 ── */
 
 .dm-detail-header {
@@ -348,6 +369,79 @@
 .dm-tag--signal-digital {
   background: var(--success-soft);
   color: var(--success-ink);
+}
+
+/* ── 能力标签（与信号标签统一圆角样式） ── */
+
+.dm-cap-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.dm-cap-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
+  padding: 2px 10px;
+  border-radius: var(--radius-pill, 999px);
+  border: 1px solid var(--panel-border);
+  background: var(--surface-elevated);
+  color: var(--text-soft);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.dm-cap-tag:hover {
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  color: var(--accent);
+}
+
+.dm-cap-tag.is-active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+.dm-cap-tag--action {
+  border-color: color-mix(in srgb, var(--accent-border) 28%, transparent);
+  background: color-mix(in srgb, var(--accent-soft) 24%, var(--surface-muted) 76%);
+  color: var(--accent);
+}
+
+.dm-cap-tag--action:hover:not(:disabled) {
+  background: var(--accent);
+  color: white;
+}
+
+.dm-cap-tag--action:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.dm-cap-tag--generated {
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.dm-cap-tag__save {
+  padding: 0 6px;
+  border: none;
+  background: var(--accent-soft);
+  border-radius: var(--radius-pill, 999px);
+  color: var(--accent-ink);
+  font-size: 10px;
+  cursor: pointer;
+  line-height: 18px;
+}
+
+.dm-cap-tag__save:hover {
+  background: var(--accent);
+  color: white;
 }
 
 /* ── 表格 ── */

@@ -18,7 +18,6 @@ import type {
   WorkflowGraph,
   WorkflowWindowStatus,
 } from '../../types';
-import { ExpandTransition } from './ExpandTransition';
 import { AboutPanel } from './AboutPanel';
 import { AiConfigPanel } from './AiConfigPanel';
 import { BoardWorkspace, type BoardWorkspaceHandle } from './BoardWorkspace';
@@ -209,100 +208,94 @@ export function StudioContentRouter({
           </section>
         </StrictStudioPanel>
       );
-    case 'boards': {
-      const boardActive = activeBoard !== null && activeProject !== null;
-      return (
-        <div style={{ position: 'relative', height: '100%', minHeight: 0, overflow: 'hidden' }}>
-          <ExpandTransition
-            active={boardActive}
-            base={
-              <StrictStudioPanel>
-                <section className="studio-content studio-content--panel">
-                  <ScrollSurface className="panel studio-content__panel studio-content__panel--scroll">
-                    <BoardsPanel
-                      boards={boardItems}
-                      onOpenBoard={onOpenBoard}
-                      onCreateBoard={onCreateBoard}
-                      onStartAiCreate={onOpenAiCreate}
-                      onImportBoardFile={onImportBoardFile}
-                      onDeleteBoard={onDeleteBoard}
-                      aiActionTitle={aiActionTitle}
-                      aiActionDisabled={aiActionDisabled}
-                      aiActionLoading={aiActionLoadingCreate}
-                    />
-                  </ScrollSurface>
-                </section>
-              </StrictStudioPanel>
-            }
-            overlay={boardActive ? (
-              <section className="studio-content studio-content--board">
-                <BoardWorkspace
-                  ref={flowgramCanvasRef}
-                  project={activeProject}
-                  graph={graph}
-                  nodeCount={graphNodeCount}
-                  connectionPreview={connectionPreview}
-                  themeMode={settings.themeMode}
-                  isRuntimeDockCollapsed={engine.isRuntimeDockCollapsed}
-                  flowgramResources={{
-                    connections: connectionLibrary.connections,
-                    aiProviders: aiConfig?.providers ?? [],
-                    activeAiProviderId: aiConfig?.activeProviderId ?? null,
-                    copilotParams: aiConfig?.copilotParams ?? {},
-                  }}
-                  flowgramRuntime={{
-                    runtimeState: engine.runtimeState,
-                    workflowStatus,
-                    canTestRun,
-                  }}
-                  flowgramAppearance={{
-                    accentHex: settings.accentHex,
-                    themeMode: settings.themeMode,
-                    nodeCodeColor: settings.accentThemeVariables['--node-code'],
-                  }}
-                  flowgramExportTarget={{
-                    workspacePath: settings.projectWorkspacePath,
-                    workflowName: activeProject.name,
-                  }}
-                  flowgramActions={{
-                    onRunRequested: onStartDeploy,
-                    onStopRequested: onStopDeploy,
-                    onTestRunRequested: onTestRun,
-                    onGraphChange,
-                    onError: engine.handleFlowgramError,
-                    onStatusMessage: engine.setStatusMessage,
-                  }}
-                  runtimeDock={{
-                    eventFeed: engine.eventFeed,
-                    appErrors: engine.appErrors,
-                    results: engine.results,
-                    activeWorkflowId: currentBoardDeployInfo?.workflowId ?? null,
-                    payloadText,
-                    deployInfo: currentBoardDeployInfo,
-                    onPayloadTextChange,
-                  }}
-                  onToggleRuntimeDockCollapsed={() =>
-                    engine.setIsRuntimeDockCollapsed((current) => !current)
-                  }
-                  onBack={onBackToBoards}
-                  onCreateSnapshot={onCreateSnapshot}
-                  onDeleteSnapshot={onDeleteSnapshot}
-                  onRollbackSnapshot={onRollbackSnapshot}
-                  onEnvironmentChange={onEnvironmentChange}
-                  onEnvironmentSave={onEnvironmentSave}
-                  onDuplicateEnvironment={onDuplicateEnvironment}
-                  onDeleteEnvironment={onDeleteEnvironment}
-                  onOpenAiComposer={onOpenAiEdit}
+    case 'boards':
+      if (!activeBoard || !activeProject) {
+        return (
+          <StrictStudioPanel>
+            <section className="studio-content studio-content--panel">
+              <ScrollSurface className="panel studio-content__panel studio-content__panel--scroll">
+                <BoardsPanel
+                  boards={boardItems}
+                  onOpenBoard={onOpenBoard}
+                  onCreateBoard={onCreateBoard}
+                  onStartAiCreate={onOpenAiCreate}
+                  onImportBoardFile={onImportBoardFile}
+                  onDeleteBoard={onDeleteBoard}
                   aiActionTitle={aiActionTitle}
                   aiActionDisabled={aiActionDisabled}
-                  aiActionLoading={aiActionLoadingEdit}
+                  aiActionLoading={aiActionLoadingCreate}
                 />
-              </section>
-            ) : <div />}
+              </ScrollSurface>
+            </section>
+          </StrictStudioPanel>
+        );
+      }
+
+      return (
+        <section className="studio-content studio-content--board">
+          <BoardWorkspace
+            ref={flowgramCanvasRef}
+            project={activeProject}
+            graph={graph}
+            nodeCount={graphNodeCount}
+            connectionPreview={connectionPreview}
+            themeMode={settings.themeMode}
+            isRuntimeDockCollapsed={engine.isRuntimeDockCollapsed}
+            flowgramResources={{
+              connections: connectionLibrary.connections,
+              aiProviders: aiConfig?.providers ?? [],
+              activeAiProviderId: aiConfig?.activeProviderId ?? null,
+              copilotParams: aiConfig?.copilotParams ?? {},
+            }}
+            flowgramRuntime={{
+              runtimeState: engine.runtimeState,
+              workflowStatus,
+              canTestRun,
+            }}
+            flowgramAppearance={{
+              accentHex: settings.accentHex,
+              themeMode: settings.themeMode,
+              nodeCodeColor: settings.accentThemeVariables['--node-code'],
+            }}
+            flowgramExportTarget={{
+              workspacePath: settings.projectWorkspacePath,
+              workflowName: activeProject.name,
+            }}
+            flowgramActions={{
+              onRunRequested: onStartDeploy,
+              onStopRequested: onStopDeploy,
+              onTestRunRequested: onTestRun,
+              onGraphChange,
+              onError: engine.handleFlowgramError,
+              onStatusMessage: engine.setStatusMessage,
+            }}
+            runtimeDock={{
+              eventFeed: engine.eventFeed,
+              appErrors: engine.appErrors,
+              results: engine.results,
+              activeWorkflowId: currentBoardDeployInfo?.workflowId ?? null,
+              payloadText,
+              deployInfo: currentBoardDeployInfo,
+              onPayloadTextChange,
+            }}
+            onToggleRuntimeDockCollapsed={() =>
+              engine.setIsRuntimeDockCollapsed((current) => !current)
+            }
+            onBack={onBackToBoards}
+            onCreateSnapshot={onCreateSnapshot}
+            onDeleteSnapshot={onDeleteSnapshot}
+            onRollbackSnapshot={onRollbackSnapshot}
+            onEnvironmentChange={onEnvironmentChange}
+            onEnvironmentSave={onEnvironmentSave}
+            onDuplicateEnvironment={onDuplicateEnvironment}
+            onDeleteEnvironment={onDeleteEnvironment}
+            onOpenAiComposer={onOpenAiEdit}
+            aiActionTitle={aiActionTitle}
+            aiActionDisabled={aiActionDisabled}
+            aiActionLoading={aiActionLoadingEdit}
           />
-        </div>
+        </section>
       );
-    }
     case 'runtime':
       return (
         <StrictStudioPanel>

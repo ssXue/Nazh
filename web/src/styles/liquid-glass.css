@@ -138,7 +138,9 @@ button:hover {
   border-right: 0;
   box-shadow: none;
   overflow: visible;
-  transition: transform 260ms ease, opacity 260ms ease;
+  transition:
+    transform 380ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 260ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .studio-nav-sidebar.is-collapsed {
@@ -287,7 +289,7 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
   min-height: 0;
   padding: 0 0 0 calc(var(--nav-float-width) + var(--nav-float-gap) + 8px);
   background: transparent;
-  transition: padding-left 260ms ease;
+  transition: padding-left 420ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .studio-frame:has(.studio-nav-sidebar.is-collapsed) .studio-content {
