@@ -529,7 +529,6 @@ function App() {
           activeBoard={activeBoard}
           activeProject={activeProject}
           aiActionDisabled={aiWorkflowComposer.actionDisabled}
-          aiActionLoadingCreate={aiWorkflowComposer.generating && aiWorkflowComposer.mode === 'create'}
           aiActionLoadingEdit={aiWorkflowComposer.generating && aiWorkflowComposer.mode === 'edit'}
           aiActionTitle={aiWorkflowComposer.actionTitle}
           aiConfig={aiConfig}
@@ -571,7 +570,6 @@ function App() {
           onEnvironmentSave={projectActions.handleEnvironmentSave}
           onGraphChange={projectActions.handleGraphChange}
           onImportBoardFile={projectActions.handleImportBoardFile}
-          onOpenAiCreate={aiWorkflowComposer.openCreate}
           onOpenAiEdit={aiWorkflowComposer.openEdit}
           onOpenBoard={projectActions.handleOpenBoard}
           onPayloadTextChange={projectActions.handlePayloadTextChange}

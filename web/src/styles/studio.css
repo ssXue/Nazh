@@ -1636,12 +1636,6 @@ html.is-tauri-runtime [data-window-drag-region] {
   height: 14px;
 }
 
-.boards-panel__action--accent {
-  border-color: color-mix(in srgb, var(--accent-border) 72%, var(--line-soft) 28%);
-  background: color-mix(in srgb, var(--accent-soft) 84%, var(--panel) 16%);
-  color: var(--accent-ink);
-}
-
 .boards-panel__action:hover,
 .boards-panel__action:focus-visible {
   border-color: var(--accent-border);

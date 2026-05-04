@@ -101,11 +101,6 @@ export function useAiWorkflowComposerState({
     setSessionState(nextSessionState);
   }
 
-  function openCreate() {
-    resetState('create');
-    setOpen(true);
-  }
-
   function openEdit() {
     if (!activeProject) {
       return;
@@ -344,7 +339,6 @@ export function useAiWorkflowComposerState({
     },
     generating,
     mode,
-    openCreate,
     openEdit,
   };
 }

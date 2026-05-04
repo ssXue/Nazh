@@ -35,7 +35,6 @@ interface StudioContentRouterProps {
   activeBoard: BoardItem | null;
   activeProject: ProjectRecord | null;
   aiActionDisabled: boolean;
-  aiActionLoadingCreate: boolean;
   aiActionLoadingEdit: boolean;
   aiActionTitle: string;
   aiConfig: AiConfigView | null;
@@ -80,7 +79,6 @@ interface StudioContentRouterProps {
   ) => void;
   onGraphChange: (nextAstText: string) => void;
   onImportBoardFile: (file: File) => void | Promise<void>;
-  onOpenAiCreate: () => void;
   onOpenAiEdit: () => void;
   onOpenBoard: (board: BoardItem) => void;
   onPayloadTextChange: (value: string) => void;
@@ -125,7 +123,6 @@ export function StudioContentRouter({
   activeBoard,
   activeProject,
   aiActionDisabled,
-  aiActionLoadingCreate,
   aiActionLoadingEdit,
   aiActionTitle,
   aiConfig,
@@ -167,7 +164,6 @@ export function StudioContentRouter({
   onEnvironmentSave,
   onGraphChange,
   onImportBoardFile,
-  onOpenAiCreate,
   onOpenAiEdit,
   onOpenBoard,
   onPayloadTextChange,
@@ -218,12 +214,8 @@ export function StudioContentRouter({
                   boards={boardItems}
                   onOpenBoard={onOpenBoard}
                   onCreateBoard={onCreateBoard}
-                  onStartAiCreate={onOpenAiCreate}
                   onImportBoardFile={onImportBoardFile}
                   onDeleteBoard={onDeleteBoard}
-                  aiActionTitle={aiActionTitle}
-                  aiActionDisabled={aiActionDisabled}
-                  aiActionLoading={aiActionLoadingCreate}
                 />
               </ScrollSurface>
             </section>

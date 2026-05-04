@@ -53,6 +53,7 @@
 - 4A：设备/能力 AI 结构化提取提案 — `extract_device_proposal` / `extract_device_proposal_stream`（JSON 输出含 uncertainties + warnings）+ 前端 proposal 流程
 - 4B/4C 的 DSL 编辑器页面和 AI 编排控制台页面已在 2026-05-04 移除——设计评估结论是与核心画布创作能力冲突。DSL 编辑器是编译器中间态的裸露调试界面（功能闭环缺失），AI 编排的一次性生成器能力已由画布内 `AiWorkflowComposer` 覆盖。对应的 4 个 IPC 命令（`compile_workflow_dsl` / `load_compiler_asset_snapshot` / `ai_generate_workflow_dsl` / `ai_generate_workflow_dsl_stream`）和前端组件/hooks/CSS 全部清除。`crates/dsl-core/` 和 `crates/dsl-compiler/` 库 crate 保留。
 - 4D 已完成：安全编译器对接（随 Phase 5 一起完成）
+- 看板页 AI 新建画布入口已于 2026-05-05 移除——将创建画布的仪式感交还给使用者。移除 `BoardsPanel` 的 AI 编排按钮、`openCreate()` 函数及整条 prop 链。画布内 AI 编辑（`openEdit()`）保留。
 
 ## 设备建模页优化（2026-05-04）
 

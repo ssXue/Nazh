@@ -24,6 +24,16 @@
 ### 移除
 
 - DSL 编辑器页面和 AI 编排控制台页面（RFC-0004 Phase 4B/4C）— 设计评估结论：与核心画布创作能力冲突，功能闭环缺失 / 画布内 AI 编排器已覆盖同等能力。移除 4 个 IPC 命令（`compile_workflow_dsl` / `load_compiler_asset_snapshot` / `ai_generate_workflow_dsl` / `ai_generate_workflow_dsl_stream`）、前端组件、hooks、CSS
+- 看板页 AI 新建画布入口 — 将创建画布的仪式感交还给使用者。移除看板列表页的 AI 编排按钮、`BoardsPanel` 的 `onStartAiCreate` / `aiAction*` props、`use-ai-workflow-composer-state` 的 `openCreate()` 函数及整条 prop 链。画布内 AI 编辑功能保留
+
+### 变更
+
+- 导航栏折叠/展开动画改用 Apple 风格弹簧缓动 `cubic-bezier(0.16, 1, 0.3, 1)`，时长错落（位移 380ms / 透明度 260ms / 内容区 420ms）
+- 看板页去除 ExpandTransition 展开动画复用，还原为 if/else 直接切换
+
+### 修复
+
+- ExpandTransition 居中浮层遮罩透明度从 80% 降至 0%，修复亮主题下方形白色底（`#F7F8F9`）
 
 ## [0.1.0] — 2025-xx-xx
 

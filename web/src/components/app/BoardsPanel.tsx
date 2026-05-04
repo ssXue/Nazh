@@ -1,7 +1,7 @@
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useEffect, useRef, useState } from 'react';
 
-import { CanvasIcon, DeleteActionIcon, PlusIcon, SparklesIcon, UploadIcon } from './AppIcons';
+import { CanvasIcon, DeleteActionIcon, PlusIcon, UploadIcon } from './AppIcons';
 
 export interface BoardItem {
   id: string;
@@ -19,24 +19,16 @@ interface BoardsPanelProps {
   boards: BoardItem[];
   onOpenBoard: (board: BoardItem) => void;
   onCreateBoard: () => void;
-  onStartAiCreate: () => void;
   onImportBoardFile: (file: File) => void | Promise<void>;
   onDeleteBoard: (board: BoardItem) => void;
-  aiActionTitle: string;
-  aiActionDisabled?: boolean;
-  aiActionLoading?: boolean;
 }
 
 export function BoardsPanel({
   boards,
   onOpenBoard,
   onCreateBoard,
-  onStartAiCreate,
   onImportBoardFile,
   onDeleteBoard,
-  aiActionTitle,
-  aiActionDisabled = false,
-  aiActionLoading = false,
 }: BoardsPanelProps) {
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const [pendingDeleteBoard, setPendingDeleteBoard] = useState<BoardItem | null>(null);
@@ -78,16 +70,6 @@ export function BoardsPanel({
         </div>
 
         <div className="boards-panel__actions" data-no-window-drag>
-          <button
-            type="button"
-            className="boards-panel__action boards-panel__action--accent"
-            onClick={onStartAiCreate}
-            disabled={aiActionDisabled}
-            title={aiActionTitle}
-          >
-            <SparklesIcon />
-            <span>{aiActionLoading ? 'AI 编排中...' : 'AI 编排'}</span>
-          </button>
           <button
             type="button"
             className="boards-panel__action"
