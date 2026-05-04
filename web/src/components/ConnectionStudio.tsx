@@ -15,6 +15,7 @@ import {
   DeleteActionIcon,
   SettingsIcon,
 } from './app/AppIcons';
+import { ExpandTransition } from './app/ExpandTransition';
 import {
   listSerialPorts,
   testSerialConnection,
@@ -481,120 +482,114 @@ export function ConnectionStudio({
       {storageError ? <p className="connection-card__error">{storageError}</p> : null}
 
       <div className="connection-layout">
-        <div className="connection-resources">
-          <div className="connection-toolbar">
-            {CONNECTION_TEMPLATES.map((template) => (
-              <button
-                key={template.key}
-                type="button"
-                className="connection-toolbar__button"
-                data-testid="connection-add"
-                onClick={() => handleAddConnection(template)}
-              >
-                <strong>{template.label}</strong>
-                <span>{template.description}</span>
-              </button>
-            ))}
-          </div>
-
-          {isLoading ? (
-            <div className="connection-empty" data-testid="connection-empty-state">
-              <span className="connection-loading-spinner" aria-hidden="true" />
-              <p>正在加载连接资源…</p>
-            </div>
-          ) : connections.length === 0 ? (
-            <div className="connection-empty" data-testid="connection-empty-state">
-              <p>暂无连接</p>
-            </div>
-          ) : (
-            <div className="connection-grid">
-              {connections.map((connection, index) => {
-                const runtimeConnection = connection.id
-                  ? runtimeById.get(connection.id)
-                  : undefined;
-                const usage = connection.id
-                  ? usageByConnection.get(connection.id) ?? { nodeIds: [], projectNames: [] }
-                  : { nodeIds: [], projectNames: [] };
-                const runtimeState = connectionRuntimeState(runtimeConnection);
-                const ConnectionIcon = connectionIconFor(connection.type);
-                const isActive = activeConnectionIndex === index;
-
-                return (
-                  <article
-                    key={`${connection.id || 'connection'}-${index}`}
-                    className={`connection-card ${isActive ? 'is-active' : ''}`}
-                    data-testid="connection-card"
+        <ExpandTransition
+          active={activeConnection !== undefined && activeConnectionIndex !== null}
+          mode="centered"
+          base={
+            <div className="connection-resources">
+              <div className="connection-toolbar">
+                {CONNECTION_TEMPLATES.map((template) => (
+                  <button
+                    key={template.key}
+                    type="button"
+                    className="connection-toolbar__button"
+                    data-testid="connection-add"
+                    onClick={() => handleAddConnection(template)}
                   >
-                    <div className="connection-card__main">
-                      <div className="connection-card__icon">
-                        <ConnectionIcon />
-                      </div>
-                      <div className="connection-card__identity">
-                        <strong>{connection.id || `connection_${index + 1}`}</strong>
-                        <span className="connection-card__brief">
-                          {connectionParameterBrief(connection)}
-                        </span>
-                        <div className="connection-card__meta">
-                          <span className="connection-card__tag">
-                            {connection.type || 'custom'}
-                          </span>
-                          <span className="connection-card__tag">
-                            {usage.nodeIds.length > 0 ? `${usage.nodeIds.length} 节点` : '未绑定'}
-                          </span>
-                          <span className="connection-card__tag">
-                            {usage.projectNames.length > 0
-                              ? `${usage.projectNames.length} 工程`
-                              : '全局可用'}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
+                    <strong>{template.label}</strong>
+                    <span>{template.description}</span>
+                  </button>
+                ))}
+              </div>
 
-                    <div className="connection-card__footer">
-                      <span className={`connection-status is-${runtimeState.state}`}>
-                        <span className="connection-status__dot" />
-                        {runtimeState.label}
-                      </span>
-                      <button
-                        type="button"
-                        className="connection-card__settings"
-                        aria-label={`设置 ${connection.id || `connection_${index + 1}`}`}
-                        onClick={() => setActiveConnectionIndex(index)}
+              {isLoading ? (
+                <div className="connection-empty" data-testid="connection-empty-state">
+                  <span className="connection-loading-spinner" aria-hidden="true" />
+                  <p>正在加载连接资源…</p>
+                </div>
+              ) : connections.length === 0 ? (
+                <div className="connection-empty" data-testid="connection-empty-state">
+                  <p>暂无连接</p>
+                </div>
+              ) : (
+                <div className="connection-grid">
+                  {connections.map((connection, index) => {
+                    const runtimeConnection = connection.id
+                      ? runtimeById.get(connection.id)
+                      : undefined;
+                    const usage = connection.id
+                      ? usageByConnection.get(connection.id) ?? { nodeIds: [], projectNames: [] }
+                      : { nodeIds: [], projectNames: [] };
+                    const runtimeState = connectionRuntimeState(runtimeConnection);
+                    const ConnectionIcon = connectionIconFor(connection.type);
+                    const isActive = activeConnectionIndex === index;
+
+                    return (
+                      <article
+                        key={`${connection.id || 'connection'}-${index}`}
+                        className={`connection-card ${isActive ? 'is-active' : ''}`}
+                        data-testid="connection-card"
                       >
-                        <SettingsIcon />
-                      </button>
-                    </div>
+                        <div className="connection-card__main">
+                          <div className="connection-card__icon">
+                            <ConnectionIcon />
+                          </div>
+                          <div className="connection-card__identity">
+                            <strong>{connection.id || `connection_${index + 1}`}</strong>
+                            <span className="connection-card__brief">
+                              {connectionParameterBrief(connection)}
+                            </span>
+                            <div className="connection-card__meta">
+                              <span className="connection-card__tag">
+                                {connection.type || 'custom'}
+                              </span>
+                              <span className="connection-card__tag">
+                                {usage.nodeIds.length > 0 ? `${usage.nodeIds.length} 节点` : '未绑定'}
+                              </span>
+                              <span className="connection-card__tag">
+                                {usage.projectNames.length > 0
+                                  ? `${usage.projectNames.length} 工程`
+                                  : '全局可用'}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
 
-                    {runtimeState.detail ? (
-                      <p className="connection-card__hint">{runtimeState.detail}</p>
-                    ) : null}
+                        <div className="connection-card__footer">
+                          <span className={`connection-status is-${runtimeState.state}`}>
+                            <span className="connection-status__dot" />
+                            {runtimeState.label}
+                          </span>
+                          <button
+                            type="button"
+                            className="connection-card__settings"
+                            aria-label={`设置 ${connection.id || `connection_${index + 1}`}`}
+                            onClick={() => setActiveConnectionIndex(index)}
+                          >
+                            <SettingsIcon />
+                          </button>
+                        </div>
 
-                    {runtimeState.failureReason ? (
-                      <p className="connection-card__error">{runtimeState.failureReason}</p>
-                    ) : null}
-                  </article>
-                );
-              })}
+                        {runtimeState.detail ? (
+                          <p className="connection-card__hint">{runtimeState.detail}</p>
+                        ) : null}
+
+                        {runtimeState.failureReason ? (
+                          <p className="connection-card__error">{runtimeState.failureReason}</p>
+                        ) : null}
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
             </div>
-          )}
-        </div>
-
-        {activeConnection && activeConnectionIndex !== null ? (
-          <div
-            className="connection-settings-dialog"
-            role="presentation"
-            onMouseDown={(event) => {
-              if (event.target === event.currentTarget) {
-                setActiveConnectionIndex(null);
-              }
-            }}
-          >
+          }
+          overlay={activeConnection && activeConnectionIndex !== null ? (
             <section
               className="connection-settings-panel"
               role="dialog"
               aria-modal="true"
               aria-label="连接资源设置"
-              onMouseDown={(event) => event.stopPropagation()}
             >
               <div className="connection-settings-panel__header">
                 <div className="connection-settings-panel__icon">
@@ -1364,8 +1359,8 @@ export function ConnectionStudio({
                 </button>
               </div>
             </section>
-          </div>
-        ) : null}
+          ) : <div />}
+        />
       </div>
     </section>
   );

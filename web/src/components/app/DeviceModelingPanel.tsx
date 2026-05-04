@@ -10,8 +10,11 @@ import {
   PlusIcon,
   DeleteActionIcon,
   SearchIcon,
+  DeviceIcon,
+  BackIcon,
 } from './AppIcons';
 import { DeviceImportDrawer } from './DeviceImportDrawer';
+import { ExpandTransition } from './ExpandTransition';
 
 interface DeviceModelingPanelProps {
   isTauriRuntime: boolean;
@@ -30,13 +33,11 @@ export function DeviceModelingPanel({
     deleteAsset,
   } = useDeviceAssets();
 
-  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<DeviceAssetDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [importDrawerOpen, setImportDrawerOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // 搜索过滤
   const filteredAssets = useMemo(() => {
     if (!searchQuery.trim()) return assets;
     const q = searchQuery.toLowerCase();
@@ -48,15 +49,12 @@ export function DeviceModelingPanel({
     );
   }, [assets, searchQuery]);
 
-  // 加载列表
   useEffect(() => {
     void loadAssets();
   }, [loadAssets]);
 
-  // 加载详情
-  const handleSelectAsset = useCallback(
+  const handleOpenDetail = useCallback(
     async (id: string) => {
-      setSelectedId(id);
       setDetail(null);
       setDetailLoading(true);
       try {
@@ -71,21 +69,21 @@ export function DeviceModelingPanel({
     [loadDetail, onStatusMessage],
   );
 
-  // 删除设备
+  const handleCloseDetail = useCallback(() => {
+    setDetail(null);
+  }, []);
+
   const handleDelete = useCallback(
     async (id: string) => {
       try {
         await deleteAsset(id);
         onStatusMessage(`设备 ${id} 已删除`);
-        if (selectedId === id) {
-          setSelectedId(null);
-          setDetail(null);
-        }
+        setDetail(null);
       } catch (error) {
         onStatusMessage(`删除设备失败: ${error}`);
       }
     },
-    [deleteAsset, selectedId, onStatusMessage],
+    [deleteAsset, onStatusMessage],
   );
 
   if (!isTauriRuntime) {
@@ -99,111 +97,131 @@ export function DeviceModelingPanel({
     );
   }
 
-  return (
-    <div className="device-modeling">
-      {/* 左侧：设备列表 */}
-      <div className="device-modeling__sidebar">
-        <div className="device-modeling__sidebar-header">
-          <h2>设备资产</h2>
-          <div className="device-modeling__sidebar-actions">
-            <button
-              type="button"
-              className="dm-btn dm-btn--primary"
-              title="从说明书导入"
-              onClick={() => setImportDrawerOpen(true)}
-            >
-              <SparklesIcon width={14} height={14} />
-              <span>导入</span>
-            </button>
-            <button
-              type="button"
-              className="dm-btn"
-              title="新建设备"
-              disabled
-            >
-              <PlusIcon width={14} height={14} />
-            </button>
-          </div>
+  const showDetail = detail && !detailLoading;
+
+  const gridBase = (
+    <div className="dm-grid-view">
+      <div className="dm-grid-header window-safe-header" data-window-drag-region>
+        <h2>设备资产</h2>
+      </div>
+
+      {assets.length > 0 && (
+        <div className="dm-grid-search" data-no-window-drag>
+          <SearchIcon width={14} height={14} />
+          <input
+            type="text"
+            className="dm-grid-search-input"
+            placeholder="搜索设备..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
         </div>
+      )}
 
-        {/* 搜索 */}
-        {assets.length > 0 && (
-          <div className="device-modeling__search">
-            <SearchIcon width={14} height={14} />
-            <input
-              type="text"
-              className="device-modeling__search-input"
-              placeholder="搜索设备..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
+      <div className="dm-grid">
+        {/* 虚线添加卡片 */}
+        <button
+          type="button"
+          className="board-card board-card--create"
+          onClick={() => setImportDrawerOpen(true)}
+        >
+          <div className="board-card__icon board-card__icon--create">
+            <PlusIcon />
           </div>
-        )}
+          <div className="board-card__body">
+            <strong className="board-card__name">导入设备</strong>
+            <span className="board-card__desc">
+              从 PDF 说明书或文本自动提取设备信息，生成设备模型。
+            </span>
+          </div>
+          <div className="board-card__chips">
+            <span className="board-card__chip board-card__chip--create">PDF 导入</span>
+            <span className="board-card__chip board-card__chip--create">AI 提取</span>
+          </div>
+          <div className="board-card__footer">
+            <span className="board-card__meta">
+              {assets.length === 0 ? '当前还没有设备' : '继续添加设备'}
+            </span>
+          </div>
+        </button>
 
-        {/* 设备列表 */}
         {loading ? (
-          <div className="device-modeling__loading">加载中...</div>
-        ) : assets.length === 0 ? (
-          <div className="dm-empty-list">
-            <SparklesIcon width={28} height={28} />
-            <p>暂无设备</p>
-            <span>从说明书导入或手动创建</span>
-            <button
-              type="button"
-              className="dm-empty-action"
-              onClick={() => setImportDrawerOpen(true)}
-            >
-              <SparklesIcon width={14} height={14} />
-              从说明书导入
-            </button>
-          </div>
-        ) : filteredAssets.length === 0 ? (
-          <div className="dm-empty-list">
-            <p>无匹配设备</p>
+          <div className="dm-loading-card">加载中...</div>
+        ) : filteredAssets.length === 0 && assets.length > 0 ? (
+          <div className="dm-empty-card">
+            <strong>无匹配设备</strong>
             <span>尝试其他搜索词</span>
           </div>
         ) : (
-          <ul className="device-modeling__card-list">
-            {filteredAssets.map((asset) => (
-              <li
+          filteredAssets.map((asset) => {
+            return (
+              <article
                 key={asset.id}
-                className={`dm-card${selectedId === asset.id ? ' is-active' : ''}`}
-                onClick={() => void handleSelectAsset(asset.id)}
+                className="board-card board-card--entry"
+                role="button"
+                tabIndex={0}
+                onClick={() => void handleOpenDetail(asset.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    void handleOpenDetail(asset.id);
+                  }
+                }}
               >
-                <div className="dm-card__icon">
-                  <DeviceTypeBadge type={asset.device_type} />
+                <div className="board-card__icon">
+                  <DeviceIcon />
                 </div>
-                <div className="dm-card__body">
-                  <div className="dm-card__name">{asset.name}</div>
-                  <div className="dm-card__meta">
-                    <span className="dm-card__type">{asset.device_type}</span>
-                    <span className="dm-card__version">v{asset.version}</span>
-                  </div>
+
+                <div className="board-card__body">
+                  <strong className="board-card__name">{asset.name}</strong>
+                  <span className="board-card__desc">{asset.device_type}</span>
                 </div>
-              </li>
-            ))}
-          </ul>
+
+                <div className="board-card__chips">
+                  <span className="board-card__chip">{asset.device_type}</span>
+                  <span className="board-card__chip">{`v${asset.version}`}</span>
+                </div>
+
+                <div className="board-card__footer">
+                  <span className="board-card__meta">{asset.updated_at}</span>
+                  <button
+                    type="button"
+                    className="board-card__delete"
+                    aria-label={`删除设备 ${asset.name}`}
+                    title={`删除设备 ${asset.name}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void handleDelete(asset.id);
+                    }}
+                  >
+                    <DeleteActionIcon />
+                  </button>
+                </div>
+              </article>
+            );
+          })
         )}
       </div>
+    </div>
+  );
 
-      {/* 右侧：设备详情 */}
-      <div className="device-modeling__content">
-        {!detail ? (
-          <div className="dm-empty-state">
-            <h2>设备详情</h2>
-            <p>选择左侧设备查看详情，或从说明书导入新设备。</p>
-          </div>
-        ) : detailLoading ? (
-          <div className="device-modeling__loading">加载详情...</div>
-        ) : (
-          <DetailPanel
-            detail={detail}
-            onDelete={() => void handleDelete(detail.id)}
-          />
-        )}
-      </div>
+  const detailOverlay = detail ? (
+    <DetailPanel
+      detail={detail}
+      onBack={handleCloseDetail}
+      onDelete={() => void handleDelete(detail.id)}
+    />
+  ) : null;
 
-      {/* 导入抽屉 */}
+  return (
+    <div className="device-modeling">
+      <ExpandTransition
+        active={!!showDetail}
+        loading={detailLoading}
+        base={gridBase}
+        overlay={detailOverlay}
+      />
+
       <DeviceImportDrawer
         open={importDrawerOpen}
         onClose={() => setImportDrawerOpen(false)}
@@ -223,9 +241,11 @@ function DeviceTypeBadge({ type }: { type: string }) {
 /** 设备详情子面板。 */
 function DetailPanel({
   detail,
+  onBack,
   onDelete,
 }: {
   detail: DeviceAssetDetail;
+  onBack: () => void;
   onDelete: () => void;
 }) {
   const [tab, setTab] = useState<'signals' | 'capabilities'>('signals');
@@ -237,6 +257,14 @@ function DetailPanel({
       {/* 头部 */}
       <div className="dm-detail-header">
         <div className="dm-detail-header__left">
+          <button
+            type="button"
+            className="dm-back-btn"
+            onClick={onBack}
+            title="返回设备列表"
+          >
+            <BackIcon />
+          </button>
           <DeviceTypeBadge type={String(spec?.type ?? detail.device_type)} />
           <div className="dm-detail-header__info">
             <h2>{String(spec?.id ?? detail.id)}</h2>

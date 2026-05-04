@@ -7,6 +7,7 @@
 @import "./styles/restore.css";
 @import "./styles/about.css";
 @import "./styles/runtime-dock.css";
+@import "./styles/expand-transition.css";
 @import "./styles/device-modeling.css";
 @import "./styles/device-modeling-drawer.css";
 @import "./styles/capability-catalog.css";
