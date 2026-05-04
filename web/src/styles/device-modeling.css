@@ -501,3 +501,96 @@
   background: var(--danger-soft);
   color: var(--danger-ink);
 }
+
+/* ── 能力 badge 扩展 ── */
+
+.dm-badge--impl-read {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent-ink);
+}
+
+.dm-badge--impl-write {
+  background: var(--warning-soft);
+  color: var(--warning-ink);
+}
+
+.dm-badge--impl-control {
+  background: var(--danger-soft);
+  color: var(--danger-ink);
+}
+
+/* 能力安全等级 */
+.dm-cap-safety-badge {
+  display: inline-block;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill, 999px);
+  font-weight: 600;
+  text-transform: capitalize;
+  border: 1px solid transparent;
+}
+
+.dm-cap-safety-badge--high {
+  background: var(--danger-soft);
+  color: var(--danger-ink);
+  border-color: var(--danger-border);
+}
+
+.dm-cap-safety-badge--medium {
+  background: var(--warning-soft);
+  color: var(--warning-ink);
+  border-color: var(--warning-border);
+}
+
+.dm-cap-safety-badge--low {
+  background: var(--success-soft);
+  color: var(--success-ink);
+  border-color: var(--success-border);
+}
+
+/* 必填标记 */
+.dm-required-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-circle, 50%);
+  background: var(--accent);
+  vertical-align: middle;
+  margin-right: 4px;
+}
+
+/* 实现信息 grid */
+.dm-impl-grid {
+  display: grid;
+  grid-template-columns: 60px 1fr;
+  gap: 4px 12px;
+  font-size: 12px;
+}
+
+/* 安全约束行 */
+.dm-safety-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* 条件/副作用/后备列表 */
+.dm-condition-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.dm-condition-item {
+  padding: 5px 10px;
+  border-radius: var(--radius-xs, 4px);
+  border-left: 3px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  color: var(--text);
+  line-height: 1.4;
+}

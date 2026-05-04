@@ -507,208 +507,278 @@ function CapabilitiesTab({ deviceId }: { deviceId: string }) {
 
   return (
     <div className="capability-catalog">
-      <div className="capability-catalog__header">
-        <h3>能力目录</h3>
-        <div className="capability-catalog__actions">
-          <button
-            type="button"
-            className="capability-catalog__btn capability-catalog__btn--primary"
-            onClick={() => void handleGenerate()}
-            disabled={generating}
-          >
-            {generating ? '生成中...' : '从信号生成'}
-          </button>
+      {/* 左侧：能力列表 */}
+      <div className="capability-catalog__list-pane">
+        <div className="capability-catalog__list-pane-header">
+          <h3>
+            能力
+            {capabilities.length > 0 && (
+              <span className="capability-catalog__count">{capabilities.length}</span>
+            )}
+          </h3>
+          <div className="capability-catalog__actions">
+            <button
+              type="button"
+              className="capability-catalog__btn capability-catalog__btn--primary"
+              onClick={() => void handleGenerate()}
+              disabled={generating}
+              title="从设备信号自动生成能力"
+            >
+              {generating ? '生成中...' : '生成'}
+            </button>
+          </div>
         </div>
+
+        {generated.length > 0 && (
+          <div className="capability-catalog__generated">
+            {generated.map((gen) => (
+              <div key={gen.capability_id} className="capability-catalog__generated-item">
+                <span className="capability-catalog__generated-id">
+                  {gen.capability_id}
+                </span>
+                <button
+                  type="button"
+                  className="capability-catalog__btn"
+                  onClick={() => void handleSaveGenerated(gen)}
+                >
+                  保存
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {loading ? (
+          <div className="capability-catalog__loading">加载中...</div>
+        ) : capabilities.length === 0 && generated.length === 0 ? (
+          <div className="capability-catalog__empty">
+            <p>暂无能力</p>
+            <span>从设备信号自动生成能力</span>
+          </div>
+        ) : (
+          <ul className="capability-catalog__list">
+            {capabilities.map((cap) => (
+              <li
+                key={cap.id}
+                className={`capability-catalog__item${selectedCapId === cap.id ? ' is-active' : ''}`}
+                onClick={() => void handleSelectCap(cap.id)}
+              >
+                <div className="capability-catalog__item-body">
+                  <div className="capability-catalog__item-row">
+                    <span className="capability-catalog__item-name">{cap.name}</span>
+                    <span className="capability-catalog__item-version">v{cap.version}</span>
+                  </div>
+                  {cap.description && (
+                    <div className="capability-catalog__item-desc">{cap.description}</div>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  className="capability-catalog__btn capability-catalog__btn--danger"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void handleDeleteCap(cap.id);
+                  }}
+                  title="删除"
+                >
+                  <DeleteActionIcon width={12} height={12} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
-      {generated.length > 0 && (
-        <div className="capability-catalog__generated">
-          {generated.map((gen) => (
-            <div key={gen.capability_id} className="capability-catalog__generated-item">
-              <span className="capability-catalog__generated-id">
-                {gen.capability_id}
-              </span>
-              <button
-                type="button"
-                className="capability-catalog__btn"
-                onClick={() => void handleSaveGenerated(gen)}
-              >
-                保存
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {loading ? (
-        <div className="capability-catalog__loading">加载中...</div>
-      ) : capabilities.length === 0 && generated.length === 0 ? (
-        <div className="capability-catalog__empty">
-          <p>暂无能力</p>
-          <span>从设备信号自动生成能力</span>
-        </div>
-      ) : (
-        <ul className="capability-catalog__list">
-          {capabilities.map((cap) => (
-            <li
-              key={cap.id}
-              className={`capability-catalog__item${selectedCapId === cap.id ? ' is-active' : ''}`}
-              onClick={() => void handleSelectCap(cap.id)}
-            >
-              <span className="capability-catalog__item-name">{cap.name}</span>
-              <button
-                type="button"
-                className="capability-catalog__btn capability-catalog__btn--danger"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void handleDeleteCap(cap.id);
-                }}
-                title="删除"
-              >
-                <DeleteActionIcon width={12} height={12} />
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {capDetail && (
-        <div className="capability-catalog__detail">
-          <div className="capability-catalog__detail-header">
-            <div>
-              <h3>{capDetail.name}</h3>
-              {capDetail.description && (
-                <div className="capability-catalog__detail-desc">
-                  {capDetail.description}
-                </div>
-              )}
-            </div>
+      {/* 右侧：能力详情 */}
+      <div className="capability-catalog__detail-pane">
+        {!capDetail ? (
+          <div className="dm-empty-state">
+            <h2>能力详情</h2>
+            <p>选择左侧能力查看详情</p>
           </div>
-
-          {inputs && inputs.length > 0 && (
-            <div className="capability-catalog__section">
-              <h4>输入参数</h4>
-              <table className="capability-catalog__table">
-                <thead>
-                  <tr>
-                    <th>ID</th>
-                    <th>单位</th>
-                    <th>量程</th>
-                    <th>必填</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {inputs.map((inp, i) => (
-                    <tr key={String(inp.id ?? i)}>
-                      <td className="is-mono">{String(inp.id)}</td>
-                      <td>{inp.unit ? String(inp.unit) : '-'}</td>
-                      <td className="is-mono">
-                        {inp.range
-                          ? `[${(inp.range as { min: number; max: number }).min}, ${(inp.range as { min: number; max: number }).max}]`
-                          : '-'}
-                      </td>
-                      <td>{inp.required ? '是' : '否'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {preconditions && preconditions.length > 0 && (
-            <div className="capability-catalog__section">
-              <h4>前置条件</h4>
-              <ul className="capability-catalog__conditions">
-                {preconditions.map((cond, i) => (
-                  <li key={i} className="capability-catalog__condition-item">
-                    {String(cond)}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {implementation && (
-            <div className="capability-catalog__section">
-              <h4>实现</h4>
-              <div className="capability-catalog__impl">
-                <span className="capability-catalog__impl-type">
-                  {String(implementation.type ?? '-')}
-                </span>
-                {implementation.register != null && (
-                  <div className="capability-catalog__impl-field">
-                    <span className="capability-catalog__impl-label">寄存器</span>
-                    <span className="capability-catalog__impl-value">
-                      {String(implementation.register)}
-                    </span>
+        ) : (
+          <div className="dm-detail-body">
+            {/* 头部 */}
+            <div className="dm-detail-header" style={{ padding: '0 0 12px', borderBottom: '1px solid var(--panel-border)' }}>
+              <div className="dm-detail-header__left">
+                <DeviceTypeBadge type="C" />
+                <div className="dm-detail-header__info">
+                  <h2>{capDetail.name}</h2>
+                  <div className="dm-detail-header__badges">
+                    {implementation && (
+                      <span className={`dm-badge dm-badge--type ${implTypeBadgeClass(String(implementation.type ?? ''))}`}>
+                        {String(implementation.type ?? '-')}
+                      </span>
+                    )}
+                    {safety && (
+                      <span className={`dm-cap-safety-badge dm-cap-safety-badge--${String(safety.level ?? 'low')}`}>
+                        {String(safety.level ?? 'low')}
+                      </span>
+                    )}
+                    <span className="dm-badge dm-badge--version">v{capDetail.version}</span>
+                    {capDetail.description && (
+                      <span className="dm-badge dm-badge--meta">{capDetail.description}</span>
+                    )}
                   </div>
-                )}
-                {implementation.topic != null && (
-                  <div className="capability-catalog__impl-field">
-                    <span className="capability-catalog__impl-label">主题</span>
-                    <span className="capability-catalog__impl-value">
-                      {String(implementation.topic)}
-                    </span>
-                  </div>
-                )}
-                {(implementation.value ?? implementation.payload ?? implementation.command ?? implementation.content) != null && (
-                  <div className="capability-catalog__impl-field">
-                    <span className="capability-catalog__impl-label">值</span>
-                    <span className="capability-catalog__impl-value">
-                      {String(implementation.value ?? implementation.payload ?? implementation.command ?? implementation.content)}
-                    </span>
-                  </div>
-                )}
+                </div>
               </div>
             </div>
-          )}
 
-          {effects && effects.length > 0 && (
-            <div className="capability-catalog__section">
-              <h4>副作用</h4>
-              <ul className="capability-catalog__conditions">
-                {effects.map((eff, i) => (
-                  <li key={i} className="capability-catalog__condition-item">
-                    {String(eff)}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {fallback && fallback.length > 0 && (
-            <div className="capability-catalog__section">
-              <h4>后备能力</h4>
-              <ul className="capability-catalog__conditions">
-                {fallback.map((fb, i) => (
-                  <li key={i} className="capability-catalog__condition-item">
-                    {String(fb)}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {safety && (
-            <div className="capability-catalog__section">
-              <h4>安全约束</h4>
-              <div className="capability-catalog__safety">
-                <span className={`capability-catalog__item-badge capability-catalog__item-badge--${String(safety.level ?? 'low')}`}>
-                  {String(safety.level ?? 'low')}
-                </span>
-                {Boolean(safety.requires_approval) && (
-                  <span className="capability-catalog__safety-detail">需要审批</span>
-                )}
-                {safety.max_execution_time != null && (
-                  <span className="capability-catalog__safety-detail">
-                    最大执行时间: {String(safety.max_execution_time)}
-                  </span>
-                )}
+            {/* 输入参数 */}
+            {inputs && inputs.length > 0 && (
+              <div className="dm-section-card">
+                <div className="dm-section-card__header">
+                  <h3>输入参数 ({inputs.length})</h3>
+                </div>
+                <div className="dm-section-card__body dm-section-card__body--no-pad">
+                  <table className="dm-table">
+                    <thead>
+                      <tr>
+                        <th>ID</th>
+                        <th>单位</th>
+                        <th>量程</th>
+                        <th>必填</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {inputs.map((inp, i) => (
+                        <tr key={String(inp.id ?? i)}>
+                          <td className="dm-mono">{String(inp.id)}</td>
+                          <td>{inp.unit ? String(inp.unit) : '-'}</td>
+                          <td className="dm-mono">
+                            {inp.range
+                              ? `[${(inp.range as { min: number; max: number }).min}, ${(inp.range as { min: number; max: number }).max}]`
+                              : '-'}
+                          </td>
+                          <td>
+                            {inp.required ? (
+                              <>
+                                <span className="dm-required-dot" />
+                                必填
+                              </>
+                            ) : (
+                              '可选'
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </div>
-          )}
-        </div>
-      )}
+            )}
+
+            {/* 实现 */}
+            {implementation && (
+              <div className="dm-section-card">
+                <div className="dm-section-card__header">
+                  <h3>实现</h3>
+                </div>
+                <div className="dm-section-card__body">
+                  <div className="dm-impl-grid">
+                    {implementation.register != null && (
+                      <>
+                        <span className="dm-meta">寄存器</span>
+                        <span className="dm-mono">{String(implementation.register)}</span>
+                      </>
+                    )}
+                    {implementation.topic != null && (
+                      <>
+                        <span className="dm-meta">主题</span>
+                        <span className="dm-mono">{String(implementation.topic)}</span>
+                      </>
+                    )}
+                    {(implementation.value ?? implementation.payload ?? implementation.command ?? implementation.content) != null && (
+                      <>
+                        <span className="dm-meta">值</span>
+                        <span className="dm-mono">
+                          {String(implementation.value ?? implementation.payload ?? implementation.command ?? implementation.content)}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 安全约束 */}
+            {safety && (
+              <div className="dm-section-card">
+                <div className="dm-section-card__header">
+                  <h3>安全约束</h3>
+                </div>
+                <div className="dm-section-card__body">
+                  <div className="dm-safety-row">
+                    <span className={`dm-cap-safety-badge dm-cap-safety-badge--${String(safety.level ?? 'low')}`}>
+                      {String(safety.level ?? 'low')}
+                    </span>
+                    {Boolean(safety.requires_approval) && (
+                      <span className="dm-meta">需要审批</span>
+                    )}
+                    {safety.max_execution_time != null && (
+                      <span className="dm-meta">最大执行时间: {String(safety.max_execution_time)}</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 前置条件 */}
+            {preconditions && preconditions.length > 0 && (
+              <div className="dm-section-card">
+                <div className="dm-section-card__header">
+                  <h3>前置条件 ({preconditions.length})</h3>
+                </div>
+                <div className="dm-section-card__body">
+                  <ul className="dm-condition-list">
+                    {preconditions.map((cond, i) => (
+                      <li key={i} className="dm-condition-item">
+                        {String(cond)}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            )}
+
+            {/* 副作用 */}
+            {effects && effects.length > 0 && (
+              <div className="dm-section-card">
+                <div className="dm-section-card__header">
+                  <h3>副作用 ({effects.length})</h3>
+                </div>
+                <div className="dm-section-card__body">
+                  <ul className="dm-condition-list">
+                    {effects.map((eff, i) => (
+                      <li key={i} className="dm-condition-item">
+                        {String(eff)}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            )}
+
+            {/* 后备能力 */}
+            {fallback && fallback.length > 0 && (
+              <div className="dm-section-card">
+                <div className="dm-section-card__header">
+                  <h3>后备能力 ({fallback.length})</h3>
+                </div>
+                <div className="dm-section-card__body">
+                  <ul className="dm-condition-list">
+                    {fallback.map((fb, i) => (
+                      <li key={i} className="dm-condition-item">
+                        {String(fb)}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -717,4 +787,13 @@ function CapabilitiesTab({ deviceId }: { deviceId: string }) {
 
 function formatSignalType(t: string): string {
   return t.replace(/_/g, ' ');
+}
+
+/** 实现 type → CSS class 后缀。 */
+function implTypeBadgeClass(type: string): string {
+  const lower = type.toLowerCase();
+  if (lower.includes('read')) return 'dm-badge--impl-read';
+  if (lower.includes('write')) return 'dm-badge--impl-write';
+  if (lower.includes('control')) return 'dm-badge--impl-control';
+  return '';
 }

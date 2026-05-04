@@ -1,26 +1,50 @@
 /* 能力目录样式（RFC-0004 Phase 2） */
+/* 详情区域复用 dm-section-card / dm-table / dm-detail-body，此处只保留左侧列表和分栏布局 */
 
 .capability-catalog {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-sm);
-  padding: var(--space-md);
+  display: grid;
+  grid-template-columns: 220px 1fr;
   height: 100%;
-  overflow-y: auto;
+  min-height: 0;
+  overflow: hidden;
 }
 
-.capability-catalog__header {
+/* ── 左侧面板 ── */
+
+.capability-catalog__list-pane {
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--panel-border);
+  overflow: hidden;
+}
+
+.capability-catalog__list-pane-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-sm);
+  padding: 12px 12px 8px;
+  flex-shrink: 0;
 }
 
-.capability-catalog__header h3 {
+.capability-catalog__list-pane-header h3 {
   margin: 0;
-  font-size: var(--text-sm);
+  font-size: 12px;
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--text);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.capability-catalog__count {
+  font-size: 10px;
+  padding: 0 6px;
+  border-radius: var(--radius-pill, 999px);
+  background: var(--surface-elevated);
+  color: var(--muted);
+  font-weight: 500;
+  line-height: 16px;
+  margin-left: 6px;
 }
 
 .capability-catalog__actions {
@@ -34,19 +58,18 @@
   justify-content: center;
   gap: var(--space-xs);
   padding: var(--space-xs) var(--space-sm);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  background: var(--surface-default);
-  color: var(--text-secondary);
-  font-size: var(--text-xs);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-sm, 8px);
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
   cursor: pointer;
   transition: all 0.15s ease;
   white-space: nowrap;
 }
 
 .capability-catalog__btn:hover:not(:disabled) {
-  background: var(--surface-hover);
-  color: var(--text-primary);
+  background: var(--surface-elevated);
 }
 
 .capability-catalog__btn:disabled {
@@ -55,13 +78,13 @@
 }
 
 .capability-catalog__btn--primary {
-  background: var(--color-accent);
-  color: var(--text-on-accent);
-  border-color: transparent;
+  border-color: var(--accent-border);
+  color: var(--accent);
 }
 
 .capability-catalog__btn--primary:hover:not(:disabled) {
-  background: var(--color-accent-hover);
+  background: var(--accent);
+  color: white;
 }
 
 .capability-catalog__btn--danger {
@@ -69,264 +92,156 @@
 }
 
 .capability-catalog__btn--danger:hover:not(:disabled) {
-  background: var(--color-danger-bg);
+  background: var(--danger-soft);
+  border-color: var(--danger-border);
+  color: var(--danger-ink);
 }
 
 /* 能力列表 */
 .capability-catalog__list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: 4px 6px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
 }
 
 .capability-catalog__item {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
-  padding: var(--space-sm);
-  border-radius: var(--radius-sm);
+  padding: 8px 8px 8px 10px;
+  border-radius: var(--radius-sm, 8px);
+  border-left: 3px solid transparent;
   cursor: pointer;
-  transition: background 0.1s ease;
+  transition: background 0.1s ease, border-color 0.15s ease;
 }
 
 .capability-catalog__item:hover {
-  background: var(--surface-hover);
+  background: var(--surface-elevated);
+  border-left-color: color-mix(in srgb, var(--accent) 40%, transparent);
 }
 
 .capability-catalog__item.is-active {
-  background: var(--surface-active);
+  background: var(--accent-soft);
+  border-left-color: var(--accent);
+}
+
+.capability-catalog__item-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.capability-catalog__item-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .capability-catalog__item-name {
-  font-size: var(--text-xs);
+  font-size: 12px;
   font-weight: 500;
-  color: var(--text-primary);
-  flex: 1;
+  color: var(--text);
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.capability-catalog__item-badge {
+.capability-catalog__item-version {
+  flex-shrink: 0;
   font-size: 10px;
-  padding: 1px 6px;
-  border-radius: var(--radius-xs);
-  text-transform: capitalize;
-  font-weight: 600;
+  padding: 0 5px;
+  border-radius: var(--radius-pill, 999px);
+  background: var(--surface-elevated);
+  color: var(--muted);
+  font-family: var(--font-mono, monospace);
+  font-weight: 500;
+  line-height: 16px;
 }
 
-.capability-catalog__item-badge--high {
-  background: var(--color-danger-bg);
-  color: var(--color-danger);
+.capability-catalog__item-desc {
+  font-size: 10px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 1px;
 }
 
-.capability-catalog__item-badge--medium {
-  background: var(--color-warning-bg);
-  color: var(--color-warning);
-}
+/* ── 右侧详情面板 ── */
 
-.capability-catalog__item-badge--low {
-  background: var(--color-success-bg);
-  color: var(--color-success);
-}
-
-/* 能力详情 */
-.capability-catalog__detail {
+.capability-catalog__detail-pane {
   display: flex;
   flex-direction: column;
-  gap: var(--space-md);
-  padding: var(--space-sm) 0;
+  overflow-y: auto;
+  min-height: 0;
 }
 
-.capability-catalog__detail-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-sm);
-}
+/* ── 空列表 ── */
 
-.capability-catalog__detail-header h3 {
-  margin: 0;
-  font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--text-primary);
-  word-break: break-all;
-}
-
-.capability-catalog__detail-desc {
-  font-size: var(--text-xs);
-  color: var(--text-secondary);
-  margin-top: 2px;
-}
-
-.capability-catalog__section {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-xs);
-}
-
-.capability-catalog__section h4 {
-  margin: 0;
-  font-size: var(--text-xs);
-  font-weight: 600;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-/* 输入参数表 */
-.capability-catalog__table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: var(--text-xs);
-}
-
-.capability-catalog__table th {
-  text-align: left;
-  padding: var(--space-xs) var(--space-sm);
-  font-weight: 600;
-  color: var(--text-secondary);
-  border-bottom: 1px solid var(--border-default);
-}
-
-.capability-catalog__table td {
-  padding: var(--space-xs) var(--space-sm);
-  border-bottom: 1px solid var(--border-subtle);
-  color: var(--text-primary);
-}
-
-.capability-catalog__table .is-mono {
-  font-family: var(--font-mono);
-  font-size: 11px;
-}
-
-/* 安全等级标签 */
-.capability-catalog__safety {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-}
-
-.capability-catalog__safety-level {
-  font-size: var(--text-xs);
-  font-weight: 600;
-  text-transform: capitalize;
-}
-
-.capability-catalog__safety-detail {
-  font-size: var(--text-xs);
-  color: var(--text-tertiary);
-}
-
-/* 实现信息 */
-.capability-catalog__impl {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-xs);
-  padding: var(--space-sm);
-  background: var(--surface-raised);
-  border-radius: var(--radius-sm);
-  font-size: var(--text-xs);
-}
-
-.capability-catalog__impl-type {
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.capability-catalog__impl-field {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.capability-catalog__impl-label {
-  color: var(--text-secondary);
-}
-
-.capability-catalog__impl-value {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text-primary);
-}
-
-/* 前置条件列表 */
-.capability-catalog__conditions {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.capability-catalog__condition-item {
-  padding: var(--space-xs) var(--space-sm);
-  background: var(--surface-raised);
-  border-radius: var(--radius-xs);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text-primary);
-}
-
-/* 空状态 */
 .capability-catalog__empty {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: var(--space-xs);
-  padding: var(--space-lg);
-  color: var(--text-tertiary);
+  gap: 4px;
+  padding: 32px 12px;
+  color: var(--muted);
   text-align: center;
 }
 
 .capability-catalog__empty span {
-  font-size: var(--text-xs);
+  font-size: 11px;
 }
 
 .capability-catalog__empty p {
   margin: 0;
-  font-size: var(--text-sm);
+  font-size: 13px;
 }
 
-/* 生成结果预览 */
+/* ── 生成结果 ── */
+
 .capability-catalog__generated {
   display: flex;
   flex-direction: column;
-  gap: var(--space-xs);
+  gap: 4px;
+  padding: 0 6px 4px;
+  flex-shrink: 0;
 }
 
 .capability-catalog__generated-item {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
-  padding: var(--space-sm);
-  background: var(--surface-raised);
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border-subtle);
+  padding: 6px 8px;
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  border-radius: var(--radius-sm, 8px);
+  border: 1px solid color-mix(in srgb, var(--accent) 15%, transparent);
 }
 
 .capability-catalog__generated-id {
-  font-family: var(--font-mono);
+  font-family: var(--font-mono, monospace);
   font-size: 11px;
   flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--text);
 }
 
-/* 加载状态 */
+/* ── 加载状态 ── */
+
 .capability-catalog__loading {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: var(--space-lg);
-  color: var(--text-tertiary);
-  font-size: var(--text-xs);
+  padding: 40px;
+  color: var(--muted);
+  font-size: 13px;
 }
