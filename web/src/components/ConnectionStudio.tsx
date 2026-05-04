@@ -13,7 +13,6 @@ import type {
 } from '../types';
 import {
   DeleteActionIcon,
-  SettingsIcon,
 } from './app/AppIcons';
 import { ExpandTransition } from './app/ExpandTransition';
 import {
@@ -529,6 +528,16 @@ export function ConnectionStudio({
                         key={`${connection.id || 'connection'}-${index}`}
                         className={`connection-card ${isActive ? 'is-active' : ''}`}
                         data-testid="connection-card"
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`编辑 ${connection.id || `connection_${index + 1}`}`}
+                        onClick={() => setActiveConnectionIndex(index)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            setActiveConnectionIndex(index);
+                          }
+                        }}
                       >
                         <div className="connection-card__main">
                           <div className="connection-card__icon">
@@ -560,14 +569,6 @@ export function ConnectionStudio({
                             <span className="connection-status__dot" />
                             {runtimeState.label}
                           </span>
-                          <button
-                            type="button"
-                            className="connection-card__settings"
-                            aria-label={`设置 ${connection.id || `connection_${index + 1}`}`}
-                            onClick={() => setActiveConnectionIndex(index)}
-                          >
-                            <SettingsIcon />
-                          </button>
                         </div>
 
                         {runtimeState.detail ? (
