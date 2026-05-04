@@ -24,8 +24,6 @@ import { BoardWorkspace, type BoardWorkspaceHandle } from './BoardWorkspace';
 import { BoardsPanel, type BoardItem } from './BoardsPanel';
 import { DashboardPanel } from './DashboardPanel';
 import { DeviceModelingPanel } from './DeviceModelingPanel';
-import { DslEditorPanel } from './DslEditorPanel';
-import { AiOrchestrationConsole } from './AiOrchestrationConsole';
 import { LogsPanel } from './LogsPanel';
 import { PluginPanel } from './PluginPanel';
 import { RuntimeManagerPanel } from './RuntimeManagerPanel';
@@ -95,7 +93,6 @@ interface StudioContentRouterProps {
   onStopDeploy: () => Promise<void>;
   onAiConfigSave: (update: AiConfigUpdate) => Promise<void>;
   onAiProviderTest: (draft: AiProviderDraft) => Promise<void>;
-  onImportDslToCanvas: (graphJson: Record<string, unknown>) => void;
 }
 
 function ProjectGate({
@@ -183,7 +180,6 @@ export function StudioContentRouter({
   onStopDeploy,
   onAiConfigSave,
   onAiProviderTest,
-  onImportDslToCanvas,
 }: StudioContentRouterProps) {
   switch (section) {
     case 'dashboard':
@@ -361,33 +357,6 @@ export function StudioContentRouter({
               <DeviceModelingPanel
                 isTauriRuntime={isTauriRuntime}
                 onStatusMessage={engine.setStatusMessage}
-              />
-            </ScrollSurface>
-          </section>
-        </StrictStudioPanel>
-      );
-    case 'dsl-editor':
-      return (
-        <StrictStudioPanel>
-          <section className="studio-content studio-content--panel">
-            <ScrollSurface className="panel studio-content__panel studio-content__panel--scroll">
-              <DslEditorPanel
-                isTauriRuntime={isTauriRuntime}
-                onStatusMessage={engine.setStatusMessage}
-              />
-            </ScrollSurface>
-          </section>
-        </StrictStudioPanel>
-      );
-    case 'ai-orchestration':
-      return (
-        <StrictStudioPanel>
-          <section className="studio-content studio-content--panel">
-            <ScrollSurface className="panel studio-content__panel studio-content__panel--scroll">
-              <AiOrchestrationConsole
-                isTauriRuntime={isTauriRuntime}
-                onStatusMessage={engine.setStatusMessage}
-                onGraphReady={onImportDslToCanvas}
               />
             </ScrollSurface>
           </section>

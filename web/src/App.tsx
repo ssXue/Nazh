@@ -215,19 +215,6 @@ function App() {
     setSidebarCollapsed,
   });
 
-  const handleImportDslToCanvas = useCallback(
-    (graphJson: Record<string, unknown>) => {
-      const project = projectLibrary.createProject('AI 编排工作流');
-      projectLibrary.updateProjectDraft(project.id, {
-        astText: JSON.stringify(graphJson, null, 2),
-      });
-      openBoard(project.id);
-      setSidebarCollapsed(true);
-      engine.resetWorkspaceRuntime('已导入 AI 编排工作流到画布。');
-    },
-    [projectLibrary, openBoard, setSidebarCollapsed, engine],
-  );
-
   const aiWorkflowComposer = useAiWorkflowComposerState({
     activeBoardId,
     activeProject,
@@ -597,7 +584,6 @@ function App() {
           onStopDeploy={handleUndeploy}
           onAiConfigSave={handleAiConfigSave}
           onAiProviderTest={handleAiProviderTest}
-          onImportDslToCanvas={handleImportDslToCanvas}
         />
       </section>
       <AiWorkflowComposer {...aiWorkflowComposer.composerProps} />

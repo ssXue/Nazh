@@ -49,10 +49,9 @@
 
 ## RFC-0004 Phase 4
 
-**已完成 4A/4B/4C**（2026-05-03）。AI 生成管道对接：
+**已完成 4A**（2026-05-03）。AI 生成管道对接：
 - 4A：设备/能力 AI 结构化提取提案 — `extract_device_proposal` / `extract_device_proposal_stream`（JSON 输出含 uncertainties + warnings）+ 前端 proposal 流程
-- 4B：DSL 编译器 IPC — `compile_workflow_dsl` / `load_compiler_asset_snapshot` + 前端 DSL 编辑器（YAML textarea + 编译反馈 + 资产快照）
-- 4C：AI 编排控制台 — `ai_generate_workflow_dsl` / `ai_generate_workflow_dsl_stream`（NL 目标 → Workflow DSL + 自动编译 + 不确定项标记）+ 前端三栏编排页面 + `use-dsl-orchestrator` hook + "导入画布"按钮（ADR-0021 闭环）
+- 4B/4C 的 DSL 编辑器页面和 AI 编排控制台页面已在 2026-05-04 移除——设计评估结论是与核心画布创作能力冲突。DSL 编辑器是编译器中间态的裸露调试界面（功能闭环缺失），AI 编排的一次性生成器能力已由画布内 `AiWorkflowComposer` 覆盖。对应的 4 个 IPC 命令（`compile_workflow_dsl` / `load_compiler_asset_snapshot` / `ai_generate_workflow_dsl` / `ai_generate_workflow_dsl_stream`）和前端组件/hooks/CSS 全部清除。`crates/dsl-core/` 和 `crates/dsl-compiler/` 库 crate 保留。
 - 4D 已完成：安全编译器对接（随 Phase 5 一起完成）
 
 ## 设备建模页优化（2026-05-04）
@@ -75,7 +74,7 @@
 - 规则 5 `dangerous_action_approval`：危险动作审批校验（Warning 级）
 - 规则 6 `mechanical_interlock`：机械互锁校验（Warning 级）
 - `compile_with_safety()` 新增编译入口（原有 `compile()` 不变）
-- IPC 已集成：`compile_workflow_dsl` / `ai_generate_workflow_dsl` 透传安全诊断到前端
+- 编译器库 crate 内部集成安全诊断；前端页面已移除，IPC 透传已清除（2026-05-04）
 
 ## ADR-0012 Phase 3
 

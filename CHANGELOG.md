@@ -19,10 +19,11 @@
 - ADR-0022：`crates/store/` Ring 1 SQLite crate（变量快照 / 变更历史 / 全局变量 / schema 版本管理）
 - P1/P2 技术债批量偿还：变量事件独立通道（`WorkflowVariableEvent`）、`NodeOutput.metadata` 改 `Option<Map>`、Rhai `default_max_operations` 统一、`workflow.rs` 拆为三模块、前端大文件拆分、17 IPC 类型迁入 `tauri-bindings`
 - RFC-0004 Phase 4A：设备/能力 AI 结构化提取提案（`extract_device_proposal` / `extract_device_proposal_stream`）— JSON 输出含 uncertainties + warnings
-- RFC-0004 Phase 4B：DSL 编译器 IPC（`compile_workflow_dsl` / `load_compiler_asset_snapshot`）+ 前端 DSL 编辑器（YAML textarea + 编译反馈 + 资产快照）
-- RFC-0004 Phase 4C：AI 编排控制台（`ai_generate_workflow_dsl` / `ai_generate_workflow_dsl_stream`）— 从自然语言目标生成 Workflow DSL + 自动编译 + 不确定项标记
-- RFC-0004 Phase 5：安全编译器 6 条规则（`compile_with_safety()`）— 单位一致性、量程边界、前置条件可达性、状态机完整性、危险动作审批、机械互锁 + IPC 透传安全诊断
-- ADR-0021 画布导入闭环：AI 编排控制台编译成功后可点击"导入画布"按钮，自动创建工程并导航到画布页渲染 WorkflowGraph
+- RFC-0004 Phase 5：安全编译器 6 条规则（`compile_with_safety()`）— 单位一致性、量程边界、前置条件可达性、状态机完整性、危险动作审批、机械互锁
+
+### 移除
+
+- DSL 编辑器页面和 AI 编排控制台页面（RFC-0004 Phase 4B/4C）— 设计评估结论：与核心画布创作能力冲突，功能闭环缺失 / 画布内 AI 编排器已覆盖同等能力。移除 4 个 IPC 命令（`compile_workflow_dsl` / `load_compiler_asset_snapshot` / `ai_generate_workflow_dsl` / `ai_generate_workflow_dsl_stream`）、前端组件、hooks、CSS
 
 ## [0.1.0] — 2025-xx-xx
 

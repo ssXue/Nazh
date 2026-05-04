@@ -191,11 +191,7 @@ pub fn run() {
             commands::capabilities::load_capability_version,
             commands::capabilities::generate_capabilities_from_device_cmd,
             commands::capabilities::save_capability_sources,
-            commands::capabilities::load_capability_sources,
-            commands::dsl_compiler::compile_workflow_dsl,
-            commands::dsl_compiler::load_compiler_asset_snapshot,
-            commands::dsl_compiler::ai_generate_workflow_dsl,
-            commands::dsl_compiler::ai_generate_workflow_dsl_stream
+            commands::capabilities::load_capability_sources
         ]);
 
     if let Err(error) = builder.run(tauri::generate_context!()) {

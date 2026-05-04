@@ -2,7 +2,7 @@
 
 | 字段     | 值                                         |
 |----------|--------------------------------------------|
-| 状态     | 已接受，部分实施（Phase 3 编译器 + Phase 4A/4B/4C/4D AI 编排已实施，Phase 5 Safety Compiler 已实施，画布导入闭环已实施；DSL 编辑器 gutter diagnostics 待后续）                |
+| 状态     | 已接受，部分实施（Phase 3 编译器 + Phase 4A 设备 AI 提取 + Phase 5 Safety Compiler 已实施；Phase 4B/4C 的 DSL 编辑器页面和 AI 编排控制台页面已于 2026-05-04 移除——与核心画布冲突；画布内 AiWorkflowComposer 覆盖 AI 编排需求；DSL 编辑器 gutter diagnostics 待后续）                |
 | 日期     | 2026-04-30                                 |
 | 决策者   | ssXue                                      |
 | 关联     | RFC-0004（三段式 DSL）、ADR-0010（Pin 声明）、ADR-0012（工作流变量）、ADR-0013（子图）、ADR-0014（PinKind）、ADR-0019（AI 依赖反转）、ADR-0020（`src/graph/` 归属） |
