@@ -1,43 +1,16 @@
-/* ── 设备导入抽屉 ── */
-
-.dm-drawer {
-  position: absolute;
-  inset: 0;
-  z-index: var(--z-overlay, 100);
-  display: flex;
-  pointer-events: auto;
-}
-
-.dm-drawer__backdrop {
-  position: absolute;
-  inset: 0;
-  background: color-mix(in srgb, var(--bg) 74%, transparent);
-  -webkit-backdrop-filter: blur(2px);
-  backdrop-filter: blur(2px);
-}
+/* ── 设备导入抽屉（由 ExpandTransition 居中承载） ── */
 
 .dm-drawer__panel {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: 440px;
-  max-width: 100%;
+  width: 520px;
+  max-width: calc(100vw - 48px);
+  max-height: calc(100vh - 48px);
   background: var(--panel-strong);
-  border-left: 1px solid var(--panel-border);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-lg, 16px);
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.2);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  animation: dm-drawer-slide-in 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-@keyframes dm-drawer-slide-in {
-  from {
-    transform: translateX(100%);
-  }
-  to {
-    transform: translateX(0);
-  }
 }
 
 .dm-drawer__header {

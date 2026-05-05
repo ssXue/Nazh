@@ -27,17 +27,13 @@ import {
   SlidersIcon,
   XCloseIcon,
 } from './AppIcons';
-
-type ThinkingModeValue = 'enabled' | 'disabled';
-type ReasoningEffortValue = 'high' | 'max';
+import { ExpandTransition } from './ExpandTransition';
 
 interface AgentSettingsFormState {
   systemPrompt: string;
   temperature: string;
   maxTokens: string;
   topP: string;
-  thinkingMode: string;
-  reasoningEffort: string;
   timeoutMs: string;
 }
 
@@ -46,8 +42,6 @@ const EMPTY_AGENT_SETTINGS_FORM: AgentSettingsFormState = {
   temperature: '',
   maxTokens: '',
   topP: '',
-  thinkingMode: '',
-  reasoningEffort: '',
   timeoutMs: '',
 };
 
@@ -101,23 +95,6 @@ function parseOptionalPositiveInteger(value: string): number | undefined {
   return Math.round(parsed);
 }
 
-function isThinkingModeValue(value: string): value is ThinkingModeValue {
-  return value === 'enabled' || value === 'disabled';
-}
-
-function isReasoningEffortValue(value: string): value is ReasoningEffortValue {
-  return value === 'high' || value === 'max';
-}
-
-function parseOptionalThinkingConfig(value: string) {
-  const normalized = value.trim();
-  return isThinkingModeValue(normalized) ? { type: normalized } : undefined;
-}
-
-function parseOptionalReasoningEffort(value: string): ReasoningEffortValue | undefined {
-  const normalized = value.trim();
-  return isReasoningEffortValue(normalized) ? normalized : undefined;
-}
 
 function buildProviderUpserts(
   aiConfig: NonNullable<AiConfigPanelProps['aiConfig']>,
@@ -175,8 +152,6 @@ function toAgentSettingsForm(
     temperature: readNumberInput(aiConfig.copilotParams.temperature),
     maxTokens: readNumberInput(aiConfig.copilotParams.maxTokens),
     topP: readNumberInput(aiConfig.copilotParams.topP),
-    thinkingMode: aiConfig.copilotParams.thinking?.type ?? '',
-    reasoningEffort: aiConfig.copilotParams.reasoningEffort ?? '',
     timeoutMs: readNumberInput(aiConfig.agentSettings.timeoutMs),
   };
 }
@@ -250,12 +225,6 @@ export function AiConfigPanel({
   const isTopPValid =
     !agentSettingsForm.topP.trim() ||
     parseOptionalFiniteNumber(agentSettingsForm.topP) !== undefined;
-  const isThinkingModeValid =
-    agentSettingsForm.thinkingMode === '' ||
-    isThinkingModeValue(agentSettingsForm.thinkingMode);
-  const isReasoningEffortValid =
-    agentSettingsForm.reasoningEffort === '' ||
-    isReasoningEffortValue(agentSettingsForm.reasoningEffort);
   const isTimeoutValid =
     !agentSettingsForm.timeoutMs.trim() ||
     parseOptionalPositiveInteger(agentSettingsForm.timeoutMs) !== undefined;
@@ -263,8 +232,6 @@ export function AiConfigPanel({
     isTemperatureValid &&
     isMaxTokensValid &&
     isTopPValid &&
-    isThinkingModeValid &&
-    isReasoningEffortValid &&
     isTimeoutValid;
 
   const hasPendingAgentSettings =
@@ -414,8 +381,6 @@ export function AiConfigPanel({
           temperature: parseOptionalFiniteNumber(agentSettingsForm.temperature),
           maxTokens: parseOptionalPositiveInteger(agentSettingsForm.maxTokens),
           topP: parseOptionalFiniteNumber(agentSettingsForm.topP),
-          thinking: parseOptionalThinkingConfig(agentSettingsForm.thinkingMode),
-          reasoningEffort: parseOptionalReasoningEffort(agentSettingsForm.reasoningEffort),
         },
         agentSettings: {
           systemPrompt: agentSettingsForm.systemPrompt.trim() || undefined,
@@ -456,8 +421,8 @@ export function AiConfigPanel({
     setAgentSettingsForm(toAgentSettingsForm(aiConfig));
   }
 
-  return (
-    <div className="ai-config-panel">
+  const baseView = (
+    <>
       <div
         className="panel__header panel__header--desktop window-safe-header"
         data-window-drag-region
@@ -620,10 +585,11 @@ export function AiConfigPanel({
         )}
         </div>
       </div>
+    </>
+  );
 
-      {showForm && (
-        <div className="ai-drawer-overlay" onClick={handleResetForm}>
-          <div className="ai-drawer" onClick={(e) => e.stopPropagation()}>
+  const providerFormOverlay = (
+    <div className="ai-drawer" onClick={(e) => e.stopPropagation()}>
             <div className="ai-drawer__header">
               <h3>{isEditingProvider ? '编辑提供商' : '添加提供商'}</h3>
               <button
@@ -815,220 +781,148 @@ export function AiConfigPanel({
                 </button>
               </div>
             </div>
-          </div>
+    </div>
+  );
+
+  const agentDialogOverlay = (
+    <div className="ai-agent-dialog" onClick={(e) => e.stopPropagation()}>
+      <div className="ai-drawer__header">
+        <h3>全局 Agent 参数</h3>
+        <button
+          type="button"
+          className="ai-drawer__close"
+          onClick={() => setShowAgentDialog(false)}
+        >
+          <XCloseIcon className="ai-btn-icon" />
+        </button>
+      </div>
+
+      <div className="ai-drawer__body">
+        <p className="ai-config-panel__hint">
+          `code` 节点调用 `ai_complete(prompt)` 时默认使用这里的系统提示词、采样参数和超时设置。
+        </p>
+
+        <div className="ai-agent-dialog__fields">
+          <article className="settings-row settings-row--stacked">
+            <label className="settings-row__label" htmlFor="ai-agent-temperature">
+              Temperature
+            </label>
+            <input
+              id="ai-agent-temperature"
+              className="settings-path-input"
+              type="text"
+              placeholder="留空使用默认值"
+              value={agentSettingsForm.temperature}
+              onChange={(event) =>
+                handleAgentSettingsChange('temperature', event.target.value)
+              }
+            />
+          </article>
+
+          <article className="settings-row settings-row--stacked">
+            <label className="settings-row__label" htmlFor="ai-agent-max-tokens">
+              Max Tokens
+            </label>
+            <input
+              id="ai-agent-max-tokens"
+              className="settings-path-input"
+              type="text"
+              placeholder="留空使用默认值"
+              value={agentSettingsForm.maxTokens}
+              onChange={(event) =>
+                handleAgentSettingsChange('maxTokens', event.target.value)
+              }
+            />
+          </article>
+
+          <article className="settings-row settings-row--stacked">
+            <label className="settings-row__label" htmlFor="ai-agent-top-p">
+              Top P
+            </label>
+            <input
+              id="ai-agent-top-p"
+              className="settings-path-input"
+              type="text"
+              placeholder="留空使用默认值"
+              value={agentSettingsForm.topP}
+              onChange={(event) => handleAgentSettingsChange('topP', event.target.value)}
+            />
+          </article>
+
+          <article className="settings-row settings-row--stacked">
+            <label className="settings-row__label" htmlFor="ai-agent-timeout">
+              Agent 超时 ms
+            </label>
+            <input
+              id="ai-agent-timeout"
+              className="settings-path-input"
+              type="text"
+              placeholder="留空使用运行时默认值"
+              value={agentSettingsForm.timeoutMs}
+              onChange={(event) =>
+                handleAgentSettingsChange('timeoutMs', event.target.value)
+              }
+            />
+          </article>
+
+          <article className="settings-row settings-row--stacked">
+            <label className="settings-row__label" htmlFor="ai-agent-system-prompt">
+              System Prompt
+            </label>
+            <textarea
+              id="ai-agent-system-prompt"
+              className="settings-path-input"
+              placeholder="可选：全局约束 code node 的 AI 输出风格"
+              value={agentSettingsForm.systemPrompt}
+              onChange={(event) =>
+                handleAgentSettingsChange('systemPrompt', event.target.value)
+              }
+            />
+          </article>
         </div>
-      )}
 
-      {showAgentDialog && (
-        <div className="ai-drawer-overlay" onClick={() => setShowAgentDialog(false)}>
-          <div className="ai-agent-dialog" onClick={(e) => e.stopPropagation()}>
-            <div className="ai-drawer__header">
-              <h3>全局 Agent 参数</h3>
-              <button
-                type="button"
-                className="ai-drawer__close"
-                onClick={() => setShowAgentDialog(false)}
-              >
-                <XCloseIcon className="ai-btn-icon" />
-              </button>
-            </div>
+        {!isAgentSettingsValid ? (
+          <article className="ai-config-panel__notice ai-config-panel__notice--error">
+            <span style={{ color: 'var(--color-error)' }}>
+              参数格式无效：Temperature / Top P 需要是数字，Max Tokens / 超时需要是大于 0 的整数。
+            </span>
+          </article>
+        ) : null}
+      </div>
 
-            <div className="ai-drawer__body">
-              <p className="ai-config-panel__hint">
-                `code` 节点调用 `ai_complete(prompt)` 时默认使用这里的系统提示词、采样参数和超时设置。
-              </p>
-
-              <div className="ai-agent-dialog__fields">
-                <article className="settings-row settings-row--stacked">
-                  <label className="settings-row__label" htmlFor="ai-agent-temperature">
-                    Temperature
-                  </label>
-                  <input
-                    id="ai-agent-temperature"
-                    className="settings-path-input"
-                    type="text"
-                    placeholder="留空使用默认值"
-                    value={agentSettingsForm.temperature}
-                    onChange={(event) =>
-                      handleAgentSettingsChange('temperature', event.target.value)
-                    }
-                  />
-                </article>
-
-                <article className="settings-row settings-row--stacked">
-                  <label className="settings-row__label" htmlFor="ai-agent-max-tokens">
-                    Max Tokens
-                  </label>
-                  <input
-                    id="ai-agent-max-tokens"
-                    className="settings-path-input"
-                    type="text"
-                    placeholder="留空使用默认值"
-                    value={agentSettingsForm.maxTokens}
-                    onChange={(event) =>
-                      handleAgentSettingsChange('maxTokens', event.target.value)
-                    }
-                  />
-                </article>
-
-                <article className="settings-row settings-row--stacked">
-                  <label className="settings-row__label" htmlFor="ai-agent-top-p">
-                    Top P
-                  </label>
-                  <input
-                    id="ai-agent-top-p"
-                    className="settings-path-input"
-                    type="text"
-                    placeholder="留空使用默认值"
-                    value={agentSettingsForm.topP}
-                    onChange={(event) => handleAgentSettingsChange('topP', event.target.value)}
-                  />
-                </article>
-
-                <article className="settings-row settings-row--stacked">
-                  <strong className="settings-row__label">DeepSeek Thinking</strong>
-                  <div className="settings-segment" role="group" aria-label="DeepSeek Thinking">
-                    <button
-                      type="button"
-                      className={
-                        agentSettingsForm.thinkingMode === ''
-                          ? 'settings-segment__button is-active'
-                          : 'settings-segment__button'
-                      }
-                      onClick={() => handleAgentSettingsChange('thinkingMode', '')}
-                    >
-                      默认
-                    </button>
-                    <button
-                      type="button"
-                      className={
-                        agentSettingsForm.thinkingMode === 'enabled'
-                          ? 'settings-segment__button is-active'
-                          : 'settings-segment__button'
-                      }
-                      onClick={() => handleAgentSettingsChange('thinkingMode', 'enabled')}
-                    >
-                      开启
-                    </button>
-                    <button
-                      type="button"
-                      className={
-                        agentSettingsForm.thinkingMode === 'disabled'
-                          ? 'settings-segment__button is-active'
-                          : 'settings-segment__button'
-                      }
-                      onClick={() => handleAgentSettingsChange('thinkingMode', 'disabled')}
-                    >
-                      关闭
-                    </button>
-                  </div>
-                </article>
-
-                <article className="settings-row settings-row--stacked">
-                  <strong className="settings-row__label">Reasoning Effort</strong>
-                  <div className="settings-segment" role="group" aria-label="Reasoning Effort">
-                    <button
-                      type="button"
-                      className={
-                        agentSettingsForm.reasoningEffort === ''
-                          ? 'settings-segment__button is-active'
-                          : 'settings-segment__button'
-                      }
-                      onClick={() => handleAgentSettingsChange('reasoningEffort', '')}
-                    >
-                      默认
-                    </button>
-                    <button
-                      type="button"
-                      className={
-                        agentSettingsForm.reasoningEffort === 'high'
-                          ? 'settings-segment__button is-active'
-                          : 'settings-segment__button'
-                      }
-                      onClick={() => handleAgentSettingsChange('reasoningEffort', 'high')}
-                    >
-                      High
-                    </button>
-                    <button
-                      type="button"
-                      className={
-                        agentSettingsForm.reasoningEffort === 'max'
-                          ? 'settings-segment__button is-active'
-                          : 'settings-segment__button'
-                      }
-                      onClick={() => handleAgentSettingsChange('reasoningEffort', 'max')}
-                    >
-                      Max
-                    </button>
-                  </div>
-                </article>
-
-                <article className="settings-row settings-row--stacked">
-                  <label className="settings-row__label" htmlFor="ai-agent-timeout">
-                    Agent 超时 ms
-                  </label>
-                  <input
-                    id="ai-agent-timeout"
-                    className="settings-path-input"
-                    type="text"
-                    placeholder="留空使用运行时默认值"
-                    value={agentSettingsForm.timeoutMs}
-                    onChange={(event) =>
-                      handleAgentSettingsChange('timeoutMs', event.target.value)
-                    }
-                  />
-                </article>
-
-                <article className="settings-row settings-row--stacked">
-                  <label className="settings-row__label" htmlFor="ai-agent-system-prompt">
-                    System Prompt
-                  </label>
-                  <textarea
-                    id="ai-agent-system-prompt"
-                    className="settings-path-input"
-                    placeholder="可选：全局约束 code node 的 AI 输出风格"
-                    value={agentSettingsForm.systemPrompt}
-                    onChange={(event) =>
-                      handleAgentSettingsChange('systemPrompt', event.target.value)
-                    }
-                  />
-                </article>
-              </div>
-
-              {!isAgentSettingsValid ? (
-                <article className="ai-config-panel__notice ai-config-panel__notice--error">
-                  <span style={{ color: 'var(--color-error)' }}>
-                    参数格式无效：Temperature / Top P 需要是数字，Max Tokens / 超时需要是大于 0 的整数。
-                  </span>
-                </article>
-              ) : null}
-            </div>
-
-            <div className="ai-drawer__footer">
-              <div className="settings-path-actions">
-                <button
-                  type="button"
-                  className="settings-inline-button"
-                  disabled={!hasPendingAgentSettings || !isAgentSettingsValid}
-                  onClick={handleSaveAgentSettings}
-                >
-                  <SaveIcon className="ai-btn-icon" />
-                  保存参数
-                </button>
-                <button
-                  type="button"
-                  className="settings-inline-button settings-inline-button--ghost"
-                  disabled={!hasPendingAgentSettings}
-                  onClick={handleResetAgentSettings}
-                >
-                  <ResetIcon className="ai-btn-icon" />
-                  还原
-                </button>
-              </div>
-            </div>
-          </div>
+      <div className="ai-drawer__footer">
+        <div className="settings-path-actions">
+          <button
+            type="button"
+            className="settings-inline-button"
+            disabled={!hasPendingAgentSettings || !isAgentSettingsValid}
+            onClick={handleSaveAgentSettings}
+          >
+            <SaveIcon className="ai-btn-icon" />
+            保存参数
+          </button>
+          <button
+            type="button"
+            className="settings-inline-button settings-inline-button--ghost"
+            disabled={!hasPendingAgentSettings}
+            onClick={handleResetAgentSettings}
+          >
+            <ResetIcon className="ai-btn-icon" />
+            还原
+          </button>
         </div>
-      )}
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="ai-config-panel">
+      <ExpandTransition
+        active={showForm || showAgentDialog}
+        mode="centered"
+        base={baseView}
+        overlay={showForm ? providerFormOverlay : showAgentDialog ? agentDialogOverlay : null}
+      />
     </div>
   );
 }

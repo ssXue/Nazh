@@ -230,19 +230,22 @@ export function DeviceModelingPanel({
   return (
     <div className="device-modeling">
       <ExpandTransition
-        active={!!showDetail}
-        loading={detailLoading}
+        active={!!showDetail || importDrawerOpen}
+        loading={detailLoading && !importDrawerOpen}
         mode="centered"
         base={gridBase}
-        overlay={detailOverlay}
-      />
-
-      <DeviceImportDrawer
-        open={importDrawerOpen}
-        workspacePath={workspacePath}
-        onClose={() => setImportDrawerOpen(false)}
-        onSaved={() => void loadAssets()}
-        onStatusMessage={onStatusMessage}
+        overlay={
+          importDrawerOpen ? (
+            <DeviceImportDrawer
+              workspacePath={workspacePath}
+              onClose={() => setImportDrawerOpen(false)}
+              onSaved={() => { setImportDrawerOpen(false); void loadAssets(); }}
+              onStatusMessage={onStatusMessage}
+            />
+          ) : (
+            detailOverlay
+          )
+        }
       />
     </div>
   );

@@ -41,7 +41,6 @@ const TEXT_PHASES: PhaseInfo[] = [
 ];
 
 interface DeviceImportDrawerProps {
-  open: boolean;
   workspacePath: string;
   onClose: () => void;
   onSaved: () => void;
@@ -51,7 +50,6 @@ interface DeviceImportDrawerProps {
 type InputMode = 'text' | 'pdf';
 
 export function DeviceImportDrawer({
-  open,
   workspacePath,
   onClose,
   onSaved,
@@ -260,13 +258,8 @@ export function DeviceImportDrawer({
     onClose();
   }, [onClose]);
 
-  if (!open) return null;
-
   return (
-    <div className="dm-drawer">
-      <div className="dm-drawer__backdrop" onClick={handleClose} />
-
-      <div className="dm-drawer__panel">
+    <div className="dm-drawer__panel" onClick={(e) => e.stopPropagation()}>
         <div className="dm-drawer__header">
           <h2>从说明书导入设备</h2>
           <button type="button" className="dm-drawer__close" onClick={handleClose}>
@@ -348,8 +341,7 @@ export function DeviceImportDrawer({
           )}
         </div>
       </div>
-    </div>
-  );
+    );
 }
 
 // ---- 进度指示器 ----

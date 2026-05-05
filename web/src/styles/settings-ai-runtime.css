@@ -337,14 +337,24 @@
   grid-column: 1 / -1;
 }
 
-/* --- 抽屉遮罩 + 面板 --- */
+/* --- ExpandTransition 承载下的面板 --- */
+.ai-config-panel > .expand-base {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  gap: 6px;
+}
+
+/* --- 抽屉遮罩 + 面板（Agent 对话框仍独立使用） --- */
 .ai-drawer-overlay {
-  position: absolute;
+  position: fixed;
   inset: 0;
   z-index: 20;
   background: rgba(0, 0, 0, 0.25);
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: center;
   animation: ai-drawer-fade-in 0.15s ease;
 }
 
@@ -353,21 +363,17 @@
   to { opacity: 1; }
 }
 
+/* 由 ExpandTransition 承载时，动画由 expand-overlay--centered > * 提供 */
 .ai-drawer {
-  width: min(380px, 90%);
-  height: 100%;
+  width: min(440px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
   display: flex;
   flex-direction: column;
   background: var(--surface);
-  border-left: 1px solid var(--line-soft);
-  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.08);
-  animation: ai-drawer-slide-in 0.2s ease;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-lg, 16px);
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.2);
   overflow: hidden;
-}
-
-@keyframes ai-drawer-slide-in {
-  from { transform: translateX(100%); }
-  to { transform: translateX(0); }
 }
 
 .ai-drawer__header {
@@ -448,19 +454,7 @@
   border: 1px solid var(--line-soft);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-medium);
-  animation: ai-dialog-pop 0.2s ease;
   overflow: hidden;
-}
-
-@keyframes ai-dialog-pop {
-  from { opacity: 0; transform: scale(0.96); }
-  to { opacity: 1; transform: scale(1); }
-}
-
-/* 对话框遮罩居中（覆盖默认的 flex-end） */
-.ai-drawer-overlay:has(> .ai-agent-dialog) {
-  justify-content: center;
-  align-items: center;
 }
 
 .ai-agent-dialog__fields {
@@ -491,7 +485,7 @@
   }
 
   .ai-drawer {
-    width: 100%;
+    width: min(440px, calc(100vw - 32px));
   }
 }
 
