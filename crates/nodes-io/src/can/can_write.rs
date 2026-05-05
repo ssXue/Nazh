@@ -1,6 +1,6 @@
 //! CAN 帧发送节点。
 //!
-//! 通过 SLCAN 适配器发送单帧 CAN 数据。
+//! 通过连接级共享 CAN 会话发送单帧 CAN 数据。
 //! 帧 ID 和 data 可从 payload 动态提取，或由 config 中的默认值覆盖。
 //! 无连接时走 MockBackend，记录发送但不实际操作硬件。
 
@@ -11,9 +11,16 @@ use serde_json::{Map, Value, json};
 use uuid::Uuid;
 
 use connections::{SharedConnectionManager, connection_metadata};
-use nazh_core::{EngineError, NodeExecution, NodeTrait, PinDefinition, PinType, into_payload_map};
+use nazh_core::{
+    EngineError, LifecycleGuard, NodeExecution, NodeLifecycleContext, NodeTrait, PinDefinition,
+    PinType, into_payload_map,
+};
 
-use crate::can::{CanBusConfig, CanFrame, create_can_bus, hex, validate_can_id};
+use crate::can::{
+    CanFrame, hex,
+    session::{self, CanBusRuntime},
+    validate_can_id,
+};
 
 /// CAN 写节点配置。
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -48,40 +55,13 @@ impl CanWriteNode {
             connection_manager,
         }
     }
-}
-
-#[async_trait]
-impl NodeTrait for CanWriteNode {
-    nazh_core::impl_node_meta!("canWrite");
-
-    fn input_pins(&self) -> Vec<PinDefinition> {
-        vec![PinDefinition::required_input(
-            PinType::Json,
-            "待发送 CAN 帧参数（can_id / data / is_extended）",
-        )]
-    }
-
-    fn output_pins(&self) -> Vec<PinDefinition> {
-        vec![PinDefinition::output(
-            PinType::Json,
-            "发送结果（包含实际发送的帧信息）",
-        )]
-    }
 
     #[allow(clippy::cast_possible_truncation)]
-    async fn transform(
+    fn frame_from_payload(
         &self,
-        trace_id: Uuid,
         payload: Value,
-    ) -> Result<NodeExecution, EngineError> {
-        let mut guard = if let Some(conn_id) = &self.config.connection_id {
-            Some(self.connection_manager.acquire(conn_id).await?)
-        } else {
-            None
-        };
-
-        // 从 payload 提取帧参数（优先于 config 默认值）
-        let payload_map = into_payload_map(payload.clone());
+    ) -> Result<(Map<String, Value>, CanFrame), EngineError> {
+        let payload_map = into_payload_map(payload);
         let can_id = payload_map
             .get("can_id")
             .and_then(Value::as_u64)
@@ -105,7 +85,7 @@ impl NodeTrait for CanWriteNode {
         validate_can_id(can_id, is_extended)
             .map_err(|e| EngineError::node_config(self.id.clone(), e.to_string()))?;
 
-        let data: Vec<u8> = payload_map
+        let data = payload_map
             .get("data")
             .and_then(|v| {
                 if let Value::Array(arr) = v {
@@ -123,38 +103,82 @@ impl NodeTrait for CanWriteNode {
             .transpose()?
             .unwrap_or_default();
 
-        // 构建 CAN 帧
         let frame = if is_extended {
             CanFrame::new_extended(can_id, &data)
         } else {
             CanFrame::new_standard(can_id, &data)
         };
+        Ok((payload_map, frame))
+    }
+}
 
-        // 构建 CAN 总线配置
-        let bus_config = if let Some(ref mut g) = guard {
-            CanBusConfig::from_metadata(g.metadata())
-                .map_err(|e| EngineError::node_config(self.id.clone(), e.to_string()))?
-        } else {
-            // 无连接时回退到 Mock
-            CanBusConfig {
-                interface: "mock".to_owned(),
-                channel: "mock-can".to_owned(),
-                baud_rate: 115_200,
-                bitrate: 500_000,
-                filters: Vec::new(),
-                fd: false,
-                receive_own_messages: false,
+#[async_trait]
+impl NodeTrait for CanWriteNode {
+    nazh_core::impl_node_meta!("canWrite");
+
+    fn input_pins(&self) -> Vec<PinDefinition> {
+        vec![PinDefinition::required_input(
+            PinType::Json,
+            "待发送 CAN 帧参数（can_id / data / is_extended）",
+        )]
+    }
+
+    fn output_pins(&self) -> Vec<PinDefinition> {
+        vec![PinDefinition::output(
+            PinType::Json,
+            "发送结果（包含实际发送的帧信息）",
+        )]
+    }
+
+    async fn transform(
+        &self,
+        trace_id: Uuid,
+        payload: Value,
+    ) -> Result<NodeExecution, EngineError> {
+        let (payload_map, frame) = self.frame_from_payload(payload)?;
+
+        let connection_id = self
+            .config
+            .connection_id
+            .clone()
+            .unwrap_or_else(|| "mock-can".to_owned());
+
+        let runtime = CanBusRuntime::new(self.connection_manager.clone(), connection_id);
+        let session = runtime
+            .ensure_session(&self.id, |_| Ok(()))
+            .await
+            .map_err(|error| {
+                EngineError::stage_execution(self.id.clone(), trace_id, error.to_string())
+            })?;
+
+        let bus_guard = session.bus(&self.id)?;
+        let send_result = match bus_guard.as_ref() {
+            Some(bus) => bus.send(&frame).await,
+            None => {
+                return Err(EngineError::stage_execution(
+                    self.id.clone(),
+                    trace_id,
+                    "CAN 总线会话已被清理".to_owned(),
+                ));
             }
         };
+        drop(bus_guard);
 
-        // 创建后端并发送
-        let bus = create_can_bus(&bus_config)
-            .await
-            .map_err(|e| EngineError::stage_execution(self.id.clone(), trace_id, e.to_string()))?;
-
-        bus.send(&frame)
-            .await
-            .map_err(|e| EngineError::stage_execution(self.id.clone(), trace_id, e.to_string()))?;
+        if let Err(error) = send_result {
+            let reason = error.to_string();
+            runtime.shutdown().await;
+            if let Some(conn_id) = &self.config.connection_id {
+                let _ = self
+                    .connection_manager
+                    .record_connect_failure(conn_id, &reason)
+                    .await;
+            }
+            return Err(EngineError::stage_execution(
+                self.id.clone(),
+                trace_id,
+                reason,
+            ));
+        }
 
         // 构建输出 payload
         let mut output = payload_map;
@@ -171,20 +195,43 @@ impl NodeTrait for CanWriteNode {
         );
 
         // 构建 metadata
+        let simulated = session.simulated();
+        let channel_info = session.channel_info().to_owned();
+        let connection_meta = session
+            .lease()
+            .map(|lease| connection_metadata(&self.id, lease))
+            .transpose()?;
+
         let mut can_meta = Map::from_iter([
-            ("simulated".to_owned(), json!(guard.is_none())),
-            ("channel_info".to_owned(), json!(bus.channel_info())),
+            ("simulated".to_owned(), json!(simulated)),
+            ("channel_info".to_owned(), json!(channel_info)),
             ("sent_at".to_owned(), json!(Utc::now().to_rfc3339())),
         ]);
 
-        if let Some(ref mut g) = guard {
-            let (key, value) = connection_metadata(&self.id, g.lease())?;
+        if let Some((key, value)) = connection_meta {
             can_meta.insert(key, value);
-            g.mark_success();
         }
 
         let metadata = Map::from_iter([("can".to_owned(), Value::Object(can_meta))]);
         Ok(NodeExecution::broadcast(Value::Object(output)).with_metadata(Some(metadata)))
+    }
+
+    async fn on_deploy(&self, ctx: NodeLifecycleContext) -> Result<LifecycleGuard, EngineError> {
+        let connection_id = match &self.config.connection_id {
+            Some(id) => id.clone(),
+            None => return Ok(LifecycleGuard::noop()),
+        };
+
+        // 验证连接并预热共享会话
+        let runtime = CanBusRuntime::new(self.connection_manager.clone(), connection_id.clone());
+        let session = runtime.ensure_session(&self.id, |_| Ok(())).await?;
+        drop(session);
+
+        Ok(session::lifecycle_guard(
+            ctx,
+            self.connection_manager.clone(),
+            connection_id,
+        ))
     }
 }
 
@@ -232,6 +279,7 @@ fn parse_hex_string(s: &str) -> Result<Vec<u8>, String> {
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
+    use connections::{ConnectionDefinition, shared_connection_manager};
 
     #[test]
     fn 解析十六进制字符串空格分隔() {
@@ -278,5 +326,45 @@ mod tests {
         assert_eq!(pins[0].id, "in");
         assert_eq!(pins[0].pin_type, PinType::Json);
         assert!(pins[0].required);
+    }
+
+    #[tokio::test]
+    async fn 绑定连接时连续发送复用同一_can_会话() {
+        let manager = shared_connection_manager();
+        manager
+            .register_connection(ConnectionDefinition {
+                id: "can-fast".to_owned(),
+                kind: "can".to_owned(),
+                metadata: json!({
+                    "interface": "mock",
+                    "channel": "mock-can-fast",
+                    "baud_rate": 115_200,
+                    "bitrate": 1_000_000,
+                    "rate_limit_max_attempts": 1,
+                    "rate_limit_window_ms": 60_000
+                }),
+            })
+            .await
+            .unwrap();
+
+        let node = CanWriteNode::new(
+            "can-write-fast",
+            CanWriteNodeConfig {
+                connection_id: Some("can-fast".to_owned()),
+                can_id: Some(0x123),
+                is_extended: false,
+            },
+            manager,
+        );
+
+        let payload = json!({ "data": [1, 2, 3, 4] });
+        let first = node.transform(Uuid::new_v4(), payload.clone()).await;
+        let second = node.transform(Uuid::new_v4(), payload).await;
+
+        assert!(first.is_ok());
+        let second = second.unwrap();
+        let metadata = second.outputs[0].metadata.as_ref().unwrap();
+        assert_eq!(metadata["can"]["simulated"], Value::Bool(false));
+        assert_eq!(metadata["can"]["connection"]["id"], "can-fast");
     }
 }

@@ -20,6 +20,15 @@
 //! - 设置波特率：`S{代码}\r`（6 = 500kbps）
 //! - 打开 CAN：`O\r`
 //! - 关闭 CAN：`C\r`
+//!
+//! ## 高频运行模型
+//!
+//! CAN/SLCAN 节点共享连接级总线会话：同一 `connection_id` 的所有 canRead /
+//! canWrite 节点复用同一个后端实例，会话存储在 `ConnectionManager` 的共享会话缓存中。
+//! 热路径不再反复执行串口 open / `C-S-O` 初始化序列，避免 1M CAN 场景下被串口
+//! 独占锁、连接限流与初始化延迟拖垮。
+//!
+//! 节点级 CAN ID 过滤在接收到帧后本地执行，共享总线不做过滤。
 
 pub mod filter;
 pub mod frame;
@@ -28,6 +37,7 @@ pub mod hex;
 mod backends;
 mod can_read;
 mod can_write;
+mod session;
 
 use std::time::Duration;
 

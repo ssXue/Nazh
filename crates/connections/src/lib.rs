@@ -5,6 +5,7 @@
 //! 统一治理连接的建连、重连、心跳、超时、限流、熔断与状态诊断。
 
 use std::{
+    any::Any,
     collections::{HashMap, VecDeque},
     sync::{Arc, Mutex},
 };
@@ -371,6 +372,8 @@ impl Drop for ConnectionGuard {
 pub struct ConnectionManager {
     connections: RwLock<HashMap<String, Arc<Mutex<ConnectionRecord>>>>,
     attempt_windows: Mutex<HashMap<String, VecDeque<DateTime<Utc>>>>,
+    /// 连接级共享会话缓存。key 为 `connection_id`，value 为类型擦除的会话实例。
+    shared_sessions: RwLock<HashMap<String, Arc<dyn Any + Send + Sync>>>,
 }
 
 /// 创建一个空的 [`ConnectionManager`]，包装在 `Arc<...>` 中。
@@ -872,6 +875,80 @@ impl ConnectionManager {
             result.push(record.clone());
         }
         result
+    }
+
+    /// 获取或创建连接级共享会话。
+    ///
+    /// 同一 `connection_id` 的多个调用者共享同一会话实例。
+    /// 首次调用时执行 `factory` 创建会话，后续调用直接返回缓存。
+    ///
+    /// `factory` 内部应自行通过 `record_connect_success` / `record_connect_failure`
+    /// 报告建连健康状态，不依赖 `ConnectionGuard`（共享会话不使用排他借用）。
+    ///
+    /// # Errors
+    ///
+    /// - factory 创建失败时传播底层错误
+    pub async fn ensure_shared_session<T: Send + Sync + 'static>(
+        &self,
+        connection_id: &str,
+        factory: impl AsyncFnOnce() -> Result<T, EngineError>,
+    ) -> Result<Arc<T>, EngineError> {
+        // 快速路径：读锁检查缓存
+        {
+            let sessions = self.shared_sessions.read().await;
+            if let Some(existing) = sessions.get(connection_id) {
+                return existing.clone().downcast::<T>().map_err(|_| {
+                    EngineError::node_config(
+                        connection_id.to_owned(),
+                        "共享会话类型不匹配".to_owned(),
+                    )
+                });
+            }
+        }
+
+        // 慢路径：不在写锁期间执行 factory（避免阻塞其他读者）
+        let session = factory().await?;
+
+        let mut sessions = self.shared_sessions.write().await;
+        // double-check：factory 执行期间可能已被其他任务插入
+        if let Some(existing) = sessions.get(connection_id) {
+            return existing.clone().downcast::<T>().map_err(|_| {
+                EngineError::node_config(connection_id.to_owned(), "共享会话类型不匹配".to_owned())
+            });
+        }
+
+        let arc: Arc<dyn Any + Send + Sync> = Arc::new(session);
+        let result = arc.clone().downcast::<T>().map_err(|_| {
+            EngineError::node_config(connection_id.to_owned(), "共享会话类型不匹配".to_owned())
+        })?;
+        sessions.insert(connection_id.to_owned(), arc);
+        Ok(result)
+    }
+
+    /// 释放连接级共享会话。
+    ///
+    /// 从缓存移除会话。会话的 `Drop` 实现负责关闭底层总线和释放硬件资源。
+    /// 调用方（节点生命周期守卫）负责在移除前/后更新连接健康状态。
+    pub async fn remove_shared_session(&self, connection_id: &str) {
+        let mut sessions = self.shared_sessions.write().await;
+        sessions.remove(connection_id);
+    }
+
+    /// 清理并移除连接级共享会话。
+    ///
+    /// 从缓存取出会话，调用 `cleanup` 执行协议级关闭，然后从缓存移除。
+    /// `cleanup` 闭包接收 downcast 后的会话引用，负责关闭底层总线。
+    pub async fn cleanup_and_remove_shared_session<T: Send + Sync + 'static>(
+        &self,
+        connection_id: &str,
+        cleanup: impl FnOnce(&T),
+    ) {
+        let mut sessions = self.shared_sessions.write().await;
+        if let Some(session) = sessions.remove(connection_id)
+            && let Ok(concrete) = session.downcast::<T>()
+        {
+            cleanup(&concrete);
+        }
     }
 }
 

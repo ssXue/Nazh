@@ -19,6 +19,7 @@
 use std::{
     io::{BufRead, BufReader, Write},
     sync::{Arc, Mutex},
+    thread::JoinHandle,
     time::Duration,
 };
 
@@ -42,6 +43,7 @@ pub struct SlCanBackend {
     filters: Arc<Mutex<Vec<CanFilter>>>,
     state: Arc<Mutex<BusState>>,
     shutdown_tx: mpsc::Sender<()>,
+    reader_join: Option<JoinHandle<()>>,
 }
 
 impl SlCanBackend {
@@ -65,12 +67,25 @@ impl SlCanBackend {
         let state = Arc::new(Mutex::new(BusState::Active));
         let state_clone = Arc::clone(&state);
 
-        // 启动后台接收线程
-        std::thread::spawn(move || {
+        // 启动后台接收线程。JoinHandle 由 Drop 回收，确保串口 clone 及时释放。
+        let reader_join = std::thread::spawn(move || {
             let mut reader = BufReader::new(port_clone);
             let mut line = String::new();
 
             loop {
+                // 非阻塞检查关闭信号；放在读之前，避免串口空闲超时时无法退出。
+                match shutdown_rx.try_recv() {
+                    Ok(()) => {
+                        tracing::debug!("[slcan] 收到关闭信号，退出接收线程");
+                        break;
+                    }
+                    Err(mpsc::error::TryRecvError::Disconnected) => {
+                        tracing::debug!("[slcan] 关闭端已释放，退出接收线程");
+                        break;
+                    }
+                    Err(mpsc::error::TryRecvError::Empty) => {}
+                }
+
                 line.clear();
                 match reader.read_line(&mut line) {
                     Ok(0) => {
@@ -97,19 +112,6 @@ impl SlCanBackend {
                         break;
                     }
                 }
-
-                // 非阻塞检查关闭信号。
-                match shutdown_rx.try_recv() {
-                    Ok(()) => {
-                        tracing::debug!("[slcan] 收到关闭信号，退出接收线程");
-                        break;
-                    }
-                    Err(mpsc::error::TryRecvError::Disconnected) => {
-                        tracing::debug!("[slcan] 关闭端已释放，退出接收线程");
-                        break;
-                    }
-                    Err(mpsc::error::TryRecvError::Empty) => {}
-                }
             }
         });
 
@@ -120,6 +122,7 @@ impl SlCanBackend {
             filters: Arc::new(Mutex::new(Vec::new())),
             state,
             shutdown_tx,
+            reader_join: Some(reader_join),
         };
 
         backend.init_adapter().await?;
@@ -173,6 +176,11 @@ impl Drop for SlCanBackend {
     fn drop(&mut self) {
         let _ = self.shutdown_tx.try_send(());
         let _ = self.send_raw(b"C\r");
+        if let Some(reader_join) = self.reader_join.take()
+            && reader_join.join().is_err()
+        {
+            tracing::warn!("[slcan] 接收线程退出时发生 panic");
+        }
         if let Ok(mut state) = self.state.lock() {
             *state = BusState::Error;
         }
@@ -234,6 +242,7 @@ impl CanBus for SlCanBackend {
     }
 
     fn shutdown(&self) -> Result<(), CanError> {
+        let _ = self.shutdown_tx.try_send(());
         if let Ok(mut writer) = self.writer.lock() {
             let _ = writer.write_all(b"C\r");
             let _ = writer.flush();

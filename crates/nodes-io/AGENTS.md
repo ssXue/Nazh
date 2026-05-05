@@ -79,6 +79,20 @@ Plugin 注册入口：`IoPlugin::register(&mut NodeRegistry)`，在 `lib.rs` 集
 2. **连接 id 可从 `WorkflowNodeDefinition` 顶层字段继承**。辅助函数 `inherit_connection_id(&mut config.connection_id, def)` 实现这个 fallback；新节点添加连接支持时沿用这个模式。
 3. **Drop 自动归还**：`ConnectionGuard` 离开作用域时归还，不要手写 `drop(guard)` 或 `release`。必要时 `guard.mark_success()` 通知连接池健康反馈。
 
+### CAN/SLCAN 连接级共享会话
+
+`canRead` / `canWrite` 共享连接级 CAN 总线会话：
+
+- 同一 `connection_id` 的所有 CAN 节点共享同一个总线实例，存储在 `ConnectionManager::shared_sessions` 缓存中；
+- `can::session::CanBusRuntime` 是轻量级操作句柄，按需创建，内部委托给 `ConnectionManager::ensure_shared_session`；
+- 部署期（有 `connection_id`）或首帧（无连接 Mock）建立后端，后续 transform 复用；
+- SLCAN 只在建连时执行 `C` / `S{bitrate}` / `O` 初始化序列，避免 1M CAN 场景下被串口独占锁、连接限流和初始化延迟拖垮；
+- 共享会话不使用 `ConnectionGuard` 的排他借用，改用 `record_connect_success` / `record_connect_failure` 直接报告健康状态；
+- 节点级 CAN ID 过滤在接收到帧后本地执行，共享总线不做过滤；
+- 撤销部署时 `lifecycle_guard` 清理共享会话；运行错误时 `runtime.shutdown()` 移除会话，所有共享节点下次 `ensure_session` 重建。
+
+修改 CAN 节点时必须保留这个共享会话模型。
+
 ### 元数据约定（ADR-0008）
 
 所有节点通过 `NodeExecution::with_metadata()` 返回执行元数据，键名非下划线：
