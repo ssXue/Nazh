@@ -45,6 +45,11 @@ pub enum CapabilityImplSnapshot {
     SerialCommand {
         command_template: String,
     },
+    CanWrite {
+        can_id: u32,
+        data_template: String,
+        is_extended: bool,
+    },
     Script {
         content: String,
     },
@@ -196,6 +201,22 @@ impl NodeTrait for CapabilityCallNode {
                     "args": resolved_args,
                 })
             }
+            CapabilityImplSnapshot::CanWrite {
+                can_id,
+                data_template,
+                is_extended,
+            } => {
+                let resolved_data = self.resolve_template(data_template, &payload);
+                serde_json::json!({
+                    "capability_id": self.config.capability_id,
+                    "device_id": self.config.device_id,
+                    "operation": "can-write",
+                    "can_id": can_id,
+                    "data": resolved_data,
+                    "is_extended": is_extended,
+                    "args": resolved_args,
+                })
+            }
             CapabilityImplSnapshot::Script { content } => {
                 let resolved_script = self.resolve_template(content, &payload);
                 serde_json::json!({
@@ -327,6 +348,11 @@ mod tests {
             },
             CapabilityImplSnapshot::SerialCommand {
                 command_template: "c".to_owned(),
+            },
+            CapabilityImplSnapshot::CanWrite {
+                can_id: 0x123,
+                data_template: "0102".to_owned(),
+                is_extended: false,
             },
             CapabilityImplSnapshot::Script {
                 content: "s".to_owned(),

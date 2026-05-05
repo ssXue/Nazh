@@ -51,6 +51,8 @@ import { CodeNodeSettings } from './nodes/code/settings';
 import { TimerNodeSettings } from './nodes/timer/settings';
 import { SerialTriggerNodeSettings } from './nodes/serialTrigger/settings';
 import { ModbusReadNodeSettings } from './nodes/modbusRead/settings';
+import { CanReadNodeSettings } from './nodes/canRead/settings';
+import { CanWriteNodeSettings } from './nodes/canWrite/settings';
 import { MqttClientNodeSettings } from './nodes/mqttClient/settings';
 import { IfNodeSettings } from './nodes/if/settings';
 import { SwitchNodeSettings } from './nodes/switch/settings';
@@ -118,6 +120,9 @@ function readNodeDraft(node: FlowNodeEntity): SelectedNodeDraft {
     modbusRegisterType: readString(config.register_type, 'holding'),
     modbusBaseValue: readNumberString(config.base_value, '64'),
     modbusAmplitude: readNumberString(config.amplitude, '6'),
+    canId: readNumberString(config.can_id, ''),
+    canIsExtended: readBoolean(config.is_extended, false),
+    canReadTimeoutMs: readNumberString(config.timeout_ms, '1000'),
     mqttMode: readString(config.mode, 'publish'),
     mqttTopic: readString(config.topic, ''),
     mqttQos: typeof config.qos === 'number' ? String(config.qos) : '0',
@@ -212,6 +217,23 @@ function buildNodeConfig(draft: SelectedNodeDraft, currentConfig: NodeConfigMap)
 
   if (draft.nodeType === 'modbusRead') {
     return { ...currentConfig, unit_id: parsePositiveInteger(draft.modbusUnitId) ?? 1, register: parsePositiveInteger(draft.modbusRegister) ?? 40001, quantity: parsePositiveInteger(draft.modbusQuantity) ?? 1, register_type: draft.modbusRegisterType || 'holding', base_value: parseFiniteNumber(draft.modbusBaseValue) ?? 64, amplitude: parseFiniteNumber(draft.modbusAmplitude) ?? 6 };
+  }
+
+  if (draft.nodeType === 'canRead') {
+    return {
+      ...currentConfig,
+      can_id: parseNonNegativeInteger(draft.canId),
+      is_extended: draft.canIsExtended,
+      timeout_ms: parsePositiveInteger(draft.canReadTimeoutMs) ?? 1000,
+    };
+  }
+
+  if (draft.nodeType === 'canWrite') {
+    return {
+      ...currentConfig,
+      can_id: parseNonNegativeInteger(draft.canId),
+      is_extended: draft.canIsExtended,
+    };
   }
 
   if (draft.nodeType === 'mqttClient') {
@@ -327,6 +349,8 @@ const NODE_SETTINGS_MAP: Record<string, React.FC<NodeSettingsProps>> = {
   timer: TimerNodeSettings,
   serialTrigger: SerialTriggerNodeSettings,
   modbusRead: ModbusReadNodeSettings,
+  canRead: CanReadNodeSettings,
+  canWrite: CanWriteNodeSettings,
   mqttClient: MqttClientNodeSettings,
   if: IfNodeSettings,
   switch: SwitchNodeSettings,

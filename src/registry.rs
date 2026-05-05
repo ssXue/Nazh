@@ -43,6 +43,8 @@ mod tests {
             "sqlWriter",
             "debugConsole",
             "humanLoop",
+            "canRead",
+            "canWrite",
         ] {
             assert!(
                 types.contains(&expected),
@@ -52,12 +54,12 @@ mod tests {
     }
 
     #[test]
-    fn 两个插件合并后覆盖全部_22_种节点类型() {
+    fn 两个插件合并后覆盖全部_24_种节点类型() {
         let registry = standard_registry();
         assert_eq!(
             registry.registered_types().len(),
-            22,
-            "应注册 22 种节点类型"
+            24,
+            "应注册 24 种节点类型"
         );
     }
 
@@ -104,6 +106,8 @@ mod tests {
         expect("barkPush", NodeCapabilities::NETWORK_IO);
         expect("sqlWriter", NodeCapabilities::FILE_IO);
         expect("humanLoop", NodeCapabilities::BRANCHING);
+        expect("canRead", NodeCapabilities::DEVICE_IO);
+        expect("canWrite", NodeCapabilities::DEVICE_IO);
 
         // RFC-0004 Phase 3：DSL 编译器生成的节点
         expect("stateMachine", NodeCapabilities::BRANCHING);

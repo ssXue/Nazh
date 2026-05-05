@@ -65,6 +65,7 @@ import type {
 // 从拆分模块导入
 import {
   isSerialConnectionType,
+  isCanConnectionType,
   isModbusConnectionType,
   isMqttConnectionType,
   isHttpConnectionType,
@@ -281,6 +282,8 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
       connections.find((connection) => isHttpConnectionType(connection.type))?.id ?? null;
     const barkConnectionId =
       connections.find((connection) => isBarkConnectionType(connection.type))?.id ?? null;
+    const canConnectionId =
+      connections.find((connection) => isCanConnectionType(connection.type))?.id ?? null;
 
     return {
       any: anyConnectionId,
@@ -289,6 +292,7 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
       mqtt: mqttConnectionId,
       http: httpConnectionId,
       bark: barkConnectionId,
+      can: canConnectionId,
     };
   }, [connections]);
 

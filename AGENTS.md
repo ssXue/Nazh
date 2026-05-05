@@ -68,7 +68,7 @@ crates/
   connections/       # Ring 1 — ConnectionManager, ConnectionGuard RAII, health/circuit-breaker
   scripting/         # Ring 1 — Rhai engine base (with AI-aware ai_complete() helper)
   nodes-flow/        # Ring 1 — if / switch / loop / tryCatch / code (Rhai script) / stateMachine
-  nodes-io/          # Ring 1 — timer / serial / native / modbus / http / mqtt / bark / sql / debugConsole / capabilityCall
+  nodes-io/          # Ring 1 — timer / serial / native / modbus / http / mqtt / bark / sql / CAN/SLCAN / debugConsole / capabilityCall / humanLoop
   nodes-pure/        # Ring 1 — c2f / minutesSince / lookup pure-form Data 引脚节点（ADR-0014 Phase 3/3b）
   ai/                # Ring 1 — OpenAI-compatible client (streaming, thinking-mode) + 壳层配置型；AiService trait 在 Ring 0（ADR-0019）
   graph/             # Ring 1 — DAG 工作流编排：解析、校验、拓扑排序、部署与执行（ADR-0020）

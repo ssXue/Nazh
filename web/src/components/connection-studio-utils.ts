@@ -20,6 +20,7 @@ export interface ConnectionUsageSummary {
 }
 import {
   BarkNodeIcon,
+  CanNodeIcon,
   ConnectionsIcon,
   HttpClientNodeIcon,
   ModbusNodeIcon,
@@ -146,6 +147,23 @@ export const CONNECTION_TEMPLATES: ConnectionTemplate[] = [
     },
   },
   {
+    key: 'can-slcan',
+    label: 'CAN / SLCAN',
+    description: '适合 USB-CAN 适配器，使用 Lawicel SLCAN 串口协议。',
+    idPrefix: 'can_slcan',
+    definition: {
+      id: 'can_slcan',
+      type: 'can-slcan',
+      metadata: {
+        interface: 'slcan',
+        channel: '/dev/ttyUSB0',
+        baud_rate: 115200,
+        bitrate: 500000,
+        governance: DEFAULT_CONNECTION_GOVERNANCE,
+      },
+    },
+  },
+  {
     key: 'custom',
     label: '空白连接',
     description: '保留完全自定义空间，适配专有协议或插件节点。',
@@ -162,6 +180,10 @@ export const CONNECTION_TEMPLATES: ConnectionTemplate[] = [
 
 export const BAUD_RATE_OPTIONS = [
   1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600,
+];
+
+export const CAN_BITRATE_OPTIONS = [
+  10000, 20000, 50000, 100000, 125000, 250000, 500000, 800000, 1000000,
 ];
 
 export const DEFAULT_PORT_PATH: Record<string, string> = {
@@ -256,6 +278,17 @@ export function isSerialConnectionType(connectionType: string): boolean {
   }
 }
 
+export function isCanConnectionType(connectionType: string): boolean {
+  switch (normalizedConnectionType(connectionType)) {
+    case 'can':
+    case 'can-slcan':
+    case 'slcan':
+      return true;
+    default:
+      return false;
+  }
+}
+
 export function isHttpConnectionType(connectionType: string): boolean {
   switch (normalizedConnectionType(connectionType)) {
     case 'http':
@@ -286,6 +319,10 @@ export function connectionIconFor(connectionType: string): ConnectionIconCompone
   const type = normalizedConnectionType(connectionType);
   if (isSerialConnectionType(type)) {
     return SerialNodeIcon;
+  }
+
+  if (isCanConnectionType(type)) {
+    return CanNodeIcon;
   }
 
   if (isBarkConnectionType(type)) {
@@ -322,6 +359,13 @@ export function connectionParameterBrief(connection: ConnectionDefinition): stri
     const baudRate = metadataNumber(connection.metadata, 'baud_rate', 9600);
     const encoding = metadataString(connection.metadata, 'encoding', 'ascii').toUpperCase();
     return `${compactConnectionValue(portPath, '未配置端口')} · ${baudRate} · ${encoding}`;
+  }
+
+  if (isCanConnectionType(type)) {
+    const channel = metadataString(connection.metadata, 'channel', '未配置通道');
+    const baudRate = metadataNumber(connection.metadata, 'baud_rate', 115200);
+    const bitrate = metadataNumber(connection.metadata, 'bitrate', 500000);
+    return `${compactConnectionValue(channel, '未配置通道')} · ${baudRate} · CAN ${bitrate / 1000} kbps`;
   }
 
   if (type === 'modbus' || type === 'modbus_tcp') {

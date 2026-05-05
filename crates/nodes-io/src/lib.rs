@@ -42,6 +42,8 @@ mod timer;
 // 协议相关节点：按 cfg 启用
 #[cfg(feature = "io-notify")]
 mod bark_push;
+#[cfg(feature = "io-can")]
+mod can;
 #[cfg(feature = "io-http")]
 mod http_client;
 #[cfg(feature = "io-modbus")]
@@ -62,6 +64,9 @@ pub use human_loop::WorkflowId;
 pub use human_loop::registry::{HumanLoopResponse, PendingApprovalSummary, ResponseAction};
 pub use native::{NativeNode, NativeNodeConfig};
 pub use timer::{TimerNode, TimerNodeConfig};
+
+#[cfg(feature = "io-can")]
+pub use can::{CanReadNode, CanReadNodeConfig, CanWriteNode, CanWriteNodeConfig};
 
 #[cfg(feature = "io-notify")]
 pub use bark_push::{BarkPushNode, BarkPushNodeConfig};
@@ -250,5 +255,21 @@ impl Plugin for IoPlugin {
                 )))
             },
         );
+
+        #[cfg(feature = "io-can")]
+        registry.register_with_capabilities("canRead", NodeCapabilities::DEVICE_IO, |def, res| {
+            let mut config: CanReadNodeConfig = def.parse_config()?;
+            inherit_connection_id(&mut config.connection_id, def);
+            let cm = downcast_connection_manager(&res)?;
+            Ok(Arc::new(CanReadNode::new(def.id().to_owned(), config, cm)))
+        });
+
+        #[cfg(feature = "io-can")]
+        registry.register_with_capabilities("canWrite", NodeCapabilities::DEVICE_IO, |def, res| {
+            let mut config: CanWriteNodeConfig = def.parse_config()?;
+            inherit_connection_id(&mut config.connection_id, def);
+            let cm = downcast_connection_manager(&res)?;
+            Ok(Arc::new(CanWriteNode::new(def.id().to_owned(), config, cm)))
+        });
     }
 }

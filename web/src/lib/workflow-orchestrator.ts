@@ -45,6 +45,7 @@ const EMPTY_FLOWGRAM_CONNECTION_DEFAULTS = {
   mqtt: null,
   http: null,
   bark: null,
+  can: null,
 };
 const FLOWGRAM_NODE_REGISTRY_MAP = new Map(
   createFlowgramNodeRegistries(EMPTY_FLOWGRAM_CONNECTION_DEFAULTS).map((registry) => [
@@ -698,7 +699,7 @@ ${sourcePortGuideText}
 - 新建节点时自己选择 ref，但不要输出或猜测系统 node id
 - code 节点脚本只输出 Rhai 可执行逻辑，不要使用未声明 API
 - 如果设备/能力资产上下文存在，涉及设备动作时优先使用这些已审查 Device DSL / Capability DSL；不要编造未列出的 capability_id、device_id、寄存器、topic 或串口命令
-- 使用 capabilityCall 时，config 必须包含 capability_id、device_id、implementation、args；implementation 需从 Capability DSL 的 implementation 转为运行时快照（modbus-write.value → value_template，mqtt-publish.payload → payload_template，serial-command.command → command_template，script.content 保持 content）
+- 使用 capabilityCall 时，config 必须包含 capability_id、device_id、implementation、args；implementation 需从 Capability DSL 的 implementation 转为运行时快照（modbus-write.value → value_template，mqtt-publish.payload → payload_template，serial-command.command → command_template，can-write.data → data_template，script.content 保持 content）
 - 设备连接只引用 Device DSL connection.id，不要把连接密钥写入配置
 - 对于工业场景，优先给出可以直接继续编辑和绑定连接的稳定草图
 - 如果需求不清晰，优先从最小可运行链路开始，再补上分支和输出

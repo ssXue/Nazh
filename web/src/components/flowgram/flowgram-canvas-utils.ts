@@ -32,6 +32,18 @@ export function isSerialConnectionType(connectionType: string): boolean {
   }
 }
 
+/** 判断是否为 CAN / SLCAN 类连接。 */
+export function isCanConnectionType(connectionType: string): boolean {
+  switch (normalizedConnectionType(connectionType)) {
+    case 'can':
+    case 'can-slcan':
+    case 'slcan':
+      return true;
+    default:
+      return false;
+  }
+}
+
 /** 判断是否为 Modbus 类连接。 */
 export function isModbusConnectionType(connectionType: string): boolean {
   switch (normalizedConnectionType(connectionType)) {
@@ -282,6 +294,9 @@ export function resolveNodePortColor(
       return 'color-mix(in srgb, var(--accent) 55%, var(--warning) 45%)';
     case 'serialTrigger':
       return 'color-mix(in srgb, var(--accent) 64%, var(--success) 36%)';
+    case 'canRead':
+    case 'canWrite':
+      return 'color-mix(in srgb, var(--success) 58%, var(--warning) 42%)';
     case 'modbusRead':
       return 'color-mix(in srgb, var(--accent) 58%, var(--success) 42%)';
     case 'if':

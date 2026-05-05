@@ -8,7 +8,7 @@
 
 ## 定位
 
-节点绝不直接访问硬件——所有协议连接（Modbus / MQTT / HTTP / 串口 / Bark / ...）都声明为 `ConnectionDefinition`，注册到 `ConnectionManager`，节点通过 `acquire(id)` 借用 `ConnectionGuard`，Drop 时自动归还。
+节点绝不直接访问硬件——所有协议连接（Modbus / MQTT / HTTP / 串口 / CAN/SLCAN / Bark / ...）都声明为 `ConnectionDefinition`，注册到 `ConnectionManager`，节点通过 `acquire(id)` 借用 `ConnectionGuard`，Drop 时自动归还。
 
 ## 对外暴露
 
@@ -57,7 +57,7 @@ ts-rs 导出：`ConnectionDefinition` / `ConnectionHealthSnapshot` / `Connection
 | 改 `ConnectionGuard` API / Drop 行为 | 所有 `nodes-io` 中 `acquire` 的调用点；`connection_metadata` 可能需要调整 |
 | 改 `ConnectionDefinition` 字段 | ts-rs 重新生成 + 前端连接管理 UI |
 | 改熔断/健康判定算法 | 本文件"内部约定"小节 + 相关集成测试 + 若语义变化则开 ADR |
-| 加新的连接类型（如 OPC-UA） | `validate_connection_definition` 中的匹配分支 + `ConnectionDefinition` 的 type 字段 + `nodes-io` 的使用方 + 文档 |
+| 加新的连接类型（如 OPC-UA / CAN） | `validate_connection_definition` 中的匹配分支 + `ConnectionDefinition` 的 type 字段 + `nodes-io` 的使用方 + 文档 |
 | 改 `ConnectionHealthSnapshot` 字段 | ts-rs 重新生成 + 前端连接状态 UI |
 
 测试：

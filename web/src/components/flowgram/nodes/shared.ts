@@ -84,6 +84,7 @@ export interface FlowgramConnectionDefaults {
   mqtt: string | null;
   http: string | null;
   bark: string | null;
+  can: string | null;
 }
 
 export interface NodeCatalogInfo {

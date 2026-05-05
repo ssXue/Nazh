@@ -14,7 +14,7 @@
 //! | Ring 1 | `connections` | 全局连接资源池 |
 //! | Ring 1 | `scripting` | Rhai 脚本引擎基座 |
 //! | Ring 1 | `nodes-flow` | 流程控制节点（if/switch/loop/tryCatch/code） |
-//! | Ring 1 | `nodes-io` | I/O 节点（native/timer/serial/modbus/http/mqtt/bark/sql/debug） |
+//! | Ring 1 | `nodes-io` | I/O 节点（native/timer/serial/modbus/http/mqtt/bark/sql/can/debug） |
 //! | Ring 1 | `nodes-pure` | 纯计算节点（c2f/minutesSince/lookup） |
 //! | Ring 1 | `ai` | OpenAI-compatible `AiService` 实现 |
 //! | Ring 1 | `graph` | DAG 工作流编排：解析、校验、拓扑排序、部署与执行 |
@@ -60,6 +60,8 @@ pub use nodes_pure::{C2fNode, LookupNode, LookupNodeConfig, MinutesSinceNode, Pu
 
 #[cfg(feature = "io-notify")]
 pub use nodes_io::{BarkPushNode, BarkPushNodeConfig};
+#[cfg(feature = "io-can")]
+pub use nodes_io::{CanReadNode, CanReadNodeConfig, CanWriteNode, CanWriteNodeConfig};
 #[cfg(feature = "io-http")]
 pub use nodes_io::{HttpClientNode, HttpClientNodeConfig};
 #[cfg(feature = "io-modbus")]

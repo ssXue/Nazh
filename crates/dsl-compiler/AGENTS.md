@@ -52,6 +52,10 @@ RFC-0004 Phase 3 + Phase 5 核心组件：将 `WorkflowSpec`（状态机 YAML）
 
 `Value::Number` 整数→`{ "kind": "integer" }`，浮点→`{ "kind": "float" }`，`String`→`{ "kind": "string" }`，`Bool`→`{ "kind": "bool" }`，其余→`{ "kind": "any" }`。
 
+## Capability implementation 映射
+
+`output.rs::capability_impl_to_json` 必须输出 `nodes-io::CapabilityImplSnapshot` 能反序列化的格式：`modbus-write.value` → `value_template`，`mqtt-publish.payload` → `payload_template`，`serial-command.command` → `command_template`，`can-write.data` → `data_template`，`script.content` 保持 `content`。
+
 ## 修改本 crate 时
 
 - 编译输出格式变更必须同步更新 `WorkflowGraph` serde 格式 + 更新 conformance test

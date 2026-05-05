@@ -450,6 +450,19 @@ export function ModbusNodeIcon(props: IconProps) {
   );
 }
 
+export function CanNodeIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="M4 9h16" />
+      <path d="M4 15h16" />
+      <circle cx="7" cy="9" r="2.2" />
+      <circle cx="17" cy="15" r="2.2" />
+      <path d="M9.2 9h5.6" />
+      <path d="M9.2 15h5.6" />
+    </BaseIcon>
+  );
+}
+
 export function HttpClientNodeIcon(props: IconProps) {
   return (
     <BaseIcon {...props}>

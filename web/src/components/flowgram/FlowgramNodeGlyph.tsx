@@ -2,6 +2,7 @@ import type { SVGProps } from 'react';
 
 import {
   BarkNodeIcon,
+  CanNodeIcon,
   DebugConsoleNodeIcon,
   HttpClientNodeIcon,
   IfNodeIcon,
@@ -25,6 +26,8 @@ export function normalizeFlowgramDisplayType(value: unknown): NazhNodeDisplayTyp
     value === 'code' ||
     value === 'timer' ||
     value === 'serialTrigger' ||
+    value === 'canRead' ||
+    value === 'canWrite' ||
     value === 'modbusRead' ||
     value === 'capabilityCall' ||
     value === 'mqttClient' ||
@@ -58,6 +61,10 @@ export function getFlowgramDisplayLabel(displayType: NazhNodeDisplayType): strin
       return 'Timer';
     case 'serialTrigger':
       return 'Serial';
+    case 'canRead':
+      return 'CAN RX';
+    case 'canWrite':
+      return 'CAN TX';
     case 'modbusRead':
       return 'Modbus';
     case 'capabilityCall':
@@ -108,6 +115,9 @@ export function FlowgramNodeGlyph({
       return <TimerNodeIcon {...props} />;
     case 'serialTrigger':
       return <SerialNodeIcon {...props} />;
+    case 'canRead':
+    case 'canWrite':
+      return <CanNodeIcon {...props} />;
     case 'modbusRead':
       return <ModbusNodeIcon {...props} />;
     case 'capabilityCall':

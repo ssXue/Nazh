@@ -21,6 +21,7 @@ const CONNECTION_DEFAULTS: FlowgramConnectionDefaults = {
   mqtt: null,
   http: null,
   bark: null,
+  can: null,
 };
 
 describe('normalizeFlowgramNodeJson', () => {

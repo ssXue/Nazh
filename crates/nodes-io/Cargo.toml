@@ -21,6 +21,7 @@ serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+thiserror.workspace = true
 url.workspace = true
 uuid.workspace = true
 
@@ -38,7 +39,7 @@ default = ["io-all"]
 
 # 元 feature。`debug` / `native` / `timer` 与 `template` 工具永远启用，
 # 不需要单独 feature——空声明在历史草案里出现过，落地时确认是死重去除。
-io-all = ["io-sql", "io-http", "io-mqtt", "io-modbus", "io-serial", "io-notify"]
+io-all = ["io-sql", "io-http", "io-mqtt", "io-modbus", "io-serial", "io-notify", "io-can"]
 
 # 按协议门控
 io-sql = ["dep:rusqlite"]
@@ -47,3 +48,4 @@ io-mqtt = ["dep:rumqttc"]
 io-modbus = ["dep:tokio-modbus"]
 io-serial = ["dep:serialport"]
 io-notify = ["dep:reqwest"]
+io-can = ["dep:serialport"]

@@ -2,7 +2,7 @@
 
 > **Ring**: Ring 1
 > **对外 crate 名**: `nodes-io`
-> **职责**: 所有协议 I/O 节点（9 个） + payload 模板渲染
+> **职责**: 所有协议 I/O 节点（13 个） + payload 模板渲染
 >
 > 根 `AGENTS.md` 的约束对本 crate 同样适用。
 
@@ -18,9 +18,13 @@
 | `modbusRead` | Modbus TCP | 寄存器读取（有连接走真实协议，无连接走正弦函数模拟） |
 | `httpClient` | HTTP(S) | 通用 HTTP 请求（三种 body 模式：json / template / dingtalk_markdown） |
 | `mqttClient` | MQTT | 两种模式：publish（变换节点）/ subscribe（触发器，壳层启动订阅） |
+| `canRead` | CAN/SLCAN | 通过 USB-CAN SLCAN 适配器接收 CAN 帧（无连接走 Mock 回退） |
+| `canWrite` | CAN/SLCAN | 通过 USB-CAN SLCAN 适配器发送 CAN 帧（无连接走 Mock 回退） |
 | `barkPush` | HTTP | 向 Bark 服务推送 iOS 通知 |
 | `sqlWriter` | sqlite | 本地持久化写入（内部 `spawn_blocking` 包装 `rusqlite`） |
 | `debugConsole` | — | 格式化 payload 打印到控制台 |
+| `capabilityCall` | DSL 适配 | Workflow DSL 编译出的设备能力调用快照 |
+| `humanLoop` | 人机协同 | 人工审批 / 表单确认节点 |
 
 **模板引擎** (`template` 模块)：给 `httpClient` / `barkPush` 等节点用，支持 `{{ payload.field }}` /
 `{{ now }}` 等占位符、JSON path 数组索引、超长截断。
@@ -37,12 +41,15 @@ crates/nodes-io/src/
 ├── modbus_read.rs
 ├── http_client.rs
 ├── mqtt_client.rs
+├── can/
 ├── bark_push.rs
 ├── sql_writer.rs
+├── capability_call.rs
+├── human_loop/
 └── debug_console.rs
 ```
 
-Plugin 注册入口：`IoPlugin::register(&mut NodeRegistry)`，在 `lib.rs:50` 集中声明 9 个节点类型的工厂 + 能力标签。
+Plugin 注册入口：`IoPlugin::register(&mut NodeRegistry)`，在 `lib.rs` 集中声明 13 个节点类型的工厂 + 能力标签。
 
 ## 内部约定
 
@@ -56,9 +63,13 @@ Plugin 注册入口：`IoPlugin::register(&mut NodeRegistry)`，在 `lib.rs:50` 
 | `modbusRead` | `DEVICE_IO` | 设备总线 |
 | `httpClient` | `NETWORK_IO` | 通用网络 |
 | `mqttClient` | `NETWORK_IO` | **publish + subscribe 都归为网络**；TRIGGER 仅 subscribe 模式成立，类型级保守不声明 |
+| `canRead` | `DEVICE_IO` | CAN/SLCAN 设备总线读 |
+| `canWrite` | `DEVICE_IO` | CAN/SLCAN 设备总线写 |
 | `barkPush` | `NETWORK_IO` | HTTP 到 Bark |
 | `sqlWriter` | `FILE_IO` | **不标 BLOCKING**：内部已 `spawn_blocking` 自包装 |
 | `debugConsole` | `empty()` | 副作用是 stdout，可忽略 |
+| `capabilityCall` | `DEVICE_IO` | 设备能力调用适配器 |
+| `humanLoop` | `BRANCHING` | approve / reject 分支 |
 
 这张表由 `src/registry.rs::标准注册表节点能力标签与_adr_0011_契约一致` 单测守住。
 
@@ -71,11 +82,11 @@ Plugin 注册入口：`IoPlugin::register(&mut NodeRegistry)`，在 `lib.rs:50` 
 ### 元数据约定（ADR-0008）
 
 所有节点通过 `NodeExecution::with_metadata()` 返回执行元数据，键名非下划线：
-`"timer"`、`"http"`、`"modbus"`、`"serial"`、`"sql_writer"`、`"debug_console"`、`"connection"`、`"bark"`、`"mqtt"`。payload 只保留 `_loop` / `_error` 等路由上下文。
+`"timer"`、`"http"`、`"modbus"`、`"serial"`、`"can"`、`"sql_writer"`、`"debug_console"`、`"connection"`、`"bark"`、`"mqtt"`、`"capability_call"`。payload 只保留 `_loop` / `_error` 等路由上下文。
 
 ### Pin 声明（ADR-0010 Phase 3）
 
-四个协议节点在 Phase 3 落地具体 pin 类型；其余节点保留 trait 默认（单 `Any` 进、单 `Any` 出）：
+协议节点逐步落地具体 pin 类型；其余节点保留 trait 默认（单 `Any` 进、单 `Any` 出）：
 
 | 节点 | mode | input | output | 备注 |
 |------|------|-------|--------|------|
@@ -84,6 +95,8 @@ Plugin 注册入口：`IoPlugin::register(&mut NodeRegistry)`，在 `lib.rs:50` 
 | `httpClient` | — | `Json` (required) | `Json` | body / template / 钉钉三种 mode 都期待 JSON 对象输入 |
 | `mqttClient` | publish | `Json` (required) | `Any` | 实例方法按 `self.config.mode` 切换 pin 类型 |
 | `mqttClient` | subscribe | `Any` | `Json` | subscribe 由 `on_deploy` 触发；transform 仅手动 dispatch |
+| `canRead` | — | `Any` | `Json` | 输出 `{ can: { id, data, dlc, ... } }`；无帧超时为 `can: null` |
+| `canWrite` | — | `Json` (required) | `Json` | 输入 `can_id` / `data` / `is_extended`，输出 `sent` 快照 |
 | `timer` / `serialTrigger` / `native` / `barkPush` / `debugConsole` / `template` | — | `Any` | `Any` | 触发器 / 透传 / 格式化类节点保留默认 |
 
 **修改 pin 声明时必须同步：**
@@ -108,7 +121,7 @@ Plugin 注册入口：`IoPlugin::register(&mut NodeRegistry)`，在 `lib.rs:50` 
 
 ## 依赖约束
 
-- 允许：`nazh-core`、`connections`、`chrono`、`serde_json`、`url`、`tokio`、`uuid`、`tracing`
+- 允许：`nazh-core`、`connections`、`chrono`、`serde_json`、`url`、`tokio`、`uuid`、`tracing`、`thiserror`
 - 可选（按 feature 门控，ADR-0018）：`reqwest`、`rumqttc`、`rusqlite`、`tokio-modbus`、`serialport`
 - 协议依赖是本 crate 的**职责所在**，但不能传染：
   - **`nodes-flow` 不能依赖 `nodes-io`**
@@ -124,6 +137,7 @@ Plugin 注册入口：`IoPlugin::register(&mut NodeRegistry)`，在 `lib.rs:50` 
 | `io-modbus` | `modbusRead` | `tokio-modbus` |
 | `io-serial` | `serialTrigger` | `serialport` |
 | `io-notify` | `barkPush` | `reqwest`（与 `io-http` 共享） |
+| `io-can` | `canRead` / `canWrite` | `serialport`（SLCAN） |
 | **元 feature `io-all`** | 全部以上 | 全部以上 |
 
 永远启用（无 feature 门控）：`timer` / `native` / `debugConsole` + `template` 工具——零额外依赖，任何部署都用得到。

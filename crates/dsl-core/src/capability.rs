@@ -59,10 +59,25 @@ pub struct CapabilityOutput {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum CapabilityImpl {
-    ModbusWrite { register: u16, value: String },
-    MqttPublish { topic: String, payload: String },
-    SerialCommand { command: String },
-    Script { content: String },
+    ModbusWrite {
+        register: u16,
+        value: String,
+    },
+    MqttPublish {
+        topic: String,
+        payload: String,
+    },
+    SerialCommand {
+        command: String,
+    },
+    CanWrite {
+        can_id: u32,
+        data: String,
+        is_extended: bool,
+    },
+    Script {
+        content: String,
+    },
 }
 
 /// 安全约束。
@@ -101,6 +116,9 @@ impl CapabilitySpec {
             }
             CapabilityImpl::SerialCommand { command } => {
                 validate_template_expr(command)?;
+            }
+            CapabilityImpl::CanWrite { data, .. } => {
+                validate_template_expr(data)?;
             }
             CapabilityImpl::Script { content } => {
                 validate_template_expr(content)?;
@@ -161,6 +179,15 @@ pub fn generate_capabilities_from_device(device: &DeviceSpec) -> Vec<CapabilityS
                 SignalSource::SerialCommand { command } => CapabilityImpl::SerialCommand {
                     command: format!("{command} ${{value}}"),
                 },
+                SignalSource::CanFrame {
+                    can_id,
+                    is_extended,
+                    ..
+                } => CapabilityImpl::CanWrite {
+                    can_id: *can_id,
+                    data: "${value}".to_owned(),
+                    is_extended: *is_extended,
+                },
             };
 
             CapabilitySpec {
@@ -194,6 +221,13 @@ fn is_writable_signal(signal_type: SignalType, source: &SignalSource) -> bool {
     // 输入信号也可能是 read-write
     if let SignalSource::Register { access, .. } = source {
         return matches!(access, AccessMode::Write | AccessMode::ReadWrite);
+    }
+    // CAN 帧信号：输出信号可直接写入
+    if matches!(source, SignalSource::CanFrame { .. }) {
+        return matches!(
+            signal_type,
+            SignalType::AnalogOutput | SignalType::DigitalOutput
+        );
     }
     false
 }
@@ -362,6 +396,25 @@ command: "MOVE_TO"
 "#;
         let imp: CapabilityImpl = serde_yaml::from_str(yaml).unwrap();
         assert!(matches!(imp, CapabilityImpl::SerialCommand { .. }));
+    }
+
+    #[test]
+    fn capability_impl_can_write() {
+        let yaml = r#"
+type: can-write
+can_id: 291
+data: "${value}"
+is_extended: false
+"#;
+        let imp: CapabilityImpl = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(
+            imp,
+            CapabilityImpl::CanWrite {
+                can_id: 291,
+                data: "${value}".to_owned(),
+                is_extended: false,
+            }
+        );
     }
 
     #[test]
@@ -605,5 +658,44 @@ safety:
 
         let caps = generate_capabilities_from_device(&device);
         assert!(caps.is_empty());
+    }
+
+    #[test]
+    fn 从_can_output_信号生成写能力() {
+        use crate::device::{ByteOrder, ConnectionRef, DataType, SignalSpec};
+        let device = DeviceSpec {
+            id: "drive_1".to_owned(),
+            device_type: "servo_drive".to_owned(),
+            manufacturer: None,
+            model: None,
+            connection: ConnectionRef {
+                connection_type: "can-slcan".to_owned(),
+                id: "drive_can".to_owned(),
+                unit: None,
+            },
+            signals: vec![SignalSpec {
+                id: "target_speed".to_owned(),
+                signal_type: SignalType::AnalogOutput,
+                unit: Some("rpm".to_owned()),
+                range: None,
+                source: SignalSource::CanFrame {
+                    can_id: 0x123,
+                    is_extended: false,
+                    byte_offset: 0,
+                    byte_length: 2,
+                    data_type: DataType::U16,
+                    byte_order: ByteOrder::BigEndian,
+                },
+                scale: None,
+            }],
+            alarms: vec![],
+        };
+
+        let caps = generate_capabilities_from_device(&device);
+        assert_eq!(caps.len(), 1);
+        assert!(matches!(
+            caps[0].implementation,
+            CapabilityImpl::CanWrite { can_id: 0x123, .. }
+        ));
     }
 }

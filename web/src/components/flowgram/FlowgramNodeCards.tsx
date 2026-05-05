@@ -161,9 +161,17 @@ export function FlowgramNodeCard(props: FlowgramNodeMaterialProps) {
                   ? rawData?.connectionId
                     ? `Connection Studio · ${rawData.connectionId}`
                     : '未绑定 Bark 连接'
-                  : nodeType === 'sqlWriter'
-                    ? `${rawData?.config?.table ?? 'workflow_logs'} → ${rawData?.config?.database_path ?? './nazh-local.sqlite3'}`
-                    : nodeType === 'debugConsole'
+                  : nodeType === 'canRead'
+                    ? rawData?.connectionId
+                      ? `CAN · ${rawData.connectionId}`
+                      : '未绑定 CAN 连接'
+                    : nodeType === 'canWrite'
+                      ? rawData?.connectionId
+                        ? `CAN · ${rawData.connectionId}`
+                        : '未绑定 CAN 连接'
+                      : nodeType === 'sqlWriter'
+                        ? `${rawData?.config?.table ?? 'workflow_logs'} → ${rawData?.config?.database_path ?? './nazh-local.sqlite3'}`
+                        : nodeType === 'debugConsole'
                       ? rawData?.config?.label ?? 'Console output'
                       : nodeType === 'subgraphInput'
                         ? '输入桥接'

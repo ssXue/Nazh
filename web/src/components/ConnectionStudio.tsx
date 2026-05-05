@@ -27,6 +27,7 @@ import {
   DEFAULT_CONNECTION_GOVERNANCE,
   CONNECTION_TEMPLATES,
   BAUD_RATE_OPTIONS,
+  CAN_BITRATE_OPTIONS,
   DEFAULT_PORT_PATH,
   connectionKey,
   formatMetadata,
@@ -38,6 +39,7 @@ import {
   governanceNumber,
   parseMetadataNumber,
   isSerialConnectionType,
+  isCanConnectionType,
   isHttpConnectionType,
   isBarkConnectionType,
   connectionIconFor,
@@ -940,6 +942,93 @@ export function ConnectionStudio({
                         </label>
                       </>
                     ) : null}
+                  </>
+                ) : null}
+
+                {isCanConnectionType(activeConnection.type) ? (
+                  <>
+                    <label>
+                      <span>CAN 接口</span>
+                      <select
+                        value={metadataString(activeConnection.metadata, 'interface', 'slcan')}
+                        onChange={(event) =>
+                          handleMetadataFieldChange(activeConnectionIndex, 'interface', event.target.value)
+                        }
+                      >
+                        <option value="slcan">SLCAN</option>
+                        <option value="mock">Mock</option>
+                      </select>
+                    </label>
+                    <label className="serial-port-field">
+                      <span>串口通道</span>
+                      <div className="serial-port-select">
+                        <select
+                          value={metadataString(
+                            activeConnection.metadata,
+                            'channel',
+                            DEFAULT_PORT_PATH[navigator.platform.startsWith('Win') ? 'win32' : navigator.platform.startsWith('Mac') ? 'darwin' : 'linux'] ?? '/dev/ttyUSB0',
+                          )}
+                          onChange={(event) =>
+                            handleMetadataFieldChange(activeConnectionIndex, 'channel', event.target.value)
+                          }
+                        >
+                          <option value="">-- 选择通道 --</option>
+                          {scannedPorts.map((port) => (
+                            <option key={port.path} value={port.path}>
+                              {port.path}
+                              {port.description ? ` (${port.description})` : ''}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          className="ghost"
+                          onClick={handleRefreshPorts}
+                          disabled={isScanningPorts}
+                          title="刷新端口列表"
+                        >
+                          {isScanningPorts ? '扫描中...' : '刷新'}
+                        </button>
+                      </div>
+                    </label>
+                    <label>
+                      <span>串口波特率</span>
+                      <select
+                        value={metadataNumber(activeConnection.metadata, 'baud_rate', 115200)}
+                        onChange={(event) =>
+                          handleMetadataFieldChange(
+                            activeConnectionIndex,
+                            'baud_rate',
+                            parseInt(event.target.value, 10),
+                          )
+                        }
+                      >
+                        {BAUD_RATE_OPTIONS.map((rate) => (
+                          <option key={rate} value={rate}>
+                            {rate}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      <span>CAN bitrate</span>
+                      <select
+                        value={metadataNumber(activeConnection.metadata, 'bitrate', 500000)}
+                        onChange={(event) =>
+                          handleMetadataFieldChange(
+                            activeConnectionIndex,
+                            'bitrate',
+                            parseInt(event.target.value, 10),
+                          )
+                        }
+                      >
+                        {CAN_BITRATE_OPTIONS.map((rate) => (
+                          <option key={rate} value={rate}>
+                            {rate / 1000} kbps
+                          </option>
+                        ))}
+                      </select>
+                    </label>
                   </>
                 ) : null}
 

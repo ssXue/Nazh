@@ -423,6 +423,16 @@ fn capability_impl_to_json(impl_: &CapabilityImpl) -> Value {
             "type": "serial-command",
             "command_template": command,
         }),
+        CapabilityImpl::CanWrite {
+            can_id,
+            data,
+            is_extended,
+        } => serde_json::json!({
+            "type": "can-write",
+            "can_id": can_id,
+            "data_template": data,
+            "is_extended": is_extended,
+        }),
         CapabilityImpl::Script { content } => serde_json::json!({
             "type": "script",
             "content": content,

@@ -1109,6 +1109,7 @@ fn apply_runtime_failure(
     retry_after_ms
 }
 
+#[allow(clippy::too_many_lines)]
 fn validate_connection_definition(kind: &str, metadata: &Value) -> Result<(), String> {
     let normalized_kind = normalize_connection_kind(kind);
     let metadata = metadata_object(metadata);
@@ -1198,6 +1199,51 @@ fn validate_connection_definition(kind: &str, metadata: &Value) -> Result<(), St
                 .unwrap_or_default();
             if !server_url.is_empty() {
                 Url::parse(server_url).map_err(|error| format!("Bark server_url 无效: {error}"))?;
+            }
+        }
+        "can" | "can-slcan" | "slcan" => {
+            let interface = metadata
+                .and_then(|value| value.get("interface"))
+                .and_then(Value::as_str)
+                .map_or("slcan", str::trim);
+            if !matches!(interface, "slcan" | "mock" | "virtual") {
+                return Err(format!("CAN 连接 interface 不支持: {interface}"));
+            }
+
+            let channel = metadata
+                .and_then(|value| value.get("channel"))
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .unwrap_or_default();
+            if channel.is_empty() {
+                return Err("CAN-SLCAN 连接需要配置 channel（串口设备路径）".to_owned());
+            }
+
+            let baud_rate = metadata
+                .and_then(|value| value.get("baud_rate"))
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
+            if baud_rate == 0 {
+                return Err("CAN-SLCAN 连接需要配置有效的 baud_rate".to_owned());
+            }
+
+            let bitrate = metadata
+                .and_then(|value| value.get("bitrate"))
+                .and_then(Value::as_u64)
+                .unwrap_or(500_000);
+            if !matches!(
+                bitrate,
+                10_000
+                    | 20_000
+                    | 50_000
+                    | 100_000
+                    | 125_000
+                    | 250_000
+                    | 500_000
+                    | 800_000
+                    | 1_000_000
+            ) {
+                return Err(format!("CAN-SLCAN 连接不支持 bitrate: {bitrate}"));
             }
         }
         _ => {}

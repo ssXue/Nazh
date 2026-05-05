@@ -68,6 +68,17 @@ pub enum SignalSource {
     Topic { topic: String },
     /// 串口命令。
     SerialCommand { command: String },
+    /// CAN 帧信号解码。
+    CanFrame {
+        can_id: u32,
+        #[serde(default)]
+        is_extended: bool,
+        byte_offset: u8,
+        byte_length: u8,
+        data_type: DataType,
+        #[serde(default)]
+        byte_order: ByteOrder,
+    },
 }
 
 /// 寄存器访问模式。
@@ -78,6 +89,15 @@ pub enum AccessMode {
     Read,
     Write,
     ReadWrite,
+}
+
+/// 字节序。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ByteOrder {
+    #[default]
+    BigEndian,
+    LittleEndian,
 }
 
 /// Modbus 寄存器数据类型。

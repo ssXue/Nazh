@@ -21,6 +21,9 @@ export interface SelectedNodeDraft {
   modbusRegisterType: string;
   modbusBaseValue: string;
   modbusAmplitude: string;
+  canId: string;
+  canIsExtended: boolean;
+  canReadTimeoutMs: string;
   mqttMode: string;
   mqttTopic: string;
   mqttQos: string;
@@ -185,11 +188,24 @@ export function isSerialConnectionType(connectionType: string): boolean {
   }
 }
 
+export function isCanConnectionType(connectionType: string): boolean {
+  switch (connectionType.trim().toLowerCase()) {
+    case 'can':
+    case 'can-slcan':
+    case 'slcan':
+      return true;
+    default:
+      return false;
+  }
+}
+
 export function supportsConnectionBinding(nodeType: string): boolean {
   return (
     nodeType === 'native' ||
     nodeType === 'modbusRead' ||
     nodeType === 'serialTrigger' ||
+    nodeType === 'canRead' ||
+    nodeType === 'canWrite' ||
     nodeType === 'mqttClient' ||
     nodeType === 'httpClient' ||
     nodeType === 'barkPush'
@@ -200,6 +216,9 @@ export function connectionMatchesNodeType(nodeType: string, connection: Connecti
   switch (nodeType) {
     case 'serialTrigger':
       return isSerialConnectionType(connection.type);
+    case 'canRead':
+    case 'canWrite':
+      return isCanConnectionType(connection.type);
     case 'modbusRead':
       return connection.type.trim().toLowerCase() === 'modbus' || connection.type.trim().toLowerCase() === 'modbus_tcp';
     case 'mqttClient':
@@ -217,6 +236,9 @@ export function compatibleConnectionHint(nodeType: string): string {
   switch (nodeType) {
     case 'serialTrigger':
       return 'serial / uart';
+    case 'canRead':
+    case 'canWrite':
+      return 'can / can-slcan / slcan';
     case 'modbusRead':
       return 'modbus';
     case 'mqttClient':
@@ -277,7 +299,13 @@ export function getPrimaryEditorLabel(nodeType: string): string {
 }
 
 export function requiresConnectionBinding(nodeType: string): boolean {
-  return nodeType === 'serialTrigger' || nodeType === 'httpClient' || nodeType === 'barkPush';
+  return (
+    nodeType === 'serialTrigger' ||
+    nodeType === 'canRead' ||
+    nodeType === 'canWrite' ||
+    nodeType === 'httpClient' ||
+    nodeType === 'barkPush'
+  );
 }
 
 export function validateConnectionBinding(params: {
@@ -314,6 +342,8 @@ export function validateConnectionBinding(params: {
     const noConn = compatibleConnections.length === 0;
     const labels: Record<string, string> = {
       serialTrigger: '串口触发',
+      canRead: 'CAN Read',
+      canWrite: 'CAN Write',
       httpClient: 'HTTP Client',
       barkPush: 'Bark Push',
     };

@@ -58,6 +58,8 @@ import { definition as serialTriggerDef } from './nodes/serialTrigger';
 import { definition as modbusReadDef } from './nodes/modbusRead';
 import { definition as capabilityCallDef } from './nodes/capabilityCall';
 import { definition as mqttClientDef } from './nodes/mqttClient';
+import { definition as canReadDef } from './nodes/canRead';
+import { definition as canWriteDef } from './nodes/canWrite';
 import { definition as ifDef } from './nodes/if';
 import { definition as switchDef } from './nodes/switch';
 import { definition as tryCatchDef } from './nodes/tryCatch';
@@ -91,6 +93,7 @@ interface FlowgramNodeData {
 
 const ALL_DEFS = [
   nativeDef, codeDef, timerDef, serialTriggerDef, modbusReadDef, mqttClientDef,
+  canReadDef, canWriteDef,
   capabilityCallDef,
   ifDef, switchDef, tryCatchDef, loopDef,
   httpClientDef, barkPushDef, sqlWriterDef, debugConsoleDef,
@@ -169,6 +172,9 @@ export function resolveDefaultConnectionId(
       return connectionDefaults.modbus;
     case 'serialTrigger':
       return connectionDefaults.serial;
+    case 'canRead':
+    case 'canWrite':
+      return connectionDefaults.can;
     case 'mqttClient':
       return connectionDefaults.mqtt;
     case 'httpClient':

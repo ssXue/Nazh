@@ -143,12 +143,11 @@ fn pull_one<'a>(
 
             // 命中 memo → 直接提取 pin 值
             if let Some(cached_payload) = pure_memo.get(upstream_node_id, trace_id, ih) {
-                return extract_pin_from_payload(&cached_payload, upstream_output_pin_id).ok_or_else(|| {
-                    EngineError::DataPinCacheEmpty {
+                return extract_pin_from_payload(&cached_payload, upstream_output_pin_id)
+                    .ok_or_else(|| EngineError::DataPinCacheEmpty {
                         upstream: upstream_node_id.to_owned(),
                         pin: upstream_output_pin_id.to_owned(),
-                    }
-                });
+                    });
             }
 
             let span = tracing::info_span!(
@@ -181,12 +180,14 @@ fn pull_one<'a>(
                 }
             }
             // 兜底：若 pure 节点只有单输出且 payload 不是 `{pin_id: value}` 形态
-            result.outputs.first().map(|o| o.payload.clone()).ok_or_else(|| {
-                EngineError::DataPinCacheEmpty {
+            result
+                .outputs
+                .first()
+                .map(|o| o.payload.clone())
+                .ok_or_else(|| EngineError::DataPinCacheEmpty {
                     upstream: upstream_node_id.to_owned(),
                     pin: upstream_output_pin_id.to_owned(),
-                }
-            })
+                })
         } else {
             // 非 pure：读 OutputCache，按 empty_policy 分支
             let cache = output_caches_index.get(upstream_node_id).ok_or_else(|| {

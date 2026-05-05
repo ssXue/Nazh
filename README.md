@@ -103,6 +103,8 @@ flowchart TB
 | **I/O 操作** | modbusRead | Modbus TCP 寄存器读取 |
 | | httpClient | HTTP 请求 / Webhook |
 | | mqttClient | MQTT 消息发布 |
+| | canRead | 通过 SLCAN 接收 CAN 帧 |
+| | canWrite | 通过 SLCAN 发送 CAN 帧 |
 | | sqlWriter | SQLite 本地存储 |
 | | barkPush | Bark iOS 推送 |
 | | debugConsole | 调试输出 |
