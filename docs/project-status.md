@@ -27,12 +27,13 @@
 - ADR-0016（边级可观测性）— **已接受，部分实施**（2026-04-30）。`EdgeTransmitSummary` 类型 + Runner `EdgeWindow` 累计器 + 每执行周期 flush + ts-rs 导出 + 前端解析。`BackpressureDetected` 类型就位，发射逻辑 deferred。
 - ADR-0020 — **已实施**（2026-05-01：`src/graph/` 拆分为 `crates/graph/`）。见 `docs/adr/0020-graph-编排层长期归属.md`。
 - ADR-0022 (工作流变量持久化) — **已实施**（2026-05-03，`crates/store/` Ring 1 SQLite crate + 壳层持久化钩子 + 部署时恢复）
-- RFC-0004 Phase 3 (Workflow DSL 编译器) — **已实施**（2026-05-03，`crates/dsl-compiler/` 编译器 + `stateMachine` + `capabilityCall` 节点类型 + 一致性测试 + 集成测试）
+- RFC-0004 Phase 3 (Workflow DSL 编译器) — **已实施**（2026-05-03，`crates/dsl-compiler/` 编译器 + `stateMachine` + `capabilityCall` 节点类型 + 一致性测试 + 集成测试；`capabilityCall` 真实协议执行待按 `docs/superpowers/specs/2026-05-05-node-architecture-boundary-review.md` 收口）
 - RFC-0004 资产落盘与 AI 编辑挂接 — **已实施**（2026-05-05，Device / Capability 仅以工程工作路径 `dsl/devices` / `dsl/capabilities` YAML 文件持久化；SQLite 资产表逻辑已移除；新增 `load_ai_asset_context` IPC；画布内 AI 编辑读取已审查资产并可生成 `capabilityCall`）
 
 ## Immediate known tech debt
 
 - **Architecture review 派生 P1/P2**（2026-04-29，~~已偿还~~ 2026-05-03）：~~变量控制事件从 `ExecutionEvent` 拆出~~（已偿还：`WorkflowVariableEvent` 独立枚举 + 独立通道，B1-R0-01/B1-R0-05）；~~`src/graph/` 触发 ADR-0020 重评~~（已偿还，2026-05-01 拆为 `crates/graph/`）；~~Rhai `max_operations` 增加统一 clamp~~（已偿还：`scripting::default_max_operations()` 统一，D-01）；~~`NodeOutput.metadata` 显式三值语义~~（已偿还：`Map` → `Option<Map>`，B1-R0-02）；~~前端大文件拆分~~（已偿还：FlowgramCanvas 2025→988 行 / ConnectionStudio 1824→1372 行，C-02）；~~`workflow.rs` 单文件过~~大（已偿还：拆为 `workflow_deploy/dispatch/undeploy` 三模块，C-01）。**剩余**：runtime / dead-letter / scoped event 等 IPC 类型迁入 `tauri-bindings`（B4-IPC-02/03，17 类型已迁入定义，壳层 import 替换待后续）；core/connections/ai crate AGENTS.md 已同步（B2-R1-03/04）。详见 `docs/superpowers/specs/2026-04-29-architecture-review-findings.md`。
+- **设备/连接节点边界收口**（2026-05-05）：评审结论见 `docs/superpowers/specs/2026-05-05-node-architecture-boundary-review.md`。当前连接资源层方向正确，但普通节点库仍直接暴露 `serialTrigger` / `modbusRead` / `canRead` / `canWrite` 等底层协议节点；`capabilityCall` 已是 DSL 高级节点入口，但真实协议执行尚未闭环。
 - **ADR-0016 deferred items**（2026-04-30）：`BackpressureDetected` 发射逻辑；`payload_bytes` 统计（需序列化测量）；`received_at` 精确测量（需 instrument 接收端）；100ms 定时窗口 flush（当前每执行周期 flush）；`queue_depth` 精确值（需共享 channel 状态）；前端边热力图 UI。
 - ~~**ADR-0013 子图实施 deployment 断链**（2026-04-28 发现）~~ **已偿还（2026-04-28）**。merge 68ab709 解决冲突时丢失的 ADR-0013 改动重写恢复——`flattenSubgraphs` + Rust `mod passthrough` 注册 + `FlowgramCanvas` 容器/桥接渲染 + 设置面板全部到位，三件套全绿。loop 容器恢复已并入当前 `main`。
 - ~~MQTT subscriber / Timer / Serial root lifecycle is owned by the Tauri shell.~~ **已偿还（2026-04-26，ADR-0009 已实施）**。三类触发器节点现自持 `on_deploy` + `LifecycleGuard`；壳层不再监督触发器任务。**语义变化**：触发器节点走 `NodeHandle::emit` 而非 `dispatch_router` 的 trigger lane，失去 backpressure / DLQ / retry / metrics 防御能力，等 ADR-0014 / ADR-0016 引擎级背压能力补回。
@@ -44,9 +45,9 @@
 **已完成**（2026-05-03）。Workflow DSL 编译器全部就位：
 - `crates/dsl-compiler/` — `WorkflowSpec` → `WorkflowGraph` JSON 编译器（引用校验 + 语义校验 + JSON 生成）
 - `crates/nodes-flow/src/state_machine.rs` — `stateMachine` 节点（动态 output pins + Rhai 条件评估 + `NodeDispatch::Route`）
-- `crates/nodes-io/src/capability_call.rs` — `capabilityCall` 节点（编译期快照 + 模板解析 + 协议执行）
+- `crates/nodes-io/src/capability_call.rs` — `capabilityCall` 节点（编译期快照 + 模板解析 + 设备动作意图输出；真实协议执行待收口）
 - 4 个一致性测试（`WorkflowGraph::from_json()` 守护 schema 漂移）+ 集成测试
-- 节点总数 22（+2），注册表合约测试已更新
+- 标准注册表当前节点总数 24；Phase 3 新增 `stateMachine` / `capabilityCall`，注册表合约测试已更新
 
 ## RFC-0004 Phase 4
 
