@@ -72,6 +72,7 @@ export interface WorkflowEngineActions {
   appendAppError: (scope: AppErrorRecord['scope'], title: string, detail?: string | null) => void;
   handleFlowgramError: (title: string, detail?: string | null) => void;
   resetWorkspaceRuntime: (nextMessage: string) => void;
+  clearLogs: () => void;
   applyDeploymentState: (payload: DeployResponse, nextMessage?: string) => void;
   addResult: (result: WorkflowResult) => void;
   refreshConnections: () => Promise<void>;
@@ -146,6 +147,11 @@ export function useWorkflowEngine(
     setAppErrors([]);
     setRuntimeState(EMPTY_RUNTIME_STATE);
     setStatusMessage(nextMessage);
+  }
+
+  function clearLogs() {
+    setEventFeed([]);
+    setAppErrors([]);
   }
 
   function applyDeploymentState(payload: DeployResponse, nextMessage?: string) {
@@ -442,6 +448,7 @@ export function useWorkflowEngine(
     appendAppError,
     handleFlowgramError,
     resetWorkspaceRuntime,
+    clearLogs,
     applyDeploymentState,
     addResult: (result: WorkflowResult) => {
       setResults((current) => [result, ...current].slice(0, 8));

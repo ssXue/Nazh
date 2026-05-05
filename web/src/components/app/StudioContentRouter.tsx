@@ -18,6 +18,7 @@ import type {
   WorkflowGraph,
   WorkflowWindowStatus,
 } from '../../types';
+import { clearObservability, hasTauriRuntime } from '../../lib/tauri';
 import { AboutPanel } from './AboutPanel';
 import { AiConfigPanel } from './AiConfigPanel';
 import { BoardWorkspace, type BoardWorkspaceHandle } from './BoardWorkspace';
@@ -197,7 +198,13 @@ export function StudioContentRouter({
                 eventCount={engine.eventFeed.length}
                 resultCount={engine.results.length}
                 statusMessage={engine.statusMessage}
-                deployInfo={currentBoardDeployInfo}
+                workflowStatus={workflowStatus}
+                traceId={engine.runtimeState.traceId}
+                lastEventType={engine.runtimeState.lastEventType}
+                lastNodeId={engine.runtimeState.lastNodeId}
+                lastUpdatedAt={engine.runtimeState.lastUpdatedAt}
+                connections={engine.connections}
+                eventFeed={engine.eventFeed}
                 onNavigateToBoards={onBackToBoards}
               />
             </ScrollSurface>
@@ -375,9 +382,14 @@ export function StudioContentRouter({
                 resultCount={engine.results.length}
                 themeMode={settings.themeMode}
                 activeBoardName={activeBoard?.name ?? null}
-                workflowStatusLabel={workflowStatusLabel}
                 workspacePath={settings.projectWorkspacePath}
                 activeTraceId={engine.runtimeState.traceId}
+                onClearLogs={() => {
+                  engine.clearLogs();
+                  if (hasTauriRuntime()) {
+                    void clearObservability(settings.projectWorkspacePath);
+                  }
+                }}
               />
             </ScrollSurface>
           </section>

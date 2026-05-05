@@ -460,6 +460,12 @@ export async function queryObservability(
   });
 }
 
+export async function clearObservability(workspacePath: string): Promise<void> {
+  return invoke('clear_observability', {
+    workspacePath: workspacePath.trim() || null,
+  });
+}
+
 export async function loadConnectionDefinitions(
   workspacePath: string,
 ): Promise<ConnectionDefinitionsLoadResult> {

@@ -54,10 +54,10 @@ export interface LogsPanelProps {
   resultCount: number;
   themeMode: ThemeMode;
   activeBoardName: string | null;
-  workflowStatusLabel: string;
   workspacePath: string;
   activeTraceId: string | null;
   observability?: ObservabilityQueryResult | null;
+  onClearLogs: () => void;
 }
 
 export interface RuntimeDockProps {

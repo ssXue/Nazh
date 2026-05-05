@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { JsonView, collapseAllNested, darkStyles, defaultStyles } from 'react-json-view-lite';
 import 'react-json-view-lite/dist/index.css';
 
-import { CopyIcon } from './AppIcons';
+import { CopyIcon, DeleteActionIcon } from './AppIcons';
 import { hasTauriRuntime, queryObservability } from '../../lib/tauri';
 import {
   buildEventFeedPlainText,
@@ -96,9 +96,9 @@ export function LogsPanel({
   resultCount,
   themeMode,
   activeBoardName,
-  workflowStatusLabel,
   workspacePath,
   activeTraceId,
+  onClearLogs,
 }: LogsPanelProps) {
   const [levelFilter, setLevelFilter] = useState<LogLevelFilter>('all');
   const [typeFilter, setTypeFilter] = useState<LogTypeFilter>('all');
@@ -292,42 +292,44 @@ export function LogsPanel({
         className="panel__header panel__header--desktop window-safe-header"
         data-window-drag-region
       >
-        <div className="logs-panel__heading">
+        <div className="panel__header__heading">
           <h2>结构化日志</h2>
           <span>{activeBoardName ?? '全局会话'}</span>
         </div>
-        <span className="panel__badge">{workflowStatusLabel}</span>
+        <div className="panel__header-metrics">
+          <span className="panel__header-metric">
+            <strong>{consoleEntries.length}</strong> 日志
+          </span>
+          <span className="panel__header-metric">
+            <strong>{errorCount}</strong> 异常
+          </span>
+          <span className="panel__header-metric">
+            <strong>{traceSummaries.length}</strong> Trace
+          </span>
+          <span className="panel__header-metric">
+            <strong>{alertCount}/{auditCount}</strong> 观测
+          </span>
+          <span className="panel__header-metric">
+            <strong>{resultCount}</strong> 输出
+          </span>
+          <span className="panel__header-metric">
+            <strong>
+              {latestEntry ? formatLogTimestamp(latestEntry.timestamp) : '--:--:--'}
+            </strong>{' '}
+            更新
+          </span>
+        </div>
+        <button
+          type="button"
+          className="panel__action"
+          onClick={onClearLogs}
+        >
+          <DeleteActionIcon />
+          <span>清空日志</span>
+        </button>
       </div>
 
       <div className="logs-panel">
-        <section className="logs-panel__summary" aria-label="日志概览">
-          <article className="logs-panel__summary-item">
-            <span>日志总数</span>
-            <strong>{consoleEntries.length}</strong>
-            <em>当前可追踪事件</em>
-          </article>
-          <article className="logs-panel__summary-item">
-            <span>异常捕获</span>
-            <strong>{errorCount}</strong>
-            <em>{errorCount > 0 ? '需要关注' : '当前平稳'}</em>
-          </article>
-          <article className="logs-panel__summary-item">
-            <span>Trace 数</span>
-            <strong>{traceSummaries.length}</strong>
-            <em>{activeTraceId ? '当前 Trace 已锁定' : '可按 Trace 回看'}</em>
-          </article>
-          <article className="logs-panel__summary-item">
-            <span>告警 / 审计</span>
-            <strong>{`${alertCount} / ${auditCount}`}</strong>
-            <em>{resultCount} 条结果输出</em>
-          </article>
-          <article className="logs-panel__summary-item">
-            <span>最新更新</span>
-            <strong>{latestEntry ? formatLogTimestamp(latestEntry.timestamp) : '--:--:--'}</strong>
-            <em>{latestEntry ? formatLogDate(latestEntry.timestamp) : '等待事件'}</em>
-          </article>
-        </section>
-
         <div className="logs-panel__workspace">
           <aside className="logs-panel__rail" aria-label="日志筛选">
             <div className="logs-panel__section-head">
