@@ -60,7 +60,7 @@
 }
 
 .plugin-panel__cap {
-  font-size: 10px;
+  font-size: var(--font-footnote);
   line-height: 1;
   padding: 3px 6px;
   border-radius: var(--radius-xs);
@@ -297,7 +297,7 @@
 .flowgram-ai-dialog__thinking-toggle::before {
   content: "▸";
   margin-right: 6px;
-  font-size: 10px;
+  font-size: var(--font-footnote);
   transition: transform 0.15s;
 }
 

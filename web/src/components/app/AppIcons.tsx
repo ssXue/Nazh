@@ -31,10 +31,9 @@ export function CanvasIcon(props: IconProps) {
 export function DashboardIcon(props: IconProps) {
   return (
     <BaseIcon {...props}>
-      <rect x="3" y="3" width="8" height="8" rx="2" />
-      <rect x="13" y="3" width="8" height="4" rx="1.5" />
-      <rect x="13" y="9" width="8" height="12" rx="2" />
-      <rect x="3" y="13" width="8" height="8" rx="2" />
+      <path d="M4 14a8 8 0 0 1 16 0" />
+      <path d="M12 14 15.5 9" />
+      <circle cx="12" cy="14" r="1.5" />
     </BaseIcon>
   );
 }
@@ -630,15 +629,24 @@ export function DeleteActionIcon(props: IconProps) {
   );
 }
 
+export function PluginsIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <rect x="4" y="8" width="10" height="10" rx="2" />
+      <rect x="10" y="4" width="10" height="10" rx="2" />
+    </BaseIcon>
+  );
+}
+
 export function AiIcon(props: IconProps) {
   return (
     <BaseIcon {...props}>
-      <path d="M12 2a4 4 0 0 0-4 4v2H6a2 2 0 0 0-2 2v2a6 6 0 0 0 4.2 5.7" />
-      <path d="M12 2a4 4 0 0 1 4 4v2h2a2 2 0 0 1 2 2v2a6 6 0 0 1-4.2 5.7" />
-      <path d="M9 16.5c.7.8 1.8 1.5 3 1.5s2.3-.7 3-1.5" />
-      <circle cx="9" cy="11" r="1.2" />
-      <circle cx="15" cy="11" r="1.2" />
-      <path d="M10 21h4" />
+      <circle cx="12" cy="5" r="2" />
+      <circle cx="6" cy="14" r="2" />
+      <circle cx="18" cy="14" r="2" />
+      <path d="M12 7 6 12" />
+      <path d="M12 7 18 12" />
+      <path d="M8 14h8" />
     </BaseIcon>
   );
 }

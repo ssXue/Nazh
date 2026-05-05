@@ -108,7 +108,7 @@ export function PluginPanel({ isTauriRuntime }: PluginPanelProps) {
           className="panel__header panel__header--desktop window-safe-header"
           data-window-drag-region
         >
-          <div>
+          <div className="panel__header__heading">
             <h2>插件管理</h2>
           </div>
         </div>
@@ -126,11 +126,9 @@ export function PluginPanel({ isTauriRuntime }: PluginPanelProps) {
         className="panel__header panel__header--desktop window-safe-header"
         data-window-drag-region
       >
-        <div>
+        <div className="panel__header__heading">
           <h2>插件管理</h2>
-          <span className="panel__header-badge">
-            共 {totalTypes} 个节点类型 · {categoryCount} 个分类
-          </span>
+          <span>共 {totalTypes} 个节点类型 · {categoryCount} 个分类</span>
         </div>
       </div>
 

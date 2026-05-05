@@ -59,17 +59,18 @@ export function BoardsPanel({
 
   return (
     <div className="boards-panel">
-      <div className="boards-panel__header window-safe-header" data-window-drag-region>
-        <h2>所有看板</h2>
-      </div>
-
-      <div className="boards-panel__toolbar">
-        <div className="boards-panel__summary">
-          <strong>{boards.length} 个工程</strong>
-          <span>项目、版本与环境差异都将自动持久化到本地。</span>
+      <div
+        className="panel__header panel__header--desktop window-safe-header"
+        data-window-drag-region
+      >
+        <div className="panel__header__heading">
+          <h2>所有看板</h2>
+          <span>
+            {boards.length} 个工程 · 项目、版本与环境差异都将自动持久化到本地。
+          </span>
         </div>
 
-        <div className="boards-panel__actions" data-no-window-drag>
+        <div className="panel__header-actions" data-no-window-drag>
           <button
             type="button"
             className="boards-panel__action"

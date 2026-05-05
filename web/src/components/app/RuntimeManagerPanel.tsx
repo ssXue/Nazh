@@ -388,34 +388,42 @@ export function RuntimeManagerPanel({
 
   return (
     <div className="runtime-manager">
-      <div className="runtime-manager__header window-safe-header" data-window-drag-region>
-        <h2>运行时管理</h2>
+      <div
+        className="panel__header panel__header--desktop window-safe-header"
+        data-window-drag-region
+      >
+        <div className="panel__header__heading">
+          <h2>运行时管理</h2>
+        </div>
 
-        <div className="runtime-manager__header-metrics">
-          <span className="runtime-manager__header-metric">
+        <div className="panel__header-metrics">
+          <span className="panel__header-metric">
             <strong>{workflows.length}</strong> 在线
           </span>
-          <span className="runtime-manager__header-metric">
+          <span className="panel__header-metric">
             <strong>{totalQueuedCount}</strong> 积压
           </span>
-          <span className="runtime-manager__header-metric">
+          <span className="panel__header-metric">
             <strong>{totalRetryCount}</strong> 重试
           </span>
-          <span className="runtime-manager__header-metric">
+          <span className="panel__header-metric">
             <strong>{totalDeadLetterCount}</strong> 死信
           </span>
         </div>
 
-        <button
-          type="button"
-          className="runtime-manager__icon-button"
-          onClick={() => void handleRefresh()}
-          disabled={isLoading || isDeadLettersLoading}
-          aria-label="刷新运行时管理"
-          title="刷新"
-        >
-          <HistoryIcon />
-        </button>
+        <div className="panel__header-actions" data-no-window-drag>
+          <button
+            type="button"
+            className="panel__icon-button"
+            onClick={() => void handleRefresh()}
+            disabled={isLoading || isDeadLettersLoading}
+            aria-label="刷新运行时管理"
+            title="刷新"
+          >
+            <HistoryIcon />
+            <span>刷新</span>
+          </button>
+        </div>
       </div>
 
       <div className="runtime-manager__workspace">

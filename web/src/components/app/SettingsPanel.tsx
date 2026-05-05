@@ -63,10 +63,12 @@ export function SettingsPanel({
         className="panel__header panel__header--desktop window-safe-header"
         data-window-drag-region
       >
-        <div>
+        <div className="panel__header__heading">
           <h2>设置</h2>
         </div>
-        <span className="panel__badge">{runtimeModeLabel}</span>
+        <div className="panel__header-actions">
+          <span className="panel__badge">{runtimeModeLabel}</span>
+        </div>
       </div>
 
       <div className="settings-panel">

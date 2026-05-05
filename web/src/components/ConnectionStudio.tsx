@@ -467,10 +467,10 @@ export function ConnectionStudio({
   return (
     <section className="connection-studio">
       <div
-        className="panel__header panel__header--dense window-safe-header"
+        className="panel__header panel__header--desktop window-safe-header"
         data-window-drag-region
       >
-        <div>
+        <div className="panel__header__heading">
           <h2>连接资源编辑</h2>
         </div>
         <span className="panel__badge">

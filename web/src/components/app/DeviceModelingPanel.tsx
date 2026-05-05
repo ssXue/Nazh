@@ -89,9 +89,14 @@ export function DeviceModelingPanel({
   if (!isTauriRuntime) {
     return (
       <div className="device-modeling">
-        <div className="dm-empty-state">
-          <h2>设备建模</h2>
-          <p>设备建模功能需要 Tauri 桌面运行时。</p>
+        <div
+          className="panel__header panel__header--desktop window-safe-header"
+          data-window-drag-region
+        >
+          <div className="panel__header__heading">
+            <h2>设备建模</h2>
+            <span>设备建模功能需要 Tauri 桌面运行时。</span>
+          </div>
         </div>
       </div>
     );
@@ -101,8 +106,14 @@ export function DeviceModelingPanel({
 
   const gridBase = (
     <div className="dm-grid-view">
-      <div className="dm-grid-header window-safe-header" data-window-drag-region>
-        <h2>设备资产</h2>
+      <div
+        className="panel__header panel__header--desktop window-safe-header"
+        data-window-drag-region
+      >
+        <div className="panel__header__heading">
+          <h2>设备资产</h2>
+          <span>{assets.length} 个设备资产</span>
+        </div>
       </div>
 
       {assets.length > 0 && (

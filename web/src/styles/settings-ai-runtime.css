@@ -17,24 +17,6 @@
   margin-bottom: 0;
 }
 
-.ai-config-panel__header-info {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
-
-.ai-config-panel__header-active {
-  font-size: var(--font-caption);
-  color: var(--text-secondary);
-  font-weight: 400;
-}
-
-.ai-config-panel__header-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
 /* 复用看板页操作按钮样式 */
 .ai-config-panel__action {
   display: inline-flex;
@@ -49,6 +31,12 @@
   box-shadow: var(--shadow-low);
   font-size: var(--font-callout);
   cursor: pointer;
+  transition:
+    border-color 180ms ease,
+    background-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease,
+    color 180ms ease;
 }
 
 .ai-config-panel__action svg {
@@ -62,6 +50,7 @@
   background: var(--accent-soft);
   color: var(--accent-ink);
   box-shadow: var(--shadow-medium);
+  transform: translateY(-1px);
 }
 
 .ai-config-panel__scroll {
@@ -397,7 +386,7 @@
 .ai-drawer__close {
   background: none;
   border: none;
-  font-size: 18px;
+  font-size: var(--font-title-2);
   color: var(--text-secondary);
   cursor: pointer;
   padding: 0 4px;
@@ -766,42 +755,6 @@
   min-height: 0;
 }
 
-.runtime-manager__header {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  flex: 0 0 auto;
-  padding: 10px 2px;
-  border-bottom: 1px solid color-mix(in srgb, var(--line-soft) 74%, transparent);
-}
-
-.runtime-manager__header h2 {
-  margin: 0;
-  font-size: 17px;
-  line-height: 1.2;
-  letter-spacing: -0.02em;
-  white-space: nowrap;
-}
-
-.runtime-manager__header-metrics {
-  display: flex;
-  gap: 14px;
-  flex: 1;
-}
-
-.runtime-manager__header-metric {
-  color: var(--text-secondary);
-  font-size: 12px;
-  line-height: 1;
-  white-space: nowrap;
-}
-
-.runtime-manager__header-metric strong {
-  color: var(--text-primary);
-  font-weight: 700;
-}
-
-.runtime-manager__header-actions,
 .runtime-manager__section-actions,
 .runtime-manager__detail-actions {
   display: flex;
@@ -856,7 +809,7 @@
 .runtime-manager__workflow-row-meta,
 .runtime-manager__queue-head span {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-subheadline);
   line-height: 1.45;
 }
 
@@ -907,7 +860,7 @@
 }
 
 .runtime-manager__section-head strong {
-  font-size: 13px;
+  font-size: var(--font-body);
   line-height: 1;
 }
 
@@ -958,7 +911,7 @@
 
 .runtime-manager__workflow-row-top strong,
 .runtime-manager__dead-row-top strong {
-  font-size: 13px;
+  font-size: var(--font-body);
   line-height: 1.2;
   margin: 0;
 }
@@ -979,7 +932,7 @@
   border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--line-soft) 86%, transparent);
   color: var(--text-secondary);
-  font-size: 10px;
+  font-size: var(--font-footnote);
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -1014,7 +967,7 @@
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--panel-elevated) 94%, transparent);
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: var(--font-callout);
   font-weight: 600;
   transition:
     transform 180ms ease,
@@ -1072,7 +1025,7 @@
 
 .runtime-manager__queue-head strong,
 .runtime-manager__detail-block-title {
-  font-size: 12px;
+  font-size: var(--font-callout);
   font-weight: 700;
   line-height: 1.2;
 }
@@ -1082,7 +1035,7 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-callout);
   line-height: 1.4;
 }
 
@@ -1116,7 +1069,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 14px;
-  font-size: 12px;
+  font-size: var(--font-callout);
   line-height: 1.45;
 }
 
@@ -1143,7 +1096,7 @@
   border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--accent-primary) 10%, transparent);
   color: color-mix(in srgb, var(--accent-primary) 72%, var(--text-primary));
-  font-size: 11px;
+  font-size: var(--font-subheadline);
   font-weight: 600;
 }
 
@@ -1178,7 +1131,7 @@
 .runtime-manager__dead-detail-head span,
 .runtime-manager__dead-row-reason {
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-callout);
   line-height: 1.45;
 }
 
@@ -1199,7 +1152,7 @@
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-subheadline);
   font-weight: 600;
   transition:
     border-color 180ms ease,
@@ -1228,7 +1181,7 @@
 
 .runtime-manager__empty strong {
   color: var(--text-primary);
-  font-size: 14px;
+  font-size: var(--font-headline);
 }
 
 @media (max-width: 1440px) {
@@ -1344,6 +1297,105 @@
 
 .panel__header--desktop {
   align-items: flex-start;
+}
+
+/* === 全局 panel header typography === */
+.panel__header h2 {
+  margin: 0;
+  font-size: var(--font-title-2);
+  line-height: 1.2;
+  font-weight: 600;
+}
+
+/* 标题块:h2 + 副标 span */
+.panel__header__heading {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.panel__header__heading > span {
+  color: var(--muted);
+  font-size: var(--font-callout);
+  line-height: 1.4;
+}
+
+/* 通用 metric 区(替代 runtime/logs 各自的 BEM) */
+.panel__header-metrics {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.panel__header-metric {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  font-size: var(--font-callout);
+  color: var(--muted);
+}
+
+.panel__header-metric > strong {
+  color: var(--text);
+  font-size: var(--font-headline);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 通用 actions 区(替代 boards/runtime 各自的 BEM) */
+.panel__header-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* header 右上角通用操作按钮 */
+.panel__action,
+.panel__icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 11px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  background: var(--panel-strong);
+  color: var(--text);
+  box-shadow: var(--shadow-low);
+  font-size: var(--font-callout);
+  cursor: pointer;
+  transition:
+    border-color 180ms ease,
+    background-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease,
+    color 180ms ease;
+}
+
+.panel__action svg,
+.panel__icon-button svg {
+  width: 14px;
+  height: 14px;
+}
+
+.panel__action:hover:not(:disabled),
+.panel__action:focus-visible,
+.panel__icon-button:hover:not(:disabled),
+.panel__icon-button:focus-visible {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  box-shadow: var(--shadow-medium);
+  transform: translateY(-1px);
+}
+
+.panel__action:disabled,
+.panel__icon-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
 }
 
 .panel__badge {

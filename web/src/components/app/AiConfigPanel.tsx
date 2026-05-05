@@ -462,15 +462,15 @@ export function AiConfigPanel({
         className="panel__header panel__header--desktop window-safe-header"
         data-window-drag-region
       >
-        <div className="ai-config-panel__header-info">
+        <div className="panel__header__heading">
           <h2>AI 配置</h2>
           {activeProvider && (
-            <span className="ai-config-panel__header-active">
+            <span>
               {activeProvider.name} · {activeProvider.defaultModel}
             </span>
           )}
         </div>
-        <div className="ai-config-panel__header-actions" data-no-window-drag>
+        <div className="panel__header-actions" data-no-window-drag>
           <button
             type="button"
             className="ai-config-panel__action"

@@ -21,7 +21,7 @@ export function AboutPanel() {
         className="panel__header panel__header--desktop window-safe-header"
         data-window-drag-region
       >
-        <div>
+        <div className="panel__header__heading">
           <h2>关于</h2>
         </div>
       </div>

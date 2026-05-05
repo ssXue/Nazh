@@ -62,16 +62,8 @@
 }
 
 @media (max-width: 980px) {
-  .logs-panel__summary {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .logs-panel__summary-item:nth-child(2n) {
-    border-right: 0;
-  }
-
-  .logs-panel__summary-item:nth-child(n + 3) {
-    border-top: 1px solid var(--line-faint);
+  .panel__header-metrics {
+    display: none;
   }
 
   .logs-panel__workspace,
@@ -81,19 +73,6 @@
 }
 
 @media (max-width: 720px) {
-  .logs-panel__summary {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .logs-panel__summary-item {
-    border-right: 0;
-    border-top: 1px solid var(--line-faint);
-  }
-
-  .logs-panel__summary-item:first-child {
-    border-top: 0;
-  }
-
   .logs-panel__entry-top,
   .logs-panel__detail-meta,
   .logs-panel__stream-toolbar {
@@ -154,11 +133,6 @@
   .studio-frame,
   .boards-panel__grid {
     grid-template-columns: 1fr;
-  }
-
-  .boards-panel__toolbar {
-    flex-direction: column;
-    align-items: stretch;
   }
 
   .settings-path-input-row,
