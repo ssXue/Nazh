@@ -147,6 +147,7 @@ pub fn run() {
             commands::runtime::list_dead_letters,
             commands::runtime::subscribe_reactive_pin,
             commands::observability::query_observability,
+            commands::observability::clear_observability,
             commands::connections::load_connection_definitions,
             commands::connections::save_connection_definitions,
             commands::deployment_session::load_deployment_session_file,

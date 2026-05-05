@@ -412,6 +412,26 @@ pub async fn query_observability(
     })
 }
 
+/// 清空观测目录下的所有 JSONL 文件。
+pub async fn clear_observability(workspace_dir: PathBuf) -> Result<(), String> {
+    let root_dir = workspace_dir.join(OBSERVABILITY_DIR);
+    if !root_dir.exists() {
+        return Ok(());
+    }
+
+    let files = [EVENTS_FILE, AUDIT_FILE, ALERTS_FILE];
+    for file in files {
+        let path = root_dir.join(file);
+        if path.exists() {
+            tokio::fs::write(&path, "")
+                .await
+                .map_err(|error| format!("清空观测文件失败: {error}"))?;
+        }
+    }
+
+    Ok(())
+}
+
 #[derive(Default)]
 struct TraceAccumulator {
     status: String,

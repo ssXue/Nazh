@@ -2,7 +2,10 @@ use tauri::AppHandle;
 use tauri_bindings::ObservabilityQueryResult;
 
 use crate::{
-    observability::query_observability as query_workspace_observability,
+    observability::{
+        clear_observability as clear_workspace_observability,
+        query_observability as query_workspace_observability,
+    },
     workspace::resolve_project_workspace_dir,
 };
 
@@ -16,4 +19,13 @@ pub(crate) async fn query_observability(
 ) -> Result<ObservabilityQueryResult, String> {
     let (workspace_dir, _) = resolve_project_workspace_dir(&app, workspace_path.as_deref())?;
     query_workspace_observability(workspace_dir, trace_id, search, limit.unwrap_or(240)).await
+}
+
+#[tauri::command]
+pub(crate) async fn clear_observability(
+    app: AppHandle,
+    workspace_path: Option<String>,
+) -> Result<(), String> {
+    let (workspace_dir, _) = resolve_project_workspace_dir(&app, workspace_path.as_deref())?;
+    clear_workspace_observability(workspace_dir).await
 }
