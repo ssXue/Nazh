@@ -68,7 +68,7 @@ crates/
   connections/       # Ring 1 — ConnectionManager, ConnectionGuard RAII, health/circuit-breaker
   scripting/         # Ring 1 — Rhai engine base (with AI-aware ai_complete() helper)
   nodes-flow/        # Ring 1 — if / switch / loop / tryCatch / code (Rhai script) / stateMachine
-  nodes-io/          # Ring 1 — timer / serial / native / modbus / http / mqtt / bark / sql / CAN/SLCAN / debugConsole / capabilityCall / humanLoop
+  nodes-io/          # Ring 1 — timer / serial / native / modbus / http / mqtt / bark / sql / CAN/SLCAN / EtherCAT 三件套 / debugConsole / capabilityCall / humanLoop
   nodes-pure/        # Ring 1 — c2f / minutesSince / lookup pure-form Data 引脚节点（ADR-0014 Phase 3/3b）
   ai/                # Ring 1 — OpenAI-compatible client (streaming, thinking-mode) + 壳层配置型；AiService trait 在 Ring 0（ADR-0019）
   graph/             # Ring 1 — DAG 工作流编排：解析、校验、拓扑排序、部署与执行（ADR-0020）
@@ -125,7 +125,7 @@ IPC boundary types are defined once in Rust and auto-generated to TypeScript via
 
 Workflow commands are split across `workflow_deploy.rs` / `workflow_dispatch.rs` / `workflow_undeploy.rs` (since 2026-05-03, was single `workflow.rs`). Other command domains remain in their respective files (`ai.rs`, `catalog.rs`, `connections.rs`, `variables.rs`, `devices.rs`, etc.).
 
-67 commands covering:
+68 commands covering:
 - workflow lifecycle/runtime: `deploy_workflow`, `dispatch_payload`, `undeploy_workflow`, `list_runtime_workflows`, `set_active_runtime_workflow`, `list_dead_letters`
 - node / pin catalog: `list_node_types`, `describe_node_pins`
 - workflow variables: `snapshot_workflow_variables`, `set_workflow_variable`, `delete_workflow_variable`, `reset_workflow_variable`, `query_variable_history`, `set_global_variable`, `get_global_variable`, `list_global_variables`, `delete_global_variable`
@@ -133,11 +133,12 @@ Workflow commands are split across `workflow_deploy.rs` / `workflow_dispatch.rs`
 - device assets（RFC-0004 Phase 1）: `list_device_assets`, `load_device_asset`, `save_device_asset`, `delete_device_asset`, `list_asset_versions`, `load_asset_version`, `extract_device_from_text`, `extract_device_from_text_stream`, `generate_pin_schema`, `save_device_asset_sources`, `load_device_asset_sources`, `extract_text_from_pdf`, `extract_device_from_pdf`, `import_ethercat_esi`
 - device AI extraction（RFC-0004 Phase 4A）: `extract_device_proposal`, `extract_device_proposal_stream`
 - capabilities（RFC-0004 Phase 2）: `list_capabilities`, `load_capability`, `save_capability`, `delete_capability`, `list_capability_versions`, `load_capability_version`, `generate_capabilities_from_device_cmd`, `save_capability_sources`, `load_capability_sources`
-- observability: `query_observability`
+- observability: `query_observability`, `clear_observability`
 - deployment session files: `load_deployment_session_file`, `load_deployment_session_state_file`, `list_deployment_sessions_file`, `save_deployment_session_file`, `set_deployment_session_active_project_file`, `remove_deployment_session_file`, `clear_deployment_session_file`
 - serial: `list_serial_ports`, `test_serial_connection`
 - project library/export: `load_project_board_files`, `save_project_board_files`, `save_flowgram_export_file`
 - AI: `load_ai_config`, `save_ai_config`, `test_ai_provider`, `load_ai_asset_context`, `copilot_complete`, `copilot_complete_stream`
+- humanLoop（HITL 审批节点）: `respond_human_loop`, `list_pending_approvals`
 - reactive: `subscribe_reactive_pin`（ADR-0015 Phase 2，OutputCache watch → Tauri 事件推送）
 
 Device / Capability DSL assets are persisted only as reviewable YAML under the active workspace: `dsl/devices/*.device.yaml`, `dsl/devices/versions/*.device.yaml`, `dsl/devices/sources/*.sources.yaml`, `dsl/capabilities/*.capability.yaml`, `dsl/capabilities/versions/*.capability.yaml`, and `dsl/capabilities/sources/*.sources.yaml`. They are not stored in SQLite. The canvas AI edit path reads these reviewed YAML files via `load_ai_asset_context` before asking the model to modify a workflow.

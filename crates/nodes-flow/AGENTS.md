@@ -2,13 +2,13 @@
 
 > **Ring**: Ring 1
 > **对外 crate 名**: `nodes-flow`
-> **职责**: 工作流的流程控制类节点 — `if` / `switch` / `loop` / `tryCatch` / `code`，以及子图展开后的桥接节点
+> **职责**: 工作流的流程控制类节点 — `if` / `switch` / `loop` / `tryCatch` / `code` / `stateMachine`，以及子图展开后的桥接节点
 >
 > 根 `AGENTS.md` 的约束对本 crate 同样适用。
 
 ## 这个 crate 做什么
 
-本 crate 实现 5 个基于脚本的流程控制节点 + 2 个子图桥接节点，组成 `FlowPlugin` 插件：
+本 crate 实现 6 个基于脚本/状态语义的流程控制节点 + 2 个子图桥接节点，组成 `FlowPlugin` 插件：
 
 | 节点 | 作用 | Dispatch |
 |------|------|----------|
@@ -17,10 +17,12 @@
 | `loop` | 循环展开 | 每个元素产出一条 `Route(["body"])`，末尾 `Route(["done"])` |
 | `tryCatch` | 异常捕获 | `Route(["try"])` / `Route(["catch"])` |
 | `code` | 任意 Rhai 脚本 | `Broadcast` |
+| `stateMachine` | 状态机子运行时（RFC-0004 Phase 3） | 每条命中的 `transition.to` 一条 `Route([state_id])` |
 | `subgraphInput` | 子图展开后的入口桥接节点 | `Broadcast` |
 | `subgraphOutput` | 子图展开后的出口桥接节点 | `Broadcast` |
 
-每个节点都嵌入 `scripting::ScriptNodeBase`，组合式复用脚本执行。
+5 个脚本节点（`if` / `switch` / `loop` / `tryCatch` / `code`）都嵌入 `scripting::ScriptNodeBase`，组合式复用脚本执行。
+`stateMachine` 自带状态/迁移持久化逻辑，迁移条件评估走 Rhai 表达式但不复用 `ScriptNodeBase`。
 `subgraphInput` / `subgraphOutput` 复用 `PassthroughNode`，只透传 payload，不运行脚本。
 
 **`code` 节点的 AI 能力**：`code` 节点在 `AiGenerationParams` 配置下可调用 `ai_complete()`
@@ -36,10 +38,11 @@ crates/nodes-flow/src/
 ├── loop_node.rs      # LoopNode + LoopNodeConfig
 ├── try_catch.rs      # TryCatchNode + TryCatchNodeConfig
 ├── code_node.rs      # CodeNode + CodeNodeConfig + CodeNodeAiConfig
+├── state_machine.rs  # StateMachineNode + StateMachineConfig + StateConfig + TransitionConfig + TimeoutRule
 └── passthrough.rs    # PassthroughNode（subgraphInput / subgraphOutput 共用）
 ```
 
-Plugin 注册入口：`FlowPlugin::register(&mut NodeRegistry)`，在 `lib.rs:29` 集中声明 7 个节点类型的工厂 + 能力标签。
+Plugin 注册入口：`FlowPlugin::register(&mut NodeRegistry)`，在 `lib.rs:36` 集中声明 8 个节点类型的工厂 + 能力标签。
 
 ## 内部约定
 
@@ -52,6 +55,7 @@ Plugin 注册入口：`FlowPlugin::register(&mut NodeRegistry)`，在 `lib.rs:29
 | `loop` | `BRANCHING \| MULTI_OUTPUT` | 一次产出多条（每个元素一条 + done） |
 | `tryCatch` | `BRANCHING` | 成功/失败分支 |
 | `code` | `empty()` | 用户脚本可能含任意副作用（AI 调用、Rhai 自定义函数等）——无法静态保证 PURE |
+| `stateMachine` | `BRANCHING \| MULTI_OUTPUT` | 状态机迁移可能命中多条 `transition`，分别路由到各 `to` 状态端口 |
 | `subgraphInput` | `PURE` | 子图入口桥接节点只原样透传 JSON payload |
 | `subgraphOutput` | `PURE` | 子图出口桥接节点只原样透传 JSON payload |
 
@@ -66,19 +70,20 @@ Plugin 注册入口：`FlowPlugin::register(&mut NodeRegistry)`，在 `lib.rs:29
 | `switch` | `in: Any`（默认） | **动态**：每个 `branches[i].key` 一个 `Any` 输出 + `default_branch`（去重） |
 | `loop` | `in: Any`（默认） | `body: Any` / `done: Any` |
 | `tryCatch` | `in: Any`（默认） | `try: Any` / `catch: Any` |
+| `stateMachine` | `in: Any`（默认） | **动态**：每个声明的 `state.id` 一个 `Any` 输出（命中迁移后路由到 `transition.to`） |
 | `subgraphInput` | `in: Json` | `out: Json` |
 | `subgraphOutput` | `in: Json` | `out: Json` |
 
 **Phase 1 输入端均为默认 `Any`**——脚本节点天然吃任何 payload，没有理由收紧。输出端的具名 pin 与 `transform` 路径上 `NodeDispatch::Route([id])` 的字符串严格一致；改 pin id 必须同步改 transform，反之亦然。
 
-**`switch` 的动态 pin 由 `output_pins(&self)` 实例方法在每次调用时读 `self.branches` + `self.default_branch` 生成**，避免把每个用户配置都注册成新类型。这是 ADR-0010 把 `output_pins` 设计为实例方法（而非 `'static` 表）的典型原因。
+**`switch` / `stateMachine` 的动态 pin 由 `output_pins(&self)` 实例方法在每次调用时读取实例配置生成**（`switch` 读 `branches` + `default_branch`，`stateMachine` 读 `states`），避免把每个用户配置都注册成新类型。这是 ADR-0010 把 `output_pins` 设计为实例方法（而非 `'static` 表）的典型原因。
 
 ### 共同契约
 
-1. **所有节点都嵌入 `ScriptNodeBase`**。`NodeTrait` 元数据（`id` / `kind`）用 `scripting::delegate_node_base!` 宏委托。**能力标签不走 trait**，而是在 `FlowPlugin::register` 时通过 `register_with_capabilities` 声明——详见 `crates/core/AGENTS.md` 的"为什么 `NodeTrait` 没有 `capabilities()` 方法"。
+1. **5 个脚本节点（`if` / `switch` / `loop` / `tryCatch` / `code`）嵌入 `ScriptNodeBase`**，`NodeTrait` 元数据（`id` / `kind`）用 `scripting::delegate_node_base!` 宏委托。`stateMachine` 自带状态/迁移逻辑，不复用 `ScriptNodeBase`，但 `transition.condition` 仍走 `rhai::Engine` 评估；`subgraphInput` / `subgraphOutput` 复用 `PassthroughNode`。**能力标签不走 trait**，而是在 `FlowPlugin::register` 时通过 `register_with_capabilities` 声明——详见 `crates/core/AGENTS.md` 的"为什么 `NodeTrait` 没有 `capabilities()` 方法"。
 2. **脚本执行遵循 `scripting` crate 的约定**（`max_operations`、payload 变量名、Scope 单次使用）。
 3. **不借用连接、不做 I/O**。`code` 节点可以通过 `ai_complete()` 发 AI 请求，但走的是 Ring 0 的 `nazh_core::ai::AiService` trait（具体实现由壳层注入）；本 crate 不直接用 `reqwest` / `rusqlite` / 其他协议，**也不依赖 `ai` crate**（ADR-0019）。
-4. **分支端口名固定**：`if` 用 `"true"` / `"false"`，`tryCatch` 用 `"try"` / `"catch"`，`loop` 用 `"body"` / `"done"`，`switch` 用配置里声明的分支名。改端口名是前端画布的 breaking change。
+4. **分支端口名固定**：`if` 用 `"true"` / `"false"`，`tryCatch` 用 `"try"` / `"catch"`，`loop` 用 `"body"` / `"done"`，`switch` 用配置里声明的分支名，`stateMachine` 用 `states[i].id`。改端口名是前端画布的 breaking change。
 5. **子图桥接节点只服务部署后的扁平 DAG**。`subgraph` 容器本身不进入 Rust Runner；前端 `flattenSubgraphs()` 会把容器改写成 `<subgraph-id>/...` 前缀节点，并把外部边接到 `subgraphInput` / `subgraphOutput`。
 
 ## 依赖约束
@@ -107,15 +112,18 @@ cargo test -p nazh-engine --test workflow   # 集成测试，覆盖分支+循环
 ## 工作流变量集成（ADR-0012）
 
 5 个脚本节点（`if` / `switch` / `loop` / `tryCatch` / `code`）的 `new()` 从工厂闭包接收 `variables: Option<Arc<WorkflowVariables>>`，传给 `ScriptNodeBase::new`。
-工厂闭包在 `lib.rs::FlowPlugin::register()` 内 `res.get::<Arc<WorkflowVariables>>()` 提取（Task 5 的 deploy 注入到 SharedResources）。
 脚本里通过 `vars.get/set/cas` 读写工作流声明的变量；详见 `crates/scripting/AGENTS.md` Rhai 全局对象节。
+
+`stateMachine` 节点也强依赖 `WorkflowVariables`：当前状态以普通工作流变量名形式持久化（默认 `${node_id}.state`），迁移条件评估时读取，命中后写回。`new()` 在缺失 `variables` 资源时直接返回错误——状态机没有 fallback 路径。
+工厂闭包都在 `lib.rs::FlowPlugin::register()` 内 `res.get::<Arc<WorkflowVariables>>()` 提取（Task 5 的 deploy 注入到 SharedResources）。
 
 ## 关联 ADR / RFC
 
-- **ADR-0002** Rhai 脚本引擎（本 crate 的全部节点都依赖）
+- **ADR-0002** Rhai 脚本引擎（5 个脚本节点 + `stateMachine` 的迁移条件都依赖）
 - **ADR-0008** 元数据通道（节点输出遵循此约定）
 - **ADR-0011** 节点能力标签（能力分配见上表）
-- **ADR-0010** Pin 声明系统（Phase 1：4 个分支节点已声明具体 output pin；子图桥接节点声明 `Json` 输入/输出，详见引脚声明表）
+- **ADR-0010** Pin 声明系统（4 个分支节点 + `stateMachine` 的具名/动态 output pin 见引脚声明表；子图桥接节点声明 `Json` 输入/输出）
 - **ADR-0013** 子图与宏系统 — 子图容器部署前展平为 `subgraphInput` / `subgraphOutput` 桥接节点
-- **ADR-0012** 工作流变量 — **已实施 Phase 1**（2026-04-27），5 节点工厂从 SharedResources 取 `Arc<WorkflowVariables>` 并注入 Rhai
+- **ADR-0012** 工作流变量 — **已实施 Phase 1+2+3**（2026-04-27 / 2026-05-03）。5 个脚本节点 + `stateMachine` 工厂从 SharedResources 取 `Arc<WorkflowVariables>` 注入；`stateMachine` 缺失 variables 资源时直接 `new()` 失败
 - **ADR-0019** AI 能力依赖反转 — 本 crate 已脱离 `ai` 依赖（2026-04-26）
+- **RFC-0004 Phase 3** — Workflow DSL 编译器引入 `stateMachine` 节点（2026-05-03）；详见 `docs/rfcs/0004-三段式DSL.md`

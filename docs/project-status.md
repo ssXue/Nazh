@@ -47,7 +47,7 @@
 - `crates/nodes-flow/src/state_machine.rs` — `stateMachine` 节点（动态 output pins + Rhai 条件评估 + `NodeDispatch::Route`）
 - `crates/nodes-io/src/capability_call.rs` — `capabilityCall` 节点（编译期快照 + 模板解析 + 设备动作意图输出；真实协议执行待收口）
 - 4 个一致性测试（`WorkflowGraph::from_json()` 守护 schema 漂移）+ 集成测试
-- 标准注册表当前节点总数 24；Phase 3 新增 `stateMachine` / `capabilityCall`，注册表合约测试已更新
+- 标准注册表当前节点总数 27（Flow 8 + IO 16 + Pure 3）；RFC-0004 Phase 3 新增 `stateMachine` / `capabilityCall`，其后又陆续合入 `humanLoop`（HITL 审批）+ EtherCAT 三件套（`ethercatPdoRead` / `ethercatPdoWrite` / `ethercatStatus`，2026-05-06），注册表合约测试随之更新
 
 ## RFC-0004 Phase 4
 
