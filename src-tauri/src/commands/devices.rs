@@ -7,16 +7,28 @@ use std::sync::Arc;
 use nazh_dsl_core::{parse_capability_yaml, parse_device_yaml, signals_to_pin_definitions};
 use nazh_engine::{AiCompletionRequest, AiGenerationParams, AiMessage, AiMessageRole, AiService};
 use serde::{Deserialize, Serialize};
-use store::{
-    AssetVersionSummary, DeviceAssetSummary, FieldSource, Store, StoredAssetVersion,
-    StoredDeviceAsset,
-};
 use tauri::{AppHandle, Emitter, State};
 
+use crate::asset_files::{
+    AssetFieldSource, delete_device_asset_yaml, device_asset_latest_path, file_modified_at,
+    list_device_asset_version_files, list_device_asset_yaml_files, load_device_asset_version_yaml,
+    next_device_asset_version, read_device_asset_sources, write_device_asset_sources,
+    write_device_asset_yaml,
+};
 use crate::state::DesktopState;
 use base64::Engine;
 
 // ---- IPC 响应类型 ----
+
+/// 设备资产摘要（IPC 响应）。
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct DeviceAssetSummary {
+    pub id: String,
+    pub name: String,
+    pub device_type: String,
+    pub version: i64,
+    pub updated_at: String,
+}
 
 /// 设备资产完整详情（IPC 响应）。
 #[derive(Debug, Clone, serde::Serialize)]
@@ -26,22 +38,10 @@ pub struct DeviceAssetDetail {
     pub device_type: String,
     pub version: i64,
     pub spec_json: serde_json::Value,
+    pub spec_yaml: String,
+    pub yaml_file_path: Option<String>,
     pub created_at: String,
     pub updated_at: String,
-}
-
-impl From<StoredDeviceAsset> for DeviceAssetDetail {
-    fn from(value: StoredDeviceAsset) -> Self {
-        Self {
-            id: value.id,
-            name: value.name,
-            device_type: value.device_type,
-            version: value.version,
-            spec_json: value.spec_json,
-            created_at: value.created_at,
-            updated_at: value.updated_at,
-        }
-    }
 }
 
 /// Pin schema 条目（IPC 响应）。
@@ -54,30 +54,70 @@ pub struct PinSchemaEntry {
     pub description: Option<String>,
 }
 
+/// 设备资产版本摘要（IPC 响应）。
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct AssetVersionSummary {
+    pub version: i64,
+    pub created_at: String,
+    pub source_summary: Option<String>,
+}
+
+/// 设备资产版本详情（IPC 响应）。
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct StoredAssetVersion {
+    pub asset_id: String,
+    pub version: i64,
+    pub spec_json: serde_json::Value,
+    pub source_summary: Option<String>,
+    pub created_at: String,
+}
+
+/// AI 来源追溯记录。
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct FieldSource {
+    pub field_path: String,
+    pub source_text: String,
+    pub confidence: f64,
+}
+
 // ---- CRUD 命令 ----
 
 /// 列出所有设备资产摘要。
 #[tauri::command]
 pub(crate) async fn list_device_assets(
-    state: State<'_, DesktopState>,
+    app: AppHandle,
+    workspace_path: Option<String>,
 ) -> Result<Vec<DeviceAssetSummary>, String> {
-    let store = get_store(&state)?;
-    store
-        .list_device_assets()
-        .map_err(|e| format!("列出设备资产失败: {e}"))
+    let files = list_device_asset_yaml_files(&app, workspace_path.as_deref()).await?;
+    let mut summaries = Vec::with_capacity(files.len());
+    for file in files {
+        let detail = load_device_detail_from_path(&app, workspace_path.as_deref(), &file).await?;
+        summaries.push(DeviceAssetSummary {
+            id: detail.id,
+            name: detail.name,
+            device_type: detail.device_type,
+            version: detail.version,
+            updated_at: detail.updated_at,
+        });
+    }
+    summaries.sort_by(|left, right| left.id.cmp(&right.id));
+    Ok(summaries)
 }
 
 /// 加载指定设备资产详情。
 #[tauri::command]
 pub(crate) async fn load_device_asset(
-    state: State<'_, DesktopState>,
+    app: AppHandle,
     id: String,
+    workspace_path: Option<String>,
 ) -> Result<Option<DeviceAssetDetail>, String> {
-    let store = get_store(&state)?;
-    store
-        .load_device_asset(&id)
-        .map_err(|e| format!("加载设备资产失败: {e}"))
-        .map(|opt| opt.map(DeviceAssetDetail::from))
+    let path = device_asset_latest_path(&app, workspace_path.as_deref(), &id)?;
+    if !path.exists() {
+        return Ok(None);
+    }
+    load_device_detail_from_path(&app, workspace_path.as_deref(), &path)
+        .await
+        .map(Some)
 }
 
 /// 保存（或更新）设备资产。
@@ -85,32 +125,48 @@ pub(crate) async fn load_device_asset(
 /// 接收 YAML 格式的设备规格，解析校验后存储为 JSON。
 #[tauri::command]
 pub(crate) async fn save_device_asset(
-    state: State<'_, DesktopState>,
+    app: AppHandle,
     id: String,
     name: String,
     device_type: String,
     spec_yaml: String,
+    workspace_path: Option<String>,
 ) -> Result<(), String> {
     // 解析 YAML 校验合法性
     let spec = parse_device_yaml(&spec_yaml).map_err(|e| format!("设备 DSL 解析失败: {e}"))?;
-    let spec_json = serde_json::to_value(&spec).map_err(|e| format!("设备规格序列化失败: {e}"))?;
-
-    let store = get_store(&state)?;
-    store
-        .save_device_asset(&id, &name, &device_type, &spec_json)
-        .map_err(|e| format!("保存设备资产失败: {e}"))
+    if spec.id != id {
+        return Err(format!(
+            "设备资产 ID `{id}` 与 Device DSL id `{}` 不一致",
+            spec.id
+        ));
+    }
+    if spec.device_type != device_type {
+        return Err(format!(
+            "设备类型 `{device_type}` 与 Device DSL type `{}` 不一致",
+            spec.device_type
+        ));
+    }
+    let _ = name;
+    let version = next_device_asset_version(&app, workspace_path.as_deref(), &id).await?;
+    write_device_asset_yaml(
+        &app,
+        workspace_path.as_deref(),
+        &id,
+        version,
+        spec_yaml.trim(),
+    )
+    .await
+    .map(|_| ())
 }
 
 /// 删除设备资产及其版本历史。
 #[tauri::command]
 pub(crate) async fn delete_device_asset(
-    state: State<'_, DesktopState>,
+    app: AppHandle,
     id: String,
+    workspace_path: Option<String>,
 ) -> Result<(), String> {
-    let store = get_store(&state)?;
-    store
-        .delete_device_asset(&id)
-        .map_err(|e| format!("删除设备资产失败: {e}"))
+    delete_device_asset_yaml(&app, workspace_path.as_deref(), &id).await
 }
 
 // ---- 版本管理 ----
@@ -118,26 +174,44 @@ pub(crate) async fn delete_device_asset(
 /// 列出设备资产的所有版本摘要。
 #[tauri::command]
 pub(crate) async fn list_asset_versions(
-    state: State<'_, DesktopState>,
+    app: AppHandle,
     asset_id: String,
+    workspace_path: Option<String>,
 ) -> Result<Vec<AssetVersionSummary>, String> {
-    let store = get_store(&state)?;
-    store
-        .list_asset_versions(&asset_id)
-        .map_err(|e| format!("列出设备版本失败: {e}"))
+    let versions =
+        list_device_asset_version_files(&app, workspace_path.as_deref(), &asset_id).await?;
+    Ok(versions
+        .into_iter()
+        .map(|version| AssetVersionSummary {
+            version: version.version,
+            created_at: version.created_at,
+            source_summary: None,
+        })
+        .collect())
 }
 
 /// 加载特定版本的设备资产。
 #[tauri::command]
 pub(crate) async fn load_asset_version(
-    state: State<'_, DesktopState>,
+    app: AppHandle,
     asset_id: String,
     version: i64,
+    workspace_path: Option<String>,
 ) -> Result<Option<StoredAssetVersion>, String> {
-    let store = get_store(&state)?;
-    store
-        .load_asset_version(&asset_id, version)
-        .map_err(|e| format!("加载设备版本失败: {e}"))
+    let Some((yaml, created_at)) =
+        load_device_asset_version_yaml(&app, workspace_path.as_deref(), &asset_id, version).await?
+    else {
+        return Ok(None);
+    };
+    let spec = parse_device_yaml(&yaml).map_err(|e| format!("设备 DSL 解析失败: {e}"))?;
+    let spec_json = serde_json::to_value(&spec).map_err(|e| format!("设备规格序列化失败: {e}"))?;
+    Ok(Some(StoredAssetVersion {
+        asset_id,
+        version,
+        spec_json,
+        source_summary: None,
+        created_at,
+    }))
 }
 
 // ---- AI 抽取 ----
@@ -274,10 +348,12 @@ pub(crate) async fn extract_device_proposal(
     text: String,
     provider_id: Option<String>,
 ) -> Result<DeviceExtractionProposal, String> {
-    let resolved = resolve_provider_id(&state, provider_id).await.map_err(|e| {
-        tracing::error!(error = %e, "解析 AI 提供商失败");
-        e
-    })?;
+    let resolved = resolve_provider_id(&state, provider_id)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "解析 AI 提供商失败");
+            e
+        })?;
     tracing::info!(
         provider_id = %resolved,
         text_len = text.len(),
@@ -285,15 +361,11 @@ pub(crate) async fn extract_device_proposal(
     );
     let request = build_proposal_request(&text, resolved);
 
-    let response = state
-        .ai_service
-        .complete(request)
-        .await
-        .map_err(|e| {
-            let msg = format!("AI 结构化抽取失败: {e}");
-            tracing::error!(error = %e, "AI completion 请求失败");
-            msg
-        })?;
+    let response = state.ai_service.complete(request).await.map_err(|e| {
+        let msg = format!("AI 结构化抽取失败: {e}");
+        tracing::error!(error = %e, "AI completion 请求失败");
+        msg
+    })?;
 
     tracing::info!(
         response_len = response.content.len(),
@@ -302,16 +374,15 @@ pub(crate) async fn extract_device_proposal(
 
     let json_text = extract_json_from_response(&response.content);
 
-    let raw: RawExtractionProposal =
-        serde_json::from_str(&json_text).map_err(|e| {
-            let msg = format!("AI 输出 JSON 结构无效: {e}");
-            tracing::error!(
-                error = %e,
-                json_preview = %json_text.chars().take(500).collect::<String>(),
-                "AI 响应 JSON 反序列化失败"
-            );
-            msg
-        })?;
+    let raw: RawExtractionProposal = serde_json::from_str(&json_text).map_err(|e| {
+        let msg = format!("AI 输出 JSON 结构无效: {e}");
+        tracing::error!(
+            error = %e,
+            json_preview = %json_text.chars().take(500).collect::<String>(),
+            "AI 响应 JSON 反序列化失败"
+        );
+        msg
+    })?;
 
     parse_device_yaml(&raw.device_yaml)
         .map_err(|e| {
@@ -386,18 +457,15 @@ pub(crate) async fn extract_device_proposal_stream(
 /// 从设备资产生成 Pin 声明列表。
 #[tauri::command]
 pub(crate) async fn generate_pin_schema(
-    state: State<'_, DesktopState>,
+    app: AppHandle,
     device_id: String,
+    workspace_path: Option<String>,
 ) -> Result<Vec<PinSchemaEntry>, String> {
-    let store = get_store(&state)?;
-    let asset = store
-        .load_device_asset(&device_id)
-        .map_err(|e| format!("加载设备资产失败: {e}"))?
+    let detail = load_device_asset(app, device_id.clone(), workspace_path)
+        .await?
         .ok_or_else(|| format!("设备资产 `{device_id}` 不存在"))?;
-
-    // 从 JSON 反序列化为 DeviceSpec
-    let spec: nazh_dsl_core::DeviceSpec = serde_json::from_value(asset.spec_json)
-        .map_err(|e| format!("设备规格反序列化失败: {e}"))?;
+    let spec =
+        parse_device_yaml(&detail.spec_yaml).map_err(|e| format!("设备 DSL 解析失败: {e}"))?;
 
     let pin_defs = signals_to_pin_definitions(&spec.signals);
     Ok(pin_defs
@@ -417,43 +485,39 @@ pub(crate) async fn generate_pin_schema(
 /// 批量保存 AI 抽取来源追溯记录。
 #[tauri::command]
 pub(crate) async fn save_device_asset_sources(
-    state: State<'_, DesktopState>,
+    app: AppHandle,
     asset_id: String,
     sources: Vec<FieldSource>,
+    workspace_path: Option<String>,
 ) -> Result<(), String> {
-    let store = get_store(&state)?;
-    store
-        .save_asset_sources(&asset_id, &sources)
-        .map_err(|e| format!("保存来源记录失败: {e}"))
+    let converted = sources
+        .into_iter()
+        .map(AssetFieldSource::from)
+        .collect::<Vec<_>>();
+    write_device_asset_sources(&app, workspace_path.as_deref(), &asset_id, &converted).await
 }
 
 /// 加载设备资产的来源追溯记录。
 #[tauri::command]
 pub(crate) async fn load_device_asset_sources(
-    state: State<'_, DesktopState>,
+    app: AppHandle,
     asset_id: String,
+    workspace_path: Option<String>,
 ) -> Result<Vec<FieldSource>, String> {
-    let store = get_store(&state)?;
-    store
-        .load_asset_sources(&asset_id)
-        .map_err(|e| format!("加载来源记录失败: {e}"))
+    let sources = read_device_asset_sources(&app, workspace_path.as_deref(), &asset_id).await?;
+    Ok(sources.into_iter().map(FieldSource::from).collect())
 }
 
 // ---- PDF 文本提取 ----
 
 /// 从 PDF 文件（base64 编码）中提取纯文本。
 #[tauri::command]
-pub(crate) async fn extract_text_from_pdf(
-    pdf_base64: String,
-) -> Result<String, String> {
+pub(crate) async fn extract_text_from_pdf(pdf_base64: String) -> Result<String, String> {
     let pdf_bytes = base64::engine::general_purpose::STANDARD
         .decode(&pdf_base64)
         .map_err(|e| format!("PDF base64 解码失败: {e}"))?;
 
-    tracing::info!(
-        "PDF 文本提取开始，文件大小 {} 字节",
-        pdf_bytes.len()
-    );
+    tracing::info!("PDF 文本提取开始，文件大小 {} 字节", pdf_bytes.len());
 
     let text = pdf_extract::extract_text_from_mem(&pdf_bytes)
         .map_err(|e| format!("PDF 文本提取失败: {e}"))?;
@@ -463,10 +527,7 @@ pub(crate) async fn extract_text_from_pdf(
         return Err("PDF 文本提取结果为空，文件可能是扫描件或图片型 PDF".to_owned());
     }
 
-    tracing::info!(
-        "PDF 文本提取完成，提取字符数 {}",
-        trimmed.len()
-    );
+    tracing::info!("PDF 文本提取完成，提取字符数 {}", trimmed.len());
 
     Ok(trimmed.to_owned())
 }
@@ -485,10 +546,12 @@ pub(crate) async fn extract_device_from_pdf(
         e
     })?;
 
-    let resolved = resolve_provider_id(&state, provider_id).await.map_err(|e| {
-        tracing::error!(error = %e, "解析 AI 提供商失败");
-        e
-    })?;
+    let resolved = resolve_provider_id(&state, provider_id)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "解析 AI 提供商失败");
+            e
+        })?;
     tracing::info!(
         provider_id = %resolved,
         text_len = text.len(),
@@ -496,15 +559,11 @@ pub(crate) async fn extract_device_from_pdf(
     );
     let request = build_proposal_request(&text, resolved);
 
-    let response = state
-        .ai_service
-        .complete(request)
-        .await
-        .map_err(|e| {
-            let msg = format!("AI 结构化抽取失败: {e}");
-            tracing::error!(error = %e, "AI completion 请求失败");
-            msg
-        })?;
+    let response = state.ai_service.complete(request).await.map_err(|e| {
+        let msg = format!("AI 结构化抽取失败: {e}");
+        tracing::error!(error = %e, "AI completion 请求失败");
+        msg
+    })?;
 
     tracing::info!(
         response_len = response.content.len(),
@@ -514,16 +573,15 @@ pub(crate) async fn extract_device_from_pdf(
     let json_text = extract_json_from_response(&response.content);
     tracing::debug!(json_len = json_text.len(), "JSON 文本已提取，开始反序列化");
 
-    let raw: RawExtractionProposal =
-        serde_json::from_str(&json_text).map_err(|e| {
-            let msg = format!("AI 输出 JSON 结构无效: {e}");
-            tracing::error!(
-                error = %e,
-                json_preview = %json_text.chars().take(500).collect::<String>(),
-                "AI 响应 JSON 反序列化失败"
-            );
-            msg
-        })?;
+    let raw: RawExtractionProposal = serde_json::from_str(&json_text).map_err(|e| {
+        let msg = format!("AI 输出 JSON 结构无效: {e}");
+        tracing::error!(
+            error = %e,
+            json_preview = %json_text.chars().take(500).collect::<String>(),
+            "AI 响应 JSON 反序列化失败"
+        );
+        msg
+    })?;
 
     parse_device_yaml(&raw.device_yaml)
         .map_err(|e| {
@@ -550,13 +608,54 @@ pub(crate) async fn extract_device_from_pdf(
 
 // ---- 辅助函数 ----
 
-/// 获取 Store 的 Arc 引用。
-fn get_store(state: &State<'_, DesktopState>) -> Result<Arc<Store>, String> {
-    state
-        .store
-        .read()
-        .map(|guard| Arc::clone(&guard))
-        .map_err(|e| format!("Store 锁异常: {e}"))
+async fn load_device_detail_from_path(
+    app: &AppHandle,
+    workspace_path: Option<&str>,
+    path: &std::path::Path,
+) -> Result<DeviceAssetDetail, String> {
+    let spec_yaml = tokio::fs::read_to_string(path)
+        .await
+        .map_err(|error| format!("读取设备 DSL 文件失败 `{}`: {error}", path.display()))?;
+    let spec = parse_device_yaml(&spec_yaml).map_err(|e| format!("设备 DSL 解析失败: {e}"))?;
+    let spec_json = serde_json::to_value(&spec).map_err(|e| format!("设备规格序列化失败: {e}"))?;
+    let versions = list_device_asset_version_files(app, workspace_path, &spec.id).await?;
+    let version = versions.first().map_or(1, |item| item.version);
+    let updated_at = file_modified_at(path).await?;
+    let created_at = versions
+        .last()
+        .map_or_else(|| updated_at.clone(), |item| item.created_at.clone());
+
+    Ok(DeviceAssetDetail {
+        id: spec.id.clone(),
+        name: spec.id.clone(),
+        device_type: spec.device_type.clone(),
+        version,
+        spec_json,
+        spec_yaml,
+        yaml_file_path: Some(path.to_string_lossy().to_string()),
+        created_at,
+        updated_at,
+    })
+}
+
+impl From<FieldSource> for AssetFieldSource {
+    fn from(value: FieldSource) -> Self {
+        Self {
+            field_path: value.field_path,
+            source_text: value.source_text,
+            confidence: value.confidence,
+        }
+    }
+}
+
+impl From<AssetFieldSource> for FieldSource {
+    fn from(value: AssetFieldSource) -> Self {
+        Self {
+            field_path: value.field_path,
+            source_text: value.source_text,
+            confidence: value.confidence,
+        }
+    }
 }
 
 /// 解析有效的 `provider_id`：若传入为空则回退到配置中的活跃提供商。
@@ -567,10 +666,7 @@ async fn resolve_provider_id(
     if let Some(id) = provider_id.filter(|s| !s.is_empty()) {
         return Ok(id);
     }
-    let config = state
-        .ai_config
-        .read()
-        .await;
+    let config = state.ai_config.read().await;
     config
         .active_provider_id
         .clone()

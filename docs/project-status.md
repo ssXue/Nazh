@@ -1,4 +1,4 @@
-# Project Status（2026-05-04）
+# Project Status（2026-05-05）
 
 从 `AGENTS.md` 拆出的项目状态追踪。本文件随 ADR 落地、技术债偿还、路线图推进而更新。
 
@@ -28,6 +28,7 @@
 - ADR-0020 — **已实施**（2026-05-01：`src/graph/` 拆分为 `crates/graph/`）。见 `docs/adr/0020-graph-编排层长期归属.md`。
 - ADR-0022 (工作流变量持久化) — **已实施**（2026-05-03，`crates/store/` Ring 1 SQLite crate + 壳层持久化钩子 + 部署时恢复）
 - RFC-0004 Phase 3 (Workflow DSL 编译器) — **已实施**（2026-05-03，`crates/dsl-compiler/` 编译器 + `stateMachine` + `capabilityCall` 节点类型 + 一致性测试 + 集成测试）
+- RFC-0004 资产落盘与 AI 编辑挂接 — **已实施**（2026-05-05，Device / Capability 仅以工程工作路径 `dsl/devices` / `dsl/capabilities` YAML 文件持久化；SQLite 资产表逻辑已移除；新增 `load_ai_asset_context` IPC；画布内 AI 编辑读取已审查资产并可生成 `capabilityCall`）
 
 ## Immediate known tech debt
 
@@ -49,8 +50,10 @@
 
 ## RFC-0004 Phase 4
 
-**已完成 4A**（2026-05-03）。AI 生成管道对接：
+**已完成 4A + 画布资产上下文挂接**（2026-05-05）。AI 生成管道对接：
 - 4A：设备/能力 AI 结构化提取提案 — `extract_device_proposal` / `extract_device_proposal_stream`（JSON 输出含 uncertainties + warnings）+ 前端 proposal 流程
+- 资产落盘：设备/能力保存后写入工程工作路径 `dsl/devices/*.device.yaml`、`dsl/devices/versions/*.device.yaml`、`dsl/devices/sources/*.sources.yaml`、`dsl/capabilities/*.capability.yaml`、`dsl/capabilities/versions/*.capability.yaml`、`dsl/capabilities/sources/*.sources.yaml`，不再进入 SQLite
+- AI 编辑挂接：新增 `load_ai_asset_context` IPC，画布内 `AiWorkflowComposer` 在编辑/生成前加载已审查 Device / Capability YAML，上下文进入 prompt；前端节点库补齐 `capabilityCall`
 - 4B/4C 的 DSL 编辑器页面和 AI 编排控制台页面已在 2026-05-04 移除——设计评估结论是与核心画布创作能力冲突。DSL 编辑器是编译器中间态的裸露调试界面（功能闭环缺失），AI 编排的一次性生成器能力已由画布内 `AiWorkflowComposer` 覆盖。对应的 4 个 IPC 命令（`compile_workflow_dsl` / `load_compiler_asset_snapshot` / `ai_generate_workflow_dsl` / `ai_generate_workflow_dsl_stream`）和前端组件/hooks/CSS 全部清除。`crates/dsl-core/` 和 `crates/dsl-compiler/` 库 crate 保留。
 - 4D 已完成：安全编译器对接（随 Phase 5 一起完成）
 - 看板页 AI 新建画布入口已于 2026-05-05 移除——将创建画布的仪式感交还给使用者。移除 `BoardsPanel` 的 AI 编排按钮、`openCreate()` 函数及整条 prop 链。画布内 AI 编辑（`openEdit()`）保留。

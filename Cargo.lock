@@ -2404,7 +2404,6 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
- "store",
  "tokio",
  "tracing",
  "ts-rs",

@@ -26,6 +26,8 @@ export function normalizeFlowgramDisplayType(value: unknown): NazhNodeDisplayTyp
     value === 'timer' ||
     value === 'serialTrigger' ||
     value === 'modbusRead' ||
+    value === 'capabilityCall' ||
+    value === 'mqttClient' ||
     value === 'if' ||
     value === 'switch' ||
     value === 'tryCatch' ||
@@ -58,6 +60,8 @@ export function getFlowgramDisplayLabel(displayType: NazhNodeDisplayType): strin
       return 'Serial';
     case 'modbusRead':
       return 'Modbus';
+    case 'capabilityCall':
+      return 'Capability';
     case 'mqttClient':
       return 'MQTT';
     case 'if':
@@ -106,6 +110,10 @@ export function FlowgramNodeGlyph({
       return <SerialNodeIcon {...props} />;
     case 'modbusRead':
       return <ModbusNodeIcon {...props} />;
+    case 'capabilityCall':
+      return <ModbusNodeIcon {...props} />;
+    case 'mqttClient':
+      return <NativeNodeIcon {...props} />;
     case 'if':
       return <IfNodeIcon {...props} />;
     case 'switch':

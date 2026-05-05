@@ -18,11 +18,13 @@ import { ExpandTransition } from './ExpandTransition';
 
 interface DeviceModelingPanelProps {
   isTauriRuntime: boolean;
+  workspacePath: string;
   onStatusMessage: (message: string) => void;
 }
 
 export function DeviceModelingPanel({
   isTauriRuntime,
+  workspacePath,
   onStatusMessage,
 }: DeviceModelingPanelProps) {
   const {
@@ -31,7 +33,7 @@ export function DeviceModelingPanel({
     loadAssets,
     loadDetail,
     deleteAsset,
-  } = useDeviceAssets();
+  } = useDeviceAssets(workspacePath);
 
   const [detail, setDetail] = useState<DeviceAssetDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -219,6 +221,7 @@ export function DeviceModelingPanel({
   const detailOverlay = detail ? (
     <DetailPanel
       detail={detail}
+      workspacePath={workspacePath}
       onBack={handleCloseDetail}
       onDelete={() => void handleDelete(detail.id)}
     />
@@ -236,6 +239,7 @@ export function DeviceModelingPanel({
 
       <DeviceImportDrawer
         open={importDrawerOpen}
+        workspacePath={workspacePath}
         onClose={() => setImportDrawerOpen(false)}
         onSaved={() => void loadAssets()}
         onStatusMessage={onStatusMessage}
@@ -253,10 +257,12 @@ function DeviceTypeBadge({ type }: { type: string }) {
 /** 设备详情子面板。 */
 function DetailPanel({
   detail,
+  workspacePath,
   onBack,
   onDelete,
 }: {
   detail: DeviceAssetDetail;
+  workspacePath: string;
   onBack: () => void;
   onDelete: () => void;
 }) {
@@ -332,7 +338,7 @@ function DetailPanel({
         {tab === 'signals' ? (
           <SignalsTab detail={detail} />
         ) : (
-          <CapabilitiesTab deviceId={detail.id} />
+          <CapabilitiesTab deviceId={detail.id} workspacePath={workspacePath} />
         )}
       </div>
     </div>
@@ -471,7 +477,7 @@ function SignalsTab({ detail }: { detail: DeviceAssetDetail }) {
 }
 
 /** 能力 Tab。 */
-function CapabilitiesTab({ deviceId }: { deviceId: string }) {
+function CapabilitiesTab({ deviceId, workspacePath }: { deviceId: string; workspacePath: string }) {
   const {
     capabilities,
     loading,
@@ -480,7 +486,7 @@ function CapabilitiesTab({ deviceId }: { deviceId: string }) {
     deleteCapability,
     generateFromDevice,
     saveCapability,
-  } = useCapabilities();
+  } = useCapabilities(workspacePath);
 
   const [selectedCapId, setSelectedCapId] = useState<string | null>(null);
   const [capDetail, setCapDetail] = useState<CapabilityDetail | null>(null);

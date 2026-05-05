@@ -4,21 +4,12 @@
 //! 未来的 edge-daemon。Ring 0 保持纯净——本 crate 只消费 [`serde_json::Value`]
 //! 和基础类型，不依赖 `nazh-core`。
 
-mod capabilities;
-mod device_assets;
 mod error;
 mod global_variables;
 mod history;
 pub(crate) mod migrations;
 mod variables;
 
-pub use capabilities::{
-    CapabilitySource, CapabilitySummary, CapabilityVersionSummary, StoredCapability,
-    StoredCapabilityVersion,
-};
-pub use device_assets::{
-    AssetVersionSummary, DeviceAssetSummary, FieldSource, StoredAssetVersion, StoredDeviceAsset,
-};
 pub use error::StoreError;
 
 use rusqlite::Connection;

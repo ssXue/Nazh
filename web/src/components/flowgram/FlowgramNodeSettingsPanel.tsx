@@ -63,6 +63,7 @@ import { DebugConsoleNodeSettings } from './nodes/debugConsole/settings';
 import { LookupNodeSettings } from './nodes/lookup/settings';
 import { SubgraphNodeSettings } from './nodes/subgraph/settings';
 import { HumanLoopNodeSettings } from './nodes/humanLoop/settings';
+import { CapabilityCallNodeSettings } from './nodes/capabilityCall/settings';
 
 export interface FlowgramNodeSettingsPanelProps {
   nodeId: string;
@@ -150,6 +151,16 @@ function readNodeDraft(node: FlowNodeEntity): SelectedNodeDraft {
     sqlTable: readString(config.table, 'workflow_logs'),
     debugLabel: readString(config.label),
     debugPretty: readBoolean(config.pretty, true),
+    capabilityId: readString(config.capability_id),
+    capabilityDeviceId: readString(config.device_id),
+    capabilityImplementationJson: JSON.stringify(
+      isRecord(config.implementation)
+        ? config.implementation
+        : { type: 'script', content: 'payload' },
+      null,
+      2,
+    ),
+    capabilityArgsJson: JSON.stringify(isRecord(config.args) ? config.args : {}, null, 2),
     parameterBindings: (() => {
       const raw = config.parameterBindings;
       if (typeof raw === 'object' && raw !== null && !Array.isArray(raw)) {
@@ -229,6 +240,34 @@ function buildNodeConfig(draft: SelectedNodeDraft, currentConfig: NodeConfigMap)
     return { ...currentConfig, label: draft.debugLabel.trim(), pretty: draft.debugPretty };
   }
 
+  if (draft.nodeType === 'capabilityCall') {
+    const implementation = (() => {
+      try {
+        const parsed = JSON.parse(draft.capabilityImplementationJson);
+        return isRecord(parsed) ? parsed : currentConfig.implementation;
+      } catch {
+        return currentConfig.implementation;
+      }
+    })();
+    const args = (() => {
+      try {
+        const parsed = JSON.parse(draft.capabilityArgsJson);
+        return isRecord(parsed) ? parsed : currentConfig.args;
+      } catch {
+        return currentConfig.args;
+      }
+    })();
+    return {
+      ...currentConfig,
+      capability_id: draft.capabilityId.trim(),
+      device_id: draft.capabilityDeviceId.trim(),
+      implementation: isRecord(implementation)
+        ? implementation
+        : { type: 'script', content: 'payload' },
+      args: isRecord(args) ? args : {},
+    };
+  }
+
   if (draft.nodeType === 'subgraph') {
     return { ...currentConfig, parameterBindings: draft.parameterBindings };
   }
@@ -297,6 +336,7 @@ const NODE_SETTINGS_MAP: Record<string, React.FC<NodeSettingsProps>> = {
   barkPush: BarkPushNodeSettings,
   sqlWriter: SqlWriterNodeSettings,
   debugConsole: DebugConsoleNodeSettings,
+  capabilityCall: CapabilityCallNodeSettings,
   lookup: LookupNodeSettings,
   subgraph: SubgraphNodeSettings,
   humanLoop: HumanLoopNodeSettings,

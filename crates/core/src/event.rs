@@ -392,7 +392,7 @@ mod edge_event_tests {
             window_started_at: "2026-04-30T10:00:00+00:00".to_owned(),
             window_ended_at: "2026-04-30T10:00:00.100+00:00".to_owned(),
         };
-        let event = ExecutionEvent::EdgeTransmitSummary(summary.clone());
+        let event = ExecutionEvent::EdgeTransmitSummary(summary);
         let json = serde_json::to_string(&event).unwrap();
         let restored: ExecutionEvent = serde_json::from_str(&json).unwrap();
         assert_eq!(event, restored);

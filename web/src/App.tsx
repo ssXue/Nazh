@@ -227,6 +227,7 @@ function App() {
     projectCount: projectLibrary.projects.length,
     resetWorkspaceRuntime: engine.resetWorkspaceRuntime,
     setStatusMessage: engine.setStatusMessage,
+    workspacePath: settings.projectWorkspacePath,
     updateProjectDraft: projectActions.updateProjectDraft,
   });
 

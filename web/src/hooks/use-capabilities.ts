@@ -20,6 +20,8 @@ export interface CapabilityDetail {
   description: string | null;
   version: number;
   spec_json: Record<string, unknown>;
+  spec_yaml?: string;
+  yaml_file_path?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -42,7 +44,7 @@ async function invoke<T>(command: string, args?: Record<string, unknown>): Promi
   return tauriInvoke<T>(command, args);
 }
 
-export function useCapabilities() {
+export function useCapabilities(workspacePath = '') {
   const [capabilities, setCapabilities] = useState<CapabilitySummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -54,6 +56,7 @@ export function useCapabilities() {
     try {
       const list = await invoke<CapabilitySummary[]>('list_capabilities', {
         deviceId: deviceId ?? null,
+        workspacePath: workspacePath.trim() || null,
       });
       setCapabilities(list);
     } catch (err) {
@@ -61,14 +64,17 @@ export function useCapabilities() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [workspacePath]);
 
   const loadDetail = useCallback(
     async (id: string): Promise<CapabilityDetail | null> => {
       if (!hasTauriRuntime()) return null;
-      return invoke<CapabilityDetail | null>('load_capability', { id });
+      return invoke<CapabilityDetail | null>('load_capability', {
+        id,
+        workspacePath: workspacePath.trim() || null,
+      });
     },
-    [],
+    [workspacePath],
   );
 
   const saveCapability = useCallback(
@@ -86,43 +92,57 @@ export function useCapabilities() {
         name,
         description,
         specYaml,
+        workspacePath: workspacePath.trim() || null,
       });
       await loadCapabilities(deviceId);
     },
-    [loadCapabilities],
+    [loadCapabilities, workspacePath],
   );
 
   const deleteCapability = useCallback(
     async (id: string, deviceId?: string) => {
       if (!hasTauriRuntime()) return;
-      await invoke('delete_capability', { id });
+      await invoke('delete_capability', {
+        id,
+        workspacePath: workspacePath.trim() || null,
+      });
       await loadCapabilities(deviceId);
     },
-    [loadCapabilities],
+    [loadCapabilities, workspacePath],
   );
 
   const generateFromDevice = useCallback(
     async (deviceId: string): Promise<GeneratedCapability[]> => {
       if (!hasTauriRuntime()) return [];
-      return invoke<GeneratedCapability[]>('generate_capabilities_from_device_cmd', { deviceId });
+      return invoke<GeneratedCapability[]>('generate_capabilities_from_device_cmd', {
+        deviceId,
+        workspacePath: workspacePath.trim() || null,
+      });
     },
-    [],
+    [workspacePath],
   );
 
   const loadSources = useCallback(
     async (capabilityId: string): Promise<CapabilitySource[]> => {
       if (!hasTauriRuntime()) return [];
-      return invoke<CapabilitySource[]>('load_capability_sources', { capabilityId });
+      return invoke<CapabilitySource[]>('load_capability_sources', {
+        capabilityId,
+        workspacePath: workspacePath.trim() || null,
+      });
     },
-    [],
+    [workspacePath],
   );
 
   const saveSources = useCallback(
     async (capabilityId: string, sources: CapabilitySource[]) => {
       if (!hasTauriRuntime()) return;
-      await invoke('save_capability_sources', { capabilityId, sources });
+      await invoke('save_capability_sources', {
+        capabilityId,
+        sources,
+        workspacePath: workspacePath.trim() || null,
+      });
     },
-    [],
+    [workspacePath],
   );
 
   const listVersions = useCallback(
@@ -130,9 +150,12 @@ export function useCapabilities() {
       if (!hasTauriRuntime()) return [];
       return invoke<
         Array<{ version: number; created_at: string; source_summary: string | null }>
-      >('list_capability_versions', { capabilityId });
+      >('list_capability_versions', {
+        capabilityId,
+        workspacePath: workspacePath.trim() || null,
+      });
     },
-    [],
+    [workspacePath],
   );
 
   return {

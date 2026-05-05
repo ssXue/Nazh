@@ -138,7 +138,6 @@ dsl-compiler.workspace = true
 nazh-dsl-core.workspace = true
 rusqlite.workspace = true
 serde_yaml.workspace = true
-store.workspace = true
 uuid.workspace = true
 
 [profile.release]

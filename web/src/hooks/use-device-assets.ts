@@ -18,6 +18,8 @@ export interface DeviceAssetDetail {
   device_type: string;
   version: number;
   spec_json: Record<string, unknown>;
+  spec_yaml?: string;
+  yaml_file_path?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -58,7 +60,7 @@ async function invoke<T>(command: string, args?: Record<string, unknown>): Promi
   return tauriInvoke<T>(command, args);
 }
 
-export function useDeviceAssets() {
+export function useDeviceAssets(workspacePath = '') {
   const [assets, setAssets] = useState<DeviceAssetSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -68,19 +70,24 @@ export function useDeviceAssets() {
     setLoading(true);
     setError(null);
     try {
-      const list = await invoke<DeviceAssetSummary[]>('list_device_assets');
+      const list = await invoke<DeviceAssetSummary[]>('list_device_assets', {
+        workspacePath: workspacePath.trim() || null,
+      });
       setAssets(list);
     } catch (err) {
       setError(`加载设备列表失败: ${err}`);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [workspacePath]);
 
   const loadDetail = useCallback(async (id: string): Promise<DeviceAssetDetail | null> => {
     if (!hasTauriRuntime()) return null;
-    return invoke<DeviceAssetDetail | null>('load_device_asset', { id });
-  }, []);
+    return invoke<DeviceAssetDetail | null>('load_device_asset', {
+      id,
+      workspacePath: workspacePath.trim() || null,
+    });
+  }, [workspacePath]);
 
   const saveAsset = useCallback(
     async (id: string, name: string, deviceType: string, specYaml: string) => {
@@ -90,19 +97,23 @@ export function useDeviceAssets() {
         name,
         deviceType,
         specYaml,
+        workspacePath: workspacePath.trim() || null,
       });
       await loadAssets();
     },
-    [loadAssets],
+    [loadAssets, workspacePath],
   );
 
   const deleteAsset = useCallback(
     async (id: string) => {
       if (!hasTauriRuntime()) return;
-      await invoke('delete_device_asset', { id });
+      await invoke('delete_device_asset', {
+        id,
+        workspacePath: workspacePath.trim() || null,
+      });
       await loadAssets();
     },
-    [loadAssets],
+    [loadAssets, workspacePath],
   );
 
   const extractFromText = useCallback(
@@ -130,25 +141,35 @@ export function useDeviceAssets() {
   const generatePinSchema = useCallback(
     async (deviceId: string): Promise<PinSchemaEntry[]> => {
       if (!hasTauriRuntime()) return [];
-      return invoke<PinSchemaEntry[]>('generate_pin_schema', { deviceId });
+      return invoke<PinSchemaEntry[]>('generate_pin_schema', {
+        deviceId,
+        workspacePath: workspacePath.trim() || null,
+      });
     },
-    [],
+    [workspacePath],
   );
 
   const loadSources = useCallback(
     async (assetId: string): Promise<FieldSource[]> => {
       if (!hasTauriRuntime()) return [];
-      return invoke<FieldSource[]>('load_device_asset_sources', { assetId });
+      return invoke<FieldSource[]>('load_device_asset_sources', {
+        assetId,
+        workspacePath: workspacePath.trim() || null,
+      });
     },
-    [],
+    [workspacePath],
   );
 
   const saveSources = useCallback(
     async (assetId: string, sources: FieldSource[]) => {
       if (!hasTauriRuntime()) return;
-      await invoke('save_device_asset_sources', { assetId, sources });
+      await invoke('save_device_asset_sources', {
+        assetId,
+        sources,
+        workspacePath: workspacePath.trim() || null,
+      });
     },
-    [],
+    [workspacePath],
   );
 
   const extractTextFromPdf = useCallback(
@@ -175,10 +196,13 @@ export function useDeviceAssets() {
       if (!hasTauriRuntime()) return [];
       return invoke<Array<{ version: number; created_at: string; source_summary: string | null }>>(
         'list_asset_versions',
-        { assetId },
+        {
+          assetId,
+          workspacePath: workspacePath.trim() || null,
+        },
       );
     },
-    [],
+    [workspacePath],
   );
 
   return {

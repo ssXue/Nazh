@@ -1,7 +1,7 @@
-//! RFC-0004 Phase 2 集成测试：Capability DSL 解析 → 验证 → 自动生成 → Store 持久化。
+//! RFC-0004 Phase 2 集成测试：Capability DSL 解析 → 验证 → 自动生成。
 //!
 //! 验证完整的能力建模管道：YAML 解析 `CapabilitySpec`，静态校验，
-//! 从设备信号自动生成能力，保存到 `SQLite` 并可检索。
+//! 从设备信号自动生成能力。能力资产文件持久化由 Tauri 壳层工作路径 YAML 命令负责。
 
 #![allow(clippy::expect_used)]
 
@@ -9,8 +9,6 @@ use nazh_dsl_core::{
     CapabilityImpl, CapabilitySpec, SafetyLevel, generate_capabilities_from_device,
     parse_capability_yaml, parse_device_yaml,
 };
-use serde_json::json;
-use store::Store;
 
 const SAMPLE_CAPABILITY_YAML: &str = r#"
 id: hydraulic_axis.move_to
@@ -82,7 +80,7 @@ alarms:
 "#;
 
 #[test]
-fn capability_yaml_解析_验证_和_持久化_完整管道() {
+fn capability_yaml_解析_验证_和_round_trip() {
     // 1. 解析 YAML
     let spec = parse_capability_yaml(SAMPLE_CAPABILITY_YAML).expect("Capability YAML 解析应成功");
     assert_eq!(spec.id, "hydraulic_axis.move_to");
@@ -94,58 +92,16 @@ fn capability_yaml_解析_验证_和_持久化_完整管道() {
     // 2. 验证
     spec.validate().expect("合法 CapabilitySpec 校验应通过");
 
-    // 3. 持久化
-    let store = Store::open_unpersisted();
-    let spec_json = serde_json::to_value(&spec).expect("序列化应成功");
-    store
-        .save_capability(
-            "axis.move_to",
-            "hydraulic_press_1",
-            "移动轴",
-            Some("控制轴移动"),
-            &spec_json,
-        )
-        .expect("保存应成功");
-
-    // 4. 加载验证
-    let loaded = store
-        .load_capability("axis.move_to")
-        .expect("加载应成功")
-        .expect("能力应存在");
-    assert_eq!(loaded.id, "axis.move_to");
-    assert_eq!(loaded.device_id, "hydraulic_press_1");
-    assert_eq!(loaded.version, 1);
-    assert_eq!(loaded.spec_json["id"], "hydraulic_axis.move_to");
-    assert_eq!(loaded.spec_json["device_id"], "hydraulic_press_1");
-
-    // 5. 版本递增
-    store
-        .save_capability(
-            "axis.move_to",
-            "hydraulic_press_1",
-            "移动轴 v2",
-            None,
-            &spec_json,
-        )
-        .expect("更新保存应成功");
-    let reloaded = store
-        .load_capability("axis.move_to")
-        .expect("加载应成功")
-        .expect("能力应存在");
-    assert_eq!(reloaded.version, 2);
-
-    // 6. 删除
-    store.delete_capability("axis.move_to").expect("删除应成功");
-    assert!(
-        store
-            .load_capability("axis.move_to")
-            .expect("查询应成功")
-            .is_none()
-    );
+    // 3. YAML round-trip
+    let yaml = serde_yaml::to_string(&spec).expect("YAML 序列化应成功");
+    let reparsed = parse_capability_yaml(&yaml).expect("重新解析应成功");
+    assert_eq!(reparsed.id, spec.id);
+    assert_eq!(reparsed.device_id, spec.device_id);
+    assert_eq!(reparsed.inputs.len(), spec.inputs.len());
 }
 
 #[test]
-fn 从设备信号自动生成能力_并持久化() {
+fn 从设备信号自动生成能力() {
     // 1. 解析设备
     let device = parse_device_yaml(SAMPLE_DEVICE_YAML).expect("Device YAML 解析应成功");
     assert_eq!(device.signals.len(), 3);
@@ -184,31 +140,12 @@ fn 从设备信号自动生成能力_并持久化() {
             .unwrap_or_else(|e| panic!("生成的能力 {} 应通过校验: {e}", cap.id));
     }
 
-    // 4. 持久化生成的能力
-    let store = Store::open_unpersisted();
+    // 4. 生成结果可序列化为 YAML 文件内容
     for cap in &caps {
-        let spec_json = serde_json::to_value(cap).expect("序列化应成功");
-        store
-            .save_capability(
-                &cap.id,
-                &cap.device_id,
-                &format!("自动生成: {}", cap.id),
-                Some("从设备信号自动生成"),
-                &spec_json,
-            )
-            .expect("保存应成功");
+        let yaml = serde_yaml::to_string(cap).expect("YAML 序列化应成功");
+        let reparsed = parse_capability_yaml(&yaml).expect("重新解析应成功");
+        assert_eq!(reparsed.device_id, "hydraulic_press_1");
     }
-
-    // 5. 按设备过滤查询
-    let list = store
-        .list_capabilities(Some("hydraulic_press_1"))
-        .expect("查询应成功");
-    assert_eq!(list.len(), 2);
-
-    let list_other = store
-        .list_capabilities(Some("other_device"))
-        .expect("查询应成功");
-    assert!(list_other.is_empty());
 }
 
 #[test]
@@ -254,46 +191,4 @@ fn capability_验证_拒绝非法定义() {
         },
     };
     assert!(spec2.validate().is_err());
-}
-
-#[test]
-fn capability_版本和来源追溯() {
-    let store = Store::open_unpersisted();
-
-    // 保存多个版本
-    store
-        .save_capability("cap.v", "dev", "V", None, &json!({"step": 1}))
-        .expect("v1 应成功");
-    store
-        .save_capability("cap.v", "dev", "V 更新", None, &json!({"step": 2}))
-        .expect("v2 应成功");
-
-    // 版本列表
-    let versions = store
-        .list_capability_versions("cap.v")
-        .expect("版本列表应成功");
-    assert_eq!(versions.len(), 2);
-    assert_eq!(versions[0].version, 2);
-
-    // 加载特定版本
-    let v1 = store
-        .load_capability_version("cap.v", 1)
-        .expect("加载版本应成功")
-        .expect("版本 1 应存在");
-    assert_eq!(v1.spec_json["step"], 1);
-
-    // 来源追溯
-    let sources = vec![store::CapabilitySource {
-        field_path: "inputs[0].range".to_owned(),
-        source_text: "量程 0-150 mm".to_owned(),
-        confidence: 0.95,
-    }];
-    store
-        .save_capability_sources("cap.v", &sources)
-        .expect("保存来源应成功");
-    let loaded_sources = store
-        .load_capability_sources("cap.v")
-        .expect("加载来源应成功");
-    assert_eq!(loaded_sources.len(), 1);
-    assert_eq!(loaded_sources[0].field_path, "inputs[0].range");
 }

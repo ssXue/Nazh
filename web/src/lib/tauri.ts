@@ -717,6 +717,36 @@ export async function copilotComplete(request: AiCompletionRequest): Promise<AiC
   return invoke<AiCompletionResponse>('copilot_complete', { request });
 }
 
+export interface AiDeviceAssetContext {
+  id: string;
+  name: string;
+  deviceType: string;
+  version: number;
+  yaml: string;
+  yamlFilePath: string | null;
+}
+
+export interface AiCapabilityAssetContext {
+  id: string;
+  deviceId: string;
+  name: string;
+  description: string | null;
+  version: number;
+  yaml: string;
+  yamlFilePath: string | null;
+}
+
+export interface AiAssetContext {
+  devices: AiDeviceAssetContext[];
+  capabilities: AiCapabilityAssetContext[];
+}
+
+export async function loadAiAssetContext(workspacePath: string): Promise<AiAssetContext> {
+  return invoke<AiAssetContext>('load_ai_asset_context', {
+    workspacePath: workspacePath.trim() || null,
+  });
+}
+
 function createCopilotStreamId(): string {
   const randomId = globalThis.crypto?.randomUUID?.();
   if (typeof randomId === 'string' && randomId.trim()) {

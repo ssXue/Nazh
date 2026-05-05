@@ -355,6 +355,7 @@ export function StudioContentRouter({
             <ScrollSurface className="panel studio-content__panel studio-content__panel--scroll">
               <DeviceModelingPanel
                 isTauriRuntime={isTauriRuntime}
+                workspacePath={settings.projectWorkspacePath}
                 onStatusMessage={engine.setStatusMessage}
               />
             </ScrollSurface>

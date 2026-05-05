@@ -19,7 +19,7 @@ import {
   type NazhNodeKind,
 } from '../components/flowgram/flowgram-node-library';
 import { toFlowgramWorkflowJson } from './flowgram';
-import { copilotCompleteStream } from './tauri';
+import { copilotCompleteStream, type AiAssetContext } from './tauri';
 import { isUsableGlobalAiProvider, resolveGlobalAiProvider } from './workflow-ai';
 import { allocateNodeId } from './workflow-node-id';
 import {
@@ -37,6 +37,7 @@ const DEFAULT_COPILOT_PARAMS: AiGenerationParams = {
   maxTokens: 4096,
   topP: 1,
 };
+const MAX_AI_ASSET_CONTEXT_CHARS = 16_000;
 const EMPTY_FLOWGRAM_CONNECTION_DEFAULTS = {
   any: null,
   modbus: null,
@@ -148,6 +149,7 @@ export interface StreamWorkflowOrchestrationOptions {
   providerId: string;
   model?: string | null;
   baseDraft?: WorkflowOrchestrationDraft | null;
+  assetContext?: AiAssetContext | null;
   params?: AiGenerationParams;
   timeoutMs?: number | null;
   onRawText?: (rawText: string) => void;
@@ -597,19 +599,64 @@ function buildWorkflowAiSourcePortGuideText(): string {
     .join('\n');
 }
 
+function limitText(value: string, maxLength: number): string {
+  if (value.length <= maxLength) {
+    return value;
+  }
+  return `${value.slice(0, maxLength)}\n# ... 已截断，请只使用可见资产内容`;
+}
+
+function buildWorkflowAssetContextText(assetContext?: AiAssetContext | null): string {
+  if (
+    !assetContext ||
+    (assetContext.devices.length === 0 && assetContext.capabilities.length === 0)
+  ) {
+    return '当前没有加载到已保存的设备/能力资产。若需求涉及现场设备，先用可编辑草图占位，并在 done summary 中提示回到设备建模控制台补齐资产。';
+  }
+
+  const sections: string[] = [];
+  if (assetContext.devices.length > 0) {
+    sections.push(
+      [
+        `Device DSL (${assetContext.devices.length})`,
+        ...assetContext.devices.map((device) => [
+          `--- device id=${device.id} name=${device.name} type=${device.deviceType} version=${device.version}${device.yamlFilePath ? ` file=${device.yamlFilePath}` : ''}`,
+          device.yaml.trim(),
+        ].join('\n')),
+      ].join('\n'),
+    );
+  }
+
+  if (assetContext.capabilities.length > 0) {
+    sections.push(
+      [
+        `Capability DSL (${assetContext.capabilities.length})`,
+        ...assetContext.capabilities.map((capability) => [
+          `--- capability id=${capability.id} device=${capability.deviceId} name=${capability.name} version=${capability.version}${capability.yamlFilePath ? ` file=${capability.yamlFilePath}` : ''}`,
+          capability.yaml.trim(),
+        ].join('\n')),
+      ].join('\n'),
+    );
+  }
+
+  return limitText(sections.join('\n\n'), MAX_AI_ASSET_CONTEXT_CHARS);
+}
+
 export function buildWorkflowOrchestrationPrompt(options: {
   mode: WorkflowOrchestrationMode;
   requirement: string;
   baseDraft?: WorkflowOrchestrationDraft | null;
   baseState?: WorkflowOrchestrationSessionState | null;
+  assetContext?: AiAssetContext | null;
 }): AiMessage[] {
-  const { mode, requirement, baseDraft, baseState } = options;
+  const { mode, requirement, baseDraft, baseState, assetContext } = options;
   const promptState =
     baseState ?? (baseDraft ? createWorkflowOrchestrationState(baseDraft) : null);
   const currentGraphText =
     mode === 'edit' && promptState
       ? buildExistingGraphSummary(promptState)
       : '当前从空白工作流开始。';
+  const assetContextText = buildWorkflowAssetContextText(assetContext);
   const sourcePortGuideText = buildWorkflowAiSourcePortGuideText();
 
   const userPrompt = `任务模式：${mode === 'create' ? 'create（从空白开始编排新工作流）' : 'edit（基于当前工作流流式修改）'}
@@ -619,6 +666,9 @@ ${requirement.trim()}
 
 当前工作流上下文：
 ${currentGraphText}
+
+已审查设备/能力资产上下文：
+${assetContextText}
 
 请严格输出 JSON Lines 操作流，逐步编排。`;
 
@@ -647,6 +697,9 @@ ${sourcePortGuideText}
 - ref 必须是本次会话内稳定、简短的英文别名；引用已有节点时只能使用“当前工作流上下文”里给出的 ref
 - 新建节点时自己选择 ref，但不要输出或猜测系统 node id
 - code 节点脚本只输出 Rhai 可执行逻辑，不要使用未声明 API
+- 如果设备/能力资产上下文存在，涉及设备动作时优先使用这些已审查 Device DSL / Capability DSL；不要编造未列出的 capability_id、device_id、寄存器、topic 或串口命令
+- 使用 capabilityCall 时，config 必须包含 capability_id、device_id、implementation、args；implementation 需从 Capability DSL 的 implementation 转为运行时快照（modbus-write.value → value_template，mqtt-publish.payload → payload_template，serial-command.command → command_template，script.content 保持 content）
+- 设备连接只引用 Device DSL connection.id，不要把连接密钥写入配置
 - 对于工业场景，优先给出可以直接继续编辑和绑定连接的稳定草图
 - 如果需求不清晰，优先从最小可运行链路开始，再补上分支和输出
 - 保持输出紧凑；每个 JSON 对象单独一行`,
@@ -661,6 +714,7 @@ ${sourcePortGuideText}
 function buildWorkflowOrchestrationContinuationPrompt(options: {
   mode: WorkflowOrchestrationMode;
   requirement: string;
+  assetContext?: AiAssetContext | null;
   acceptedState: WorkflowOrchestrationSessionState;
   rawText: string;
   error: Error;
@@ -669,6 +723,7 @@ function buildWorkflowOrchestrationContinuationPrompt(options: {
   const baseMessages = buildWorkflowOrchestrationPrompt({
     mode: options.mode,
     requirement: options.requirement,
+    assetContext: options.assetContext,
     baseState: options.acceptedState,
   });
   const acceptedOperationsText = options.acceptedState.operations
@@ -1173,16 +1228,18 @@ export async function streamWorkflowOrchestration(
         ? buildWorkflowOrchestrationContinuationPrompt({
             mode: options.mode,
             requirement: options.requirement,
+            assetContext: options.assetContext,
             acceptedState: nextState,
             rawText: lastInterruptedRawText,
             error: lastInterruptedError,
             attempt: resumeAttemptCount,
           })
         : buildWorkflowOrchestrationPrompt({
-            mode: options.mode,
-            requirement: options.requirement,
-            baseState: nextState,
-          });
+          mode: options.mode,
+          requirement: options.requirement,
+          assetContext: options.assetContext,
+          baseState: nextState,
+        });
 
     const request: AiCompletionRequest = {
       providerId: options.providerId,

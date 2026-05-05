@@ -536,8 +536,8 @@ impl AiService for OpenAiCompatibleService {
             .text()
             .await
             .map_err(|error| AiError::ResponseParseError(error.to_string()))?;
-        let chat_response: ChatCompletionApiResponse = serde_json::from_str(&body_text)
-            .map_err(|error| {
+        let chat_response: ChatCompletionApiResponse =
+            serde_json::from_str(&body_text).map_err(|error| {
                 let preview = if body_text.len() > 200 {
                     format!("{}...（共 {} 字节）", &body_text[..200], body_text.len())
                 } else {
@@ -593,7 +593,7 @@ impl AiService for OpenAiCompatibleService {
         let model = request
             .model
             .clone()
-            .unwrap_or(provider.default_model.clone());
+            .unwrap_or_else(|| provider.default_model.clone());
         let timeout_ms = request.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS);
 
         let body = build_chat_payload(

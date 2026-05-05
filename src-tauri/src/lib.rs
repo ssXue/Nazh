@@ -3,6 +3,7 @@
 //! 桌面壳层负责注册 IPC 命令、初始化窗口效果与持久化配置，业务命令按域拆到
 //! `commands/*`，运行时状态与事件转发分别位于 `runtime` / `events` 模块。
 
+mod asset_files;
 mod commands;
 mod events;
 mod observability;
@@ -167,6 +168,7 @@ pub fn run() {
             commands::ai::test_ai_provider,
             commands::ai::copilot_complete,
             commands::ai::copilot_complete_stream,
+            commands::ai::load_ai_asset_context,
             commands::human_loop::respond_human_loop,
             commands::human_loop::list_pending_approvals,
             commands::devices::list_device_assets,

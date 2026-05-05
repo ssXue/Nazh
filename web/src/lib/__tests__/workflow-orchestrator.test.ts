@@ -59,6 +59,42 @@ describe('buildWorkflowOrchestrationPrompt', () => {
     expect(messages[1].content).not.toContain('"code_clean"');
     expect(messages[1].content).toContain('把输出改成 HTTP 上报');
   });
+
+  it('会把设备和能力资产上下文交给 AI 编辑', () => {
+    const messages = buildWorkflowOrchestrationPrompt({
+      mode: 'edit',
+      requirement: '用压机能力完成压装',
+      assetContext: {
+        devices: [
+          {
+            id: 'press_1',
+            name: '压机',
+            deviceType: 'hydraulic_press',
+            version: 2,
+            yamlFilePath: '/tmp/workspace/dsl/devices/press_1.device.yaml',
+            yaml: 'id: press_1\ntype: hydraulic_press\nconnection:\n  type: modbus-tcp\n  id: press_modbus\n',
+          },
+        ],
+        capabilities: [
+          {
+            id: 'press.apply_pressure',
+            deviceId: 'press_1',
+            name: 'apply_pressure',
+            description: '加压',
+            version: 1,
+            yamlFilePath: null,
+            yaml: 'id: press.apply_pressure\ndevice_id: press_1\nimplementation:\n  type: modbus-write\n  register: 40020\n  value: "${target}"\nsafety:\n  level: low\n',
+          },
+        ],
+      },
+    });
+
+    expect(messages[0].content).toContain('优先使用这些已审查 Device DSL / Capability DSL');
+    expect(messages[0].content).toContain('capabilityCall');
+    expect(messages[1].content).toContain('Device DSL (1)');
+    expect(messages[1].content).toContain('press.apply_pressure');
+    expect(messages[1].content).toContain('press_modbus');
+  });
 });
 
 describe('applyWorkflowOrchestrationOperation', () => {

@@ -53,7 +53,7 @@ flowchart TB
     end
 
     subgraph Shell["Tauri v2 桌面壳 (nazh-desktop)"]
-        S1["65 IPC 命令 · 8 workflow/copilot 事件通道"]
+        S1["66 IPC 命令 · 8 workflow/copilot 事件通道"]
         S2["运行时调度 · 部署会话 · 工程库文件"]
         S3["AI Provider 配置 · 观测日志 · 工程库文件"]
     end
@@ -113,6 +113,7 @@ flowchart TB
 ## AI 能力
 
 - **自然语言生成规则**：描述业务需求 → 自动生成可执行逻辑
+- **资产感知编辑**：画布内 AI 编辑会读取工作路径下已审查的 Device / Capability YAML 资产，优先生成 `capabilityCall` 设备能力调用
 - **流式推理**：实时显示 AI 思考过程，透明可控
 - **多模型支持**：OpenAI / DeepSeek / Moonshot 等兼容接口
 
@@ -178,6 +179,8 @@ web/             # React + FlowGram.AI 前端
 tests/           # 集成测试
 docs/            # ADR / RFC / specs / plans / conventions / templates
 ```
+
+工程工作路径是 DSL 资产的唯一持久化位置：设备在 `dsl/devices/*.device.yaml`，能力在 `dsl/capabilities/*.capability.yaml`，对应版本快照在各自的 `versions/` 子目录，AI 来源追溯在各自的 `sources/` 子目录。
 
 ## 项目文档
 

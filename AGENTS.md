@@ -55,7 +55,7 @@ cargo deny check
 ### Three-Layer Stack
 
 1. **Rust Engine** — Cargo workspace rooted at `/` with 15 packages (see below). Public facade is the `nazh-engine` library crate at `src/lib.rs`.
-2. **Tauri Shell** (`src-tauri/`) — Desktop app binary `nazh-desktop`. Exposes IPC commands to the frontend, bridges engine events to the UI, manages shell-side concerns (observability store, project library files, AI config, runtime dispatch queues, deployment session files).
+2. **Tauri Shell** (`src-tauri/`) — Desktop app binary `nazh-desktop`. Exposes IPC commands to the frontend, bridges engine events to the UI, manages shell-side concerns (observability store, project library files, DSL asset YAML mirrors, AI config, runtime dispatch queues, deployment session files).
 3. **React Frontend** (`web/`) — Vite + React 18 + TypeScript + FlowGram.AI. Communicates **exclusively** via Tauri `invoke` / `Window::emit` — no HTTP or gRPC.
 
 ### Cargo Workspace Layout (Ring 0 / Ring 1)
@@ -125,7 +125,7 @@ IPC boundary types are defined once in Rust and auto-generated to TypeScript via
 
 Workflow commands are split across `workflow_deploy.rs` / `workflow_dispatch.rs` / `workflow_undeploy.rs` (since 2026-05-03, was single `workflow.rs`). Other command domains remain in their respective files (`ai.rs`, `catalog.rs`, `connections.rs`, `variables.rs`, `devices.rs`, etc.).
 
-65 commands covering:
+66 commands covering:
 - workflow lifecycle/runtime: `deploy_workflow`, `dispatch_payload`, `undeploy_workflow`, `list_runtime_workflows`, `set_active_runtime_workflow`, `list_dead_letters`
 - node / pin catalog: `list_node_types`, `describe_node_pins`
 - workflow variables: `snapshot_workflow_variables`, `set_workflow_variable`, `delete_workflow_variable`, `reset_workflow_variable`, `query_variable_history`, `set_global_variable`, `get_global_variable`, `list_global_variables`, `delete_global_variable`
@@ -137,8 +137,10 @@ Workflow commands are split across `workflow_deploy.rs` / `workflow_dispatch.rs`
 - deployment session files: `load_deployment_session_file`, `load_deployment_session_state_file`, `list_deployment_sessions_file`, `save_deployment_session_file`, `set_deployment_session_active_project_file`, `remove_deployment_session_file`, `clear_deployment_session_file`
 - serial: `list_serial_ports`, `test_serial_connection`
 - project library/export: `load_project_board_files`, `save_project_board_files`, `save_flowgram_export_file`
-- AI: `load_ai_config`, `save_ai_config`, `test_ai_provider`, `copilot_complete`, `copilot_complete_stream`
+- AI: `load_ai_config`, `save_ai_config`, `test_ai_provider`, `load_ai_asset_context`, `copilot_complete`, `copilot_complete_stream`
 - reactive: `subscribe_reactive_pin`（ADR-0015 Phase 2，OutputCache watch → Tauri 事件推送）
+
+Device / Capability DSL assets are persisted only as reviewable YAML under the active workspace: `dsl/devices/*.device.yaml`, `dsl/devices/versions/*.device.yaml`, `dsl/devices/sources/*.sources.yaml`, `dsl/capabilities/*.capability.yaml`, `dsl/capabilities/versions/*.capability.yaml`, and `dsl/capabilities/sources/*.sources.yaml`. They are not stored in SQLite. The canvas AI edit path reads these reviewed YAML files via `load_ai_asset_context` before asking the model to modify a workflow.
 
 Event channels: `workflow://node-status`, `workflow://result`, `workflow://deployed`, `workflow://undeployed`, `workflow://runtime-focus`, `workflow://variable-changed`（ADR-0012 Phase 2，write-on-change 变量变更广播；内部走独立 `WorkflowVariableEvent` 通道，不混入 `ExecutionEvent`——B1-R0-01/B1-R0-05，2026-05-03）, `workflow://reactive-update/{workflow_id}/{node_id}/{pin_id}`（ADR-0015 Phase 2，Reactive 引脚值变更推送） and dynamic `copilot://stream/{stream_id}`. Runtime result/status events are scoped payloads with `workflow_id`.
 
@@ -402,5 +404,3 @@ Ambiguous match found for serviceIdentifier: FlowRendererRegistry
 ## Project Status
 
 → 详见 [`docs/project-status.md`](docs/project-status.md)（ADR 实施状态、技术债追踪、执行顺序）。
-
-

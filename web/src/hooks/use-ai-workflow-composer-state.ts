@@ -14,6 +14,7 @@ import {
   type WorkflowOrchestrationSessionState,
 } from '../lib/workflow-orchestrator';
 import { describeUnknownError } from '../lib/workflow-events';
+import { hasTauriRuntime, loadAiAssetContext } from '../lib/tauri';
 import type { AiConfigView } from '../types';
 
 interface UseAiWorkflowComposerStateOptions {
@@ -28,10 +29,36 @@ interface UseAiWorkflowComposerStateOptions {
   projectCount: number;
   resetWorkspaceRuntime: (nextMessage: string) => void;
   setStatusMessage: (message: string) => void;
+  workspacePath: string;
   updateProjectDraft: (
     projectId: string,
     nextDraft: Partial<Pick<ProjectRecord, 'astText' | 'payloadText' | 'name' | 'description'>>,
   ) => void;
+}
+
+async function loadWorkflowAssetContext(
+  workspacePath: string,
+  appendRuntimeLog: UseAiWorkflowComposerStateOptions['appendRuntimeLog'],
+) {
+  if (!hasTauriRuntime()) {
+    return null;
+  }
+
+  try {
+    const context = await loadAiAssetContext(workspacePath);
+    if (context.devices.length > 0 || context.capabilities.length > 0) {
+      appendRuntimeLog(
+        'ai',
+        'info',
+        '已加载 AI 设备资产上下文',
+        `${context.devices.length} 个设备 · ${context.capabilities.length} 个能力`,
+      );
+    }
+    return context;
+  } catch (error) {
+    appendRuntimeLog('ai', 'warn', 'AI 设备资产上下文加载失败', String(error));
+    return null;
+  }
 }
 
 export function useAiWorkflowComposerState({
@@ -46,6 +73,7 @@ export function useAiWorkflowComposerState({
   projectCount,
   resetWorkspaceRuntime,
   setStatusMessage,
+  workspacePath,
   updateProjectDraft,
 }: UseAiWorkflowComposerStateOptions) {
   const [open, setOpen] = useState(false);
@@ -202,12 +230,14 @@ export function useAiWorkflowComposerState({
     );
 
     try {
+      const assetContext = await loadWorkflowAssetContext(workspacePath, appendRuntimeLog);
       const finalState = await streamWorkflowOrchestration({
         mode: currentMode,
         requirement: trimmedRequirement,
         providerId: preferredWorkflowAiProvider.id,
         model: preferredWorkflowAiProvider.defaultModel,
         baseDraft,
+        assetContext,
         params: aiConfig?.copilotParams,
         timeoutMs: aiConfig?.agentSettings.timeoutMs,
         onRawText: (nextRawText) => {

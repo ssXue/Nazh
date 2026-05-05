@@ -32,7 +32,7 @@ fn build_pin_index(node_id: &str, node: &Arc<dyn NodeTrait>) -> Result<NodePinIn
         if inputs.contains_key(&pin.id) {
             return Err(EngineError::DuplicatePinId {
                 node: node_id.to_owned(),
-                pin: pin.id.clone(),
+                pin: pin.id,
                 direction: PinDirection::Input,
             });
         }
@@ -44,7 +44,7 @@ fn build_pin_index(node_id: &str, node: &Arc<dyn NodeTrait>) -> Result<NodePinIn
         if outputs.contains_key(&pin.id) {
             return Err(EngineError::DuplicatePinId {
                 node: node_id.to_owned(),
-                pin: pin.id.clone(),
+                pin: pin.id,
                 direction: PinDirection::Output,
             });
         }

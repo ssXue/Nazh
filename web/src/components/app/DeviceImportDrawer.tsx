@@ -42,6 +42,7 @@ const TEXT_PHASES: PhaseInfo[] = [
 
 interface DeviceImportDrawerProps {
   open: boolean;
+  workspacePath: string;
   onClose: () => void;
   onSaved: () => void;
   onStatusMessage: (message: string) => void;
@@ -51,13 +52,14 @@ type InputMode = 'text' | 'pdf';
 
 export function DeviceImportDrawer({
   open,
+  workspacePath,
   onClose,
   onSaved,
   onStatusMessage,
 }: DeviceImportDrawerProps) {
   const { extractFromText, extractProposal, extractTextFromPdf, extractFromPdf, saveAsset } =
-    useDeviceAssets();
-  const { saveCapability } = useCapabilities();
+    useDeviceAssets(workspacePath);
+  const { saveCapability } = useCapabilities(workspacePath);
 
   const [mode, setMode] = useState<InputMode>('text');
 

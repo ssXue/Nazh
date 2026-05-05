@@ -23,7 +23,26 @@ vi.mock('@tauri-apps/api/window', () => ({
   },
 }));
 
-import { copilotCompleteStream } from '../tauri';
+import { copilotCompleteStream, loadAiAssetContext } from '../tauri';
+
+describe('loadAiAssetContext', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('按当前工作路径读取 AI 资产上下文', async () => {
+    const response = {
+      devices: [],
+      capabilities: [],
+    };
+    invokeMock.mockResolvedValueOnce(response);
+
+    await expect(loadAiAssetContext('/tmp/nazh-workspace')).resolves.toEqual(response);
+    expect(invokeMock).toHaveBeenCalledWith('load_ai_asset_context', {
+      workspacePath: '/tmp/nazh-workspace',
+    });
+  });
+});
 
 describe('copilotCompleteStream', () => {
   const request: AiCompletionRequest = {

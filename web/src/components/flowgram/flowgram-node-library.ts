@@ -56,6 +56,7 @@ import { definition as codeDef } from './nodes/code';
 import { definition as timerDef } from './nodes/timer';
 import { definition as serialTriggerDef } from './nodes/serialTrigger';
 import { definition as modbusReadDef } from './nodes/modbusRead';
+import { definition as capabilityCallDef } from './nodes/capabilityCall';
 import { definition as mqttClientDef } from './nodes/mqttClient';
 import { definition as ifDef } from './nodes/if';
 import { definition as switchDef } from './nodes/switch';
@@ -90,6 +91,7 @@ interface FlowgramNodeData {
 
 const ALL_DEFS = [
   nativeDef, codeDef, timerDef, serialTriggerDef, modbusReadDef, mqttClientDef,
+  capabilityCallDef,
   ifDef, switchDef, tryCatchDef, loopDef,
   httpClientDef, barkPushDef, sqlWriterDef, debugConsoleDef,
   subgraphDef, subgraphInputDef, subgraphOutputDef,

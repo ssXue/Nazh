@@ -48,6 +48,10 @@ export interface SelectedNodeDraft {
   sqlTable: string;
   debugLabel: string;
   debugPretty: boolean;
+  capabilityId: string;
+  capabilityDeviceId: string;
+  capabilityImplementationJson: string;
+  capabilityArgsJson: string;
   parameterBindings: Record<string, string | number | boolean>;
   lookupTable: Record<string, unknown>;
   lookupDefault: string;
