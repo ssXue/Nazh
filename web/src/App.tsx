@@ -106,16 +106,20 @@ function buildConnectionUsageMap(
   );
 }
 
-function getReferencedConnectionCount(nodes: Record<string, WorkflowNodeDefinition> | null): number {
+function getReferencedConnectionIds(nodes: Record<string, WorkflowNodeDefinition> | null): Set<string> {
   if (!nodes) {
-    return 0;
+    return new Set();
   }
 
   return new Set(
     Object.values(nodes)
       .map((node) => node.connection_id?.trim())
       .filter((connectionId): connectionId is string => Boolean(connectionId)),
-  ).size;
+  );
+}
+
+function getReferencedConnectionCount(nodes: Record<string, WorkflowNodeDefinition> | null): number {
+  return getReferencedConnectionIds(nodes).size;
 }
 
 function App() {
@@ -343,6 +347,7 @@ function App() {
 
   async function handleDeploy() {
     testRun.reset();
+    engine.clearResults();
 
     if (!activeBoard || !activeProject) {
       engine.setStatusMessage('请先从所有看板进入工程。');
@@ -434,6 +439,7 @@ function App() {
     appendRuntimeLog: engine.appendRuntimeLog,
     appendAppError: engine.appendAppError,
     setStatusMessage: engine.setStatusMessage,
+    clearResults: engine.clearResults,
     addPreviewResult: (payload) => {
       engine.addResult({
         trace_id: 'web-preview',
@@ -466,7 +472,10 @@ function App() {
   const workflowStatusPillClass = getWorkflowStatusPillClass(workflowStatus);
   const canTestRun = testRun.canTestRun;
   const isTestRunning = testRun.isTestRunning;
-  const connectionPreview = engine.connections.slice(0, 4);
+  const referencedConnectionIds = getReferencedConnectionIds(graphState.graph?.nodes ?? null);
+  const connectionPreview = referencedConnectionIds.size > 0
+    ? engine.connections.filter((c) => referencedConnectionIds.has(c.id))
+    : engine.connections;
   const sidebarSections = buildSidebarSections(
     workflowStatusLabel,
     runtimeWorkflowCount,

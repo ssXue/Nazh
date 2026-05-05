@@ -74,6 +74,7 @@ export interface WorkflowEngineActions {
   resetWorkspaceRuntime: (nextMessage: string) => void;
   clearLogs: () => void;
   applyDeploymentState: (payload: DeployResponse, nextMessage?: string) => void;
+  clearResults: () => void;
   addResult: (result: WorkflowResult) => void;
   refreshConnections: () => Promise<void>;
   setIsRuntimeDockCollapsed: React.Dispatch<React.SetStateAction<boolean>>;
@@ -164,7 +165,6 @@ export function useWorkflowEngine(
         payload.rootNodes.length > 0 ? `根节点: ${payload.rootNodes.join(', ')}` : null,
       ),
     ]);
-    setResults([]);
     setAppErrors([]);
     setRuntimeState(EMPTY_RUNTIME_STATE);
     setStatusMessage(
@@ -364,7 +364,6 @@ export function useWorkflowEngine(
       }
 
       setDeployInfo(null);
-      setResults([]);
       setRuntimeState(EMPTY_RUNTIME_STATE);
       appendRuntimeLog(
         'system',
@@ -450,6 +449,7 @@ export function useWorkflowEngine(
     resetWorkspaceRuntime,
     clearLogs,
     applyDeploymentState,
+    clearResults: () => setResults([]),
     addResult: (result: WorkflowResult) => {
       setResults((current) => [result, ...current].slice(0, 8));
     },

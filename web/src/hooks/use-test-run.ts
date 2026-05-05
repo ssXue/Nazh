@@ -28,6 +28,7 @@ export interface UseTestRunParams {
   appendRuntimeLog: (source: string, level: 'info' | 'success' | 'warn' | 'error', message: string, detail?: string | null) => void;
   appendAppError: (scope: AppErrorRecord['scope'], title: string, detail?: string | null) => void;
   setStatusMessage: (message: string) => void;
+  clearResults: () => void;
   addPreviewResult: (payload: unknown) => void;
   getActiveBoardId: () => string | undefined;
   isCurrentlyDeployed: () => boolean;
@@ -175,6 +176,7 @@ export function useTestRun(params: UseTestRunParams): UseTestRunResult {
     }
 
     completedRef.current = false;
+    params.clearResults();
     setIsTestRunning(true);
 
     try {
