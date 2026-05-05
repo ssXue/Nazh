@@ -53,6 +53,7 @@ import { SerialTriggerNodeSettings } from './nodes/serialTrigger/settings';
 import { ModbusReadNodeSettings } from './nodes/modbusRead/settings';
 import { CanReadNodeSettings } from './nodes/canRead/settings';
 import { CanWriteNodeSettings } from './nodes/canWrite/settings';
+import { EthercatPdoNodeSettings } from './nodes/ethercatPdoRead/settings';
 import { MqttClientNodeSettings } from './nodes/mqttClient/settings';
 import { IfNodeSettings } from './nodes/if/settings';
 import { SwitchNodeSettings } from './nodes/switch/settings';
@@ -156,6 +157,7 @@ function readNodeDraft(node: FlowNodeEntity): SelectedNodeDraft {
     sqlTable: readString(config.table, 'workflow_logs'),
     debugLabel: readString(config.label),
     debugPretty: readBoolean(config.pretty, true),
+    ethercatSlaveAddress: readNumberString(config.slave_address, '1'),
     capabilityId: readString(config.capability_id),
     capabilityDeviceId: readString(config.device_id),
     capabilityImplementationJson: JSON.stringify(
@@ -234,6 +236,17 @@ function buildNodeConfig(draft: SelectedNodeDraft, currentConfig: NodeConfigMap)
       can_id: parseNonNegativeInteger(draft.canId),
       is_extended: draft.canIsExtended,
     };
+  }
+
+  if (draft.nodeType === 'ethercatPdoRead' || draft.nodeType === 'ethercatPdoWrite') {
+    return {
+      ...currentConfig,
+      slave_address: parsePositiveInteger(draft.ethercatSlaveAddress) ?? 1,
+    };
+  }
+
+  if (draft.nodeType === 'ethercatStatus') {
+    return { ...currentConfig };
   }
 
   if (draft.nodeType === 'mqttClient') {
@@ -351,6 +364,8 @@ const NODE_SETTINGS_MAP: Record<string, React.FC<NodeSettingsProps>> = {
   modbusRead: ModbusReadNodeSettings,
   canRead: CanReadNodeSettings,
   canWrite: CanWriteNodeSettings,
+  ethercatPdoRead: EthercatPdoNodeSettings,
+  ethercatPdoWrite: EthercatPdoNodeSettings,
   mqttClient: MqttClientNodeSettings,
   if: IfNodeSettings,
   switch: SwitchNodeSettings,

@@ -31,6 +31,7 @@ rusqlite = { workspace = true, optional = true }
 tokio-modbus = { workspace = true, optional = true }
 rumqttc = { workspace = true, optional = true }
 serialport = { workspace = true, optional = true }
+ethercrab = { workspace = true, optional = true }
 
 [features]
 # 默认启用全部协议节点：保持桌面 / 工作站构建零回归。
@@ -39,7 +40,7 @@ default = ["io-all"]
 
 # 元 feature。`debug` / `native` / `timer` 与 `template` 工具永远启用，
 # 不需要单独 feature——空声明在历史草案里出现过，落地时确认是死重去除。
-io-all = ["io-sql", "io-http", "io-mqtt", "io-modbus", "io-serial", "io-notify", "io-can"]
+io-all = ["io-sql", "io-http", "io-mqtt", "io-modbus", "io-serial", "io-notify", "io-can", "io-ethercat"]
 
 # 按协议门控
 io-sql = ["dep:rusqlite"]
@@ -49,3 +50,4 @@ io-modbus = ["dep:tokio-modbus"]
 io-serial = ["dep:serialport"]
 io-notify = ["dep:reqwest"]
 io-can = ["dep:serialport"]
+io-ethercat = ["dep:ethercrab"]

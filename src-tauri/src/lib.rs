@@ -5,6 +5,7 @@
 
 mod asset_files;
 mod commands;
+mod ethercat_esi;
 mod events;
 mod observability;
 mod registry;
@@ -186,6 +187,7 @@ pub fn run() {
             commands::devices::load_device_asset_sources,
             commands::devices::extract_text_from_pdf,
             commands::devices::extract_device_from_pdf,
+            commands::devices::import_ethercat_esi,
             commands::capabilities::list_capabilities,
             commands::capabilities::load_capability,
             commands::capabilities::save_capability,

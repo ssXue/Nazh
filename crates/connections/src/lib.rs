@@ -1323,6 +1323,43 @@ fn validate_connection_definition(kind: &str, metadata: &Value) -> Result<(), St
                 return Err(format!("CAN-SLCAN 连接不支持 bitrate: {bitrate}"));
             }
         }
+        "ethercat" | "ethercat-soem" | "ecat" => {
+            let backend = metadata
+                .and_then(|value| value.get("backend"))
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .unwrap_or("ethercrab")
+                .to_ascii_lowercase();
+            if !matches!(backend.as_str(), "ethercrab" | "mock") {
+                return Err(format!("EtherCAT 连接不支持 backend: {backend}"));
+            }
+
+            let interface = metadata
+                .and_then(|value| value.get("interface"))
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .unwrap_or_default();
+            if backend != "mock" && interface.is_empty() {
+                return Err("EtherCAT 连接需要配置 interface（网络接口名）".to_owned());
+            }
+
+            let cycle_time_ms = metadata
+                .and_then(|value| value.get("cycle_time_ms"))
+                .and_then(Value::as_u64)
+                .unwrap_or(5);
+            if cycle_time_ms == 0 {
+                return Err("EtherCAT 连接 cycle_time_ms 必须大于 0".to_owned());
+            }
+
+            let op_timeout_ms = metadata
+                .and_then(|value| value.get("op_timeout_ms"))
+                .and_then(Value::as_u64)
+                .unwrap_or(15_000);
+            if op_timeout_ms == 0 {
+                return Err("EtherCAT 连接 op_timeout_ms 必须大于 0".to_owned());
+            }
+        }
         _ => {}
     }
 

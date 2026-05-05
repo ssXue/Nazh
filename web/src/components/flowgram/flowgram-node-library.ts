@@ -60,6 +60,9 @@ import { definition as capabilityCallDef } from './nodes/capabilityCall';
 import { definition as mqttClientDef } from './nodes/mqttClient';
 import { definition as canReadDef } from './nodes/canRead';
 import { definition as canWriteDef } from './nodes/canWrite';
+import { definition as ethercatPdoReadDef } from './nodes/ethercatPdoRead';
+import { definition as ethercatPdoWriteDef } from './nodes/ethercatPdoWrite';
+import { definition as ethercatStatusDef } from './nodes/ethercatStatus';
 import { definition as ifDef } from './nodes/if';
 import { definition as switchDef } from './nodes/switch';
 import { definition as tryCatchDef } from './nodes/tryCatch';
@@ -93,7 +96,7 @@ interface FlowgramNodeData {
 
 const ALL_DEFS = [
   nativeDef, codeDef, timerDef, serialTriggerDef, modbusReadDef, mqttClientDef,
-  canReadDef, canWriteDef,
+  canReadDef, canWriteDef, ethercatPdoReadDef, ethercatPdoWriteDef, ethercatStatusDef,
   capabilityCallDef,
   ifDef, switchDef, tryCatchDef, loopDef,
   httpClientDef, barkPushDef, sqlWriterDef, debugConsoleDef,
@@ -175,6 +178,10 @@ export function resolveDefaultConnectionId(
     case 'canRead':
     case 'canWrite':
       return connectionDefaults.can;
+    case 'ethercatPdoRead':
+    case 'ethercatPdoWrite':
+    case 'ethercatStatus':
+      return connectionDefaults.ethercat;
     case 'mqttClient':
       return connectionDefaults.mqtt;
     case 'httpClient':

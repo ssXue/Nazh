@@ -113,6 +113,35 @@
 
 /* PDF 上传 */
 
+.dm-drawer__field {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.dm-drawer__field span {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.dm-drawer__field input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm, 8px);
+  background: var(--surface-elevated);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.dm-drawer__field input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
 .dm-drawer__dropzone {
   display: flex;
   flex-direction: column;

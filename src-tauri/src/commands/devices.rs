@@ -15,6 +15,7 @@ use crate::asset_files::{
     next_device_asset_version, read_device_asset_sources, write_device_asset_sources,
     write_device_asset_yaml,
 };
+use crate::ethercat_esi::import_esi_to_device_yaml;
 use crate::state::DesktopState;
 use base64::Engine;
 
@@ -603,6 +604,27 @@ pub(crate) async fn extract_device_from_pdf(
         capability_yamls: raw.capability_yamls,
         uncertainties: raw.uncertainties,
         warnings: raw.warnings,
+    })
+}
+
+// ---- EtherCAT ESI 导入 ----
+
+/// 从 `EtherCAT` ESI XML 文件导入设备 DSL 草稿。
+#[tauri::command]
+pub(crate) async fn import_ethercat_esi(
+    esi_xml: String,
+    connection_id: Option<String>,
+    device_id: Option<String>,
+) -> Result<DeviceExtractionProposal, String> {
+    let result =
+        import_esi_to_device_yaml(&esi_xml, connection_id.as_deref(), device_id.as_deref())?;
+    parse_device_yaml(&result.device_yaml)
+        .map_err(|error| format!("ESI 导入结果不是合法 DeviceSpec: {error}"))?;
+    Ok(DeviceExtractionProposal {
+        device_yaml: result.device_yaml,
+        capability_yamls: Vec::new(),
+        uncertainties: Vec::new(),
+        warnings: result.warnings,
     })
 }
 

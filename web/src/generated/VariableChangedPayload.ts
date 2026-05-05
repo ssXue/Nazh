@@ -4,7 +4,7 @@ import type { JsonValue } from "./serde_json/JsonValue";
 /**
  * `workflow://variable-changed` 事件载荷（ADR-0012 Phase 2）。
  *
- * 与 `ExecutionEvent::VariableChanged` 字段一致，但走独立 ts-rs 导出路径——
- * 前端订阅时类型直接就位，不必从 `ExecutionEvent` 联合中分支。
+ * 由 Tauri shell 的变量事件 drain 循环从 [`nazh_core::WorkflowVariableEvent::Changed`]
+ * 直接构造——不再从 `ExecutionEvent` 分支（B1-R0-01/B1-R0-05）。
  */
 export type VariableChangedPayload = { workflowId: string, name: string, value: JsonValue, updatedAt: string, updatedBy?: string, };

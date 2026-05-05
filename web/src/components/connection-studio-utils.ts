@@ -164,6 +164,23 @@ export const CONNECTION_TEMPLATES: ConnectionTemplate[] = [
     },
   },
   {
+    key: 'ethercat',
+    label: 'EtherCAT',
+    description: '适合工业以太网 EtherCAT 主站，使用 ethercrab 纯 Rust 后端。',
+    idPrefix: 'ethercat',
+    definition: {
+      id: 'ethercat',
+      type: 'ethercat',
+      metadata: {
+        backend: 'ethercrab',
+        interface: 'eth0',
+        cycle_time_ms: 10,
+        op_timeout_ms: 15000,
+        governance: DEFAULT_CONNECTION_GOVERNANCE,
+      },
+    },
+  },
+  {
     key: 'custom',
     label: '空白连接',
     description: '保留完全自定义空间，适配专有协议或插件节点。',
@@ -309,6 +326,17 @@ export function isBarkConnectionType(connectionType: string): boolean {
   }
 }
 
+export function isEthercatConnectionType(connectionType: string): boolean {
+  switch (normalizedConnectionType(connectionType)) {
+    case 'ethercat':
+    case 'ethercat-soem':
+    case 'ecat':
+      return true;
+    default:
+      return false;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // 连接图标 & 摘要
 // ---------------------------------------------------------------------------
@@ -322,6 +350,10 @@ export function connectionIconFor(connectionType: string): ConnectionIconCompone
   }
 
   if (isCanConnectionType(type)) {
+    return CanNodeIcon;
+  }
+
+  if (isEthercatConnectionType(type)) {
     return CanNodeIcon;
   }
 
@@ -366,6 +398,13 @@ export function connectionParameterBrief(connection: ConnectionDefinition): stri
     const baudRate = metadataNumber(connection.metadata, 'baud_rate', 115200);
     const bitrate = metadataNumber(connection.metadata, 'bitrate', 500000);
     return `${compactConnectionValue(channel, '未配置通道')} · ${baudRate} · CAN ${bitrate / 1000} kbps`;
+  }
+
+  if (isEthercatConnectionType(type)) {
+    const iface = metadataString(connection.metadata, 'interface', '未配置接口');
+    const cycleMs = metadataNumber(connection.metadata, 'cycle_time_ms', 10);
+    const opTimeoutMs = metadataNumber(connection.metadata, 'op_timeout_ms', 15000);
+    return `${compactConnectionValue(iface, '未配置接口')} · ${cycleMs}ms 周期 · OP ${opTimeoutMs}ms`;
   }
 
   if (type === 'modbus' || type === 'modbus_tcp') {

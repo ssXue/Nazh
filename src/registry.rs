@@ -45,6 +45,9 @@ mod tests {
             "humanLoop",
             "canRead",
             "canWrite",
+            "ethercatPdoRead",
+            "ethercatPdoWrite",
+            "ethercatStatus",
         ] {
             assert!(
                 types.contains(&expected),
@@ -54,12 +57,12 @@ mod tests {
     }
 
     #[test]
-    fn 两个插件合并后覆盖全部_24_种节点类型() {
+    fn 两个插件合并后覆盖全部_27_种节点类型() {
         let registry = standard_registry();
         assert_eq!(
             registry.registered_types().len(),
-            24,
-            "应注册 24 种节点类型"
+            27,
+            "应注册 27 种节点类型"
         );
     }
 
@@ -108,6 +111,9 @@ mod tests {
         expect("humanLoop", NodeCapabilities::BRANCHING);
         expect("canRead", NodeCapabilities::DEVICE_IO);
         expect("canWrite", NodeCapabilities::DEVICE_IO);
+        expect("ethercatPdoRead", NodeCapabilities::DEVICE_IO);
+        expect("ethercatPdoWrite", NodeCapabilities::DEVICE_IO);
+        expect("ethercatStatus", NodeCapabilities::DEVICE_IO);
 
         // RFC-0004 Phase 3：DSL 编译器生成的节点
         expect("stateMachine", NodeCapabilities::BRANCHING);

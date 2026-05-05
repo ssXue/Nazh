@@ -42,6 +42,7 @@ async-trait = "0.1"
 bitflags = { version = "2", features = ["serde"] }
 chrono = { version = "0.4", features = ["clock", "serde"] }
 dashmap = "6"
+ethercrab = { version = "0.7", default-features = false, features = ["std", "log"] }
 futures-util = "0.3"
 fastrand = "2"
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "json"] }
@@ -123,7 +124,7 @@ ts-export = [
 # 第三方应用）按需裁剪。**注意**：facade 自身也用 `#[cfg(feature = "io-*")]`
 # 控制 protocol 节点的 re-export，因此 io-all 必须展开到每个 io-* 上，而不能
 # 只委托给 nodes-io/io-all——后者只激活 nodes-io 内部的 cfg，对 facade 无效。
-io-all = ["io-sql", "io-http", "io-mqtt", "io-modbus", "io-serial", "io-notify", "io-can"]
+io-all = ["io-sql", "io-http", "io-mqtt", "io-modbus", "io-serial", "io-notify", "io-can", "io-ethercat"]
 io-sql = ["nodes-io/io-sql"]
 io-http = ["nodes-io/io-http"]
 io-mqtt = ["nodes-io/io-mqtt"]
@@ -131,6 +132,7 @@ io-modbus = ["nodes-io/io-modbus"]
 io-serial = ["nodes-io/io-serial"]
 io-notify = ["nodes-io/io-notify"]
 io-can = ["nodes-io/io-can"]
+io-ethercat = ["nodes-io/io-ethercat"]
 
 [dev-dependencies]
 async-trait.workspace = true

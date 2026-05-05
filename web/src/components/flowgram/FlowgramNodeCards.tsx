@@ -169,7 +169,11 @@ export function FlowgramNodeCard(props: FlowgramNodeMaterialProps) {
                       ? rawData?.connectionId
                         ? `CAN · ${rawData.connectionId}`
                         : '未绑定 CAN 连接'
-                      : nodeType === 'sqlWriter'
+                      : nodeType === 'ethercatPdoRead' || nodeType === 'ethercatPdoWrite' || nodeType === 'ethercatStatus'
+                        ? rawData?.connectionId
+                          ? `EtherCAT · ${rawData.connectionId}`
+                          : '未绑定 EtherCAT 连接'
+                        : nodeType === 'sqlWriter'
                         ? `${rawData?.config?.table ?? 'workflow_logs'} → ${rawData?.config?.database_path ?? './nazh-local.sqlite3'}`
                         : nodeType === 'debugConsole'
                       ? rawData?.config?.label ?? 'Console output'

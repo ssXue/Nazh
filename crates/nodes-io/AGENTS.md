@@ -2,7 +2,7 @@
 
 > **Ring**: Ring 1
 > **对外 crate 名**: `nodes-io`
-> **职责**: 所有协议 I/O 节点（13 个） + payload 模板渲染
+> **职责**: 所有协议 I/O 节点（16 个） + payload 模板渲染
 >
 > 根 `AGENTS.md` 的约束对本 crate 同样适用。
 
@@ -20,6 +20,9 @@
 | `mqttClient` | MQTT | 两种模式：publish（变换节点）/ subscribe（触发器，壳层启动订阅） |
 | `canRead` | CAN/SLCAN | 通过 USB-CAN SLCAN 适配器接收 CAN 帧（无连接走 Mock 回退） |
 | `canWrite` | CAN/SLCAN | 通过 USB-CAN SLCAN 适配器发送 CAN 帧（无连接走 Mock 回退） |
+| `ethercatPdoRead` | EtherCAT | 读取从站 PDO 输入数据（ethercrab 真实后端 / Mock 回退） |
+| `ethercatPdoWrite` | EtherCAT | 写入从站 PDO 输出数据（ethercrab 真实后端 / Mock 回退） |
+| `ethercatStatus` | EtherCAT | 查询所有从站状态与通道信息 |
 | `barkPush` | HTTP | 向 Bark 服务推送 iOS 通知 |
 | `sqlWriter` | sqlite | 本地持久化写入（内部 `spawn_blocking` 包装 `rusqlite`） |
 | `debugConsole` | — | 格式化 payload 打印到控制台 |
@@ -42,6 +45,7 @@ crates/nodes-io/src/
 ├── http_client.rs
 ├── mqtt_client.rs
 ├── can/
+├── ethercat/
 ├── bark_push.rs
 ├── sql_writer.rs
 ├── capability_call.rs
@@ -49,7 +53,7 @@ crates/nodes-io/src/
 └── debug_console.rs
 ```
 
-Plugin 注册入口：`IoPlugin::register(&mut NodeRegistry)`，在 `lib.rs` 集中声明 13 个节点类型的工厂 + 能力标签。
+Plugin 注册入口：`IoPlugin::register(&mut NodeRegistry)`，在 `lib.rs` 集中声明 16 个节点类型的工厂 + 能力标签。
 
 ## 内部约定
 
@@ -65,6 +69,9 @@ Plugin 注册入口：`IoPlugin::register(&mut NodeRegistry)`，在 `lib.rs` 集
 | `mqttClient` | `NETWORK_IO` | **publish + subscribe 都归为网络**；TRIGGER 仅 subscribe 模式成立，类型级保守不声明 |
 | `canRead` | `DEVICE_IO` | CAN/SLCAN 设备总线读 |
 | `canWrite` | `DEVICE_IO` | CAN/SLCAN 设备总线写 |
+| `ethercatPdoRead` | `DEVICE_IO` | EtherCAT PDO 输入读取 |
+| `ethercatPdoWrite` | `DEVICE_IO` | EtherCAT PDO 输出写入 |
+| `ethercatStatus` | `DEVICE_IO` | EtherCAT 从站状态查询 |
 | `barkPush` | `NETWORK_IO` | HTTP 到 Bark |
 | `sqlWriter` | `FILE_IO` | **不标 BLOCKING**：内部已 `spawn_blocking` 自包装 |
 | `debugConsole` | `empty()` | 副作用是 stdout，可忽略 |
@@ -93,10 +100,58 @@ Plugin 注册入口：`IoPlugin::register(&mut NodeRegistry)`，在 `lib.rs` 集
 
 修改 CAN 节点时必须保留这个共享会话模型。
 
+### EtherCAT 连接级共享会话
+
+`ethercatPdoRead` / `ethercatPdoWrite` / `ethercatStatus` 共享连接级 EtherCAT 主站实例：
+
+- 同一 `connection_id` 的所有 EtherCAT 节点共享同一个主站后端，存储在 `ConnectionManager::shared_sessions` 缓存中；
+- `ethercat::session::EthercatRuntime` 是轻量级操作句柄，按需创建，内部委托给 `ConnectionManager::ensure_shared_session`；
+- 部署期通过 `connection_id` 建立后端；开发/测试可绑定 `backend: mock` 的 EtherCAT 连接，后续 transform 复用；
+- ethercrab 后端在建连时执行从站发现 + PreOp → OP 状态转换，PDU TX/RX 由后台 tokio task 驱动；
+- `PduStorage` 是全局静态单例（`try_split()` 只能调用一次，内部 `is_split` 是 `AtomicBool`，不可复位），因此**同一进程内 EtherCAT 主站只能绑定到第一次成功初始化的网卡**——后续部署若 `interface` 改变，`ensure_maindevice` 会显式报错要求重启 nazh-desktop；
+- 共享会话不使用 `ConnectionGuard` 的排他借用，改用 `record_connect_success` / `record_connect_failure` 直接报告健康状态；
+- 撤销部署时 `lifecycle_guard` 清理共享会话；运行错误时 `runtime.shutdown()` 移除会话，所有共享节点下次 `ensure_session` 重建。**注意**：进程级 TX/RX 后台任务 + `MainDevice` 不会随 session cleanup 一起销毁——`shutdown()` 只丢 backend 壳，下一次部署若 `interface` 一致则复用。
+
+修改 EtherCAT 节点时必须保留这个共享会话模型。
+
+#### tx_rx_task 接入坑点（删除/重写守护）
+
+`crates/nodes-io/src/ethercat/backends/ethercrab_backend.rs::ensure_maindevice` 的 TX/RX 任务接入是 ethercrab 0.7 API 的反直觉点，**改这段前必读**：
+
+`ethercrab::std::tx_rx_task` 的签名是 `fn(...) -> Result<impl Future<Output = Result<...>>, io::Error>`——**同步函数返回 `Result<Future, io::Error>`**：
+
+- 同步部分：打开 raw socket、读 MAC/MTU。失败必须立即返回，不能继续构造 `MainDevice`，否则会拿到一个 PDU 永远不上线的死主站
+- 异步部分：返回的 `Future` 必须被 `tokio::spawn` 持续 poll，PDU 收发循环才会运行
+
+正确写法：
+
+```rust
+let task = tx_rx_task(interface, tx, rx).map_err(...)?;       // 同步段失败提前返回
+let tx_handle = tokio::spawn(async move { task.await; ... }); // 异步段交给 tokio 驱动
+```
+
+**反例**（曾经踩过的坑，2026-05-06 修复）：
+
+```rust
+// ❌ 错的：tx_rx_task() 在 Ok 分支返回 Future，被 if let Err 模式整个丢弃
+tokio::spawn(async move {
+    if let Err(e) = tx_rx_task(&iface, tx, rx) {
+        tracing::error!(...);
+    }
+    // Ok(future) 直接 drop —— PDU 帧永远不上线，init_single_group 一律 timeout: PDU
+});
+```
+
+`PDU_STATE` 缓存命中时还要校验 `tx_handle.is_finished()`：socket 异常退出后必须给出"任务已死，请重启"的明确错误，不能让后续 `init_single_group` 继续 hang 到超时。
+
+#### `write_outputs` 自动 tx_rx
+
+`EthercatBus::write_outputs` 是 `async fn`，每次写完输出缓冲会立即触发一次 `group.tx_rx(&maindevice).await`，让数据上线。Nazh 没有全局周期 ticker（节点是事件驱动），如果 `write_outputs` 只 stage 不刷帧，写入永远卡在本地缓冲。改成带周期 ticker 的设计前，请保持这个"写即刷帧"的语义。
+
 ### 元数据约定（ADR-0008）
 
 所有节点通过 `NodeExecution::with_metadata()` 返回执行元数据，键名非下划线：
-`"timer"`、`"http"`、`"modbus"`、`"serial"`、`"can"`、`"sql_writer"`、`"debug_console"`、`"connection"`、`"bark"`、`"mqtt"`、`"capability_call"`。payload 只保留 `_loop` / `_error` 等路由上下文。
+`"timer"`、`"http"`、`"modbus"`、`"serial"`、`"can"`、`"ethercat"`、`"sql_writer"`、`"debug_console"`、`"connection"`、`"bark"`、`"mqtt"`、`"capability_call"`。payload 只保留 `_loop` / `_error` 等路由上下文。
 
 ### Pin 声明（ADR-0010 Phase 3）
 
@@ -111,6 +166,9 @@ Plugin 注册入口：`IoPlugin::register(&mut NodeRegistry)`，在 `lib.rs` 集
 | `mqttClient` | subscribe | `Any` | `Json` | subscribe 由 `on_deploy` 触发；transform 仅手动 dispatch |
 | `canRead` | — | `Any` | `Json` | 输出 `{ can: { id, data, dlc, ... } }`；无帧超时为 `can: null` |
 | `canWrite` | — | `Json` (required) | `Json` | 输入 `can_id` / `data` / `is_extended`，输出 `sent` 快照 |
+| `ethercatPdoRead` | — | `Any` | `Json` | 输出 `{ slave, inputs, traceId }`；Mock 通过 `backend: mock` 连接显式启用 |
+| `ethercatPdoWrite` | — | `Json` (required) | `Json` | 输入 `{ data: [u8] }`，输出 `{ slave, data, bytesWritten }` 写入快照 |
+| `ethercatStatus` | — | `Any` | `Json` | 输出 `{ slaves, channelInfo }` |
 | `timer` / `serialTrigger` / `native` / `barkPush` / `debugConsole` / `template` | — | `Any` | `Any` | 触发器 / 透传 / 格式化类节点保留默认 |
 
 **修改 pin 声明时必须同步：**
@@ -136,7 +194,7 @@ Plugin 注册入口：`IoPlugin::register(&mut NodeRegistry)`，在 `lib.rs` 集
 ## 依赖约束
 
 - 允许：`nazh-core`、`connections`、`chrono`、`serde_json`、`url`、`tokio`、`uuid`、`tracing`、`thiserror`
-- 可选（按 feature 门控，ADR-0018）：`reqwest`、`rumqttc`、`rusqlite`、`tokio-modbus`、`serialport`
+- 可选（按 feature 门控，ADR-0018）：`reqwest`、`rumqttc`、`rusqlite`、`tokio-modbus`、`serialport`、`ethercrab`
 - 协议依赖是本 crate 的**职责所在**，但不能传染：
   - **`nodes-flow` 不能依赖 `nodes-io`**
   - **`nazh-core` / `connections` / `scripting` 都不能依赖本 crate**
@@ -152,6 +210,7 @@ Plugin 注册入口：`IoPlugin::register(&mut NodeRegistry)`，在 `lib.rs` 集
 | `io-serial` | `serialTrigger` | `serialport` |
 | `io-notify` | `barkPush` | `reqwest`（与 `io-http` 共享） |
 | `io-can` | `canRead` / `canWrite` | `serialport`（SLCAN） |
+| `io-ethercat` | `ethercatPdoRead` / `ethercatPdoWrite` / `ethercatStatus` | `ethercrab` |
 | **元 feature `io-all`** | 全部以上 | 全部以上 |
 
 永远启用（无 feature 门控）：`timer` / `native` / `debugConsole` + `template` 工具——零额外依赖，任何部署都用得到。

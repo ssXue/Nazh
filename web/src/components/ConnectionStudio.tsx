@@ -40,6 +40,7 @@ import {
   parseMetadataNumber,
   isSerialConnectionType,
   isCanConnectionType,
+  isEthercatConnectionType,
   isHttpConnectionType,
   isBarkConnectionType,
   connectionIconFor,
@@ -1028,6 +1029,63 @@ export function ConnectionStudio({
                           </option>
                         ))}
                       </select>
+                    </label>
+                  </>
+                ) : null}
+
+                {isEthercatConnectionType(activeConnection.type) ? (
+                  <>
+                    <label>
+                      <span>后端</span>
+                      <select
+                        value={metadataString(activeConnection.metadata, 'backend', 'ethercrab')}
+                        onChange={(event) =>
+                          handleMetadataFieldChange(activeConnectionIndex, 'backend', event.target.value)
+                        }
+                      >
+                        <option value="ethercrab">ethercrab（真实）</option>
+                        <option value="mock">Mock（模拟）</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>网络接口</span>
+                      <input
+                        value={metadataString(activeConnection.metadata, 'interface', 'eth0')}
+                        onChange={(event) =>
+                          handleMetadataFieldChange(activeConnectionIndex, 'interface', event.target.value)
+                        }
+                        placeholder="eth0"
+                      />
+                    </label>
+                    <label>
+                      <span>周期 (ms)</span>
+                      <input
+                        type="number"
+                        value={metadataNumber(activeConnection.metadata, 'cycle_time_ms', 10)}
+                        onChange={(event) =>
+                          handleMetadataFieldChange(
+                            activeConnectionIndex,
+                            'cycle_time_ms',
+                            parseInt(event.target.value, 10) || 10,
+                          )
+                        }
+                        min={1}
+                      />
+                    </label>
+                    <label>
+                      <span>OP 超时 (ms)</span>
+                      <input
+                        type="number"
+                        value={metadataNumber(activeConnection.metadata, 'op_timeout_ms', 15000)}
+                        onChange={(event) =>
+                          handleMetadataFieldChange(
+                            activeConnectionIndex,
+                            'op_timeout_ms',
+                            parseInt(event.target.value, 10) || 15000,
+                          )
+                        }
+                        min={1}
+                      />
                     </label>
                   </>
                 ) : null}

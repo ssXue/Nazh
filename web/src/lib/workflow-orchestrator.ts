@@ -46,6 +46,7 @@ const EMPTY_FLOWGRAM_CONNECTION_DEFAULTS = {
   http: null,
   bark: null,
   can: null,
+  ethercat: null,
 };
 const FLOWGRAM_NODE_REGISTRY_MAP = new Map(
   createFlowgramNodeRegistries(EMPTY_FLOWGRAM_CONNECTION_DEFAULTS).map((registry) => [

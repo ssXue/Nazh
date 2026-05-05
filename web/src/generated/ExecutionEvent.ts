@@ -2,12 +2,14 @@
 import type { BackpressureDetected } from "./BackpressureDetected";
 import type { CompletedExecutionEvent } from "./CompletedExecutionEvent";
 import type { EdgeTransmitSummary } from "./EdgeTransmitSummary";
-import type { JsonValue } from "./serde_json/JsonValue";
 
 /**
  * 统一的执行生命周期事件。
  *
  * DAG 工作流和线性流水线共享同一事件类型，
  * 前端只需注册一个事件监听器即可处理所有执行模式。
+ *
+ * **变量控制事件**（变更/删除）已迁出到 [`WorkflowVariableEvent`](crate::WorkflowVariableEvent)，
+ * 走独立事件通道（B1-R0-01/B1-R0-05 关注点分离）。本枚举仅包含执行可观测性事件。
  */
-export type ExecutionEvent = { "Started": { stage: string, trace_id: string, } } | { "Completed": CompletedExecutionEvent } | { "Failed": { stage: string, trace_id: string, error: string, } } | { "Output": { stage: string, trace_id: string, } } | { "Finished": { trace_id: string, } } | { "VariableChanged": { workflow_id: string, name: string, value: JsonValue, updated_at: string, updated_by?: string, } } | { "VariableDeleted": { workflow_id: string, name: string, } } | { "EdgeTransmitSummary": EdgeTransmitSummary } | { "BackpressureDetected": BackpressureDetected };
+export type ExecutionEvent = { "Started": { stage: string, trace_id: string, } } | { "Completed": CompletedExecutionEvent } | { "Failed": { stage: string, trace_id: string, error: string, } } | { "Output": { stage: string, trace_id: string, } } | { "Finished": { trace_id: string, } } | { "EdgeTransmitSummary": EdgeTransmitSummary } | { "BackpressureDetected": BackpressureDetected };

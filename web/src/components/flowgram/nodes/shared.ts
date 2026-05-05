@@ -85,6 +85,7 @@ export interface FlowgramConnectionDefaults {
   http: string | null;
   bark: string | null;
   can: string | null;
+  ethercat: string | null;
 }
 
 export interface NodeCatalogInfo {

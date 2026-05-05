@@ -63,6 +63,7 @@ export interface SelectedNodeDraft {
   hitlApprovalTimeoutSec: string;
   hitlDefaultAction: string;
   hitlFormSchemaJson: string;
+  ethercatSlaveAddress: string;
 }
 
 export interface NodeValidation {
@@ -199,6 +200,17 @@ export function isCanConnectionType(connectionType: string): boolean {
   }
 }
 
+export function isEthercatConnectionType(connectionType: string): boolean {
+  switch (connectionType.trim().toLowerCase()) {
+    case 'ethercat':
+    case 'ethercat-soem':
+    case 'ecat':
+      return true;
+    default:
+      return false;
+  }
+}
+
 export function supportsConnectionBinding(nodeType: string): boolean {
   return (
     nodeType === 'native' ||
@@ -206,6 +218,9 @@ export function supportsConnectionBinding(nodeType: string): boolean {
     nodeType === 'serialTrigger' ||
     nodeType === 'canRead' ||
     nodeType === 'canWrite' ||
+    nodeType === 'ethercatPdoRead' ||
+    nodeType === 'ethercatPdoWrite' ||
+    nodeType === 'ethercatStatus' ||
     nodeType === 'mqttClient' ||
     nodeType === 'httpClient' ||
     nodeType === 'barkPush'
@@ -219,6 +234,10 @@ export function connectionMatchesNodeType(nodeType: string, connection: Connecti
     case 'canRead':
     case 'canWrite':
       return isCanConnectionType(connection.type);
+    case 'ethercatPdoRead':
+    case 'ethercatPdoWrite':
+    case 'ethercatStatus':
+      return isEthercatConnectionType(connection.type);
     case 'modbusRead':
       return connection.type.trim().toLowerCase() === 'modbus' || connection.type.trim().toLowerCase() === 'modbus_tcp';
     case 'mqttClient':
@@ -239,6 +258,10 @@ export function compatibleConnectionHint(nodeType: string): string {
     case 'canRead':
     case 'canWrite':
       return 'can / can-slcan / slcan';
+    case 'ethercatPdoRead':
+    case 'ethercatPdoWrite':
+    case 'ethercatStatus':
+      return 'ethercat / ethercat-soem / ecat';
     case 'modbusRead':
       return 'modbus';
     case 'mqttClient':
@@ -303,6 +326,9 @@ export function requiresConnectionBinding(nodeType: string): boolean {
     nodeType === 'serialTrigger' ||
     nodeType === 'canRead' ||
     nodeType === 'canWrite' ||
+    nodeType === 'ethercatPdoRead' ||
+    nodeType === 'ethercatPdoWrite' ||
+    nodeType === 'ethercatStatus' ||
     nodeType === 'httpClient' ||
     nodeType === 'barkPush'
   );
@@ -344,6 +370,9 @@ export function validateConnectionBinding(params: {
       serialTrigger: '串口触发',
       canRead: 'CAN Read',
       canWrite: 'CAN Write',
+      ethercatPdoRead: 'EtherCAT PDO Read',
+      ethercatPdoWrite: 'EtherCAT PDO Write',
+      ethercatStatus: 'EtherCAT Status',
       httpClient: 'HTTP Client',
       barkPush: 'Bark Push',
     };

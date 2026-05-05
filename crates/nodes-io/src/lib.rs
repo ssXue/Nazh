@@ -44,6 +44,8 @@ mod timer;
 mod bark_push;
 #[cfg(feature = "io-can")]
 mod can;
+#[cfg(feature = "io-ethercat")]
+mod ethercat;
 #[cfg(feature = "io-http")]
 mod http_client;
 #[cfg(feature = "io-modbus")]
@@ -67,6 +69,12 @@ pub use timer::{TimerNode, TimerNodeConfig};
 
 #[cfg(feature = "io-can")]
 pub use can::{CanReadNode, CanReadNodeConfig, CanWriteNode, CanWriteNodeConfig};
+
+#[cfg(feature = "io-ethercat")]
+pub use ethercat::{
+    EthercatPdoReadConfig, EthercatPdoReadNode, EthercatPdoWriteConfig, EthercatPdoWriteNode,
+    EthercatStatusConfig, EthercatStatusNode,
+};
 
 #[cfg(feature = "io-notify")]
 pub use bark_push::{BarkPushNode, BarkPushNodeConfig};
@@ -271,5 +279,54 @@ impl Plugin for IoPlugin {
             let cm = downcast_connection_manager(&res)?;
             Ok(Arc::new(CanWriteNode::new(def.id().to_owned(), config, cm)))
         });
+
+        // EtherCAT 主站节点
+        #[cfg(feature = "io-ethercat")]
+        registry.register_with_capabilities(
+            "ethercatPdoRead",
+            NodeCapabilities::DEVICE_IO,
+            |def, res| {
+                let mut config: EthercatPdoReadConfig = def.parse_config()?;
+                inherit_connection_id(&mut config.connection_id, def);
+                let cm = downcast_connection_manager(&res)?;
+                Ok(Arc::new(EthercatPdoReadNode::new(
+                    def.id().to_owned(),
+                    config,
+                    cm,
+                )))
+            },
+        );
+
+        #[cfg(feature = "io-ethercat")]
+        registry.register_with_capabilities(
+            "ethercatPdoWrite",
+            NodeCapabilities::DEVICE_IO,
+            |def, res| {
+                let mut config: EthercatPdoWriteConfig = def.parse_config()?;
+                inherit_connection_id(&mut config.connection_id, def);
+                let cm = downcast_connection_manager(&res)?;
+                Ok(Arc::new(EthercatPdoWriteNode::new(
+                    def.id().to_owned(),
+                    config,
+                    cm,
+                )))
+            },
+        );
+
+        #[cfg(feature = "io-ethercat")]
+        registry.register_with_capabilities(
+            "ethercatStatus",
+            NodeCapabilities::DEVICE_IO,
+            |def, res| {
+                let mut config: EthercatStatusConfig = def.parse_config()?;
+                inherit_connection_id(&mut config.connection_id, def);
+                let cm = downcast_connection_manager(&res)?;
+                Ok(Arc::new(EthercatStatusNode::new(
+                    def.id().to_owned(),
+                    config,
+                    cm,
+                )))
+            },
+        );
     }
 }

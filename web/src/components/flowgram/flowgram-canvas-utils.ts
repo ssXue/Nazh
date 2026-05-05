@@ -82,6 +82,18 @@ export function isBarkConnectionType(connectionType: string): boolean {
   }
 }
 
+/** 判断是否为 EtherCAT 类连接。 */
+export function isEthercatConnectionType(connectionType: string): boolean {
+  switch (normalizedConnectionType(connectionType)) {
+    case 'ethercat':
+    case 'ethercat-soem':
+    case 'ecat':
+      return true;
+    default:
+      return false;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // 导出文件名
 // ---------------------------------------------------------------------------

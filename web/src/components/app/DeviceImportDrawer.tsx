@@ -5,6 +5,7 @@ import type { ExtractionProposal } from '../../hooks/use-device-assets';
 import { useCapabilities } from '../../hooks/use-capabilities';
 import {
   SparklesIcon,
+  FileJsonIcon,
   FilePdfIcon,
   FileYamlIcon,
   UploadIcon,
@@ -13,6 +14,8 @@ import {
 
 /** 文件大小上限：6 MB（base64 编码后约 8 MB，留余量给 10 MB IPC 限制）。 */
 const MAX_PDF_SIZE = 6 * 1024 * 1024;
+/** ESI XML 文件大小上限：2 MB。 */
+const MAX_ESI_SIZE = 2 * 1024 * 1024;
 
 type ExtractionPhase =
   | 'idle'
@@ -40,6 +43,10 @@ const TEXT_PHASES: PhaseInfo[] = [
   { phase: 'parsing-result', label: '解析抽取结果...' },
 ];
 
+const ESI_PHASES: PhaseInfo[] = [
+  { phase: 'parsing-result', label: '解析 ESI 文件...' },
+];
+
 interface DeviceImportDrawerProps {
   workspacePath: string;
   onClose: () => void;
@@ -47,7 +54,7 @@ interface DeviceImportDrawerProps {
   onStatusMessage: (message: string) => void;
 }
 
-type InputMode = 'text' | 'pdf';
+type InputMode = 'text' | 'pdf' | 'esi';
 
 export function DeviceImportDrawer({
   workspacePath,
@@ -55,7 +62,7 @@ export function DeviceImportDrawer({
   onSaved,
   onStatusMessage,
 }: DeviceImportDrawerProps) {
-  const { extractFromText, extractProposal, extractTextFromPdf, extractFromPdf, saveAsset } =
+  const { extractFromText, extractProposal, extractTextFromPdf, extractFromPdf, importEthercatEsi, saveAsset } =
     useDeviceAssets(workspacePath);
   const { saveCapability } = useCapabilities(workspacePath);
 
@@ -72,6 +79,13 @@ export function DeviceImportDrawer({
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // EtherCAT ESI 上传状态
+  const [esiFile, setEsiFile] = useState<File | null>(null);
+  const [esiXml, setEsiXml] = useState('');
+  const [esiConnectionId, setEsiConnectionId] = useState('ethercat');
+  const [esiDragOver, setEsiDragOver] = useState(false);
+  const esiFileInputRef = useRef<HTMLInputElement>(null);
+
   // AI 抽取状态
   const [extractedYaml, setExtractedYaml] = useState('');
   const [phase, setPhase] = useState<ExtractionPhase>('idle');
@@ -79,7 +93,7 @@ export function DeviceImportDrawer({
   const [proposal, setProposal] = useState<ExtractionProposal | null>(null);
 
   const extracting = phase !== 'idle' && phase !== 'done' && phase !== 'error';
-  const phases = mode === 'pdf' ? PDF_PHASES : TEXT_PHASES;
+  const phases = mode === 'pdf' ? PDF_PHASES : mode === 'esi' ? ESI_PHASES : TEXT_PHASES;
 
   // ---- PDF 文件处理 ----
 
@@ -129,6 +143,54 @@ export function DeviceImportDrawer({
       e.target.value = '';
     },
     [handleFile],
+  );
+
+  // ---- EtherCAT ESI 文件处理 ----
+
+  const handleEsiFile = useCallback(
+    (file: File) => {
+      const lowerName = file.name.toLowerCase();
+      if (!lowerName.endsWith('.xml') && !lowerName.endsWith('.esi')) {
+        onStatusMessage('请选择 ESI XML 文件');
+        return;
+      }
+      if (file.size > MAX_ESI_SIZE) {
+        onStatusMessage(`文件大小超过 2 MB 限制（当前 ${(file.size / 1024 / 1024).toFixed(1)} MB）`);
+        return;
+      }
+
+      setEsiFile(file);
+      setEsiXml('');
+      setExtractedYaml('');
+      setProposal(null);
+      setPhase('idle');
+      setExtractError(null);
+
+      const reader = new FileReader();
+      reader.onload = () => setEsiXml(typeof reader.result === 'string' ? reader.result : '');
+      reader.onerror = () => onStatusMessage('读取 ESI 文件失败');
+      reader.readAsText(file);
+    },
+    [onStatusMessage],
+  );
+
+  const handleEsiDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setEsiDragOver(false);
+      const file = e.dataTransfer.files[0];
+      if (file) handleEsiFile(file);
+    },
+    [handleEsiFile],
+  );
+
+  const handleEsiFileInputChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (file) handleEsiFile(file);
+      e.target.value = '';
+    },
+    [handleEsiFile],
   );
 
   // ---- AI 抽取 ----
@@ -199,6 +261,28 @@ export function DeviceImportDrawer({
     }
   }, [pdfBase64, extractTextFromPdf, extractFromPdf, onStatusMessage]);
 
+  const handleImportEsi = useCallback(async () => {
+    if (!esiXml.trim()) return;
+    setExtractError(null);
+    setExtractedYaml('');
+    setProposal(null);
+    try {
+      setPhase('parsing-result');
+      const result = await importEthercatEsi(esiXml, esiConnectionId);
+      setProposal(result);
+      setExtractedYaml(result.deviceYaml);
+      onStatusMessage(
+        result.warnings.length > 0
+          ? `ESI 导入完成 · ${result.warnings.length} 条提示`
+          : 'ESI 导入完成',
+      );
+      setPhase('done');
+    } catch (error) {
+      setExtractError(`ESI 导入失败: ${error}`);
+      setPhase('error');
+    }
+  }, [esiConnectionId, esiXml, importEthercatEsi, onStatusMessage]);
+
   // ---- 保存 ----
 
   const handleSave = useCallback(async () => {
@@ -233,6 +317,9 @@ export function DeviceImportDrawer({
       setImportText('');
       setPdfFile(null);
       setPdfBase64(null);
+      setEsiFile(null);
+      setEsiXml('');
+      setEsiConnectionId('ethercat');
       setExtractedText('');
       setExtractError(null);
       setPhase('idle');
@@ -249,6 +336,9 @@ export function DeviceImportDrawer({
     setImportText('');
     setPdfFile(null);
     setPdfBase64(null);
+    setEsiFile(null);
+    setEsiXml('');
+    setEsiConnectionId('ethercat');
     setExtractedText('');
     setExtractedYaml('');
     setProposal(null);
@@ -283,6 +373,14 @@ export function DeviceImportDrawer({
             <FilePdfIcon width={13} height={13} />
             上传 PDF
           </button>
+          <button
+            type="button"
+            className={`dm-drawer__tab${mode === 'esi' ? ' is-active' : ''}`}
+            onClick={() => setMode('esi')}
+          >
+            <FileJsonIcon width={13} height={13} />
+            EtherCAT ESI
+          </button>
         </div>
 
         <div className="dm-drawer__body">
@@ -293,7 +391,7 @@ export function DeviceImportDrawer({
               extracting={extracting}
               onExtract={handleExtractFromText}
             />
-          ) : (
+          ) : mode === 'pdf' ? (
             <PdfUploadView
               file={pdfFile}
               dragOver={dragOver}
@@ -308,6 +406,22 @@ export function DeviceImportDrawer({
               onFileInputChange={handleFileInputChange}
               onTogglePreview={() => setShowTextPreview((v) => !v)}
               fileInputRef={fileInputRef}
+            />
+          ) : (
+            <EsiUploadView
+              file={esiFile}
+              dragOver={esiDragOver}
+              connectionId={esiConnectionId}
+              xml={esiXml}
+              onConnectionIdChange={setEsiConnectionId}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setEsiDragOver(true);
+              }}
+              onDragLeave={() => setEsiDragOver(false)}
+              onDrop={handleEsiDrop}
+              onFileInputChange={handleEsiFileInputChange}
+              fileInputRef={esiFileInputRef}
             />
           )}
 
@@ -327,6 +441,19 @@ export function DeviceImportDrawer({
               >
                 <SparklesIcon width={14} height={14} />
                 AI 抽取
+              </button>
+            </div>
+          )}
+
+          {mode === 'esi' && esiXml && !extractedYaml && !extracting && (
+            <div className="dm-drawer__actions">
+              <button
+                type="button"
+                className="dm-drawer__extract-btn"
+                onClick={() => void handleImportEsi()}
+              >
+                <FileYamlIcon width={14} height={14} />
+                导入 ESI
               </button>
             </div>
           )}
@@ -478,6 +605,74 @@ function PdfUploadView({
           )}
         </details>
       )}
+    </div>
+  );
+}
+
+function EsiUploadView({
+  file,
+  dragOver,
+  connectionId,
+  xml,
+  onConnectionIdChange,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  onFileInputChange,
+  fileInputRef,
+}: {
+  file: File | null;
+  dragOver: boolean;
+  connectionId: string;
+  xml: string;
+  onConnectionIdChange: (value: string) => void;
+  onDragOver: (e: React.DragEvent) => void;
+  onDragLeave: () => void;
+  onDrop: (e: React.DragEvent) => void;
+  onFileInputChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  fileInputRef: React.RefObject<HTMLInputElement | null>;
+}) {
+  return (
+    <div className="dm-drawer__pdf-area">
+      <label className="dm-drawer__field">
+        <span>EtherCAT 连接 ID</span>
+        <input
+          value={connectionId}
+          onChange={(event) => onConnectionIdChange(event.target.value)}
+          placeholder="ethercat"
+        />
+      </label>
+      <div
+        className={`dm-drawer__dropzone${dragOver ? ' is-active' : ''}${file ? ' has-file' : ''}`}
+        onDragOver={onDragOver}
+        onDragLeave={onDragLeave}
+        onDrop={onDrop}
+        onClick={() => fileInputRef.current?.click()}
+      >
+        <UploadIcon width={24} height={24} />
+        {file ? (
+          <div className="dm-drawer__file-info">
+            <FileJsonIcon width={16} height={16} />
+            <span className="dm-drawer__file-name">{file.name}</span>
+            <span className="dm-drawer__file-size">{(file.size / 1024).toFixed(0)} KB</span>
+          </div>
+        ) : (
+          <p>拖拽 .xml / .esi 文件到此处，或点击选择</p>
+        )}
+      </div>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".xml,.esi,text/xml,application/xml"
+        hidden
+        onChange={onFileInputChange}
+      />
+      {xml ? (
+        <details className="dm-drawer__preview">
+          <summary>ESI XML（{xml.length} 字符）</summary>
+          <pre className="dm-drawer__preview-text">{xml.slice(0, 5000)}</pre>
+        </details>
+      ) : null}
     </div>
   );
 }

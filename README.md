@@ -53,7 +53,7 @@ flowchart TB
     end
 
     subgraph Shell["Tauri v2 桌面壳 (nazh-desktop)"]
-        S1["66 IPC 命令 · 8 workflow/copilot 事件通道"]
+        S1["67 IPC 命令 · 8 workflow/copilot 事件通道"]
         S2["运行时调度 · 部署会话 · 工程库文件"]
         S3["AI Provider 配置 · 观测日志 · 工程库文件"]
     end
@@ -105,6 +105,9 @@ flowchart TB
 | | mqttClient | MQTT 消息发布 |
 | | canRead | 通过 SLCAN 接收 CAN 帧 |
 | | canWrite | 通过 SLCAN 发送 CAN 帧 |
+| | ethercatPdoRead | 读取 EtherCAT 从站 PDO 输入 |
+| | ethercatPdoWrite | 写入 EtherCAT 从站 PDO 输出 |
+| | ethercatStatus | 查询 EtherCAT 从站状态 |
 | | sqlWriter | SQLite 本地存储 |
 | | barkPush | Bark iOS 推送 |
 | | debugConsole | 调试输出 |

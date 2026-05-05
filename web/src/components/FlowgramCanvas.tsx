@@ -66,6 +66,7 @@ import type {
 import {
   isSerialConnectionType,
   isCanConnectionType,
+  isEthercatConnectionType,
   isModbusConnectionType,
   isMqttConnectionType,
   isHttpConnectionType,
@@ -284,6 +285,8 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
       connections.find((connection) => isBarkConnectionType(connection.type))?.id ?? null;
     const canConnectionId =
       connections.find((connection) => isCanConnectionType(connection.type))?.id ?? null;
+    const ethercatConnectionId =
+      connections.find((connection) => isEthercatConnectionType(connection.type))?.id ?? null;
 
     return {
       any: anyConnectionId,
@@ -293,6 +296,7 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
       http: httpConnectionId,
       bark: barkConnectionId,
       can: canConnectionId,
+      ethercat: ethercatConnectionId,
     };
   }, [connections]);
 

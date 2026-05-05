@@ -188,6 +188,16 @@ pub fn generate_capabilities_from_device(device: &DeviceSpec) -> Vec<CapabilityS
                     data: "${value}".to_owned(),
                     is_extended: *is_extended,
                 },
+                SignalSource::EthercatPdo {
+                    pdo_index,
+                    entry_index,
+                    sub_index,
+                    ..
+                } => CapabilityImpl::Script {
+                    content: format!(
+                        "ethercat_pdo_write({pdo_index}, {entry_index}, {sub_index}, ${{value}})"
+                    ),
+                },
             };
 
             CapabilitySpec {
@@ -212,24 +222,22 @@ pub fn generate_capabilities_from_device(device: &DeviceSpec) -> Vec<CapabilityS
 
 /// 判断信号是否为写信号。
 fn is_writable_signal(signal_type: SignalType, source: &SignalSource) -> bool {
-    if matches!(
-        signal_type,
-        SignalType::AnalogOutput | SignalType::DigitalOutput
-    ) {
-        return true;
-    }
     // 输入信号也可能是 read-write
     if let SignalSource::Register { access, .. } = source {
-        return matches!(access, AccessMode::Write | AccessMode::ReadWrite);
-    }
-    // CAN 帧信号：输出信号可直接写入
-    if matches!(source, SignalSource::CanFrame { .. }) {
         return matches!(
             signal_type,
             SignalType::AnalogOutput | SignalType::DigitalOutput
-        );
+        ) || matches!(access, AccessMode::Write | AccessMode::ReadWrite);
     }
-    false
+    matches!(
+        source,
+        SignalSource::Topic { .. }
+            | SignalSource::SerialCommand { .. }
+            | SignalSource::CanFrame { .. }
+    ) && matches!(
+        signal_type,
+        SignalType::AnalogOutput | SignalType::DigitalOutput
+    )
 }
 
 /// 校验模板表达式中的 `${...}` 参数引用格式。

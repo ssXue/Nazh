@@ -79,6 +79,22 @@ pub enum SignalSource {
         #[serde(default)]
         byte_order: ByteOrder,
     },
+    /// `EtherCAT` PDO 条目。
+    EthercatPdo {
+        pdo_index: u16,
+        entry_index: u16,
+        sub_index: u8,
+        bit_len: u16,
+        #[serde(default)]
+        #[serde(skip_serializing_if = "Option::is_none")]
+        data_type: Option<String>,
+        #[serde(default)]
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pdo_name: Option<String>,
+        #[serde(default)]
+        #[serde(skip_serializing_if = "Option::is_none")]
+        entry_name: Option<String>,
+    },
 }
 
 /// 寄存器访问模式。
@@ -303,6 +319,40 @@ source:
 "#;
         let signal: SignalSpec = serde_yaml::from_str(yaml).unwrap();
         assert!(matches!(signal.source, SignalSource::SerialCommand { .. }));
+    }
+
+    #[test]
+    fn signal_source_ethercat_pdo_解析() {
+        let yaml = r#"
+id: status_word
+signal_type: analog_input
+source:
+  type: ethercat_pdo
+  pdo_index: 6656
+  entry_index: 24641
+  sub_index: 1
+  bit_len: 16
+  data_type: UINT16
+  pdo_name: TxPDO
+  entry_name: Status word
+"#;
+        let signal: SignalSpec = serde_yaml::from_str(yaml).unwrap();
+        assert!(matches!(signal.source, SignalSource::EthercatPdo { .. }));
+        if let SignalSource::EthercatPdo {
+            pdo_index,
+            entry_index,
+            sub_index,
+            bit_len,
+            data_type,
+            ..
+        } = &signal.source
+        {
+            assert_eq!(*pdo_index, 0x1A00);
+            assert_eq!(*entry_index, 0x6041);
+            assert_eq!(*sub_index, 1);
+            assert_eq!(*bit_len, 16);
+            assert_eq!(data_type.as_deref(), Some("UINT16"));
+        }
     }
 
     #[test]

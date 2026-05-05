@@ -28,6 +28,9 @@ export function normalizeFlowgramDisplayType(value: unknown): NazhNodeDisplayTyp
     value === 'serialTrigger' ||
     value === 'canRead' ||
     value === 'canWrite' ||
+    value === 'ethercatPdoRead' ||
+    value === 'ethercatPdoWrite' ||
+    value === 'ethercatStatus' ||
     value === 'modbusRead' ||
     value === 'capabilityCall' ||
     value === 'mqttClient' ||
@@ -65,6 +68,12 @@ export function getFlowgramDisplayLabel(displayType: NazhNodeDisplayType): strin
       return 'CAN RX';
     case 'canWrite':
       return 'CAN TX';
+    case 'ethercatPdoRead':
+      return 'ECAT RX';
+    case 'ethercatPdoWrite':
+      return 'ECAT TX';
+    case 'ethercatStatus':
+      return 'ECAT';
     case 'modbusRead':
       return 'Modbus';
     case 'capabilityCall':
@@ -117,6 +126,9 @@ export function FlowgramNodeGlyph({
       return <SerialNodeIcon {...props} />;
     case 'canRead':
     case 'canWrite':
+    case 'ethercatPdoRead':
+    case 'ethercatPdoWrite':
+    case 'ethercatStatus':
       return <CanNodeIcon {...props} />;
     case 'modbusRead':
       return <ModbusNodeIcon {...props} />;
