@@ -826,3 +826,5 @@ export function DeviceIcon(props: IconProps) {
     </BaseIcon>
   );
 }
+
+// GridIcon removed — no longer used after moving grid toggle from toolbar to settings panel.

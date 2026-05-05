@@ -101,6 +101,8 @@ export interface SettingsPanelProps {
   projectWorkspaceIsSyncing: boolean;
   projectWorkspaceError: string | null;
   onProjectWorkspacePathChange: (path: string) => void;
+  gridVisible: boolean;
+  onGridVisibleChange: (visible: boolean) => void;
 }
 
 export interface AiConfigPanelProps {

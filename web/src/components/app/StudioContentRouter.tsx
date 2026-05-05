@@ -424,6 +424,8 @@ export function StudioContentRouter({
                 projectWorkspaceIsSyncing={projectLibrary.storage.isSyncing}
                 projectWorkspaceError={projectLibrary.storage.error}
                 onProjectWorkspacePathChange={settings.setProjectWorkspacePath}
+                gridVisible={settings.gridVisible}
+                onGridVisibleChange={settings.setGridVisible}
               />
             </ScrollSurface>
           </section>

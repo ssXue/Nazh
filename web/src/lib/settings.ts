@@ -15,6 +15,8 @@ export const MOTION_MODE_STORAGE_KEY = 'nazh.motion-mode';
 export const STARTUP_PAGE_STORAGE_KEY = 'nazh.startup-page';
 /** localStorage 键名：工程工作路径。 */
 export const PROJECT_WORKSPACE_PATH_STORAGE_KEY = 'nazh.project-workspace-path';
+/** localStorage 键名：画布网格显示。 */
+export const GRID_VISIBLE_STORAGE_KEY = 'nazh.grid-visible';
 
 /** 从 localStorage 读取主题模式，缺省时跟随系统偏好。 */
 export function getInitialThemeMode(): ThemeMode {
@@ -119,5 +121,19 @@ export function getInitialProjectWorkspacePath(): string {
     return window.localStorage.getItem(PROJECT_WORKSPACE_PATH_STORAGE_KEY)?.trim() ?? '';
   } catch {
     return '';
+  }
+}
+
+/** 从 localStorage 读取画布网格显示状态，缺省时返回 true（默认显示）。 */
+export function getInitialGridVisible(): boolean {
+  if (typeof window === 'undefined') {
+    return true;
+  }
+
+  try {
+    const stored = window.localStorage.getItem(GRID_VISIBLE_STORAGE_KEY);
+    return stored !== 'false';
+  } catch {
+    return true;
   }
 }

@@ -6,12 +6,14 @@ import type { MotionMode, StartupPage, ThemeMode } from '../components/app/types
 import {
   ACCENT_PRESET_STORAGE_KEY,
   CUSTOM_ACCENT_STORAGE_KEY,
+  GRID_VISIBLE_STORAGE_KEY,
   MOTION_MODE_STORAGE_KEY,
   PROJECT_WORKSPACE_PATH_STORAGE_KEY,
   STARTUP_PAGE_STORAGE_KEY,
   THEME_STORAGE_KEY,
   getInitialAccentPreset,
   getInitialCustomAccentHex,
+  getInitialGridVisible,
   getInitialProjectWorkspacePath,
   getInitialMotionMode,
   getInitialStartupPage,
@@ -42,6 +44,8 @@ export interface SettingsState {
   projectWorkspacePath: string;
   /** 完整的强调色 CSS 变量映射（键为 CSS 变量名，值为颜色字符串）。 */
   accentThemeVariables: Record<string, string>;
+  /** 画布网格是否显示。 */
+  gridVisible: boolean;
 }
 
 /** 操作偏好设置的回调集合。 */
@@ -58,6 +62,8 @@ export interface SettingsActions {
   setStartupPage: (page: StartupPage) => void;
   /** 更改工程工作路径。 */
   setProjectWorkspacePath: (path: string) => void;
+  /** 切换画布网格显示。 */
+  setGridVisible: (visible: boolean) => void;
   /** 在亮色与暗色主题之间快速切换。 */
   toggleTheme: () => void;
 }
@@ -78,6 +84,7 @@ export function useSettings(): UseSettingsResult {
   const [projectWorkspacePath, setProjectWorkspacePath] = useState<string>(
     getInitialProjectWorkspacePath,
   );
+  const [gridVisible, setGridVisible] = useState<boolean>(getInitialGridVisible);
 
   // 计算最终强调色十六进制值。
   const accentHex = useMemo(
@@ -159,6 +166,17 @@ export function useSettings(): UseSettingsResult {
     }
   }, [projectWorkspacePath]);
 
+  // 画布网格显示变更时更新 document class 并持久化。
+  useEffect(() => {
+    document.documentElement.classList.toggle('grid-hidden', !gridVisible);
+
+    try {
+      window.localStorage.setItem(GRID_VISIBLE_STORAGE_KEY, String(gridVisible));
+    } catch {
+      // 受限运行时下忽略存储失败。
+    }
+  }, [gridVisible]);
+
   /** 设置自定义强调色，并自动将预设切换为 custom。 */
   function setCustomAccentHex(hex: string) {
     setAccentPreset('custom');
@@ -179,12 +197,14 @@ export function useSettings(): UseSettingsResult {
     startupPage,
     projectWorkspacePath,
     accentThemeVariables,
+    gridVisible,
     setThemeMode,
     setAccentPreset,
     setCustomAccentHex,
     setMotionMode,
     setStartupPage,
     setProjectWorkspacePath,
+    setGridVisible,
     toggleTheme,
   };
 }

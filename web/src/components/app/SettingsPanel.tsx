@@ -26,6 +26,8 @@ export function SettingsPanel({
   projectWorkspaceIsSyncing,
   projectWorkspaceError,
   onProjectWorkspacePathChange,
+  gridVisible,
+  onGridVisibleChange,
 }: SettingsPanelProps) {
   const [workspaceDraft, setWorkspaceDraft] = useState(projectWorkspacePath);
 
@@ -170,6 +172,28 @@ export function SettingsPanel({
                 onClick={() => onStartupPageChange('boards')}
               >
                 所有看板
+              </button>
+            </div>
+          </article>
+
+          <article className="settings-row">
+            <strong className="settings-row__label">画布网格</strong>
+            <div className="settings-segment" role="group" aria-label="画布网格">
+              <button
+                type="button"
+                className={gridVisible ? 'settings-segment__button is-active' : 'settings-segment__button'}
+                aria-pressed={gridVisible}
+                onClick={() => onGridVisibleChange(true)}
+              >
+                显示
+              </button>
+              <button
+                type="button"
+                className={!gridVisible ? 'settings-segment__button is-active' : 'settings-segment__button'}
+                aria-pressed={!gridVisible}
+                onClick={() => onGridVisibleChange(false)}
+              >
+                隐藏
               </button>
             </div>
           </article>

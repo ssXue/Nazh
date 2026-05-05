@@ -75,6 +75,14 @@
   padding: 0;
 }
 
+.grid-hidden .flowgram-host {
+  background: var(--flowgram-canvas-bg);
+}
+
+.grid-hidden .flowgram-host .gedit-flow-background-layer {
+  display: none;
+}
+
 html[data-theme='dark'] .flowgram-host {
   --g-playground-selectBox-outline: color-mix(in srgb, var(--accent) 76%, var(--text) 14%);
   --g-playground-selectBox-background: color-mix(in srgb, var(--accent) 18%, transparent);
