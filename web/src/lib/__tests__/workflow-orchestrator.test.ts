@@ -56,8 +56,38 @@ describe('buildWorkflowOrchestrationPrompt', () => {
 
     expect(messages[1].content).toContain('edit（基于当前工作流流式修改）');
     expect(messages[1].content).toContain('"ref": "code_1"');
-    expect(messages[1].content).not.toContain('"code_clean"');
+    expect(messages[1].content).toContain('"node_id": "code_clean"');
     expect(messages[1].content).toContain('把输出改成 HTTP 上报');
+  });
+
+  it('edit 模式会把 Runtime Dock 错误上下文交给 AI', () => {
+    const draft = createEmptyWorkflowDraft('故障工程');
+    draft.graph = {
+      ...draft.graph,
+      nodes: {
+        '122771': {
+          type: 'ethercatPdoRead',
+          connection_id: 'ethercat',
+          config: {
+            slave_address: 1,
+          },
+        },
+      },
+    } as WorkflowGraph;
+
+    const messages = buildWorkflowOrchestrationPrompt({
+      mode: 'edit',
+      requirement: '根据运行错误修复工作流',
+      baseDraft: draft,
+      runtimeErrorContext:
+        'failedNodeIds: 122771\n- [03:57:11] source=122771 nodeId=122771 message=节点执行失败 detail=从站 1 未找到',
+    });
+
+    expect(messages[0].content).toContain('Runtime Dock 错误上下文');
+    expect(messages[0].content).toContain('操作里仍然只使用 ref');
+    expect(messages[1].content).toContain('Runtime Dock 最近错误上下文');
+    expect(messages[1].content).toContain('从站 1 未找到');
+    expect(messages[1].content).toContain('"node_id": "122771"');
   });
 
   it('会把设备和能力资产上下文交给 AI 编辑', () => {

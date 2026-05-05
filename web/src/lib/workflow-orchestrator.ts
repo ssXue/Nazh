@@ -152,6 +152,7 @@ export interface StreamWorkflowOrchestrationOptions {
   model?: string | null;
   baseDraft?: WorkflowOrchestrationDraft | null;
   assetContext?: AiAssetContext | null;
+  runtimeErrorContext?: string | null;
   params?: AiGenerationParams;
   timeoutMs?: number | null;
   onRawText?: (rawText: string) => void;
@@ -564,6 +565,7 @@ function buildExistingGraphSummary(state: WorkflowOrchestrationSessionState): st
         name: draft.graph.name,
         nodes: Object.entries(draft.graph.nodes).map(([nodeId, node]) => ({
           ref: refByNodeId[nodeId] ?? null,
+          node_id: nodeId,
           type: node.type,
           connection_id: node.connection_id ?? null,
           timeout_ms: node.timeout_ms ?? null,
@@ -650,8 +652,9 @@ export function buildWorkflowOrchestrationPrompt(options: {
   baseDraft?: WorkflowOrchestrationDraft | null;
   baseState?: WorkflowOrchestrationSessionState | null;
   assetContext?: AiAssetContext | null;
+  runtimeErrorContext?: string | null;
 }): AiMessage[] {
-  const { mode, requirement, baseDraft, baseState, assetContext } = options;
+  const { mode, requirement, baseDraft, baseState, assetContext, runtimeErrorContext } = options;
   const promptState =
     baseState ?? (baseDraft ? createWorkflowOrchestrationState(baseDraft) : null);
   const currentGraphText =
@@ -659,6 +662,9 @@ export function buildWorkflowOrchestrationPrompt(options: {
       ? buildExistingGraphSummary(promptState)
       : '当前从空白工作流开始。';
   const assetContextText = buildWorkflowAssetContextText(assetContext);
+  const runtimeErrorContextText =
+    runtimeErrorContext?.trim() ||
+    '当前 Runtime Dock 没有可用错误。若用户要求修复运行失败，请先根据当前工作流做静态检查。';
   const sourcePortGuideText = buildWorkflowAiSourcePortGuideText();
 
   const userPrompt = `任务模式：${mode === 'create' ? 'create（从空白开始编排新工作流）' : 'edit（基于当前工作流流式修改）'}
@@ -671,6 +677,9 @@ ${currentGraphText}
 
 已审查设备/能力资产上下文：
 ${assetContextText}
+
+Runtime Dock 最近错误上下文：
+${runtimeErrorContextText}
 
 请严格输出 JSON Lines 操作流，逐步编排。`;
 
@@ -698,6 +707,7 @@ ${PROTOCOL_REQUIREMENTS_TEXT}
 ${sourcePortGuideText}
 - ref 必须是本次会话内稳定、简短的英文别名；引用已有节点时只能使用“当前工作流上下文”里给出的 ref
 - 新建节点时自己选择 ref，但不要输出或猜测系统 node id
+- edit 模式若提供 Runtime Dock 错误上下文，优先根据 node_id / source / failedNodeIds 定位故障节点；操作里仍然只使用 ref，不要使用 node_id
 - code 节点脚本只输出 Rhai 可执行逻辑，不要使用未声明 API
 - 如果设备/能力资产上下文存在，涉及设备动作时优先使用这些已审查 Device DSL / Capability DSL；不要编造未列出的 capability_id、device_id、寄存器、topic 或串口命令
 - 使用 capabilityCall 时，config 必须包含 capability_id、device_id、implementation、args；implementation 需从 Capability DSL 的 implementation 转为运行时快照（modbus-write.value → value_template，mqtt-publish.payload → payload_template，serial-command.command → command_template，can-write.data → data_template，script.content 保持 content）
@@ -717,6 +727,7 @@ function buildWorkflowOrchestrationContinuationPrompt(options: {
   mode: WorkflowOrchestrationMode;
   requirement: string;
   assetContext?: AiAssetContext | null;
+  runtimeErrorContext?: string | null;
   acceptedState: WorkflowOrchestrationSessionState;
   rawText: string;
   error: Error;
@@ -726,6 +737,7 @@ function buildWorkflowOrchestrationContinuationPrompt(options: {
     mode: options.mode,
     requirement: options.requirement,
     assetContext: options.assetContext,
+    runtimeErrorContext: options.runtimeErrorContext,
     baseState: options.acceptedState,
   });
   const acceptedOperationsText = options.acceptedState.operations
@@ -1231,6 +1243,7 @@ export async function streamWorkflowOrchestration(
             mode: options.mode,
             requirement: options.requirement,
             assetContext: options.assetContext,
+            runtimeErrorContext: options.runtimeErrorContext,
             acceptedState: nextState,
             rawText: lastInterruptedRawText,
             error: lastInterruptedError,
@@ -1240,6 +1253,7 @@ export async function streamWorkflowOrchestration(
           mode: options.mode,
           requirement: options.requirement,
           assetContext: options.assetContext,
+          runtimeErrorContext: options.runtimeErrorContext,
           baseState: nextState,
         });
 

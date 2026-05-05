@@ -1,6 +1,11 @@
 import { startTransition, useMemo, useRef, useState, type RefObject } from 'react';
 
 import type { BoardWorkspaceHandle } from '../components/app/BoardWorkspace';
+import {
+  buildRuntimeConsoleEntries,
+  formatLogTimestamp,
+  type RuntimeConsoleEntry,
+} from '../components/app/runtime-console';
 import { formatWorkflowGraph } from '../lib/flowgram';
 import { parseWorkflowGraph } from '../lib/graph';
 import type { ProjectRecord } from '../lib/projects';
@@ -15,19 +20,25 @@ import {
 } from '../lib/workflow-orchestrator';
 import { describeUnknownError } from '../lib/workflow-events';
 import { hasTauriRuntime, loadAiAssetContext } from '../lib/tauri';
-import type { AiConfigView } from '../types';
+import type { AiConfigView, AppErrorRecord, RuntimeLogEntry, WorkflowRuntimeState } from '../types';
+
+const MAX_RUNTIME_ERROR_CONTEXT_ENTRIES = 8;
 
 interface UseAiWorkflowComposerStateOptions {
   activeBoardId: string | null;
   activeProject: ProjectRecord | null;
+  activeWorkflowId: string | null;
   aiConfig: AiConfigView | null;
+  appErrors: AppErrorRecord[];
   appendAppError: (scope: 'workflow' | 'command' | 'frontend' | 'runtime', title: string, detail?: string | null) => void;
   appendRuntimeLog: (source: string, level: 'info' | 'success' | 'warn' | 'error', message: string, detail?: string | null) => void;
   createProject: (name?: string, description?: string) => ProjectRecord;
+  eventFeed: RuntimeLogEntry[];
   flowgramCanvasRef: RefObject<BoardWorkspaceHandle | null>;
   openBoard: (boardId: string) => void;
   projectCount: number;
   resetWorkspaceRuntime: (nextMessage: string) => void;
+  runtimeState: WorkflowRuntimeState;
   setStatusMessage: (message: string) => void;
   workspacePath: string;
   updateProjectDraft: (
@@ -61,17 +72,90 @@ async function loadWorkflowAssetContext(
   }
 }
 
+function consoleEntryNodeId(entry: RuntimeConsoleEntry): string | null {
+  if (entry.nodeId?.trim()) {
+    return entry.nodeId.trim();
+  }
+
+  if (entry.channel === 'event' && entry.source.trim()) {
+    return entry.source.trim();
+  }
+
+  return null;
+}
+
+function buildRuntimeErrorContextText(options: {
+  activeWorkflowId: string | null;
+  appErrors: AppErrorRecord[];
+  eventFeed: RuntimeLogEntry[];
+  runtimeState: WorkflowRuntimeState;
+}): string | null {
+  const consoleEntries = buildRuntimeConsoleEntries(options.eventFeed, options.appErrors);
+  const errorEntries = consoleEntries
+    .filter((entry) => entry.level === 'error')
+    .slice(-MAX_RUNTIME_ERROR_CONTEXT_ENTRIES);
+
+  if (
+    errorEntries.length === 0 &&
+    !options.runtimeState.lastError &&
+    options.runtimeState.failedNodeIds.length === 0
+  ) {
+    return null;
+  }
+
+  const stateLines = [
+    `activeWorkflowId: ${options.activeWorkflowId ?? 'null'}`,
+    `traceId: ${options.runtimeState.traceId ?? 'null'}`,
+    `lastNodeId: ${options.runtimeState.lastNodeId ?? 'null'}`,
+    `lastEventType: ${options.runtimeState.lastEventType ?? 'null'}`,
+    `failedNodeIds: ${
+      options.runtimeState.failedNodeIds.length > 0
+        ? options.runtimeState.failedNodeIds.join(', ')
+        : '[]'
+    }`,
+  ];
+
+  if (options.runtimeState.lastError) {
+    stateLines.push(`lastError: ${options.runtimeState.lastError}`);
+  }
+
+  const errorLines = errorEntries.map((entry) => {
+    const nodeId = consoleEntryNodeId(entry);
+    const detail = entry.detail?.trim();
+    return [
+      `- [${formatLogTimestamp(entry.timestamp)}] source=${entry.source}`,
+      nodeId ? `nodeId=${nodeId}` : null,
+      entry.scope ? `scope=${entry.scope}` : null,
+      `message=${entry.message}`,
+      detail ? `detail=${detail}` : null,
+    ]
+      .filter((segment): segment is string => Boolean(segment))
+      .join(' ');
+  });
+
+  return [
+    '运行状态：',
+    ...stateLines,
+    '最近错误：',
+    ...(errorLines.length > 0 ? errorLines : ['- Runtime Dock 暂无错误行，仅有运行状态失败标记。']),
+  ].join('\n');
+}
+
 export function useAiWorkflowComposerState({
   activeBoardId,
   activeProject,
+  activeWorkflowId,
   aiConfig,
+  appErrors,
   appendAppError,
   appendRuntimeLog,
   createProject,
+  eventFeed,
   flowgramCanvasRef,
   openBoard,
   projectCount,
   resetWorkspaceRuntime,
+  runtimeState,
   setStatusMessage,
   workspacePath,
   updateProjectDraft,
@@ -99,6 +183,16 @@ export function useAiWorkflowComposerState({
 
     return getWorkflowAiUnavailableReason(aiConfig);
   }, [generating, mode, aiConfig]);
+  const runtimeErrorContext = useMemo(
+    () =>
+      buildRuntimeErrorContextText({
+        activeWorkflowId,
+        appErrors,
+        eventFeed,
+        runtimeState,
+      }),
+    [activeWorkflowId, appErrors, eventFeed, runtimeState],
+  );
 
   function buildDraftFromProject(project: ProjectRecord) {
     const parsedGraphState = parseWorkflowGraph(project.astText);
@@ -238,6 +332,7 @@ export function useAiWorkflowComposerState({
         model: preferredWorkflowAiProvider.defaultModel,
         baseDraft,
         assetContext,
+        runtimeErrorContext: currentMode === 'edit' ? runtimeErrorContext : null,
         params: aiConfig?.copilotParams,
         timeoutMs: aiConfig?.agentSettings.timeoutMs,
         onRawText: (nextRawText) => {
