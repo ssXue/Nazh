@@ -148,6 +148,33 @@ tokio::spawn(async move {
 
 `EthercatBus::write_outputs` 是 `async fn`，每次写完输出缓冲会立即触发一次 `group.tx_rx(&maindevice).await`，让数据上线。Nazh 没有全局周期 ticker（节点是事件驱动），如果 `write_outputs` 只 stage 不刷帧，写入永远卡在本地缓冲。改成带周期 ticker 的设计前，请保持这个"写即刷帧"的语义。
 
+#### TX/RX 任务死亡后的现场排查（ADR-0023）
+
+部署 EtherCAT 工作流时若撞到下面这条错误，**不是 Nazh bug，是 ethercrab 0.7 API 的硬约束**：
+
+```text
+EtherCAT 主站初始化失败: EtherCAT TX/RX 任务已终止（接口 `<iface>`）；
+请重启 nazh-desktop 后重试，或检查网卡是否被拔出/链路中断
+```
+
+含义：上一次部署期间或之后，进程级后台 TX/RX 任务因 socket 错误（`SendFrame` / `ReceiveFrame` / `PartialSend`）退出。`PduStorage::try_split` 已被消费一次不可复位，且失败路径未归还 `(PduTx, PduRx)`——**当前进程内无法软恢复，必须重启 nazh-desktop**。
+
+诊断与应对路径：
+
+1. **看根因**——重启前在 stderr 找上一次的：
+   ```text
+   ERROR ethercrab_backend: EtherCAT TX/RX 任务异常终止 error=...
+   ```
+   `error=...` 是 ethercrab 给出的真实终止原因。开发期建议跑：
+   ```bash
+   RUST_LOG=info,ethercrab=debug \
+     ../web/node_modules/.bin/tauri dev --no-watch
+   ```
+2. **检查物理链路**——`en8` 这类是 macOS USB-Ethernet 或虚拟网卡；`ifconfig` 确认 UP，必要时拔插一次 USB 适配器重置 BPF。
+3. **重启 nazh-desktop**——退出后重启，`PDU_STORAGE` 是进程级 `static`，进程退出即释放。
+
+设计层面的取舍、可选恢复方案（Tauri 重启入口 / vendor patch / 切库）以及重新评估的触发条件见 `docs/adr/0023-ethercat-tx-rx-恢复策略-暂缓.md`。**不要在没看 ADR-0023 的情况下尝试在 `ensure_maindevice` 加重试逻辑**——`tx_rx_task` 失败路径不归还 tx/rx，所谓"重试"不可能跑得通。
+
 ### 元数据约定（ADR-0008）
 
 所有节点通过 `NodeExecution::with_metadata()` 返回执行元数据，键名非下划线：
