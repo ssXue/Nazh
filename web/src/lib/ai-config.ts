@@ -5,6 +5,7 @@ export interface ProviderFormState {
   baseUrl: string;
   apiKey: string;
   defaultModel: string;
+  thinkingEnabled: boolean;
 }
 
 export const EMPTY_PROVIDER_FORM: ProviderFormState = {
@@ -12,6 +13,7 @@ export const EMPTY_PROVIDER_FORM: ProviderFormState = {
   baseUrl: '',
   apiKey: '',
   defaultModel: '',
+  thinkingEnabled: false,
 };
 
 export type ProviderApiKeyMode = 'keep' | 'set' | 'clear';
@@ -22,11 +24,12 @@ function trimProviderForm(form: ProviderFormState): ProviderFormState {
     baseUrl: form.baseUrl.trim(),
     apiKey: form.apiKey.trim(),
     defaultModel: form.defaultModel.trim(),
+    thinkingEnabled: form.thinkingEnabled,
   };
 }
 
 export function toProviderFormState(
-  provider: Pick<AiProviderView, 'name' | 'baseUrl' | 'defaultModel'> | null | undefined,
+  provider: Pick<AiProviderView, 'name' | 'baseUrl' | 'defaultModel' | 'thinkingEnabled'> | null | undefined,
 ): ProviderFormState {
   if (!provider) {
     return EMPTY_PROVIDER_FORM;
@@ -37,6 +40,7 @@ export function toProviderFormState(
     baseUrl: provider.baseUrl,
     apiKey: '',
     defaultModel: provider.defaultModel,
+    thinkingEnabled: provider.thinkingEnabled,
   };
 }
 
@@ -72,7 +76,7 @@ export function resolveProviderApiKeyInput(
 }
 
 export function hasPendingProviderChanges(
-  provider: Pick<AiProviderView, 'name' | 'baseUrl' | 'defaultModel'> | null | undefined,
+  provider: Pick<AiProviderView, 'name' | 'baseUrl' | 'defaultModel' | 'thinkingEnabled'> | null | undefined,
   form: ProviderFormState,
   editingProviderId: string | null,
   clearSavedApiKey: boolean,
@@ -89,6 +93,9 @@ export function hasPendingProviderChanges(
     return true;
   }
   if (provider.defaultModel !== nextForm.defaultModel) {
+    return true;
+  }
+  if (provider.thinkingEnabled !== form.thinkingEnabled) {
     return true;
   }
 

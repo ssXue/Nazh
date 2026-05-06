@@ -43,6 +43,7 @@ impl OpenAiCompatibleService {
             api_key: provider.api_key.clone(),
             default_model: provider.default_model.clone(),
             extra_headers: provider.extra_headers.clone(),
+            thinking_enabled: provider.thinking_enabled,
         })
     }
 
@@ -55,6 +56,7 @@ impl OpenAiCompatibleService {
                 api_key: api_key.clone(),
                 default_model: draft.default_model.clone(),
                 extra_headers: draft.extra_headers.clone(),
+                thinking_enabled: draft.thinking_enabled,
             });
         }
 
@@ -78,6 +80,7 @@ impl OpenAiCompatibleService {
                 } else {
                     draft.extra_headers.clone()
                 },
+                thinking_enabled: provider.thinking_enabled,
             });
         }
 
@@ -92,11 +95,20 @@ mod tests {
     use super::*;
 
     fn test_provider(base_url: &str, default_model: &str) -> ResolvedProvider {
+        test_provider_with_thinking(base_url, default_model, false)
+    }
+
+    fn test_provider_with_thinking(
+        base_url: &str,
+        default_model: &str,
+        thinking_enabled: bool,
+    ) -> ResolvedProvider {
         ResolvedProvider {
             base_url: base_url.to_owned(),
             api_key: "sk-test".to_owned(),
             default_model: default_model.to_owned(),
             extra_headers: HashMap::new(),
+            thinking_enabled,
         }
     }
 
@@ -109,7 +121,8 @@ mod tests {
 
     #[test]
     fn deepseek_payload_sends_thinking_options_and_omits_sampling_when_enabled() {
-        let provider = test_provider("https://api.deepseek.com", "deepseek-v4-pro");
+        let provider =
+            test_provider_with_thinking("https://api.deepseek.com", "deepseek-v4-pro", true);
         let params = AiGenerationParams {
             temperature: Some(0.8),
             max_tokens: Some(256),
@@ -125,7 +138,7 @@ mod tests {
             test_messages(),
             &params,
             false,
-            provider_accepts_deepseek_options(&provider, &provider.default_model),
+            provider.thinking_enabled,
         );
         let Ok(json) = serde_json::to_value(payload) else {
             panic!("payload serializes");
@@ -157,13 +170,13 @@ mod tests {
             test_messages(),
             &params,
             false,
-            provider_accepts_deepseek_options(&provider, &provider.default_model),
+            provider.thinking_enabled,
         );
         let Ok(json) = serde_json::to_value(payload) else {
             panic!("payload serializes");
         };
 
-        assert!(json.get("thinking").is_none());
+        assert_eq!(json["thinking"]["type"], "disabled");
         assert!(json.get("reasoning_effort").is_none());
         assert!((json["temperature"].as_f64().unwrap_or_default() - 0.3).abs() < 0.001);
         assert!((json["top_p"].as_f64().unwrap_or_default() - 0.8).abs() < 0.001);
@@ -171,17 +184,15 @@ mod tests {
 
     #[test]
     fn deepseek_connection_test_disables_thinking_for_lightweight_probe() {
-        let provider = test_provider("https://api.deepseek.com", "deepseek-v4-flash");
-        let params = build_connection_test_params(provider_accepts_deepseek_options(
-            &provider,
-            &provider.default_model,
-        ));
+        let provider =
+            test_provider_with_thinking("https://api.deepseek.com", "deepseek-v4-flash", true);
+        let params = build_connection_test_params(provider.thinking_enabled);
         let payload = build_chat_payload(
             provider.default_model.clone(),
             test_messages(),
             &params,
             false,
-            provider_accepts_deepseek_options(&provider, &provider.default_model),
+            provider.thinking_enabled,
         );
         let Ok(json) = serde_json::to_value(payload) else {
             panic!("payload serializes");
@@ -198,6 +209,7 @@ struct ResolvedProvider {
     api_key: String,
     default_model: String,
     extra_headers: HashMap<String, String>,
+    thinking_enabled: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -308,12 +320,6 @@ fn build_url(base_url: &str, path: &str) -> Result<String, AiError> {
     Ok(format!("{trimmed}{path}"))
 }
 
-fn provider_accepts_deepseek_options(provider: &ResolvedProvider, model: &str) -> bool {
-    let base_url = provider.base_url.to_ascii_lowercase();
-    let model = model.to_ascii_lowercase();
-    base_url.contains("deepseek.com") || model.starts_with("deepseek-")
-}
-
 fn is_thinking_enabled(params: &AiGenerationParams) -> bool {
     params
         .thinking
@@ -326,17 +332,21 @@ fn build_chat_payload(
     messages: Vec<ChatMessagePayload>,
     params: &AiGenerationParams,
     stream: bool,
-    include_deepseek_options: bool,
+    include_thinking_options: bool,
 ) -> ChatCompletionPayload {
-    let omit_sampling_params = include_deepseek_options && is_thinking_enabled(params);
+    let omit_sampling_params = include_thinking_options && is_thinking_enabled(params);
 
     ChatCompletionPayload {
         model,
         messages,
-        thinking: include_deepseek_options
-            .then(|| params.thinking.clone())
-            .flatten(),
-        reasoning_effort: include_deepseek_options
+        thinking: if include_thinking_options {
+            params.thinking.clone()
+        } else {
+            Some(AiThinkingConfig {
+                kind: AiThinkingMode::Disabled,
+            })
+        },
+        reasoning_effort: include_thinking_options
             .then(|| params.reasoning_effort.clone())
             .flatten(),
         temperature: if omit_sampling_params {
@@ -505,7 +515,7 @@ impl AiService for OpenAiCompatibleService {
             build_chat_messages(&request.messages),
             &request.params,
             false,
-            provider_accepts_deepseek_options(&provider, model),
+            provider.thinking_enabled,
         );
 
         let url = build_url(&provider.base_url, "/chat/completions")?;
@@ -601,7 +611,7 @@ impl AiService for OpenAiCompatibleService {
             build_chat_messages(&request.messages),
             &request.params,
             true,
-            provider_accepts_deepseek_options(&provider, &model),
+            provider.thinking_enabled,
         );
 
         let url = build_url(&provider.base_url, "/chat/completions")?;
@@ -706,9 +716,9 @@ impl OpenAiCompatibleService {
                 role: "user".to_owned(),
                 content: "Hi".to_owned(),
             }],
-            &build_connection_test_params(provider_accepts_deepseek_options(&provider, &model)),
+            &build_connection_test_params(provider.thinking_enabled),
             false,
-            provider_accepts_deepseek_options(&provider, &model),
+            provider.thinking_enabled,
         );
 
         let mut builder = self

@@ -110,6 +110,7 @@ function buildProviderUpserts(
     defaultModel: provider.defaultModel,
     extraHeaders: provider.extraHeaders,
     enabled: provider.id === resolvedActiveProviderId,
+    thinkingEnabled: provider.thinkingEnabled,
     apiKey: { kind: 'keep' } as AiSecretInput,
   }));
 }
@@ -253,11 +254,13 @@ export function AiConfigPanel({
   }
 
   function handleSelectPreset(preset: ProviderPreset) {
+    const isDeepSeek = preset.baseUrl === 'https://api.deepseek.com';
     setForm((prev) => ({
       ...prev,
       name: preset.name,
       baseUrl: preset.baseUrl,
       defaultModel: preset.defaultModel,
+      thinkingEnabled: isDeepSeek ? true : prev.thinkingEnabled,
     }));
   }
 
@@ -274,6 +277,7 @@ export function AiConfigPanel({
       defaultModel: form.defaultModel.trim(),
       extraHeaders: {},
       enabled: true,
+      thinkingEnabled: form.thinkingEnabled,
     };
 
     void onAiProviderTest(draft);
@@ -297,6 +301,7 @@ export function AiConfigPanel({
       defaultModel: provider.defaultModel,
       extraHeaders: provider.extraHeaders,
       enabled: provider.enabled,
+      thinkingEnabled: provider.thinkingEnabled,
     });
   }
 
@@ -338,6 +343,7 @@ export function AiConfigPanel({
       defaultModel: form.defaultModel.trim(),
       extraHeaders: editingProvider?.extraHeaders ?? {},
       enabled: nextProviderId === nextActiveProviderId,
+      thinkingEnabled: form.thinkingEnabled,
       apiKey: resolveProviderApiKeyInput(form.apiKey, editingProviderId, clearSavedApiKey),
     };
     const nextProviders = isEditingProvider
@@ -680,6 +686,20 @@ export function AiConfigPanel({
                     placeholder="例如：deepseek-v4-flash"
                     value={form.defaultModel}
                     onChange={(e) => handleFormChange('defaultModel', e.target.value)}
+                  />
+                </article>
+
+                <article className="settings-row">
+                  <label className="settings-row__label" htmlFor="ai-provider-thinking">
+                    启用 Thinking（深度思考）
+                  </label>
+                  <input
+                    id="ai-provider-thinking"
+                    type="checkbox"
+                    checked={form.thinkingEnabled}
+                    onChange={(e) =>
+                      setForm((prev) => ({ ...prev, thinkingEnabled: e.target.checked }))
+                    }
                   />
                 </article>
 
