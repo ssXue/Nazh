@@ -3,6 +3,7 @@ import { useCallback, useRef, useState } from 'react';
 import { useDeviceAssets } from '../../hooks/use-device-assets';
 import type { ExtractionProposal } from '../../hooks/use-device-assets';
 import { useCapabilities } from '../../hooks/use-capabilities';
+import { allocateScopedId } from '../../lib/id-allocation';
 import {
   SparklesIcon,
   FileJsonIcon,
@@ -16,6 +17,20 @@ import {
 const MAX_PDF_SIZE = 6 * 1024 * 1024;
 /** ESI XML 文件大小上限：2 MB。 */
 const MAX_ESI_SIZE = 2 * 1024 * 1024;
+
+/** 从 YAML 行尾片段去掉首尾的单/双引号，处理 serde_yaml 对纯数字字符串自动加引号的情况。 */
+function stripYamlQuotes(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
+  if (
+    (trimmed.startsWith("'") && trimmed.endsWith("'")) ||
+    (trimmed.startsWith('"') && trimmed.endsWith('"'))
+  ) {
+    return trimmed.slice(1, -1);
+  }
+  return trimmed;
+}
+
 
 type ExtractionPhase =
   | 'idle'
@@ -49,6 +64,7 @@ const ESI_PHASES: PhaseInfo[] = [
 
 interface DeviceImportDrawerProps {
   workspacePath: string;
+  existingDeviceIds: readonly string[];
   onClose: () => void;
   onSaved: () => void;
   onStatusMessage: (message: string) => void;
@@ -58,6 +74,7 @@ type InputMode = 'text' | 'pdf' | 'esi';
 
 export function DeviceImportDrawer({
   workspacePath,
+  existingDeviceIds,
   onClose,
   onSaved,
   onStatusMessage,
@@ -82,7 +99,6 @@ export function DeviceImportDrawer({
   // EtherCAT ESI 上传状态
   const [esiFile, setEsiFile] = useState<File | null>(null);
   const [esiXml, setEsiXml] = useState('');
-  const [esiConnectionId, setEsiConnectionId] = useState('ethercat');
   const [esiDragOver, setEsiDragOver] = useState(false);
   const esiFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -268,7 +284,7 @@ export function DeviceImportDrawer({
     setProposal(null);
     try {
       setPhase('parsing-result');
-      const result = await importEthercatEsi(esiXml, esiConnectionId);
+      const result = await importEthercatEsi(esiXml);
       setProposal(result);
       setExtractedYaml(result.deviceYaml);
       onStatusMessage(
@@ -281,7 +297,7 @@ export function DeviceImportDrawer({
       setExtractError(`ESI 导入失败: ${error}`);
       setPhase('error');
     }
-  }, [esiConnectionId, esiXml, importEthercatEsi, onStatusMessage]);
+  }, [esiXml, importEthercatEsi, onStatusMessage]);
 
   // ---- 保存 ----
 
@@ -290,9 +306,11 @@ export function DeviceImportDrawer({
     try {
       const idMatch = extractedYaml.match(/^id:\s*(.+)$/m);
       const typeMatch = extractedYaml.match(/^type:\s*(.+)$/m);
-      const deviceId = idMatch?.[1]?.trim() ?? `device_${Date.now()}`;
-      const deviceType = typeMatch?.[1]?.trim() ?? 'unknown';
-      const name = deviceId.replace(/_/g, ' ');
+      const modelMatch = extractedYaml.match(/^model:\s*(.+)$/m);
+      const deviceId = stripYamlQuotes(idMatch?.[1]) ?? allocateScopedId('device', new Set(existingDeviceIds));
+      const deviceType = stripYamlQuotes(typeMatch?.[1]) ?? 'unknown';
+      const name =
+        stripYamlQuotes(modelMatch?.[1]) ?? deviceId.replace(/_/g, ' ');
 
       await saveAsset(deviceId, name, deviceType, extractedYaml);
       onStatusMessage(`设备 ${deviceId} 已保存`);
@@ -301,9 +319,9 @@ export function DeviceImportDrawer({
         for (const capYaml of proposal.capabilityYamls) {
           try {
             const capIdMatch = capYaml.match(/^id:\s*(.+)$/m);
-            const capId = capIdMatch?.[1]?.trim() ?? `cap_${Date.now()}`;
+            const capId = stripYamlQuotes(capIdMatch?.[1]) ?? `cap_${Date.now()}`;
             const descMatch = capYaml.match(/^description:\s*(.+)$/m);
-            const desc = descMatch?.[1]?.trim() ?? capId;
+            const desc = stripYamlQuotes(descMatch?.[1]) ?? capId;
             await saveCapability(capId, deviceId, desc, desc, capYaml);
           } catch {
             /* 单个能力保存失败不阻塞 */
@@ -319,7 +337,6 @@ export function DeviceImportDrawer({
       setPdfBase64(null);
       setEsiFile(null);
       setEsiXml('');
-      setEsiConnectionId('ethercat');
       setExtractedText('');
       setExtractError(null);
       setPhase('idle');
@@ -328,7 +345,17 @@ export function DeviceImportDrawer({
     } catch (error) {
       onStatusMessage(`保存设备失败: ${error}`);
     }
-  }, [extractedYaml, proposal, saveAsset, saveCapability, onSaved, onClose, onStatusMessage]);
+  }, [
+    extractedYaml,
+    proposal,
+    saveAsset,
+    saveCapability,
+    existingDeviceIds,
+    mode,
+    onSaved,
+    onClose,
+    onStatusMessage,
+  ]);
 
   // ---- 关闭时重置 ----
 
@@ -338,7 +365,6 @@ export function DeviceImportDrawer({
     setPdfBase64(null);
     setEsiFile(null);
     setEsiXml('');
-    setEsiConnectionId('ethercat');
     setExtractedText('');
     setExtractedYaml('');
     setProposal(null);
@@ -411,9 +437,7 @@ export function DeviceImportDrawer({
             <EsiUploadView
               file={esiFile}
               dragOver={esiDragOver}
-              connectionId={esiConnectionId}
               xml={esiXml}
-              onConnectionIdChange={setEsiConnectionId}
               onDragOver={(e) => {
                 e.preventDefault();
                 setEsiDragOver(true);
@@ -612,9 +636,7 @@ function PdfUploadView({
 function EsiUploadView({
   file,
   dragOver,
-  connectionId,
   xml,
-  onConnectionIdChange,
   onDragOver,
   onDragLeave,
   onDrop,
@@ -623,9 +645,7 @@ function EsiUploadView({
 }: {
   file: File | null;
   dragOver: boolean;
-  connectionId: string;
   xml: string;
-  onConnectionIdChange: (value: string) => void;
   onDragOver: (e: React.DragEvent) => void;
   onDragLeave: () => void;
   onDrop: (e: React.DragEvent) => void;
@@ -634,14 +654,6 @@ function EsiUploadView({
 }) {
   return (
     <div className="dm-drawer__pdf-area">
-      <label className="dm-drawer__field">
-        <span>EtherCAT 连接 ID</span>
-        <input
-          value={connectionId}
-          onChange={(event) => onConnectionIdChange(event.target.value)}
-          placeholder="ethercat"
-        />
-      </label>
       <div
         className={`dm-drawer__dropzone${dragOver ? ' is-active' : ''}${file ? ' has-file' : ''}`}
         onDragOver={onDragOver}

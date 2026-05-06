@@ -585,17 +585,13 @@ safety:
 
     #[test]
     fn 从设备生成能力_只取写信号() {
-        use crate::device::{ConnectionRef, DataType, SignalSpec};
+        use crate::device::{DataType, SignalSpec};
         let device = DeviceSpec {
             id: "press_1".to_owned(),
             device_type: "hydraulic_press".to_owned(),
             manufacturer: None,
             model: None,
-            connection: ConnectionRef {
-                connection_type: "modbus-tcp".to_owned(),
-                id: "conn1".to_owned(),
-                unit: None,
-            },
+            connection: None,
             signals: vec![
                 SignalSpec {
                     id: "pressure".to_owned(),
@@ -648,17 +644,13 @@ safety:
 
     #[test]
     fn 从设备生成能力_无写信号返回空() {
-        use crate::device::{ConnectionRef, SignalSpec};
+        use crate::device::SignalSpec;
         let device = DeviceSpec {
             id: "sensor".to_owned(),
             device_type: "temp_sensor".to_owned(),
             manufacturer: None,
             model: None,
-            connection: ConnectionRef {
-                connection_type: "mqtt".to_owned(),
-                id: "broker".to_owned(),
-                unit: None,
-            },
+            connection: None,
             signals: vec![SignalSpec {
                 id: "temp".to_owned(),
                 signal_type: SignalType::AnalogInput,
@@ -678,17 +670,13 @@ safety:
 
     #[test]
     fn 从_can_output_信号生成写能力() {
-        use crate::device::{ByteOrder, ConnectionRef, DataType, SignalSpec};
+        use crate::device::{ByteOrder, DataType, SignalSpec};
         let device = DeviceSpec {
             id: "drive_1".to_owned(),
             device_type: "servo_drive".to_owned(),
             manufacturer: None,
             model: None,
-            connection: ConnectionRef {
-                connection_type: "can-slcan".to_owned(),
-                id: "drive_can".to_owned(),
-                unit: None,
-            },
+            connection: None,
             signals: vec![SignalSpec {
                 id: "target_speed".to_owned(),
                 signal_type: SignalType::AnalogOutput,

@@ -88,3 +88,4 @@ examples/flowgram.ai-main.zip
 
 # Git worktrees
 .worktrees/
+.wolf/

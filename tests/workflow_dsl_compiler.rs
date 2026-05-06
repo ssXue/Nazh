@@ -23,11 +23,11 @@ fn sample_device(id: &str, conn_id: &str) -> DeviceSpec {
         device_type: "hydraulic_press".to_owned(),
         manufacturer: Some("某液压".to_owned()),
         model: Some("YP-320T".to_owned()),
-        connection: ConnectionRef {
+        connection: Some(ConnectionRef {
             connection_type: "modbus-tcp".to_owned(),
             id: conn_id.to_owned(),
             unit: Some(1),
-        },
+        }),
         signals: vec![],
         alarms: vec![],
     }

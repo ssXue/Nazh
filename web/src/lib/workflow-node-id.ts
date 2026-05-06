@@ -1,8 +1,6 @@
-export function allocateNodeId(prefix: string, usedIds: ReadonlySet<string>): string {
-  let index = 1;
-  while (usedIds.has(`${prefix}_${index}`)) {
-    index += 1;
-  }
+import { allocateScopedId } from './id-allocation';
 
-  return `${prefix}_${index}`;
-}
+/** 兼容旧命名：后续逐步迁移到 allocateScopedId。 */
+export const allocateNodeId = allocateScopedId;
+
+export { allocateScopedId };

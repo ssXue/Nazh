@@ -52,7 +52,7 @@ import {
 } from '../lib/pin-validator';
 import { hasTauriRuntime, saveFlowgramExportFile } from '../lib/tauri';
 import { refreshCapabilitiesCache } from '../lib/node-capabilities-cache';
-import { allocateNodeId } from '../lib/workflow-node-id';
+import { allocateScopedId } from '../lib/id-allocation';
 import type {
   AiGenerationParams,
   AiProviderView,
@@ -877,7 +877,7 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
       editorCtx?.document.getAllNodes().map((node) => node.id) ?? Object.keys(resolvedGraph?.nodes ?? {}),
     );
 
-    return allocateNodeId(prefix, currentIds);
+    return allocateScopedId(prefix, currentIds);
   }
 
   function buildInsertionPosition(anchorNode: FlowNodeEntity | null) {

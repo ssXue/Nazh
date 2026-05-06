@@ -18,7 +18,9 @@ pub struct DeviceSpec {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
-    pub connection: ConnectionRef,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub connection: Option<ConnectionRef>,
     #[serde(default)]
     pub signals: Vec<SignalSpec>,
     #[serde(default)]
@@ -236,9 +238,9 @@ alarms:
         assert_eq!(spec.device_type, "hydraulic_press");
         assert_eq!(spec.manufacturer, Some("某液压".to_owned()));
         assert_eq!(spec.model, Some("YP-320T".to_owned()));
-        assert_eq!(spec.connection.connection_type, "modbus-tcp");
-        assert_eq!(spec.connection.id, "press_modbus");
-        assert_eq!(spec.connection.unit, Some(1));
+        assert_eq!(spec.connection.as_ref().unwrap().connection_type, "modbus-tcp");
+        assert_eq!(spec.connection.as_ref().unwrap().id, "press_modbus");
+        assert_eq!(spec.connection.as_ref().unwrap().unit, Some(1));
         assert_eq!(spec.signals.len(), 4);
 
         // pressure signal
@@ -268,9 +270,6 @@ alarms:
         let yaml = r#"
 id: sensor_1
 type: temperature_sensor
-connection:
-  type: mqtt
-  id: broker_local
 "#;
         let spec: DeviceSpec = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(spec.id, "sensor_1");
@@ -278,6 +277,7 @@ connection:
         assert!(spec.alarms.is_empty());
         assert!(spec.manufacturer.is_none());
         assert!(spec.model.is_none());
+        assert!(spec.connection.is_none());
     }
 
     #[test]
@@ -419,11 +419,13 @@ connection:
     }
 
     #[test]
-    fn 缺少_connection_解析失败() {
+    fn 缺少_connection_解析成功() {
         let yaml = r#"
 id: test_device
 type: test
 "#;
-        assert!(serde_yaml::from_str::<DeviceSpec>(yaml).is_err());
+        let spec: DeviceSpec = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(spec.id, "test_device");
+        assert!(spec.connection.is_none());
     }
 }

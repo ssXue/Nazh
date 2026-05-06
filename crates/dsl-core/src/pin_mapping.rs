@@ -35,6 +35,34 @@ pub fn signal_to_direction(signal_type: SignalType) -> PinDirection {
     }
 }
 
+/// 将人类可读标签转换为稳定的机器 ID。
+///
+/// 将输入转为小写、非字母数字字符替换为下划线、去头尾下划线。
+/// 例如 `"8Ch. Dig. Input"` → `"8ch_dig_input"`、
+/// `"Beckhoff EL1008"` → `"beckhoff_el1008"`。
+///
+/// 空输入或转换后无有效字符时返回 `None`。
+#[must_use]
+pub fn label_to_id(label: &str) -> Option<String> {
+    let mut output = String::new();
+    let mut last_was_sep = false;
+    for ch in label.chars() {
+        if ch.is_ascii_alphanumeric() {
+            output.push(ch.to_ascii_lowercase());
+            last_was_sep = false;
+        } else if !last_was_sep {
+            output.push('_');
+            last_was_sep = true;
+        }
+    }
+    let trimmed = output.trim_matches('_').to_owned();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed)
+    }
+}
+
 /// 将信号 ID 转换为人类可读的标签。
 ///
 /// 例如 `"hydraulic_pressure"` → `"Hydraulic Pressure"`。
@@ -142,6 +170,30 @@ mod tests {
             signal_to_direction(SignalType::DigitalOutput),
             PinDirection::Output
         );
+    }
+
+    #[test]
+    fn label_to_id_转换() {
+        assert_eq!(
+            label_to_id("8Ch. Dig. Input").as_deref(),
+            Some("8ch_dig_input")
+        );
+        assert_eq!(
+            label_to_id("Beckhoff EL1008").as_deref(),
+            Some("beckhoff_el1008")
+        );
+        assert_eq!(label_to_id("EL2008").as_deref(), Some("el2008"));
+        assert_eq!(
+            label_to_id("Drive 2 (Elmo Drive)").as_deref(),
+            Some("drive_2_elmo_drive")
+        );
+    }
+
+    #[test]
+    fn label_to_id_空输入返回_none() {
+        assert_eq!(label_to_id(""), None);
+        assert_eq!(label_to_id("   "), None);
+        assert_eq!(label_to_id("!@#$%"), None);
     }
 
     #[test]

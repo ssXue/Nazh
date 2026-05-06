@@ -860,11 +860,11 @@ mod tests {
             device_type: "test".to_owned(),
             manufacturer: None,
             model: None,
-            connection: ConnectionRef {
+            connection: Some(ConnectionRef {
                 connection_type: "modbus-tcp".to_owned(),
                 id: format!("{id}_conn"),
                 unit: Some(1),
-            },
+            }),
             signals,
             alarms: vec![],
         }

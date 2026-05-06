@@ -613,11 +613,8 @@ pub(crate) async fn extract_device_from_pdf(
 #[tauri::command]
 pub(crate) async fn import_ethercat_esi(
     esi_xml: String,
-    connection_id: Option<String>,
-    device_id: Option<String>,
 ) -> Result<DeviceExtractionProposal, String> {
-    let result =
-        import_esi_to_device_yaml(&esi_xml, connection_id.as_deref(), device_id.as_deref())?;
+    let result = import_esi_to_device_yaml(&esi_xml)?;
     parse_device_yaml(&result.device_yaml)
         .map_err(|error| format!("ESI 导入结果不是合法 DeviceSpec: {error}"))?;
     Ok(DeviceExtractionProposal {
@@ -649,7 +646,7 @@ async fn load_device_detail_from_path(
 
     Ok(DeviceAssetDetail {
         id: spec.id.clone(),
-        name: spec.id.clone(),
+        name: spec.model.clone().unwrap_or_else(|| spec.id.clone()),
         device_type: spec.device_type.clone(),
         version,
         spec_json,
@@ -729,10 +726,6 @@ fn build_extraction_prompt(text: &str) -> String {
          type: <设备类型>\n\
          manufacturer: <厂商>  # 可选\n\
          model: <型号>  # 可选\n\
-         connection:\n\
-           type: <协议类型，如 modbus-tcp / mqtt / serial>\n\
-           id: <连接引用 ID>\n\
-           unit: <站号>  # 可选\n\
          signals:\n\
            - id: <信号 ID>\n\
              signal_type: <analog_input / analog_output / digital_input / digital_output>\n\
@@ -828,10 +821,6 @@ fn build_proposal_prompt(text: &str) -> String {
          type: <设备类型>\n\
          manufacturer: <厂商>\n\
          model: <型号>\n\
-         connection:\n\
-           type: <modbus-tcp / mqtt / serial>\n\
-           id: <连接引用 ID>\n\
-           unit: <站号>\n\
          signals:\n\
            - id: <信号 ID>\n\
              signal_type: <analog_input / analog_output / digital_input / digital_output>\n\

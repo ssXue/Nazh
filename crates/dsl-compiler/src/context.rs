@@ -92,7 +92,7 @@ impl CompilerContext {
     pub fn connection_id_for_device(&self, device_id: &str) -> Option<&str> {
         self.devices
             .get(device_id)
-            .map(|d| d.connection.id.as_str())
+            .and_then(|d| d.connection.as_ref().map(|c| c.id.as_str()))
     }
 }
 
@@ -121,11 +121,11 @@ mod tests {
             device_type: "test".to_owned(),
             manufacturer: None,
             model: None,
-            connection: ConnectionRef {
+            connection: Some(ConnectionRef {
                 connection_type: "modbus-tcp".to_owned(),
                 id: format!("{id}_conn"),
                 unit: Some(1),
-            },
+            }),
             signals: vec![],
             alarms: vec![],
         }

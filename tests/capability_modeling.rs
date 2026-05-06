@@ -42,10 +42,6 @@ safety:
 const SAMPLE_DEVICE_YAML: &str = r#"
 id: hydraulic_press_1
 type: hydraulic_press
-connection:
-  type: modbus-tcp
-  id: press_modbus
-  unit: 1
 signals:
   - id: pressure
     signal_type: analog_input

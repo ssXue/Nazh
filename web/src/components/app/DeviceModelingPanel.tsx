@@ -238,6 +238,7 @@ export function DeviceModelingPanel({
           importDrawerOpen ? (
             <DeviceImportDrawer
               workspacePath={workspacePath}
+              existingDeviceIds={assets.map((asset) => asset.id)}
               onClose={() => setImportDrawerOpen(false)}
               onSaved={() => { setImportDrawerOpen(false); void loadAssets(); }}
               onStatusMessage={onStatusMessage}
@@ -288,7 +289,7 @@ function DetailPanel({
           </button>
           <DeviceTypeBadge type={String(spec?.type ?? detail.device_type)} />
           <div className="dm-detail-header__info">
-            <h2>{String(spec?.id ?? detail.id)}</h2>
+            <h2>{String((spec?.model as string | undefined) ?? spec?.id ?? detail.name ?? detail.id)}</h2>
             <div className="dm-detail-header__badges">
               <span className="dm-badge dm-badge--type">
                 {String(spec?.type ?? detail.device_type)}
@@ -303,7 +304,7 @@ function DetailPanel({
               )}
               {(spec?.model as string | undefined) && (
                 <span className="dm-badge dm-badge--meta">
-                  {spec.model as string}
+                  {spec.id as string}
                 </span>
               )}
             </div>

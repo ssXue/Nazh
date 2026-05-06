@@ -287,21 +287,20 @@ impl<'a> GraphBuilder<'a> {
                 let args = self.find_action_args(&action_key.target_id);
                 config.insert("args".to_owned(), Value::Object(args));
 
-                // 设置 connection_id：设备对应的连接 ID
+                // 设置 connection_id：设备对应的连接 ID（设备未指定时留空，由运行时解析）
                 let connection_id = self
                     .ctx
-                    .connection_id_for_device(&cap.device_id)
-                    .ok_or_else(|| CompileError::CapabilityCall {
-                        detail: format!("设备 `{}` 的连接 ID 未找到", cap.device_id),
-                    })?;
+                    .connection_id_for_device(&cap.device_id);
 
-                let node = serde_json::json!({
+                let mut node = serde_json::json!({
                     "id": node_id,
                     "type": "capabilityCall",
-                    "connection_id": connection_id,
                     "config": Value::Object(config),
                     "buffer": 32,
                 });
+                if let Some(conn_id) = connection_id {
+                    node["connection_id"] = Value::String(conn_id.to_owned());
+                }
                 self.nodes.insert(node_id.clone(), node);
             } else {
                 // System action → 生成 code 节点（Rhai 脚本占位）
@@ -510,11 +509,11 @@ mod tests {
             device_type: "test".to_owned(),
             manufacturer: None,
             model: None,
-            connection: ConnectionRef {
+            connection: Some(ConnectionRef {
                 connection_type: "modbus-tcp".to_owned(),
                 id: conn_id.to_owned(),
                 unit: Some(1),
-            },
+            }),
             signals: vec![],
             alarms: vec![],
         }

@@ -192,12 +192,10 @@ export function useDeviceAssets(workspacePath = '') {
   );
 
   const importEthercatEsi = useCallback(
-    async (esiXml: string, connectionId?: string, deviceId?: string): Promise<ExtractionProposal> => {
+    async (esiXml: string): Promise<ExtractionProposal> => {
       if (!hasTauriRuntime()) throw new Error('需要 Tauri 运行时');
       return invoke<ExtractionProposal>('import_ethercat_esi', {
         esiXml,
-        connectionId: connectionId?.trim() || null,
-        deviceId: deviceId?.trim() || null,
       });
     },
     [],

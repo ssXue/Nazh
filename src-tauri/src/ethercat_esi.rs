@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 
-use nazh_dsl_core::device::{ConnectionRef, DeviceSpec, SignalSource, SignalSpec, SignalType};
+use nazh_dsl_core::device::{DeviceSpec, SignalSource, SignalSpec, SignalType};
 use quick_xml::Reader;
 use quick_xml::events::{BytesEnd, BytesStart, Event};
 
@@ -114,11 +114,9 @@ enum EniTextTarget {
 /// 将 ESI XML 转换为 Device DSL YAML。
 pub(crate) fn import_esi_to_device_yaml(
     esi_xml: &str,
-    connection_id: Option<&str>,
-    requested_device_id: Option<&str>,
 ) -> Result<EsiImportResult, String> {
     if xml_root_name(esi_xml)? == Some("EtherCATConfig".to_owned()) {
-        return import_eni_to_device_yaml(esi_xml, connection_id, requested_device_id);
+        return import_eni_to_device_yaml(esi_xml);
     }
 
     let devices = parse_esi_devices(esi_xml)?;
@@ -134,20 +132,14 @@ pub(crate) fn import_esi_to_device_yaml(
         ));
     }
 
-    build_device_yaml(device, connection_id, requested_device_id, &mut warnings)
+    build_device_yaml(device, &mut warnings)
 }
 
 fn build_device_yaml(
     device: &EsiDevice,
-    connection_id: Option<&str>,
-    requested_device_id: Option<&str>,
     warnings: &mut Vec<String>,
 ) -> Result<EsiImportResult, String> {
-    let device_id = requested_device_id
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map_or_else(|| default_device_id(device), sanitize_identifier);
-    let connection_id = normalized_connection_id(connection_id, warnings);
+    let device_id = default_device_id(device);
     let signals = build_signals(device, warnings);
     if signals.is_empty() {
         warnings.push("未从 ESI 中解析到 PDO Entry，设备 YAML 只包含基本型号信息".to_owned());
@@ -161,11 +153,7 @@ fn build_device_yaml(
             .unwrap_or_else(|| "ethercat_slave".to_owned()),
         manufacturer: device.vendor_name.clone(),
         model: model_label(device),
-        connection: ConnectionRef {
-            connection_type: "ethercat".to_owned(),
-            id: connection_id,
-            unit: None,
-        },
+        connection: None,
         signals,
         alarms: Vec::new(),
     };
@@ -178,29 +166,13 @@ fn build_device_yaml(
     })
 }
 
-fn normalized_connection_id(connection_id: Option<&str>, warnings: &mut Vec<String>) -> String {
-    let connection_id = connection_id
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .unwrap_or("ethercat_main")
-        .to_owned();
-    if connection_id == "ethercat_main" {
-        warnings.push(
-            "connection.id 使用占位值 ethercat_main，保存前请改为连接资源里的真实 ID".to_owned(),
-        );
-    }
-    connection_id
-}
-
 fn import_eni_to_device_yaml(
     eni_xml: &str,
-    connection_id: Option<&str>,
-    requested_device_id: Option<&str>,
 ) -> Result<EsiImportResult, String> {
     let slaves = parse_eni_slaves(eni_xml)?;
     let mut warnings = vec!["检测到 EtherCATConfig/ENI 网络配置，已按激活 SM PDO 导入".to_owned()];
     let device = build_eni_network_device(&slaves, &mut warnings)?;
-    build_device_yaml(&device, connection_id, requested_device_id, &mut warnings)
+    build_device_yaml(&device, &mut warnings)
 }
 
 fn xml_root_name(xml: &str) -> Result<Option<String>, String> {
@@ -950,29 +922,32 @@ fn unique_signal_id(
     }
 }
 
+/// 从 ProductCode 派生 6 位数字设备 ID。
+///
+/// 例如 Beckhoff EL1008（ProductCode 0x03F03052）→ `"195538"`。
+/// 没有 ProductCode 时，使用设备标签的稳定哈希值。
 fn default_device_id(device: &EsiDevice) -> String {
-    let seed = device
+    if let Some(product_code) = device.product_code {
+        return format!("{:06}", product_code % 1_000_000);
+    }
+    // Fallback：没有 ProductCode（如 ENI 网络设备），对标签做确定性哈希
+    let label = device
         .type_name
         .as_deref()
         .or(device.name.as_deref())
-        .map(sanitize_identifier)
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| {
-            if let Some(product_code) = device.product_code {
-                format!("ethercat_{product_code:08x}")
-            } else {
-                "ethercat_device".to_owned()
-            }
-        });
-    if seed
-        .chars()
-        .next()
-        .is_some_and(|ch| ch.is_ascii_alphabetic())
-    {
-        seed
-    } else {
-        format!("device_{seed}")
+        .unwrap_or("ethercat_device");
+    let hash = deterministic_hash(label.as_bytes());
+    format!("{:06}", hash % 1_000_000)
+}
+
+/// 对字节序列做确定性哈希（FNV-1a 风格的 32 位折半）。
+fn deterministic_hash(data: &[u8]) -> u64 {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for &byte in data {
+        h ^= byte as u64;
+        h = h.wrapping_mul(0x100000001b3);
     }
+    h
 }
 
 fn model_label(device: &EsiDevice) -> Option<String> {
@@ -1192,12 +1167,11 @@ mod tests {
 
     #[test]
     fn esi_导入为_device_yaml() {
-        let result = import_esi_to_device_yaml(SAMPLE_ESI, Some("ecat_main"), None).unwrap();
+        let result = import_esi_to_device_yaml(SAMPLE_ESI).unwrap();
         let spec = parse_device_yaml(&result.device_yaml).unwrap();
-        assert_eq!(spec.id, "el1008");
+        assert_eq!(spec.id, "072658");
         assert_eq!(spec.manufacturer.as_deref(), Some("Beckhoff"));
-        assert_eq!(spec.connection.connection_type, "ethercat");
-        assert_eq!(spec.connection.id, "ecat_main");
+        assert!(spec.connection.is_none());
         assert_eq!(spec.signals.len(), 2);
         assert_eq!(spec.signals[0].signal_type, SignalType::DigitalInput);
         assert_eq!(spec.signals[1].signal_type, SignalType::DigitalOutput);
@@ -1213,23 +1187,25 @@ mod tests {
     }
 
     #[test]
-    fn esi_缺少连接时生成占位警告() {
-        let result = import_esi_to_device_yaml(SAMPLE_ESI, None, Some("axis")).unwrap();
-        assert!(result.device_yaml.contains("id: axis"));
-        assert!(
-            result
-                .warnings
-                .iter()
-                .any(|item| item.contains("ethercat_main"))
-        );
+    fn esi_导入不生成_connection() {
+        let result = import_esi_to_device_yaml(SAMPLE_ESI).unwrap();
+        let spec = parse_device_yaml(&result.device_yaml).unwrap();
+        assert_eq!(spec.id, "072658");
+        assert!(!result.device_yaml.contains("connection:"));
+    }
+
+    #[test]
+    fn esi_导入默认不生成_connection() {
+        let result = import_esi_to_device_yaml(SAMPLE_ESI).unwrap();
+        assert!(!result.device_yaml.contains("connection:"));
     }
 
     #[test]
     fn eni_按激活_sm_pdo_导入多级拓扑() {
-        let result = import_esi_to_device_yaml(SAMPLE_ENI, Some("ecat_main"), None).unwrap();
+        let result = import_esi_to_device_yaml(SAMPLE_ENI).unwrap();
         let spec = parse_device_yaml(&result.device_yaml).unwrap();
 
-        assert_eq!(spec.id, "ethercat_network");
+        assert_eq!(spec.id, "380836");
         assert_eq!(spec.device_type, "ethercat_network");
         assert_eq!(spec.signals.len(), 2);
         assert!(
