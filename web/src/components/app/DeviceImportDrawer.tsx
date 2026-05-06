@@ -282,21 +282,60 @@ export function DeviceImportDrawer({
     try {
       setPhase('parsing-result');
       const result = await importEthercatEsi(esiXml);
-      setProposal(result);
-      setExtractedYaml(result.deviceYaml);
+
+      // ESI 导入结果确定性，直接保存到磁盘
+      const yaml = result.deviceYaml;
+      const idMatch = yaml.match(/^id:\s*(.+)$/m);
+      const typeMatch = yaml.match(/^type:\s*(.+)$/m);
+      const modelMatch = yaml.match(/^model:\s*(.+)$/m);
+      const deviceId = stripYamlQuotes(idMatch?.[1]) ?? `device_${Date.now()}`;
+      const deviceType = stripYamlQuotes(typeMatch?.[1]) ?? 'unknown';
+      const name = stripYamlQuotes(modelMatch?.[1]) ?? deviceId.replace(/_/g, ' ');
+
+      await saveAsset(deviceId, name, deviceType, yaml);
+
+      if (result.capabilityYamls.length) {
+        for (const capYaml of result.capabilityYamls) {
+          try {
+            const capIdMatch = capYaml.match(/^id:\s*(.+)$/m);
+            const capId = stripYamlQuotes(capIdMatch?.[1]) ?? `cap_${Date.now()}`;
+            const descMatch = capYaml.match(/^description:\s*(.+)$/m);
+            const desc = stripYamlQuotes(descMatch?.[1]) ?? capId;
+            await saveCapability(capId, deviceId, desc, desc, capYaml);
+          } catch {
+            /* 单个能力保存失败不阻塞 */
+          }
+        }
+      }
+
       onStatusMessage(
         result.warnings.length > 0
           ? `ESI 导入完成 · ${result.warnings.length} 条提示`
           : 'ESI 导入完成',
       );
-      setPhase('done');
+      resetState();
+      onSaved();
+      onClose();
     } catch (error) {
       setExtractError(`ESI 导入失败: ${error}`);
       setPhase('error');
     }
-  }, [esiXml, importEthercatEsi, onStatusMessage]);
+  }, [esiXml, importEthercatEsi, saveAsset, saveCapability, onSaved, onClose, onStatusMessage]);
 
   // ---- 保存 ----
+
+  const resetState = useCallback(() => {
+    setProposal(null);
+    setExtractedYaml('');
+    setImportText('');
+    setPdfFile(null);
+    setPdfBase64(null);
+    setEsiFile(null);
+    setEsiXml('');
+    setExtractedText('');
+    setExtractError(null);
+    setPhase('idle');
+  }, []);
 
   const handleSave = useCallback(async () => {
     if (!extractedYaml) return;
@@ -327,16 +366,7 @@ export function DeviceImportDrawer({
         onStatusMessage(`设备 ${deviceId} + ${proposal.capabilityYamls.length} 个能力已保存`);
       }
 
-      setProposal(null);
-      setExtractedYaml('');
-      setImportText('');
-      setPdfFile(null);
-      setPdfBase64(null);
-      setEsiFile(null);
-      setEsiXml('');
-      setExtractedText('');
-      setExtractError(null);
-      setPhase('idle');
+      resetState();
       onSaved();
       onClose();
     } catch (error) {
@@ -347,7 +377,7 @@ export function DeviceImportDrawer({
     proposal,
     saveAsset,
     saveCapability,
-    mode,
+    resetState,
     onSaved,
     onClose,
     onStatusMessage,
@@ -465,7 +495,7 @@ export function DeviceImportDrawer({
             </div>
           )}
 
-          {mode === 'esi' && esiXml && !extractedYaml && !extracting && (
+          {mode === 'esi' && esiXml && !extracting && (
             <div className="dm-drawer__actions">
               <button
                 type="button"
@@ -473,7 +503,7 @@ export function DeviceImportDrawer({
                 onClick={() => void handleImportEsi()}
               >
                 <FileYamlIcon width={14} height={14} />
-                导入 ESI
+                导入并保存
               </button>
             </div>
           )}

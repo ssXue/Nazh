@@ -4,16 +4,18 @@
 
 use std::sync::Arc;
 
-use nazh_dsl_core::{parse_capability_yaml, parse_device_yaml, signals_to_pin_definitions};
+use nazh_dsl_core::{parse_capability_yaml, parse_device_yaml, signals_to_pin_definitions, DeviceSpec};
 use nazh_engine::{AiCompletionRequest, AiGenerationParams, AiMessage, AiMessageRole, AiService};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
 
 use crate::asset_files::{
-    AssetFieldSource, delete_device_asset_yaml, device_asset_latest_path, file_modified_at,
+    AssetFieldSource, DeviceSnapshotMeta, SnapshotReason,
+    append_device_snapshot, delete_device_asset_yaml, delete_device_snapshot_meta,
+    device_asset_latest_path, file_modified_at,
     list_device_asset_version_files, list_device_asset_yaml_files, load_device_asset_version_yaml,
-    next_device_asset_version, read_device_asset_sources, write_device_asset_sources,
-    write_device_asset_yaml,
+    next_device_asset_version, read_device_asset_sources, read_device_snapshots,
+    write_device_asset_sources, write_device_asset_yaml,
 };
 use crate::ethercat_esi::import_esi_to_device_yaml;
 use crate::state::DesktopState;
@@ -124,6 +126,7 @@ pub(crate) async fn load_device_asset(
 /// 保存（或更新）设备资产。
 ///
 /// 接收 YAML 格式的设备规格，解析校验后存储为 JSON。
+/// 可选 snapshot_label / snapshot_reason 用于记录快照元数据。
 #[tauri::command]
 pub(crate) async fn save_device_asset(
     app: AppHandle,
@@ -132,6 +135,8 @@ pub(crate) async fn save_device_asset(
     device_type: String,
     spec_yaml: String,
     workspace_path: Option<String>,
+    snapshot_label: Option<String>,
+    snapshot_reason: Option<String>,
 ) -> Result<(), String> {
     // 解析 YAML 校验合法性
     let spec = parse_device_yaml(&spec_yaml).map_err(|e| format!("设备 DSL 解析失败: {e}"))?;
@@ -156,8 +161,34 @@ pub(crate) async fn save_device_asset(
         version,
         spec_yaml.trim(),
     )
-    .await
-    .map(|_| ())
+    .await?;
+
+    // 记录快照元数据
+    let reason_str = snapshot_reason.as_deref().unwrap_or("edit");
+    let reason = match reason_str {
+        "seed" => SnapshotReason::Seed,
+        "manual" => SnapshotReason::Manual,
+        "import" => SnapshotReason::Import,
+        "rollback" => SnapshotReason::Rollback,
+        _ => SnapshotReason::Edit,
+    };
+    let label = snapshot_label.unwrap_or_else(|| match reason {
+        SnapshotReason::Seed => "初始快照".to_owned(),
+        SnapshotReason::Import => "导入快照".to_owned(),
+        SnapshotReason::Rollback => "回滚前保护".to_owned(),
+        SnapshotReason::Edit => format!("编辑快照 v{version}"),
+        SnapshotReason::Manual => format!("手动快照 v{version}"),
+    });
+    let meta = DeviceSnapshotMeta {
+        version,
+        label,
+        description: String::new(),
+        reason,
+        created_at: chrono::Utc::now().to_rfc3339(),
+    };
+    append_device_snapshot(&app, workspace_path.as_deref(), &id, meta).await?;
+
+    Ok(())
 }
 
 /// 删除设备资产及其版本历史。
@@ -213,6 +244,365 @@ pub(crate) async fn load_asset_version(
         source_summary: None,
         created_at,
     }))
+}
+
+// ---- 快照管理 ----
+
+/// 快照摘要（IPC 响应）。
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct DeviceSnapshotSummary {
+    pub version: i64,
+    pub label: String,
+    pub description: String,
+    pub reason: String,
+    pub created_at: String,
+}
+
+/// 列出设备资产的所有快照。
+#[tauri::command]
+pub(crate) async fn list_device_snapshots(
+    app: AppHandle,
+    asset_id: String,
+    workspace_path: Option<String>,
+) -> Result<Vec<DeviceSnapshotSummary>, String> {
+    let snapshots = read_device_snapshots(&app, workspace_path.as_deref(), &asset_id).await?;
+    Ok(snapshots
+        .into_iter()
+        .map(|s| DeviceSnapshotSummary {
+            version: s.version,
+            label: s.label,
+            description: s.description,
+            reason: match s.reason {
+                SnapshotReason::Seed => "seed",
+                SnapshotReason::Manual => "manual",
+                SnapshotReason::Import => "import",
+                SnapshotReason::Edit => "edit",
+                SnapshotReason::Rollback => "rollback",
+            }
+            .to_owned(),
+            created_at: s.created_at,
+        })
+        .collect())
+}
+
+/// 创建手动快照（保存当前最新内容为新版本，附带标签）。
+#[tauri::command]
+pub(crate) async fn create_device_snapshot(
+    app: AppHandle,
+    asset_id: String,
+    label: Option<String>,
+    description: Option<String>,
+    workspace_path: Option<String>,
+) -> Result<(), String> {
+    // 读取当前最新内容
+    let path = device_asset_latest_path(&app, workspace_path.as_deref(), &asset_id)?;
+    if !path.exists() {
+        return Err(format!("设备资产 `{asset_id}` 不存在"));
+    }
+    let yaml = tokio::fs::read_to_string(&path)
+        .await
+        .map_err(|e| format!("读取设备 DSL 失败: {e}"))?;
+
+    // 保存为新版本
+    let version = next_device_asset_version(&app, workspace_path.as_deref(), &asset_id).await?;
+    write_device_asset_yaml(&app, workspace_path.as_deref(), &asset_id, version, yaml.trim())
+        .await?;
+
+    let meta = DeviceSnapshotMeta {
+        version,
+        label: label.unwrap_or_else(|| format!("手动快照 v{version}")),
+        description: description.unwrap_or_default(),
+        reason: SnapshotReason::Manual,
+        created_at: chrono::Utc::now().to_rfc3339(),
+    };
+    append_device_snapshot(&app, workspace_path.as_deref(), &asset_id, meta).await
+}
+
+/// 回滚到指定快照版本。先保存当前状态为保护快照，再恢复目标版本内容。
+#[tauri::command]
+pub(crate) async fn rollback_device_snapshot(
+    app: AppHandle,
+    asset_id: String,
+    target_version: i64,
+    workspace_path: Option<String>,
+) -> Result<(), String> {
+    // 读取当前最新
+    let latest_path = device_asset_latest_path(&app, workspace_path.as_deref(), &asset_id)?;
+    let current_yaml = tokio::fs::read_to_string(&latest_path)
+        .await
+        .map_err(|e| format!("读取当前设备 DSL 失败: {e}"))?;
+
+    // 保护快照
+    let protection_version =
+        next_device_asset_version(&app, workspace_path.as_deref(), &asset_id).await?;
+    write_device_asset_yaml(
+        &app,
+        workspace_path.as_deref(),
+        &asset_id,
+        protection_version,
+        current_yaml.trim(),
+    )
+    .await?;
+    let protection_meta = DeviceSnapshotMeta {
+        version: protection_version,
+        label: format!("回滚前保护（→ v{target_version}）"),
+        description: format!("回滚到 v{target_version} 前自动保留的快照。"),
+        reason: SnapshotReason::Rollback,
+        created_at: chrono::Utc::now().to_rfc3339(),
+    };
+    append_device_snapshot(
+        &app,
+        workspace_path.as_deref(),
+        &asset_id,
+        protection_meta,
+    )
+    .await?;
+
+    // 恢复目标版本
+    let Some((target_yaml, _)) =
+        load_device_asset_version_yaml(&app, workspace_path.as_deref(), &asset_id, target_version)
+            .await?
+    else {
+        return Err(format!("快照 v{target_version} 不存在"));
+    };
+    let restore_version =
+        next_device_asset_version(&app, workspace_path.as_deref(), &asset_id).await?;
+    write_device_asset_yaml(
+        &app,
+        workspace_path.as_deref(),
+        &asset_id,
+        restore_version,
+        target_yaml.trim(),
+    )
+    .await?;
+
+    let restore_meta = DeviceSnapshotMeta {
+        version: restore_version,
+        label: format!("回滚到 v{target_version}"),
+        description: String::new(),
+        reason: SnapshotReason::Rollback,
+        created_at: chrono::Utc::now().to_rfc3339(),
+    };
+    append_device_snapshot(&app, workspace_path.as_deref(), &asset_id, restore_meta).await
+}
+
+/// 删除指定快照的元数据（不删除版本文件本身）。
+#[tauri::command]
+pub(crate) async fn delete_device_snapshot(
+    app: AppHandle,
+    asset_id: String,
+    version: i64,
+    workspace_path: Option<String>,
+) -> Result<(), String> {
+    delete_device_snapshot_meta(&app, workspace_path.as_deref(), &asset_id, version).await
+}
+
+// ---- 字段修补 ----
+
+/// 修改设备资产的指定字段（JSON Pointer 路径），解析校验后保存为新版本。
+///
+/// `json_path` 使用 RFC 6901 JSON Pointer 格式，例如：
+/// - `/model` → 顶层 model 字段
+/// - `/manufacturer` → 顶层 manufacturer 字段
+/// - `/connection/type` → 连接类型
+/// - `/signals/0/unit` → 第 0 个信号的 unit
+/// - `/signals/0/range/0` → 第 0 个信号的 range.min（数组格式 [min, max]）
+/// - `/alarms/0/condition` → 第 0 个告警的 condition
+#[tauri::command]
+pub(crate) async fn patch_device_field(
+    app: AppHandle,
+    asset_id: String,
+    json_path: String,
+    value: String,
+    snapshot_label: Option<String>,
+    workspace_path: Option<String>,
+) -> Result<(), String> {
+    // 读取当前最新 YAML
+    let path = device_asset_latest_path(&app, workspace_path.as_deref(), &asset_id)?;
+    if !path.exists() {
+        return Err(format!("设备资产 `{asset_id}` 不存在"));
+    }
+    let yaml_text = tokio::fs::read_to_string(&path)
+        .await
+        .map_err(|e| format!("读取设备 DSL 失败: {e}"))?;
+
+    // 解析为 DeviceSpec 再转为 JSON Value
+    let spec = parse_device_yaml(&yaml_text)
+        .map_err(|e| format!("设备 DSL 解析失败: {e}"))?;
+    let mut spec_value = serde_json::to_value(&spec)
+        .map_err(|e| format!("设备规格序列化失败: {e}"))?;
+
+    // 将字符串 value 转为合适的 JSON 值
+    let json_value = parse_patch_value(&value);
+
+    // 用 JSON Pointer 定位并修改
+    spec_value
+        .pointer_mut(&json_path)
+        .ok_or_else(|| format!("路径 `{json_path}` 不存在于设备规格中"))?
+        .clone_from(&json_value);
+
+    // 校验修改后的结构仍然合法
+    let patched_spec: DeviceSpec = serde_json::from_value(spec_value)
+        .map_err(|e| format!("修改后的设备规格不合法: {e}"))?;
+
+    // 重序列化为 YAML
+    let new_yaml = serde_yaml::to_string(&patched_spec)
+        .map_err(|e| format!("序列化设备 DSL 失败: {e}"))?;
+
+    // 保存
+    let version = next_device_asset_version(&app, workspace_path.as_deref(), &asset_id).await?;
+    write_device_asset_yaml(
+        &app,
+        workspace_path.as_deref(),
+        &asset_id,
+        version,
+        new_yaml.trim(),
+    )
+    .await?;
+
+    // 记录快照
+    let label = snapshot_label.unwrap_or_else(|| format!("编辑 {json_path}"));
+    let meta = DeviceSnapshotMeta {
+        version,
+        label,
+        description: String::new(),
+        reason: SnapshotReason::Edit,
+        created_at: chrono::Utc::now().to_rfc3339(),
+    };
+    append_device_snapshot(&app, workspace_path.as_deref(), &asset_id, meta).await?;
+
+    Ok(())
+}
+
+/// 将前端传入的字符串 value 解析为合适的 JSON 值类型。
+fn parse_patch_value(raw: &str) -> serde_json::Value {
+    if raw == "null" {
+        return serde_json::Value::Null;
+    }
+    if raw == "true" {
+        return serde_json::Value::Bool(true);
+    }
+    if raw == "false" {
+        return serde_json::Value::Bool(false);
+    }
+    if let Ok(n) = raw.parse::<i64>() {
+        return serde_json::Value::Number(n.into());
+    }
+    if let Ok(n) = raw.parse::<f64>() {
+        if let Some(v) = serde_json::Number::from_f64(n) {
+            return serde_json::Value::Number(v);
+        }
+    }
+    serde_json::Value::String(raw.to_owned())
+}
+
+// ---- 信号/告警增删 ----
+
+/// 新增信号。`signal_yaml` 为合法的 SignalSpec YAML 片段。
+#[tauri::command]
+pub(crate) async fn add_device_signal(
+    app: AppHandle,
+    asset_id: String,
+    signal_yaml: String,
+    workspace_path: Option<String>,
+) -> Result<(), String> {
+    let signal: nazh_dsl_core::SignalSpec = parse_device_yaml_fragment(&signal_yaml)
+        .map_err(|e| format!("信号 YAML 解析失败: {e}"))?;
+
+    let mut spec = load_device_spec(&app, workspace_path.as_deref(), &asset_id).await?;
+    spec.signals.push(signal);
+    save_device_spec(&app, workspace_path.as_deref(), &asset_id, &spec, "新增信号").await
+}
+
+/// 删除指定索引的信号。
+#[tauri::command]
+pub(crate) async fn remove_device_signal(
+    app: AppHandle,
+    asset_id: String,
+    index: usize,
+    workspace_path: Option<String>,
+) -> Result<(), String> {
+    let mut spec = load_device_spec(&app, workspace_path.as_deref(), &asset_id).await?;
+    if index >= spec.signals.len() {
+        return Err(format!("信号索引 {index} 越界（共 {} 个信号）", spec.signals.len()));
+    }
+    spec.signals.remove(index);
+    save_device_spec(&app, workspace_path.as_deref(), &asset_id, &spec, "删除信号").await
+}
+
+/// 新增告警。`alarm_yaml` 为合法的 AlarmSpec YAML 片段。
+#[tauri::command]
+pub(crate) async fn add_device_alarm(
+    app: AppHandle,
+    asset_id: String,
+    alarm_yaml: String,
+    workspace_path: Option<String>,
+) -> Result<(), String> {
+    let alarm: nazh_dsl_core::AlarmSpec = parse_device_yaml_fragment(&alarm_yaml)
+        .map_err(|e| format!("告警 YAML 解析失败: {e}"))?;
+
+    let mut spec = load_device_spec(&app, workspace_path.as_deref(), &asset_id).await?;
+    spec.alarms.push(alarm);
+    save_device_spec(&app, workspace_path.as_deref(), &asset_id, &spec, "新增告警").await
+}
+
+/// 删除指定索引的告警。
+#[tauri::command]
+pub(crate) async fn remove_device_alarm(
+    app: AppHandle,
+    asset_id: String,
+    index: usize,
+    workspace_path: Option<String>,
+) -> Result<(), String> {
+    let mut spec = load_device_spec(&app, workspace_path.as_deref(), &asset_id).await?;
+    if index >= spec.alarms.len() {
+        return Err(format!("告警索引 {index} 越界（共 {} 个告警）", spec.alarms.len()));
+    }
+    spec.alarms.remove(index);
+    save_device_spec(&app, workspace_path.as_deref(), &asset_id, &spec, "删除告警").await
+}
+
+/// 从 YAML 片段解析为指定类型（通用片段解析器）。
+fn parse_device_yaml_fragment<T: serde::de::DeserializeOwned>(yaml: &str) -> Result<T, String> {
+    serde_yaml::from_str(yaml).map_err(|e| format!("YAML 片段解析失败: {e}"))
+}
+
+/// 加载设备资产的 DeviceSpec。
+async fn load_device_spec(
+    app: &AppHandle,
+    workspace_path: Option<&str>,
+    asset_id: &str,
+) -> Result<DeviceSpec, String> {
+    let path = device_asset_latest_path(app, workspace_path, asset_id)?;
+    if !path.exists() {
+        return Err(format!("设备资产 `{asset_id}` 不存在"));
+    }
+    let yaml = tokio::fs::read_to_string(&path)
+        .await
+        .map_err(|e| format!("读取设备 DSL 失败: {e}"))?;
+    parse_device_yaml(&yaml).map_err(|e| format!("设备 DSL 解析失败: {e}"))
+}
+
+/// 保存 DeviceSpec 为新版本快照。
+async fn save_device_spec(
+    app: &AppHandle,
+    workspace_path: Option<&str>,
+    asset_id: &str,
+    spec: &DeviceSpec,
+    snapshot_label: &str,
+) -> Result<(), String> {
+    let yaml = serde_yaml::to_string(spec)
+        .map_err(|e| format!("序列化设备 DSL 失败: {e}"))?;
+    let version = next_device_asset_version(app, workspace_path, asset_id).await?;
+    write_device_asset_yaml(app, workspace_path, asset_id, version, yaml.trim()).await?;
+    let meta = DeviceSnapshotMeta {
+        version,
+        label: snapshot_label.to_owned(),
+        description: String::new(),
+        reason: SnapshotReason::Edit,
+        created_at: chrono::Utc::now().to_rfc3339(),
+    };
+    append_device_snapshot(app, workspace_path, asset_id, meta).await
 }
 
 // ---- AI 抽取 ----

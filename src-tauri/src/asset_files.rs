@@ -19,6 +19,8 @@ const DEVICES_DIR: &str = "devices";
 const CAPABILITIES_DIR: &str = "capabilities";
 const VERSIONS_DIR: &str = "versions";
 const SOURCES_DIR: &str = "sources";
+const SNAPSHOTS_SUFFIX: &str = ".snapshots.yaml";
+const MAX_SNAPSHOTS: usize = 20;
 
 pub(crate) struct AssetFilePaths {
     pub(crate) latest: PathBuf,
@@ -621,6 +623,140 @@ fn sanitize_asset_file_stem(raw: &str) -> String {
     } else {
         stem
     }
+}
+
+// ---- 快照元数据 ----
+
+/// 快照创建原因。
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub(crate) enum SnapshotReason {
+    #[serde(rename = "seed")]
+    Seed,
+    #[serde(rename = "manual")]
+    Manual,
+    #[serde(rename = "import")]
+    Import,
+    #[serde(rename = "edit")]
+    Edit,
+    #[serde(rename = "rollback")]
+    Rollback,
+}
+
+impl Default for SnapshotReason {
+    fn default() -> Self {
+        Self::Edit
+    }
+}
+
+/// 设备资产快照元数据条目。
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub(crate) struct DeviceSnapshotMeta {
+    /// 对应的版本号（与 `.v{version}.device.yaml` 文件对应）。
+    pub(crate) version: i64,
+    /// 快照显示标签。
+    pub(crate) label: String,
+    /// 快照描述。
+    #[serde(default)]
+    pub(crate) description: String,
+    /// 创建原因。
+    #[serde(default)]
+    pub(crate) reason: SnapshotReason,
+    /// 创建时间（RFC3339）。
+    pub(crate) created_at: String,
+}
+
+/// 读取设备资产的快照元数据。文件不存在时返回空列表。
+pub(crate) async fn read_device_snapshots(
+    app: &AppHandle,
+    workspace_path: Option<&str>,
+    asset_id: &str,
+) -> Result<Vec<DeviceSnapshotMeta>, String> {
+    let (workspace_dir, _) = resolve_project_workspace_dir(app, workspace_path)?;
+    let path = workspace_dir
+        .join(DSL_ASSETS_DIR)
+        .join(DEVICES_DIR)
+        .join(format!(
+            "{}{SNAPSHOTS_SUFFIX}",
+            sanitize_asset_file_stem(asset_id)
+        ));
+    match fs::read_to_string(&path).await {
+        Ok(text) => serde_yaml::from_str::<Vec<DeviceSnapshotMeta>>(&text)
+            .map_err(|e| format!("解析快照元数据失败 `{}`: {e}", path.display())),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
+        Err(e) => Err(format!(
+            "读取快照元数据失败 `{}`: {e}",
+            path.display()
+        )),
+    }
+}
+
+/// 写入设备资产的快照元数据（追加一条并保留上限）。
+pub(crate) async fn append_device_snapshot(
+    app: &AppHandle,
+    workspace_path: Option<&str>,
+    asset_id: &str,
+    meta: DeviceSnapshotMeta,
+) -> Result<(), String> {
+    let (workspace_dir, _) = resolve_project_workspace_dir(app, workspace_path)?;
+    let dir = workspace_dir.join(DSL_ASSETS_DIR).join(DEVICES_DIR);
+    let path = dir.join(format!(
+        "{}{SNAPSHOTS_SUFFIX}",
+        sanitize_asset_file_stem(asset_id)
+    ));
+
+    let mut snapshots = match fs::read_to_string(&path).await {
+        Ok(text) => serde_yaml::from_str::<Vec<DeviceSnapshotMeta>>(&text)
+            .unwrap_or_default(),
+        Err(_) => Vec::new(),
+    };
+
+    // 去重：同一版本号只保留最新元数据
+    snapshots.retain(|s| s.version != meta.version);
+    snapshots.insert(0, meta);
+
+    // 保留上限
+    snapshots.truncate(MAX_SNAPSHOTS);
+
+    let text = serde_yaml::to_string(&snapshots)
+        .map_err(|e| format!("序列化快照元数据失败: {e}"))?;
+    fs::write(&path, text)
+        .await
+        .map_err(|e| format!("写入快照元数据失败 `{}`: {e}", path.display()))?;
+
+    Ok(())
+}
+
+/// 删除指定版本的快照元数据。
+pub(crate) async fn delete_device_snapshot_meta(
+    app: &AppHandle,
+    workspace_path: Option<&str>,
+    asset_id: &str,
+    version: i64,
+) -> Result<(), String> {
+    let (workspace_dir, _) = resolve_project_workspace_dir(app, workspace_path)?;
+    let path = workspace_dir
+        .join(DSL_ASSETS_DIR)
+        .join(DEVICES_DIR)
+        .join(format!(
+            "{}{SNAPSHOTS_SUFFIX}",
+            sanitize_asset_file_stem(asset_id)
+        ));
+
+    let mut snapshots = match fs::read_to_string(&path).await {
+        Ok(text) => serde_yaml::from_str::<Vec<DeviceSnapshotMeta>>(&text)
+            .unwrap_or_default(),
+        Err(_) => return Ok(()),
+    };
+
+    snapshots.retain(|s| s.version != version);
+
+    let text = serde_yaml::to_string(&snapshots)
+        .map_err(|e| format!("序列化快照元数据失败: {e}"))?;
+    fs::write(&path, text)
+        .await
+        .map_err(|e| format!("写入快照元数据失败 `{}`: {e}", path.display()))?;
+
+    Ok(())
 }
 
 #[cfg(test)]

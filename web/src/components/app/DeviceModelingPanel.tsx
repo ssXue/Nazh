@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { hasTauriRuntime } from '../../lib/tauri';
+import { formatRelativeTimestamp } from '../../lib/projects';
 import { useDeviceAssets } from '../../hooks/use-device-assets';
 import type { DeviceAssetDetail } from '../../hooks/use-device-assets';
 import { useCapabilities } from '../../hooks/use-capabilities';
@@ -12,6 +13,8 @@ import {
   SearchIcon,
   DeviceIcon,
   BackIcon,
+  PencilIcon,
+  SnapshotIcon,
 } from './AppIcons';
 import { DeviceImportDrawer } from './DeviceImportDrawer';
 import { ExpandTransition } from './ExpandTransition';
@@ -192,11 +195,11 @@ export function DeviceModelingPanel({
 
                 <div className="board-card__chips">
                   <span className="board-card__chip">{asset.device_type}</span>
-                  <span className="board-card__chip">{`v${asset.version}`}</span>
+                  <span className="board-card__chip">{`${asset.version} 个快照`}</span>
                 </div>
 
                 <div className="board-card__footer">
-                  <span className="board-card__meta">{asset.updated_at}</span>
+                  <span className="board-card__meta">{formatRelativeTimestamp(asset.updated_at)}</span>
                   <button
                     type="button"
                     className="board-card__delete"
@@ -222,8 +225,10 @@ export function DeviceModelingPanel({
     <DetailPanel
       detail={detail}
       workspacePath={workspacePath}
+      onReload={() => void handleOpenDetail(detail.id)}
       onBack={handleCloseDetail}
       onDelete={() => void handleDelete(detail.id)}
+      onStatusMessage={onStatusMessage}
     />
   ) : null;
 
@@ -261,17 +266,42 @@ function DeviceTypeBadge({ type }: { type: string }) {
 function DetailPanel({
   detail,
   workspacePath,
+  onReload,
   onBack,
   onDelete,
+  onStatusMessage,
 }: {
   detail: DeviceAssetDetail;
   workspacePath: string;
+  onReload: () => void;
   onBack: () => void;
   onDelete: () => void;
+  onStatusMessage: (msg: string) => void;
 }) {
-  const [tab, setTab] = useState<'signals' | 'capabilities'>('signals');
+  const [tab, setTab] = useState<'signals' | 'capabilities' | 'snapshots'>('signals');
+  const [patching, setPatching] = useState(false);
+  const { patchField } = useDeviceAssets(workspacePath);
 
   const spec = detail.spec_json;
+
+  const patch = useCallback(
+    async (jsonPath: string, value: string) => {
+      setPatching(true);
+      try {
+        await patchField(detail.id, jsonPath, value);
+        onStatusMessage('已更新');
+        onReload();
+      } catch (error) {
+        onStatusMessage(`更新失败: ${error}`);
+      } finally {
+        setPatching(false);
+      }
+    },
+    [detail.id, patchField, onReload, onStatusMessage],
+  );
+
+  const modelName = String((spec?.model as string | undefined) ?? spec?.id ?? detail.name ?? detail.id);
+  const manufacturer = spec?.manufacturer as string | undefined;
 
   return (
     <div className="dm-detail-dialog">
@@ -288,20 +318,30 @@ function DetailPanel({
           </button>
           <DeviceTypeBadge type={String(spec?.type ?? detail.device_type)} />
           <div className="dm-detail-header__info">
-            <h2>{String((spec?.model as string | undefined) ?? spec?.id ?? detail.name ?? detail.id)}</h2>
+            <EditableField
+              value={modelName}
+              label="model"
+              onSave={(v) => void patch('/model', v)}
+              disabled={patching}
+              className="dm-detail-header__title"
+            />
             <div className="dm-detail-header__badges">
               <span className="dm-badge dm-badge--type">
                 {String(spec?.type ?? detail.device_type)}
               </span>
               <span className="dm-badge dm-badge--version">
-                v{detail.version}
+                {detail.version} 个快照
               </span>
-              {(spec?.manufacturer as string | undefined) && (
-                <span className="dm-badge dm-badge--meta">
-                  {spec.manufacturer as string}
-                </span>
+              {manufacturer && (
+                <EditableField
+                  value={manufacturer}
+                  label="manufacturer"
+                  onSave={(v) => void patch('/manufacturer', v)}
+                  disabled={patching}
+                  className="dm-badge dm-badge--meta"
+                />
               )}
-              {(spec?.model as string | undefined) && (
+              {(spec?.id as string | undefined) && (
                 <span className="dm-badge dm-badge--meta">
                   {spec.id as string}
                 </span>
@@ -335,25 +375,129 @@ function DetailPanel({
         >
           能力
         </button>
+        <button
+          type="button"
+          className={`dm-tabs__item${tab === 'snapshots' ? ' is-active' : ''}`}
+          onClick={() => setTab('snapshots')}
+        >
+          快照
+        </button>
       </div>
 
       <div className="dm-detail-dialog__body">
         {tab === 'signals' ? (
-          <SignalsTab detail={detail} />
-        ) : (
+          <SignalsTab detail={detail} workspacePath={workspacePath} onReload={onReload} onStatusMessage={onStatusMessage} />
+        ) : tab === 'capabilities' ? (
           <CapabilitiesTab deviceId={detail.id} workspacePath={workspacePath} />
+        ) : (
+          <SnapshotsTab deviceId={detail.id} workspacePath={workspacePath} onReload={onReload} onStatusMessage={onStatusMessage} />
         )}
       </div>
     </div>
   );
 }
 
-/** 信号 Tab。 */
-function SignalsTab({ detail }: { detail: DeviceAssetDetail }) {
+/** 信号 Tab。通过后端命令增删改字段。 */
+function SignalsTab({
+  detail,
+  workspacePath,
+  onReload,
+  onStatusMessage,
+}: {
+  detail: DeviceAssetDetail;
+  workspacePath: string;
+  onReload: () => void;
+  onStatusMessage: (msg: string) => void;
+}) {
+  const { patchField, addSignal, removeSignal, addAlarm, removeAlarm } = useDeviceAssets(workspacePath);
+  const [patching, setPatching] = useState(false);
+  const [addingSignal, setAddingSignal] = useState(false);
+  const [addingAlarm, setAddingAlarm] = useState(false);
+  const [newSignalId, setNewSignalId] = useState('');
+  const [newSignalType, setNewSignalType] = useState('analog_input');
+  const [newAlarmId, setNewAlarmId] = useState('');
+  const [newAlarmCondition, setNewAlarmCondition] = useState('');
+
   const spec = detail.spec_json;
-  const signals = spec?.signals as Array<Record<string, unknown>> | undefined;
-  const alarms = spec?.alarms as Array<Record<string, unknown>> | undefined;
+  const signals = (spec?.signals ?? []) as Array<Record<string, unknown>>;
+  const alarms = (spec?.alarms ?? []) as Array<Record<string, unknown>>;
   const connection = spec?.connection as Record<string, unknown> | undefined;
+
+  const patch = useCallback(
+    async (jsonPath: string, value: string) => {
+      setPatching(true);
+      try {
+        await patchField(detail.id, jsonPath, value);
+        onReload();
+      } catch (error) {
+        onStatusMessage(`修改失败: ${error}`);
+      } finally {
+        setPatching(false);
+      }
+    },
+    [detail.id, patchField, onReload, onStatusMessage],
+  );
+
+  const handleAddSignal = useCallback(async () => {
+    if (!newSignalId.trim()) return;
+    setPatching(true);
+    try {
+      const yaml = `id: ${newSignalId.trim()}\nsignal_type: ${newSignalType}\nsource:\n  type: register\n  register: 0\n  data_type: u16\n`;
+      await addSignal(detail.id, yaml);
+      setNewSignalId('');
+      setAddingSignal(false);
+      onStatusMessage(`信号 ${newSignalId} 已添加`);
+      onReload();
+    } catch (error) {
+      onStatusMessage(`添加信号失败: ${error}`);
+    } finally {
+      setPatching(false);
+    }
+  }, [detail.id, newSignalId, newSignalType, addSignal, onReload, onStatusMessage]);
+
+  const handleRemoveSignal = useCallback(async (index: number) => {
+    setPatching(true);
+    try {
+      await removeSignal(detail.id, index);
+      onStatusMessage('信号已删除');
+      onReload();
+    } catch (error) {
+      onStatusMessage(`删除信号失败: ${error}`);
+    } finally {
+      setPatching(false);
+    }
+  }, [detail.id, removeSignal, onReload, onStatusMessage]);
+
+  const handleAddAlarm = useCallback(async () => {
+    if (!newAlarmId.trim() || !newAlarmCondition.trim()) return;
+    setPatching(true);
+    try {
+      const yaml = `id: ${newAlarmId.trim()}\ncondition: "${newAlarmCondition.trim()}"\nseverity: warning\n`;
+      await addAlarm(detail.id, yaml);
+      setNewAlarmId('');
+      setNewAlarmCondition('');
+      setAddingAlarm(false);
+      onStatusMessage(`告警 ${newAlarmId} 已添加`);
+      onReload();
+    } catch (error) {
+      onStatusMessage(`添加告警失败: ${error}`);
+    } finally {
+      setPatching(false);
+    }
+  }, [detail.id, newAlarmId, newAlarmCondition, addAlarm, onReload, onStatusMessage]);
+
+  const handleRemoveAlarm = useCallback(async (index: number) => {
+    setPatching(true);
+    try {
+      await removeAlarm(detail.id, index);
+      onStatusMessage('告警已删除');
+      onReload();
+    } catch (error) {
+      onStatusMessage(`删除告警失败: ${error}`);
+    } finally {
+      setPatching(false);
+    }
+  }, [detail.id, removeAlarm, onReload, onStatusMessage]);
 
   return (
     <div className="dm-detail-body">
@@ -364,17 +508,20 @@ function SignalsTab({ detail }: { detail: DeviceAssetDetail }) {
             <h3>连接</h3>
           </div>
           <div className="dm-section-card__body">
-            <div className="dm-connection">
-              <span className="dm-tag">
-                {String(connection.type ?? '-')}
-              </span>
-              <span className="dm-mono">
-                {String(connection.id ?? '-')}
-              </span>
+            <div className="dm-connection-fields">
+              <div className="dm-conn-field">
+                <span className="dm-conn-field__label">类型</span>
+                <EditableField value={String(connection.type ?? '-')} label="connection.type" onSave={(v) => void patch('/connection/type', v)} disabled={patching} />
+              </div>
+              <div className="dm-conn-field">
+                <span className="dm-conn-field__label">连接 ID</span>
+                <EditableField value={String(connection.id ?? '-')} label="connection.id" onSave={(v) => void patch('/connection/id', v)} disabled={patching} />
+              </div>
               {connection.unit != null && (
-                <span className="dm-meta">
-                  站号 {String(connection.unit)}
-                </span>
+                <div className="dm-conn-field">
+                  <span className="dm-conn-field__label">站号</span>
+                  <EditableField value={String(connection.unit)} label="connection.unit" onSave={(v) => void patch('/connection/unit', v)} disabled={patching} />
+                </div>
               )}
             </div>
           </div>
@@ -382,12 +529,16 @@ function SignalsTab({ detail }: { detail: DeviceAssetDetail }) {
       )}
 
       {/* 信号表 */}
-      {signals && signals.length > 0 && (
-        <div className="dm-section-card">
-          <div className="dm-section-card__header">
-            <h3>信号 ({signals.length})</h3>
-          </div>
-          <div className="dm-section-card__body dm-section-card__body--no-pad">
+      <div className="dm-section-card">
+        <div className="dm-section-card__header">
+          <h3>信号 ({signals.length})</h3>
+          <button type="button" className="dm-btn dm-btn--primary" disabled={patching} onClick={() => setAddingSignal(true)}>
+            <PlusIcon width={14} height={14} />
+            新增信号
+          </button>
+        </div>
+        <div className="dm-section-card__body dm-section-card__body--no-pad">
+          {signals.length > 0 ? (
             <table className="dm-table">
               <thead>
                 <tr>
@@ -395,44 +546,108 @@ function SignalsTab({ detail }: { detail: DeviceAssetDetail }) {
                   <th>类型</th>
                   <th>单位</th>
                   <th>量程</th>
+                  <th>缩放</th>
                   <th>来源</th>
+                  <th />
                 </tr>
               </thead>
               <tbody>
-                {signals.map((sig, i) => (
-                  <tr key={String(sig.id ?? i)}>
-                    <td className="dm-mono">{String(sig.id)}</td>
-                    <td>
-                      <span className={`dm-tag dm-tag--signal-${String(sig.signal_type).split('_')[0]}`}>
-                        {formatSignalType(String(sig.signal_type))}
-                      </span>
-                    </td>
-                    <td>{sig.unit ? String(sig.unit) : '-'}</td>
-                    <td className="dm-mono">
-                      {sig.range
-                        ? `[${(sig.range as { min: number; max: number }).min}, ${(sig.range as { min: number; max: number }).max}]`
-                        : '-'}
-                    </td>
-                    <td className="dm-mono">
-                      {sig.source
-                        ? String((sig.source as Record<string, unknown>).type ?? '-')
-                        : '-'}
-                    </td>
-                  </tr>
-                ))}
+                {signals.map((sig, i) => {
+                  const range = sig.range as number[] | undefined;
+                  return (
+                    <tr key={String(sig.id ?? i)}>
+                      <td>
+                        <EditableField value={String(sig.id)} label="signal.id" onSave={(v) => void patch(`/signals/${i}/id`, v)} disabled={patching} />
+                      </td>
+                      <td>
+                        <span className={`dm-tag dm-tag--signal-${String(sig.signal_type).split('_')[0]}`}>
+                          {formatSignalType(String(sig.signal_type))}
+                        </span>
+                      </td>
+                      <td>
+                        <EditableField value={sig.unit ? String(sig.unit) : '-'} label="signal.unit" onSave={(v) => void patch(`/signals/${i}/unit`, v)} disabled={patching} />
+                      </td>
+                      <td className="dm-mono">
+                        {range
+                          ? (
+                            <>
+                              <EditableField value={String(range[0])} label="range.min" onSave={(v) => void patch(`/signals/${i}/range/0`, v)} disabled={patching} />
+                              {' ~ '}
+                              <EditableField value={String(range[1])} label="range.max" onSave={(v) => void patch(`/signals/${i}/range/1`, v)} disabled={patching} />
+                            </>
+                          )
+                          : '-'}
+                      </td>
+                      <td>
+                        <EditableField value={sig.scale ? String(sig.scale) : '-'} label="signal.scale" onSave={(v) => void patch(`/signals/${i}/scale`, v)} disabled={patching} />
+                      </td>
+                      <td className="dm-mono">
+                        {sig.source
+                          ? String((sig.source as Record<string, unknown>).type ?? '-')
+                          : '-'}
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          className="dm-btn dm-btn--danger"
+                          title="删除信号"
+                          disabled={patching}
+                          onClick={() => void handleRemoveSignal(i)}
+                        >
+                          <DeleteActionIcon width={14} height={14} />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
-          </div>
+          ) : (
+            <div style={{ padding: '16px', textAlign: 'center', color: 'var(--muted)' }}>暂无信号</div>
+          )}
+
+          {addingSignal && (
+            <div className="dm-add-row">
+              <input
+                type="text"
+                className="dm-add-row__input"
+                placeholder="信号 ID"
+                value={newSignalId}
+                onChange={(e) => setNewSignalId(e.target.value)}
+                autoFocus
+              />
+              <select
+                className="dm-add-row__select"
+                value={newSignalType}
+                onChange={(e) => setNewSignalType(e.target.value)}
+              >
+                <option value="analog_input">模拟输入</option>
+                <option value="analog_output">模拟输出</option>
+                <option value="digital_input">数字输入</option>
+                <option value="digital_output">数字输出</option>
+              </select>
+              <button type="button" className="dm-btn dm-btn--primary" disabled={!newSignalId.trim() || patching} onClick={() => void handleAddSignal()}>
+                确认
+              </button>
+              <button type="button" className="dm-btn" onClick={() => { setAddingSignal(false); setNewSignalId(''); }}>
+                取消
+              </button>
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
       {/* 告警表 */}
-      {alarms && alarms.length > 0 && (
-        <div className="dm-section-card">
-          <div className="dm-section-card__header">
-            <h3>告警 ({alarms.length})</h3>
-          </div>
-          <div className="dm-section-card__body dm-section-card__body--no-pad">
+      <div className="dm-section-card">
+        <div className="dm-section-card__header">
+          <h3>告警 ({alarms.length})</h3>
+          <button type="button" className="dm-btn dm-btn--primary" disabled={patching} onClick={() => setAddingAlarm(true)}>
+            <PlusIcon width={14} height={14} />
+            新增告警
+          </button>
+        </div>
+        <div className="dm-section-card__body dm-section-card__body--no-pad">
+          {alarms.length > 0 ? (
             <table className="dm-table">
               <thead>
                 <tr>
@@ -440,26 +655,70 @@ function SignalsTab({ detail }: { detail: DeviceAssetDetail }) {
                   <th>条件</th>
                   <th>级别</th>
                   <th>动作</th>
+                  <th />
                 </tr>
               </thead>
               <tbody>
                 {alarms.map((alarm, i) => (
                   <tr key={String(alarm.id ?? i)}>
                     <td className="dm-mono">{String(alarm.id)}</td>
-                    <td className="dm-mono">{String(alarm.condition)}</td>
+                    <td>
+                      <EditableField value={String(alarm.condition)} label="condition" onSave={(v) => void patch(`/alarms/${i}/condition`, v)} disabled={patching} />
+                    </td>
                     <td>
                       <span className={`dm-severity dm-severity--${String(alarm.severity)}`}>
                         {String(alarm.severity)}
                       </span>
                     </td>
-                    <td>{alarm.action ? String(alarm.action) : '-'}</td>
+                    <td>
+                      <EditableField value={alarm.action ? String(alarm.action) : '-'} label="action" onSave={(v) => void patch(`/alarms/${i}/action`, v)} disabled={patching} />
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        className="dm-btn dm-btn--danger"
+                        title="删除告警"
+                        disabled={patching}
+                        onClick={() => void handleRemoveAlarm(i)}
+                      >
+                        <DeleteActionIcon width={14} height={14} />
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          </div>
+          ) : (
+            <div style={{ padding: '16px', textAlign: 'center', color: 'var(--muted)' }}>暂无告警</div>
+          )}
+
+          {addingAlarm && (
+            <div className="dm-add-row">
+              <input
+                type="text"
+                className="dm-add-row__input"
+                placeholder="告警 ID"
+                value={newAlarmId}
+                onChange={(e) => setNewAlarmId(e.target.value)}
+                autoFocus
+              />
+              <input
+                type="text"
+                className="dm-add-row__input dm-add-row__input--wide"
+                placeholder="条件表达式（如 pressure > 34）"
+                value={newAlarmCondition}
+                onChange={(e) => setNewAlarmCondition(e.target.value)}
+              />
+              <button type="button" className="dm-btn dm-btn--primary" disabled={!newAlarmId.trim() || !newAlarmCondition.trim() || patching} onClick={() => void handleAddAlarm()}>
+                确认
+              </button>
+              <button type="button" className="dm-btn" onClick={() => { setAddingAlarm(false); setNewAlarmId(''); setNewAlarmCondition(''); }}>
+                取消
+              </button>
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
       {/* 元数据 */}
       <div className="dm-section-card">
@@ -469,9 +728,9 @@ function SignalsTab({ detail }: { detail: DeviceAssetDetail }) {
         <div className="dm-section-card__body">
           <div className="dm-meta-grid">
             <span>创建时间</span>
-            <span>{detail.created_at}</span>
+            <span>{formatRelativeTimestamp(detail.created_at)}</span>
             <span>更新时间</span>
-            <span>{detail.updated_at}</span>
+            <span>{formatRelativeTimestamp(detail.updated_at)}</span>
           </div>
         </div>
       </div>
@@ -627,7 +886,7 @@ function CapabilitiesTab({ deviceId, workspacePath }: { deviceId: string; worksp
                       {String(safety.level ?? 'low')}
                     </span>
                   )}
-                  <span className="dm-badge dm-badge--version">v{capDetail.version}</span>
+                  <span className="dm-badge dm-badge--version">{capDetail.version} 个快照</span>
                   {capDetail.description && (
                     <span className="dm-badge dm-badge--meta">{capDetail.description}</span>
                   )}
@@ -802,7 +1061,239 @@ function CapabilitiesTab({ deviceId, workspacePath }: { deviceId: string; worksp
   );
 }
 
+/** 快照 Tab。 */
+function SnapshotsTab({
+  deviceId,
+  workspacePath,
+  onReload,
+  onStatusMessage,
+}: {
+  deviceId: string;
+  workspacePath: string;
+  onReload: () => void;
+  onStatusMessage: (msg: string) => void;
+}) {
+  const { listSnapshots, createSnapshot, rollbackSnapshot, deleteSnapshot } = useDeviceAssets(workspacePath);
+  const [snapshots, setSnapshots] = useState<Array<{
+    version: number;
+    label: string;
+    description: string;
+    reason: string;
+    created_at: string;
+  }>>([]);
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [newLabel, setNewLabel] = useState('');
+
+  const loadSnapshots = useCallback(async () => {
+    setLoading(true);
+    try {
+      const result = await listSnapshots(deviceId);
+      setSnapshots(result);
+    } catch {
+      /* 忽略 */
+    } finally {
+      setLoading(false);
+    }
+  }, [deviceId, listSnapshots]);
+
+  useEffect(() => {
+    void loadSnapshots();
+  }, [loadSnapshots]);
+
+  const handleCreate = useCallback(async () => {
+    setCreating(true);
+    try {
+      await createSnapshot(deviceId, newLabel.trim() || undefined);
+      onStatusMessage('快照已创建');
+      setNewLabel('');
+      await loadSnapshots();
+      onReload();
+    } catch (error) {
+      onStatusMessage(`创建快照失败: ${error}`);
+    } finally {
+      setCreating(false);
+    }
+  }, [deviceId, newLabel, createSnapshot, loadSnapshots, onReload, onStatusMessage]);
+
+  const handleRollback = useCallback(async (version: number) => {
+    try {
+      await rollbackSnapshot(deviceId, version);
+      onStatusMessage(`已回滚到快照 v${version}`);
+      await loadSnapshots();
+      onReload();
+    } catch (error) {
+      onStatusMessage(`回滚失败: ${error}`);
+    }
+  }, [deviceId, rollbackSnapshot, loadSnapshots, onReload, onStatusMessage]);
+
+  const handleDelete = useCallback(async (version: number) => {
+    try {
+      await deleteSnapshot(deviceId, version);
+      await loadSnapshots();
+    } catch (error) {
+      onStatusMessage(`删除快照失败: ${error}`);
+    }
+  }, [deviceId, deleteSnapshot, loadSnapshots, onStatusMessage]);
+
+  const reasonLabel = (reason: string): string => {
+    switch (reason) {
+      case 'seed': return '初始';
+      case 'manual': return '手动';
+      case 'import': return '导入';
+      case 'edit': return '编辑';
+      case 'rollback': return '保护';
+      default: return reason;
+    }
+  };
+
+  return (
+    <div className="dm-detail-body">
+      {/* 创建快照 */}
+      <div className="dm-section-card">
+        <div className="dm-section-card__header">
+          <h3>创建快照</h3>
+        </div>
+        <div className="dm-section-card__body">
+          <div className="dm-snapshot-create">
+            <input
+              type="text"
+              className="dm-snapshot-create__input"
+              placeholder="快照标签（可选）"
+              value={newLabel}
+              onChange={(e) => setNewLabel(e.target.value)}
+              disabled={creating}
+            />
+            <button
+              type="button"
+              className="dm-btn dm-btn--primary"
+              disabled={creating}
+              onClick={() => void handleCreate()}
+            >
+              <SnapshotIcon width={14} height={14} />
+              {creating ? '创建中...' : '创建'}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* 快照列表 */}
+      <div className="dm-section-card">
+        <div className="dm-section-card__header">
+          <h3>历史快照 ({snapshots.length})</h3>
+        </div>
+        <div className="dm-section-card__body dm-section-card__body--no-pad">
+          {loading ? (
+            <div style={{ padding: '16px', textAlign: 'center', color: 'var(--muted)' }}>加载中...</div>
+          ) : snapshots.length === 0 ? (
+            <div style={{ padding: '16px', textAlign: 'center', color: 'var(--muted)' }}>暂无快照</div>
+          ) : (
+            <div className="dm-snapshot-list">
+              {snapshots.map((snap) => (
+                <div key={snap.version} className="dm-snapshot-card">
+                  <div className="dm-snapshot-card__info">
+                    <strong>{snap.label}</strong>
+                    {snap.description && <span>{snap.description}</span>}
+                  </div>
+                  <div className="dm-snapshot-card__meta">
+                    <em className={`dm-snapshot-reason dm-snapshot-reason--${snap.reason}`}>
+                      {reasonLabel(snap.reason)}
+                    </em>
+                    <span>v{snap.version}</span>
+                    <span>{formatRelativeTimestamp(snap.created_at)}</span>
+                  </div>
+                  <div className="dm-snapshot-card__actions">
+                    <button
+                      type="button"
+                      className="dm-btn"
+                      title="回滚到此快照"
+                      onClick={() => void handleRollback(snap.version)}
+                    >
+                      回滚
+                    </button>
+                    <button
+                      type="button"
+                      className="dm-btn dm-btn--danger"
+                      title="删除此快照元数据"
+                      onClick={() => void handleDelete(snap.version)}
+                    >
+                      <DeleteActionIcon width={14} height={14} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ---- 辅助函数 ----
+
+/** 可内联编辑的文本字段。点击后进入编辑模式，Enter/失焦保存，Esc 取消。 */
+function EditableField({
+  value,
+  label,
+  onSave,
+  disabled,
+  className,
+}: {
+  value: string;
+  label: string;
+  onSave: (newValue: string) => void;
+  disabled?: boolean;
+  className?: string;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+
+  if (!editing) {
+    return (
+      <span
+        className={`dm-editable${className ? ` ${className}` : ''}`}
+        role="button"
+        tabIndex={0}
+        title={`点击编辑 ${label}`}
+        onClick={() => { setDraft(value); setEditing(true); }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') { setDraft(value); setEditing(true); }
+        }}
+      >
+        {value}
+        <PencilIcon width={12} height={12} />
+      </span>
+    );
+  }
+
+  return (
+    <input
+      className="dm-editable__input"
+      type="text"
+      value={draft}
+      disabled={disabled}
+      autoFocus
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => {
+        if (draft.trim() && draft !== value) {
+          onSave(draft.trim());
+        }
+        setEditing(false);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          if (draft.trim() && draft !== value) {
+            onSave(draft.trim());
+          }
+          setEditing(false);
+        } else if (e.key === 'Escape') {
+          setEditing(false);
+        }
+      }}
+    />
+  );
+}
 
 function formatSignalType(t: string): string {
   return t.replace(/_/g, ' ');

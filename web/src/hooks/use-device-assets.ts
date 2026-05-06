@@ -90,7 +90,14 @@ export function useDeviceAssets(workspacePath = '') {
   }, [workspacePath]);
 
   const saveAsset = useCallback(
-    async (id: string, name: string, deviceType: string, specYaml: string) => {
+    async (
+      id: string,
+      name: string,
+      deviceType: string,
+      specYaml: string,
+      snapshotLabel?: string,
+      snapshotReason?: string,
+    ) => {
       if (!hasTauriRuntime()) return;
       await invoke('save_device_asset', {
         id,
@@ -98,6 +105,8 @@ export function useDeviceAssets(workspacePath = '') {
         deviceType,
         specYaml,
         workspacePath: workspacePath.trim() || null,
+        snapshotLabel: snapshotLabel ?? null,
+        snapshotReason: snapshotReason ?? null,
       });
       await loadAssets();
     },
@@ -215,6 +224,133 @@ export function useDeviceAssets(workspacePath = '') {
     [workspacePath],
   );
 
+  const listSnapshots = useCallback(
+    async (assetId: string) => {
+      if (!hasTauriRuntime()) return [];
+      return invoke<Array<{
+        version: number;
+        label: string;
+        description: string;
+        reason: string;
+        created_at: string;
+      }>>('list_device_snapshots', {
+        assetId,
+        workspacePath: workspacePath.trim() || null,
+      });
+    },
+    [workspacePath],
+  );
+
+  const createSnapshot = useCallback(
+    async (assetId: string, label?: string, description?: string) => {
+      if (!hasTauriRuntime()) return;
+      await invoke('create_device_snapshot', {
+        assetId,
+        label: label ?? null,
+        description: description ?? null,
+        workspacePath: workspacePath.trim() || null,
+      });
+    },
+    [workspacePath],
+  );
+
+  const rollbackSnapshot = useCallback(
+    async (assetId: string, targetVersion: number) => {
+      if (!hasTauriRuntime()) return;
+      await invoke('rollback_device_snapshot', {
+        assetId,
+        targetVersion,
+        workspacePath: workspacePath.trim() || null,
+      });
+      await loadAssets();
+    },
+    [loadAssets, workspacePath],
+  );
+
+  const deleteSnapshot = useCallback(
+    async (assetId: string, version: number) => {
+      if (!hasTauriRuntime()) return;
+      await invoke('delete_device_snapshot', {
+        assetId,
+        version,
+        workspacePath: workspacePath.trim() || null,
+      });
+    },
+    [workspacePath],
+  );
+
+  const patchField = useCallback(
+    async (
+      assetId: string,
+      jsonPath: string,
+      value: string,
+      snapshotLabel?: string,
+    ) => {
+      if (!hasTauriRuntime()) return;
+      await invoke('patch_device_field', {
+        assetId,
+        jsonPath,
+        value,
+        snapshotLabel: snapshotLabel ?? null,
+        workspacePath: workspacePath.trim() || null,
+      });
+      await loadAssets();
+    },
+    [loadAssets, workspacePath],
+  );
+
+  const addSignal = useCallback(
+    async (assetId: string, signalYaml: string) => {
+      if (!hasTauriRuntime()) return;
+      await invoke('add_device_signal', {
+        assetId,
+        signalYaml,
+        workspacePath: workspacePath.trim() || null,
+      });
+      await loadAssets();
+    },
+    [loadAssets, workspacePath],
+  );
+
+  const removeSignal = useCallback(
+    async (assetId: string, index: number) => {
+      if (!hasTauriRuntime()) return;
+      await invoke('remove_device_signal', {
+        assetId,
+        index,
+        workspacePath: workspacePath.trim() || null,
+      });
+      await loadAssets();
+    },
+    [loadAssets, workspacePath],
+  );
+
+  const addAlarm = useCallback(
+    async (assetId: string, alarmYaml: string) => {
+      if (!hasTauriRuntime()) return;
+      await invoke('add_device_alarm', {
+        assetId,
+        alarmYaml,
+        workspacePath: workspacePath.trim() || null,
+      });
+      await loadAssets();
+    },
+    [loadAssets, workspacePath],
+  );
+
+  const removeAlarm = useCallback(
+    async (assetId: string, index: number) => {
+      if (!hasTauriRuntime()) return;
+      await invoke('remove_device_alarm', {
+        assetId,
+        index,
+        workspacePath: workspacePath.trim() || null,
+      });
+      await loadAssets();
+    },
+    [loadAssets, workspacePath],
+  );
+
   return {
     assets,
     loading,
@@ -229,6 +365,15 @@ export function useDeviceAssets(workspacePath = '') {
     loadSources,
     saveSources,
     listVersions,
+    listSnapshots,
+    createSnapshot,
+    rollbackSnapshot,
+    deleteSnapshot,
+    patchField,
+    addSignal,
+    removeSignal,
+    addAlarm,
+    removeAlarm,
     extractTextFromPdf,
     extractFromPdf,
     importEthercatEsi,
