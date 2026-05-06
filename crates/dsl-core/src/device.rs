@@ -81,6 +81,9 @@ pub enum SignalSource {
     },
     /// `EtherCAT` PDO 条目。
     EthercatPdo {
+        #[serde(default)]
+        #[serde(skip_serializing_if = "Option::is_none")]
+        slave_address: Option<u16>,
         pdo_index: u16,
         entry_index: u16,
         sub_index: u8,
@@ -328,6 +331,7 @@ id: status_word
 signal_type: analog_input
 source:
   type: ethercat_pdo
+  slave_address: 1002
   pdo_index: 6656
   entry_index: 24641
   sub_index: 1
@@ -344,6 +348,7 @@ source:
             sub_index,
             bit_len,
             data_type,
+            slave_address,
             ..
         } = &signal.source
         {
@@ -351,6 +356,7 @@ source:
             assert_eq!(*entry_index, 0x6041);
             assert_eq!(*sub_index, 1);
             assert_eq!(*bit_len, 16);
+            assert_eq!(*slave_address, Some(1002));
             assert_eq!(data_type.as_deref(), Some("UINT16"));
         }
     }

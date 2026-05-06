@@ -1,8 +1,11 @@
-//! `EtherCAT` ESI 文件导入器。
+//! `EtherCAT` ESI / ENI 文件导入器。
 //!
 //! ESI（EtherCAT Slave Information）是设备厂商发布的 XML 描述文件。
-//! 本模块只做确定性解析：提取厂商、型号、ProductCode、RevisionNo 与 PDO 条目，
+//! ENI（EtherCAT Network Information）是主站导出的网络配置文件。
+//! 本模块只做确定性解析：提取厂商、型号、ProductCode、RevisionNo、拓扑与 PDO 条目，
 //! 再转换为 Device DSL YAML，供用户审查后保存为设备资产。
+
+use std::collections::HashMap;
 
 use nazh_dsl_core::device::{ConnectionRef, DeviceSpec, SignalSource, SignalSpec, SignalType};
 use quick_xml::Reader;
@@ -17,6 +20,7 @@ pub(crate) struct EsiImportResult {
 
 #[derive(Debug, Clone, Default)]
 struct EsiDevice {
+    device_type: Option<String>,
     vendor_name: Option<String>,
     name: Option<String>,
     type_name: Option<String>,
@@ -31,6 +35,8 @@ struct EsiPdo {
     direction: PdoDirection,
     index: Option<u16>,
     name: Option<String>,
+    slave_address: Option<u16>,
+    signal_prefix: Option<String>,
     entries: Vec<EsiPdoEntry>,
 }
 
@@ -65,12 +71,56 @@ enum TextTarget {
     EntryDataType,
 }
 
+#[derive(Debug, Clone, Default)]
+struct EniSlave {
+    name: Option<String>,
+    product_revision: Option<String>,
+    product_code: Option<u32>,
+    revision_no: Option<u32>,
+    phys_addr: Option<u16>,
+    previous_port: Option<EniPreviousPort>,
+    tx_pdos: Vec<EsiPdo>,
+    rx_pdos: Vec<EsiPdo>,
+    active_rx_pdos: Vec<u16>,
+    active_tx_pdos: Vec<u16>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct EniPreviousPort {
+    port: Option<String>,
+    phys_addr: Option<u16>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EniTextTarget {
+    SlaveName,
+    ProductRevision,
+    ProductCode,
+    RevisionNo,
+    PhysAddr,
+    PreviousPort,
+    PreviousPhysAddr,
+    Sm2Pdo,
+    Sm3Pdo,
+    PdoIndex,
+    PdoName,
+    EntryIndex,
+    EntrySubIndex,
+    EntryBitLen,
+    EntryName,
+    EntryDataType,
+}
+
 /// 将 ESI XML 转换为 Device DSL YAML。
 pub(crate) fn import_esi_to_device_yaml(
     esi_xml: &str,
     connection_id: Option<&str>,
     requested_device_id: Option<&str>,
 ) -> Result<EsiImportResult, String> {
+    if xml_root_name(esi_xml)? == Some("EtherCATConfig".to_owned()) {
+        return import_eni_to_device_yaml(esi_xml, connection_id, requested_device_id);
+    }
+
     let devices = parse_esi_devices(esi_xml)?;
     let Some(device) = devices.first() else {
         return Err("ESI 文件中没有找到 Descriptions/Devices/Device".to_owned());
@@ -84,29 +134,31 @@ pub(crate) fn import_esi_to_device_yaml(
         ));
     }
 
+    build_device_yaml(device, connection_id, requested_device_id, &mut warnings)
+}
+
+fn build_device_yaml(
+    device: &EsiDevice,
+    connection_id: Option<&str>,
+    requested_device_id: Option<&str>,
+    warnings: &mut Vec<String>,
+) -> Result<EsiImportResult, String> {
     let device_id = requested_device_id
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map_or_else(|| default_device_id(device), sanitize_identifier);
-    let connection_id = connection_id
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .unwrap_or("ethercat_main")
-        .to_owned();
-    if connection_id == "ethercat_main" {
-        warnings.push(
-            "connection.id 使用占位值 ethercat_main，保存前请改为连接资源里的真实 ID".to_owned(),
-        );
-    }
-
-    let signals = build_signals(device, &mut warnings);
+    let connection_id = normalized_connection_id(connection_id, warnings);
+    let signals = build_signals(device, warnings);
     if signals.is_empty() {
         warnings.push("未从 ESI 中解析到 PDO Entry，设备 YAML 只包含基本型号信息".to_owned());
     }
 
     let spec = DeviceSpec {
         id: device_id,
-        device_type: "ethercat_slave".to_owned(),
+        device_type: device
+            .device_type
+            .clone()
+            .unwrap_or_else(|| "ethercat_slave".to_owned()),
         manufacturer: device.vendor_name.clone(),
         model: model_label(device),
         connection: ConnectionRef {
@@ -122,8 +174,446 @@ pub(crate) fn import_esi_to_device_yaml(
         .map_err(|error| format!("DeviceSpec YAML 序列化失败: {error}"))?;
     Ok(EsiImportResult {
         device_yaml,
-        warnings,
+        warnings: warnings.clone(),
     })
+}
+
+fn normalized_connection_id(connection_id: Option<&str>, warnings: &mut Vec<String>) -> String {
+    let connection_id = connection_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("ethercat_main")
+        .to_owned();
+    if connection_id == "ethercat_main" {
+        warnings.push(
+            "connection.id 使用占位值 ethercat_main，保存前请改为连接资源里的真实 ID".to_owned(),
+        );
+    }
+    connection_id
+}
+
+fn import_eni_to_device_yaml(
+    eni_xml: &str,
+    connection_id: Option<&str>,
+    requested_device_id: Option<&str>,
+) -> Result<EsiImportResult, String> {
+    let slaves = parse_eni_slaves(eni_xml)?;
+    let mut warnings = vec!["检测到 EtherCATConfig/ENI 网络配置，已按激活 SM PDO 导入".to_owned()];
+    let device = build_eni_network_device(&slaves, &mut warnings)?;
+    build_device_yaml(&device, connection_id, requested_device_id, &mut warnings)
+}
+
+fn xml_root_name(xml: &str) -> Result<Option<String>, String> {
+    let mut reader = Reader::from_str(xml);
+    reader.config_mut().trim_text(true);
+    loop {
+        match reader.read_event() {
+            Ok(Event::Start(element) | Event::Empty(element)) => {
+                return Ok(Some(start_name(&element)));
+            }
+            Ok(Event::Eof) => return Ok(None),
+            Err(error) => return Err(format!("ESI XML 解析失败: {error}")),
+            _ => {}
+        }
+    }
+}
+
+#[allow(clippy::too_many_lines)]
+fn parse_eni_slaves(eni_xml: &str) -> Result<Vec<EniSlave>, String> {
+    let mut reader = Reader::from_str(eni_xml);
+    reader.config_mut().trim_text(true);
+
+    let mut path = Vec::<String>::new();
+    let mut text = String::new();
+    let mut slaves = Vec::new();
+    let mut current_slave: Option<EniSlave> = None;
+    let mut current_pdo: Option<EsiPdo> = None;
+    let mut current_entry: Option<EsiPdoEntry> = None;
+
+    loop {
+        match reader.read_event() {
+            Ok(Event::Start(element)) => {
+                let name = start_name(&element);
+                path.push(name.clone());
+                text.clear();
+                match name.as_str() {
+                    "Slave" if is_config_slave_path(&path) => {
+                        current_slave = Some(EniSlave::default());
+                    }
+                    "TxPdo" if current_slave.is_some() => {
+                        current_pdo = Some(EsiPdo {
+                            direction: PdoDirection::Tx,
+                            index: None,
+                            name: None,
+                            slave_address: None,
+                            signal_prefix: None,
+                            entries: Vec::new(),
+                        });
+                    }
+                    "RxPdo" if current_slave.is_some() => {
+                        current_pdo = Some(EsiPdo {
+                            direction: PdoDirection::Rx,
+                            index: None,
+                            name: None,
+                            slave_address: None,
+                            signal_prefix: None,
+                            entries: Vec::new(),
+                        });
+                    }
+                    "Entry" if current_pdo.is_some() => {
+                        current_entry = Some(EsiPdoEntry::default());
+                    }
+                    _ => {}
+                }
+            }
+            Ok(Event::Empty(element)) => {
+                let name = start_name(&element);
+                if name == "Entry" && current_pdo.is_some() {
+                    current_entry = Some(EsiPdoEntry {
+                        index: attr_number(&element, b"Index").and_then(to_u16),
+                        sub_index: attr_number(&element, b"SubIndex").and_then(to_u8),
+                        bit_len: attr_number(&element, b"BitLen").and_then(to_u16),
+                        name: attr_string(&element, b"Name"),
+                        data_type: attr_string(&element, b"DataType"),
+                    });
+                    finish_entry(&mut current_pdo, &mut current_entry);
+                }
+            }
+            Ok(Event::Text(event)) => {
+                let decoded = event
+                    .decode()
+                    .map_err(|error| format!("ENI 文本解码失败: {error}"))?;
+                let unescaped = quick_xml::escape::unescape(&decoded)
+                    .map_err(|error| format!("ENI 文本转义解析失败: {error}"))?;
+                text.push_str(&unescaped);
+            }
+            Ok(Event::CData(event)) => {
+                let decoded = event
+                    .decode()
+                    .map_err(|error| format!("ENI CDATA 解码失败: {error}"))?;
+                text.push_str(&decoded);
+            }
+            Ok(Event::End(element)) => {
+                let name = end_name(&element);
+                if let Some(target) = classify_eni_text_target(&path, &name) {
+                    apply_eni_text_target(
+                        target,
+                        text.trim(),
+                        &mut current_slave,
+                        &mut current_pdo,
+                        &mut current_entry,
+                    );
+                }
+                match name.as_str() {
+                    "Entry" => finish_entry(&mut current_pdo, &mut current_entry),
+                    "TxPdo" | "RxPdo" => {
+                        if let (Some(slave), Some(pdo)) =
+                            (current_slave.as_mut(), current_pdo.take())
+                        {
+                            match pdo.direction {
+                                PdoDirection::Tx => slave.tx_pdos.push(pdo),
+                                PdoDirection::Rx => slave.rx_pdos.push(pdo),
+                            }
+                        }
+                    }
+                    "Slave" if current_slave.is_some() && is_config_slave_path(&path) => {
+                        if let Some(slave) = current_slave.take() {
+                            slaves.push(slave);
+                        }
+                    }
+                    _ => {}
+                }
+                let _ = path.pop();
+                text.clear();
+            }
+            Ok(Event::Eof) => break,
+            Err(error) => return Err(format!("ENI XML 解析失败: {error}")),
+            _ => {}
+        }
+    }
+
+    Ok(slaves)
+}
+
+fn build_eni_network_device(
+    slaves: &[EniSlave],
+    warnings: &mut Vec<String>,
+) -> Result<EsiDevice, String> {
+    if slaves.is_empty() {
+        return Err("ENI 文件中没有找到 Config/Slave".to_owned());
+    }
+
+    let mut device = EsiDevice {
+        device_type: Some("ethercat_network".to_owned()),
+        vendor_name: None,
+        name: Some("EtherCAT Network".to_owned()),
+        type_name: Some("ethercat_network".to_owned()),
+        product_code: None,
+        revision_no: None,
+        tx_pdos: Vec::new(),
+        rx_pdos: Vec::new(),
+    };
+
+    let topology = eni_topology_summary(slaves);
+    if !topology.is_empty() {
+        warnings.push(format!("ENI 拓扑: {}", topology.join("；")));
+    }
+
+    for slave in slaves {
+        let Some(slave_address) = slave.phys_addr else {
+            warnings.push(format!(
+                "{} 缺少 PhysAddr，已跳过激活 PDO",
+                slave.name.as_deref().unwrap_or("未命名从站")
+            ));
+            continue;
+        };
+        let prefix = eni_signal_prefix(slave, slave_address);
+        append_active_eni_pdos(
+            &mut device,
+            slave,
+            slave_address,
+            &prefix,
+            PdoDirection::Tx,
+            warnings,
+        );
+        append_active_eni_pdos(
+            &mut device,
+            slave,
+            slave_address,
+            &prefix,
+            PdoDirection::Rx,
+            warnings,
+        );
+    }
+
+    if device.tx_pdos.is_empty() && device.rx_pdos.is_empty() {
+        warnings.push("ENI 中没有找到任何激活的 Sm2/Sm3 PDO，设备 YAML 只包含拓扑提示".to_owned());
+    }
+
+    Ok(device)
+}
+
+fn append_active_eni_pdos(
+    device: &mut EsiDevice,
+    slave: &EniSlave,
+    slave_address: u16,
+    prefix: &str,
+    direction: PdoDirection,
+    warnings: &mut Vec<String>,
+) {
+    let (active, pdos, target) = match direction {
+        PdoDirection::Tx => (&slave.active_tx_pdos, &slave.tx_pdos, &mut device.tx_pdos),
+        PdoDirection::Rx => (&slave.active_rx_pdos, &slave.rx_pdos, &mut device.rx_pdos),
+    };
+    let pdo_by_index: HashMap<u16, &EsiPdo> = pdos
+        .iter()
+        .filter_map(|pdo| pdo.index.map(|index| (index, pdo)))
+        .collect();
+
+    for pdo_index in active {
+        let Some(source) = pdo_by_index.get(pdo_index) else {
+            warnings.push(format!(
+                "{} 激活了 PDO 0x{pdo_index:04X}，但 ProcessData 中缺少定义",
+                slave.name.as_deref().unwrap_or("未命名从站")
+            ));
+            continue;
+        };
+        let mut pdo = (*source).clone();
+        pdo.slave_address = Some(slave_address);
+        pdo.signal_prefix = Some(prefix.to_owned());
+        target.push(pdo);
+    }
+}
+
+fn eni_signal_prefix(slave: &EniSlave, slave_address: u16) -> String {
+    slave
+        .name
+        .as_deref()
+        .map(sanitize_identifier)
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| format!("slave_{slave_address}"))
+}
+
+fn eni_topology_summary(slaves: &[EniSlave]) -> Vec<String> {
+    let names_by_addr: HashMap<u16, &str> = slaves
+        .iter()
+        .filter_map(|slave| {
+            Some((
+                slave.phys_addr?,
+                slave.name.as_deref().unwrap_or("未命名从站"),
+            ))
+        })
+        .collect();
+    slaves
+        .iter()
+        .filter_map(|slave| {
+            let addr = slave.phys_addr?;
+            let name = slave.name.as_deref().unwrap_or("未命名从站");
+            let Some(previous) = &slave.previous_port else {
+                return Some(format!("{addr} {name} 直接挂主站"));
+            };
+            let parent = previous.phys_addr?;
+            let parent_name = names_by_addr.get(&parent).copied().unwrap_or("未知从站");
+            let port = previous.port.as_deref().unwrap_or("未知端口");
+            Some(format!(
+                "{addr} {name} <- {parent} {parent_name} / Port {port}"
+            ))
+        })
+        .collect()
+}
+
+fn classify_eni_text_target(path: &[String], name: &str) -> Option<EniTextTarget> {
+    match name {
+        "Name"
+            if has_parent(path, "Info")
+                && has_parent(path, "Slave")
+                && !has_parent(path, "TxPdo")
+                && !has_parent(path, "RxPdo") =>
+        {
+            Some(EniTextTarget::SlaveName)
+        }
+        "ProductRevision" if has_parent(path, "Info") && has_parent(path, "Slave") => {
+            Some(EniTextTarget::ProductRevision)
+        }
+        "ProductCode" if has_parent(path, "Info") && has_parent(path, "Slave") => {
+            Some(EniTextTarget::ProductCode)
+        }
+        "RevisionNo" if has_parent(path, "Info") && has_parent(path, "Slave") => {
+            Some(EniTextTarget::RevisionNo)
+        }
+        "PhysAddr" if has_parent(path, "PreviousPort") => Some(EniTextTarget::PreviousPhysAddr),
+        "PhysAddr" if has_parent(path, "Info") && has_parent(path, "Slave") => {
+            Some(EniTextTarget::PhysAddr)
+        }
+        "Port" if has_parent(path, "PreviousPort") => Some(EniTextTarget::PreviousPort),
+        "Pdo" if has_parent(path, "Sm2") => Some(EniTextTarget::Sm2Pdo),
+        "Pdo" if has_parent(path, "Sm3") => Some(EniTextTarget::Sm3Pdo),
+        "Index" if has_parent(path, "Entry") => Some(EniTextTarget::EntryIndex),
+        "SubIndex" if has_parent(path, "Entry") => Some(EniTextTarget::EntrySubIndex),
+        "BitLen" if has_parent(path, "Entry") => Some(EniTextTarget::EntryBitLen),
+        "Name" if has_parent(path, "Entry") => Some(EniTextTarget::EntryName),
+        "DataType" if has_parent(path, "Entry") => Some(EniTextTarget::EntryDataType),
+        "Index" if has_parent(path, "TxPdo") || has_parent(path, "RxPdo") => {
+            Some(EniTextTarget::PdoIndex)
+        }
+        "Name" if has_parent(path, "TxPdo") || has_parent(path, "RxPdo") => {
+            Some(EniTextTarget::PdoName)
+        }
+        _ => None,
+    }
+}
+
+fn apply_eni_text_target(
+    target: EniTextTarget,
+    value: &str,
+    current_slave: &mut Option<EniSlave>,
+    current_pdo: &mut Option<EsiPdo>,
+    current_entry: &mut Option<EsiPdoEntry>,
+) {
+    if value.is_empty() {
+        return;
+    }
+
+    match target {
+        EniTextTarget::SlaveName => {
+            if let Some(slave) = current_slave.as_mut() {
+                slave.name = Some(value.to_owned());
+            }
+        }
+        EniTextTarget::ProductRevision => {
+            if let Some(slave) = current_slave.as_mut() {
+                slave.product_revision = Some(value.to_owned());
+            }
+        }
+        EniTextTarget::ProductCode => {
+            if let Some(slave) = current_slave.as_mut() {
+                slave.product_code = parse_esi_u32(value);
+            }
+        }
+        EniTextTarget::RevisionNo => {
+            if let Some(slave) = current_slave.as_mut() {
+                slave.revision_no = parse_esi_u32(value);
+            }
+        }
+        EniTextTarget::PhysAddr => {
+            if let Some(slave) = current_slave.as_mut() {
+                slave.phys_addr = parse_esi_u32(value).and_then(to_u16);
+            }
+        }
+        EniTextTarget::PreviousPort => {
+            if let Some(slave) = current_slave.as_mut() {
+                slave
+                    .previous_port
+                    .get_or_insert_with(EniPreviousPort::default)
+                    .port = Some(value.to_owned());
+            }
+        }
+        EniTextTarget::PreviousPhysAddr => {
+            if let Some(slave) = current_slave.as_mut() {
+                slave
+                    .previous_port
+                    .get_or_insert_with(EniPreviousPort::default)
+                    .phys_addr = parse_esi_u32(value).and_then(to_u16);
+            }
+        }
+        EniTextTarget::Sm2Pdo => {
+            if let (Some(slave), Some(value)) = (
+                current_slave.as_mut(),
+                parse_esi_u32(value).and_then(to_u16),
+            ) {
+                push_unique(&mut slave.active_rx_pdos, value);
+            }
+        }
+        EniTextTarget::Sm3Pdo => {
+            if let (Some(slave), Some(value)) = (
+                current_slave.as_mut(),
+                parse_esi_u32(value).and_then(to_u16),
+            ) {
+                push_unique(&mut slave.active_tx_pdos, value);
+            }
+        }
+        EniTextTarget::PdoIndex => {
+            if let Some(pdo) = current_pdo.as_mut() {
+                pdo.index = parse_esi_u32(value).and_then(to_u16);
+            }
+        }
+        EniTextTarget::PdoName => {
+            if let Some(pdo) = current_pdo.as_mut() {
+                pdo.name = Some(value.to_owned());
+            }
+        }
+        EniTextTarget::EntryIndex => {
+            if let Some(entry) = current_entry.as_mut() {
+                entry.index = parse_esi_u32(value).and_then(to_u16);
+            }
+        }
+        EniTextTarget::EntrySubIndex => {
+            if let Some(entry) = current_entry.as_mut() {
+                entry.sub_index = parse_esi_u32(value).and_then(to_u8);
+            }
+        }
+        EniTextTarget::EntryBitLen => {
+            if let Some(entry) = current_entry.as_mut() {
+                entry.bit_len = parse_esi_u32(value).and_then(to_u16);
+            }
+        }
+        EniTextTarget::EntryName => {
+            if let Some(entry) = current_entry.as_mut() {
+                entry.name = Some(value.to_owned());
+            }
+        }
+        EniTextTarget::EntryDataType => {
+            if let Some(entry) = current_entry.as_mut() {
+                entry.data_type = Some(value.to_owned());
+            }
+        }
+    }
+}
+
+fn push_unique(values: &mut Vec<u16>, value: u16) {
+    if !values.contains(&value) {
+        values.push(value);
+    }
 }
 
 #[allow(clippy::too_many_lines)]
@@ -163,6 +653,8 @@ fn parse_esi_devices(esi_xml: &str) -> Result<Vec<EsiDevice>, String> {
                             direction: PdoDirection::Tx,
                             index: None,
                             name: None,
+                            slave_address: None,
+                            signal_prefix: None,
                             entries: Vec::new(),
                         });
                     }
@@ -171,6 +663,8 @@ fn parse_esi_devices(esi_xml: &str) -> Result<Vec<EsiDevice>, String> {
                             direction: PdoDirection::Rx,
                             index: None,
                             name: None,
+                            slave_address: None,
+                            signal_prefix: None,
                             entries: Vec::new(),
                         });
                     }
@@ -362,6 +856,9 @@ fn build_signals(device: &EsiDevice, warnings: &mut Vec<String>) -> Vec<SignalSp
             continue;
         };
         for (entry_idx, entry) in pdo.entries.iter().enumerate() {
+            if entry.index == Some(0) {
+                continue;
+            }
             let Some(entry_index) = entry.index else {
                 warnings.push(format!(
                     "PDO 0x{pdo_index:04X} 的第 {} 个 Entry 缺少 Index，已跳过",
@@ -389,6 +886,7 @@ fn build_signals(device: &EsiDevice, warnings: &mut Vec<String>) -> Vec<SignalSp
                 unit: None,
                 range: None,
                 source: SignalSource::EthercatPdo {
+                    slave_address: pdo.slave_address,
                     pdo_index,
                     entry_index,
                     sub_index,
@@ -432,6 +930,13 @@ fn unique_signal_id(
         .map(sanitize_identifier)
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| format!("{direction}_{entry_index:04x}_{sub_index}"));
+    let base = pdo.signal_prefix.as_deref().map_or(base.clone(), |prefix| {
+        if prefix.is_empty() {
+            base.clone()
+        } else {
+            format!("{prefix}_{base}")
+        }
+    });
     if !existing.iter().any(|signal| signal.id == base) {
         return base;
     }
@@ -560,6 +1065,11 @@ fn is_devices_device_path(path: &[String]) -> bool {
         && path.iter().any(|segment| segment == "Devices")
 }
 
+fn is_config_slave_path(path: &[String]) -> bool {
+    path.last().is_some_and(|segment| segment == "Slave")
+        && path.iter().any(|segment| segment == "Config")
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
@@ -605,6 +1115,81 @@ mod tests {
 </EtherCATInfo>
 "##;
 
+    const SAMPLE_ENI: &str = r#"
+<EtherCATConfig Version="1.3">
+  <Config>
+    <Slave>
+      <Info>
+        <Name><![CDATA[Box 1 (CU1128)]]></Name>
+        <PhysAddr>1001</PhysAddr>
+        <ProductCode>73946162</ProductCode>
+        <RevisionNo>131072</RevisionNo>
+      </Info>
+      <ProcessData/>
+    </Slave>
+    <Slave>
+      <Info>
+        <Name><![CDATA[Drive 2 (Elmo Drive )]]></Name>
+        <PhysAddr>1002</PhysAddr>
+        <ProductCode>198948</ProductCode>
+        <RevisionNo>66592</RevisionNo>
+      </Info>
+      <ProcessData>
+        <Sm2>
+          <Type>Outputs</Type>
+          <Pdo>5637</Pdo>
+        </Sm2>
+        <Sm3>
+          <Type>Inputs</Type>
+          <Pdo>6658</Pdo>
+        </Sm3>
+        <TxPdo Fixed="true">
+          <Index>#x1a02</Index>
+          <Name>Inputs</Name>
+          <Entry>
+            <Index>#x6064</Index>
+            <SubIndex>0</SubIndex>
+            <BitLen>32</BitLen>
+            <Name>Position actual value</Name>
+            <DataType>DINT</DataType>
+          </Entry>
+          <Entry>
+            <Index>#x0</Index>
+            <BitLen>8</BitLen>
+          </Entry>
+        </TxPdo>
+        <RxPdo Fixed="true">
+          <Index>#x1605</Index>
+          <Name>Outputs</Name>
+          <Entry>
+            <Index>#x607a</Index>
+            <SubIndex>0</SubIndex>
+            <BitLen>32</BitLen>
+            <Name>Target Position</Name>
+            <DataType>DINT</DataType>
+          </Entry>
+        </RxPdo>
+        <RxPdo Fixed="true">
+          <Index>#x1606</Index>
+          <Name>Inactive Outputs</Name>
+          <Entry>
+            <Index>#x6040</Index>
+            <SubIndex>0</SubIndex>
+            <BitLen>16</BitLen>
+            <Name>Control word</Name>
+            <DataType>UINT</DataType>
+          </Entry>
+        </RxPdo>
+      </ProcessData>
+      <PreviousPort Selected="true">
+        <Port>D</Port>
+        <PhysAddr>1001</PhysAddr>
+      </PreviousPort>
+    </Slave>
+  </Config>
+</EtherCATConfig>
+"#;
+
     #[test]
     fn esi_导入为_device_yaml() {
         let result = import_esi_to_device_yaml(SAMPLE_ESI, Some("ecat_main"), None).unwrap();
@@ -636,6 +1221,56 @@ mod tests {
                 .warnings
                 .iter()
                 .any(|item| item.contains("ethercat_main"))
+        );
+    }
+
+    #[test]
+    fn eni_按激活_sm_pdo_导入多级拓扑() {
+        let result = import_esi_to_device_yaml(SAMPLE_ENI, Some("ecat_main"), None).unwrap();
+        let spec = parse_device_yaml(&result.device_yaml).unwrap();
+
+        assert_eq!(spec.id, "ethercat_network");
+        assert_eq!(spec.device_type, "ethercat_network");
+        assert_eq!(spec.signals.len(), 2);
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|item| item.contains("EtherCATConfig/ENI"))
+        );
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|item| item.contains("1002 Drive 2"))
+        );
+        assert!(spec.signals.iter().any(|signal| {
+            signal.id == "drive_2_elmo_drive_position_actual_value"
+                && matches!(
+                    signal.source,
+                    SignalSource::EthercatPdo {
+                        slave_address: Some(1002),
+                        pdo_index: 0x1A02,
+                        entry_index: 0x6064,
+                        ..
+                    }
+                )
+        }));
+        assert!(spec.signals.iter().any(|signal| {
+            signal.id == "drive_2_elmo_drive_target_position"
+                && matches!(
+                    signal.source,
+                    SignalSource::EthercatPdo {
+                        slave_address: Some(1002),
+                        pdo_index: 0x1605,
+                        entry_index: 0x607A,
+                        ..
+                    }
+                )
+        }));
+        assert!(
+            !result.device_yaml.contains("control_word"),
+            "未激活 PDO 不应导入"
         );
     }
 }

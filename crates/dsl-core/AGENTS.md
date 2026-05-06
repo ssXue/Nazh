@@ -30,6 +30,7 @@ crates/dsl-core/src/
 - `HumanDuration`（时长）YAML 表示为字符串（"30s"/"5m"/"1h"/"500ms"），自定义反序列化为毫秒数
 - `ActionTarget` 使用 `#[serde(flatten)]` 映射 `capability: <id>` / `action: <id>` 形式
 - `pin_mapping` 模块依赖 `nazh-core` 的 `PinDefinition` / `PinType` / `PinDirection` 等类型
+- `SignalSource::EthercatPdo.slave_address` 是可选字段：标准 ESI 设备目录可省略；ENI/主站配置导入多从站拓扑时必须填入物理从站地址，以便同一 PDO 条目能区分不同轴/从站。
 
 ## 修改本 crate 时
 

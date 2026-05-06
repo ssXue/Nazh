@@ -189,15 +189,23 @@ pub fn generate_capabilities_from_device(device: &DeviceSpec) -> Vec<CapabilityS
                     is_extended: *is_extended,
                 },
                 SignalSource::EthercatPdo {
+                    slave_address,
                     pdo_index,
                     entry_index,
                     sub_index,
                     ..
-                } => CapabilityImpl::Script {
-                    content: format!(
-                        "ethercat_pdo_write({pdo_index}, {entry_index}, {sub_index}, ${{value}})"
-                    ),
-                },
+                } => {
+                    let content = if let Some(slave_address) = slave_address {
+                        format!(
+                            "ethercat_pdo_write({slave_address}, {pdo_index}, {entry_index}, {sub_index}, ${{value}})"
+                        )
+                    } else {
+                        format!(
+                            "ethercat_pdo_write({pdo_index}, {entry_index}, {sub_index}, ${{value}})"
+                        )
+                    };
+                    CapabilityImpl::Script { content }
+                }
             };
 
             CapabilitySpec {
