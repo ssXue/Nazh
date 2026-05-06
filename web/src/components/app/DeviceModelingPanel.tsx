@@ -189,7 +189,7 @@ export function DeviceModelingPanel({
                 </div>
 
                 <div className="board-card__body">
-                  <strong className="board-card__name">{asset.name}</strong>
+                  <strong className="board-card__name" title={asset.name}>{asset.name}</strong>
                   <span className="board-card__desc">{asset.device_type}</span>
                 </div>
 
@@ -344,6 +344,11 @@ function DetailPanel({
               {(spec?.id as string | undefined) && (
                 <span className="dm-badge dm-badge--meta">
                   {spec.id as string}
+                </span>
+              )}
+              {(spec?.network_group as string | undefined) && (
+                <span className="dm-badge dm-badge--meta">
+                  {(spec.network_group as string)}
                 </span>
               )}
             </div>
@@ -1255,7 +1260,7 @@ function EditableField({
         className={`dm-editable${className ? ` ${className}` : ''}`}
         role="button"
         tabIndex={0}
-        title={`点击编辑 ${label}`}
+        title={value}
         onClick={() => { setDraft(value); setEditing(true); }}
         onKeyDown={(e) => {
           if (e.key === 'Enter') { setDraft(value); setEditing(true); }

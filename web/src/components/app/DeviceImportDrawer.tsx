@@ -219,7 +219,7 @@ export function DeviceImportDrawer({
 
       setPhase('parsing-result');
       setProposal(result);
-      setExtractedYaml(result.deviceYaml);
+      setExtractedYaml(result.deviceYamls[0] ?? '');
       const msg = [
         'AI 抽取完成',
         result.uncertainties.length > 0 ? ` · ${result.uncertainties.length} 项待确认` : '',
@@ -260,7 +260,7 @@ export function DeviceImportDrawer({
       // 阶段 3：解析结果
       setPhase('parsing-result');
       setProposal(result);
-      setExtractedYaml(result.deviceYaml);
+      setExtractedYaml(result.deviceYamls[0] ?? '');
       const msg = [
         'PDF 抽取完成',
         result.uncertainties.length > 0 ? ` · ${result.uncertainties.length} 项待确认` : '',
@@ -283,35 +283,38 @@ export function DeviceImportDrawer({
       setPhase('parsing-result');
       const result = await importEthercatEsi(esiXml);
 
-      // ESI 导入结果确定性，直接保存到磁盘
-      const yaml = result.deviceYaml;
-      const idMatch = yaml.match(/^id:\s*(.+)$/m);
-      const typeMatch = yaml.match(/^type:\s*(.+)$/m);
-      const modelMatch = yaml.match(/^model:\s*(.+)$/m);
-      const deviceId = stripYamlQuotes(idMatch?.[1]) ?? `device_${Date.now()}`;
-      const deviceType = stripYamlQuotes(typeMatch?.[1]) ?? 'unknown';
-      const name = stripYamlQuotes(modelMatch?.[1]) ?? deviceId.replace(/_/g, ' ');
+      // ESI/ENI 导入结果确定性，直接保存到磁盘
+      for (const yaml of result.deviceYamls) {
+        const idMatch = yaml.match(/^id:\s*(.+)$/m);
+        const typeMatch = yaml.match(/^type:\s*(.+)$/m);
+        const modelMatch = yaml.match(/^model:\s*(.+)$/m);
+        const deviceId = stripYamlQuotes(idMatch?.[1]) ?? `device_${Date.now()}`;
+        const deviceType = stripYamlQuotes(typeMatch?.[1]) ?? 'unknown';
+        const name = stripYamlQuotes(modelMatch?.[1]) ?? deviceId.replace(/_/g, ' ');
 
-      await saveAsset(deviceId, name, deviceType, yaml);
+        await saveAsset(deviceId, name, deviceType, yaml);
 
-      if (result.capabilityYamls.length) {
-        for (const capYaml of result.capabilityYamls) {
-          try {
-            const capIdMatch = capYaml.match(/^id:\s*(.+)$/m);
-            const capId = stripYamlQuotes(capIdMatch?.[1]) ?? `cap_${Date.now()}`;
-            const descMatch = capYaml.match(/^description:\s*(.+)$/m);
-            const desc = stripYamlQuotes(descMatch?.[1]) ?? capId;
-            await saveCapability(capId, deviceId, desc, desc, capYaml);
-          } catch {
-            /* 单个能力保存失败不阻塞 */
+        if (result.capabilityYamls.length) {
+          for (const capYaml of result.capabilityYamls) {
+            try {
+              const capIdMatch = capYaml.match(/^id:\s*(.+)$/m);
+              const capId = stripYamlQuotes(capIdMatch?.[1]) ?? `cap_${Date.now()}`;
+              const descMatch = capYaml.match(/^description:\s*(.+)$/m);
+              const desc = stripYamlQuotes(descMatch?.[1]) ?? capId;
+              await saveCapability(capId, deviceId, desc, desc, capYaml);
+            } catch {
+              /* 单个能力保存失败不阻塞 */
+            }
           }
         }
       }
 
+      const deviceCount = result.deviceYamls.length;
       onStatusMessage(
-        result.warnings.length > 0
-          ? `ESI 导入完成 · ${result.warnings.length} 条提示`
-          : 'ESI 导入完成',
+        [
+          deviceCount > 1 ? `ESI 导入完成 · ${deviceCount} 个设备` : 'ESI 导入完成',
+          result.warnings.length > 0 ? ` · ${result.warnings.length} 条提示` : '',
+        ].join(''),
       );
       resetState();
       onSaved();

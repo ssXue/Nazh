@@ -696,8 +696,8 @@ pub struct UncertaintyItem {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeviceExtractionProposal {
-    /// 抽取出的 `DeviceSpec` YAML。
-    pub device_yaml: String,
+    /// 抽取出的 `DeviceSpec` YAML 列表（ESI 单设备为 1 个，ENI 多从站为 N 个）。
+    pub device_yamls: Vec<String>,
     /// AI 同时推断的能力 YAML 列表（从写信号 + 说明书推断）。
     pub capability_yamls: Vec<String>,
     /// AI 标记的不确定项。
@@ -791,7 +791,7 @@ pub(crate) async fn extract_device_proposal(
     }
 
     Ok(DeviceExtractionProposal {
-        device_yaml: raw.device_yaml,
+        device_yamls: vec![raw.device_yaml],
         capability_yamls: raw.capability_yamls,
         uncertainties: raw.uncertainties,
         warnings: raw.warnings,
@@ -990,7 +990,7 @@ pub(crate) async fn extract_device_from_pdf(
     }
 
     Ok(DeviceExtractionProposal {
-        device_yaml: raw.device_yaml,
+        device_yamls: vec![raw.device_yaml],
         capability_yamls: raw.capability_yamls,
         uncertainties: raw.uncertainties,
         warnings: raw.warnings,
@@ -1005,10 +1005,12 @@ pub(crate) async fn import_ethercat_esi(
     esi_xml: String,
 ) -> Result<DeviceExtractionProposal, String> {
     let result = import_esi_to_device_yaml(&esi_xml)?;
-    parse_device_yaml(&result.device_yaml)
-        .map_err(|error| format!("ESI 导入结果不是合法 DeviceSpec: {error}"))?;
+    for yaml in &result.device_yamls {
+        parse_device_yaml(yaml)
+            .map_err(|error| format!("ESI 导入结果不是合法 DeviceSpec: {error}"))?;
+    }
     Ok(DeviceExtractionProposal {
-        device_yaml: result.device_yaml,
+        device_yamls: result.device_yamls,
         capability_yamls: Vec::new(),
         uncertainties: Vec::new(),
         warnings: result.warnings,

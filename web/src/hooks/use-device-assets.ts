@@ -49,7 +49,7 @@ export interface UncertaintyItem {
 
 /** 设备 + 能力的结构化抽取提案（RFC-0004 Phase 4A）。 */
 export interface ExtractionProposal {
-  deviceYaml: string;
+  deviceYamls: string[];
   capabilityYamls: string[];
   uncertainties: UncertaintyItem[];
   warnings: string[];

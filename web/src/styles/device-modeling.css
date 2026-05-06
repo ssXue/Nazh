@@ -183,13 +183,31 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
+  gap: 12px;
   padding: 20px 24px 16px;
+}
+
+.dm-detail-header > .dm-btn {
+  flex-shrink: 0;
 }
 
 .dm-detail-header__left {
   display: flex;
   align-items: flex-start;
   gap: 12px;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.dm-detail-header__left > .dm-back-btn,
+.dm-detail-header__left > .dm-type-badge {
+  flex-shrink: 0;
+}
+
+.dm-detail-header__info {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .dm-detail-header__left .dm-type-badge {
@@ -252,6 +270,9 @@
 .dm-detail-header__title {
   font-size: var(--font-title-1);
   font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .dm-detail-header__badges {

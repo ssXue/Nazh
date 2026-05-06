@@ -21,6 +21,10 @@ pub struct DeviceSpec {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub connection: Option<ConnectionRef>,
+    /// 设备所属网络组（如 ENI 导入时同一网络的所有从站共享此 ID）。
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub network_group: Option<String>,
     #[serde(default)]
     pub signals: Vec<SignalSpec>,
     #[serde(default)]

@@ -126,6 +126,7 @@ mod tests {
                 id: format!("{id}_conn"),
                 unit: Some(1),
             }),
+            network_group: None,
             signals: vec![],
             alarms: vec![],
         }

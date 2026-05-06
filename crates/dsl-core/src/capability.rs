@@ -592,6 +592,7 @@ safety:
             manufacturer: None,
             model: None,
             connection: None,
+            network_group: None,
             signals: vec![
                 SignalSpec {
                     id: "pressure".to_owned(),
@@ -651,6 +652,7 @@ safety:
             manufacturer: None,
             model: None,
             connection: None,
+            network_group: None,
             signals: vec![SignalSpec {
                 id: "temp".to_owned(),
                 signal_type: SignalType::AnalogInput,
@@ -677,6 +679,7 @@ safety:
             manufacturer: None,
             model: None,
             connection: None,
+            network_group: None,
             signals: vec![SignalSpec {
                 id: "target_speed".to_owned(),
                 signal_type: SignalType::AnalogOutput,

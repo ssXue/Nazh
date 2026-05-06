@@ -514,6 +514,7 @@ mod tests {
                 id: conn_id.to_owned(),
                 unit: Some(1),
             }),
+            network_group: None,
             signals: vec![],
             alarms: vec![],
         }

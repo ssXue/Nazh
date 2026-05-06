@@ -7,14 +7,15 @@
 
 use std::collections::HashMap;
 
-use nazh_dsl_core::device::{DeviceSpec, SignalSource, SignalSpec, SignalType};
+use nazh_dsl_core::device::{ConnectionRef, DeviceSpec, SignalSource, SignalSpec, SignalType};
 use quick_xml::Reader;
 use quick_xml::events::{BytesEnd, BytesStart, Event};
 
 /// ESI 导入结果。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct EsiImportResult {
-    pub(crate) device_yaml: String,
+    /// 解析产出的设备 YAML 列表（ESI 单设备为 1 个，ENI 多从站为 N 个）。
+    pub(crate) device_yamls: Vec<String>,
     pub(crate) warnings: Vec<String>,
 }
 
@@ -26,6 +27,7 @@ struct EsiDevice {
     type_name: Option<String>,
     product_code: Option<u32>,
     revision_no: Option<u32>,
+    network_group: Option<String>,
     tx_pdos: Vec<EsiPdo>,
     rx_pdos: Vec<EsiPdo>,
 }
@@ -154,6 +156,7 @@ fn build_device_yaml(
         manufacturer: device.vendor_name.clone(),
         model: model_label(device),
         connection: None,
+        network_group: device.network_group.clone(),
         signals,
         alarms: Vec::new(),
     };
@@ -161,7 +164,7 @@ fn build_device_yaml(
     let device_yaml = serde_yaml::to_string(&spec)
         .map_err(|error| format!("DeviceSpec YAML 序列化失败: {error}"))?;
     Ok(EsiImportResult {
-        device_yaml,
+        device_yamls: vec![device_yaml],
         warnings: warnings.clone(),
     })
 }
@@ -170,9 +173,57 @@ fn import_eni_to_device_yaml(
     eni_xml: &str,
 ) -> Result<EsiImportResult, String> {
     let slaves = parse_eni_slaves(eni_xml)?;
+    if slaves.is_empty() {
+        return Err("ENI 文件中没有找到 Config/Slave".to_owned());
+    }
+
     let mut warnings = vec!["检测到 EtherCATConfig/ENI 网络配置，已按激活 SM PDO 导入".to_owned()];
-    let device = build_eni_network_device(&slaves, &mut warnings)?;
-    build_device_yaml(&device, &mut warnings)
+
+    let group_id = eni_group_id(eni_xml);
+    let topology = eni_topology_summary(&slaves);
+    if !topology.is_empty() {
+        warnings.push(format!("ENI 拓扑: {}", topology.join("；")));
+    }
+
+    let mut device_yamls = Vec::new();
+    for slave in &slaves {
+        let device = eni_slave_to_device(slave, &group_id, &mut warnings);
+        let signals = build_signals(&device, &mut warnings);
+        if signals.is_empty() {
+            warnings.push(format!(
+                "{} 没有激活的 PDO Entry，跳过",
+                slave.name.as_deref().unwrap_or("未命名从站")
+            ));
+            continue;
+        }
+
+        let spec = DeviceSpec {
+            id: eni_slave_device_id(slave),
+            device_type: "ethercat_slave".to_owned(),
+            manufacturer: slave.product_revision.clone(),
+            model: eni_slave_model(slave),
+            connection: slave.phys_addr.map(|_addr| ConnectionRef {
+                connection_type: "ethercat".to_owned(),
+                id: "ethercat_master".to_owned(),
+                unit: None,
+            }),
+            network_group: Some(group_id.clone()),
+            signals,
+            alarms: Vec::new(),
+        };
+        let yaml = serde_yaml::to_string(&spec)
+            .map_err(|error| format!("从站 DeviceSpec YAML 序列化失败: {error}"))?;
+        device_yamls.push(yaml);
+    }
+
+    if device_yamls.is_empty() {
+        warnings.push("ENI 中没有找到任何激活的 Sm2/Sm3 PDO".to_owned());
+    }
+
+    Ok(EsiImportResult {
+        device_yamls,
+        warnings,
+    })
 }
 
 fn xml_root_name(xml: &str) -> Result<Option<String>, String> {
@@ -307,69 +358,54 @@ fn parse_eni_slaves(eni_xml: &str) -> Result<Vec<EniSlave>, String> {
     Ok(slaves)
 }
 
-fn build_eni_network_device(
-    slaves: &[EniSlave],
+/// 将单个 ENI 从站转为 EsiDevice（包含该从站的激活 PDO）。
+fn eni_slave_to_device(
+    slave: &EniSlave,
+    group_id: &str,
     warnings: &mut Vec<String>,
-) -> Result<EsiDevice, String> {
-    if slaves.is_empty() {
-        return Err("ENI 文件中没有找到 Config/Slave".to_owned());
-    }
-
+) -> EsiDevice {
     let mut device = EsiDevice {
-        device_type: Some("ethercat_network".to_owned()),
+        device_type: Some("ethercat_slave".to_owned()),
         vendor_name: None,
-        name: Some("EtherCAT Network".to_owned()),
-        type_name: Some("ethercat_network".to_owned()),
-        product_code: None,
-        revision_no: None,
+        name: slave.name.clone(),
+        type_name: slave.name.clone(),
+        product_code: slave.product_code,
+        revision_no: slave.revision_no,
+        network_group: Some(group_id.to_owned()),
         tx_pdos: Vec::new(),
         rx_pdos: Vec::new(),
     };
 
-    let topology = eni_topology_summary(slaves);
-    if !topology.is_empty() {
-        warnings.push(format!("ENI 拓扑: {}", topology.join("；")));
-    }
+    let Some(slave_address) = slave.phys_addr else {
+        warnings.push(format!(
+            "{} 缺少 PhysAddr，无法关联激活 PDO",
+            slave.name.as_deref().unwrap_or("未命名从站")
+        ));
+        return device;
+    };
 
-    for slave in slaves {
-        let Some(slave_address) = slave.phys_addr else {
-            warnings.push(format!(
-                "{} 缺少 PhysAddr，已跳过激活 PDO",
-                slave.name.as_deref().unwrap_or("未命名从站")
-            ));
-            continue;
-        };
-        let prefix = eni_signal_prefix(slave, slave_address);
-        append_active_eni_pdos(
-            &mut device,
-            slave,
-            slave_address,
-            &prefix,
-            PdoDirection::Tx,
-            warnings,
-        );
-        append_active_eni_pdos(
-            &mut device,
-            slave,
-            slave_address,
-            &prefix,
-            PdoDirection::Rx,
-            warnings,
-        );
-    }
+    append_active_eni_pdos(
+        &mut device,
+        slave,
+        slave_address,
+        PdoDirection::Tx,
+        warnings,
+    );
+    append_active_eni_pdos(
+        &mut device,
+        slave,
+        slave_address,
+        PdoDirection::Rx,
+        warnings,
+    );
 
-    if device.tx_pdos.is_empty() && device.rx_pdos.is_empty() {
-        warnings.push("ENI 中没有找到任何激活的 Sm2/Sm3 PDO，设备 YAML 只包含拓扑提示".to_owned());
-    }
-
-    Ok(device)
+    device
 }
 
 fn append_active_eni_pdos(
     device: &mut EsiDevice,
     slave: &EniSlave,
     slave_address: u16,
-    prefix: &str,
     direction: PdoDirection,
     warnings: &mut Vec<String>,
 ) {
@@ -392,18 +428,51 @@ fn append_active_eni_pdos(
         };
         let mut pdo = (*source).clone();
         pdo.slave_address = Some(slave_address);
-        pdo.signal_prefix = Some(prefix.to_owned());
+        pdo.signal_prefix = None;
         target.push(pdo);
     }
 }
 
-fn eni_signal_prefix(slave: &EniSlave, slave_address: u16) -> String {
-    slave
+/// 从 ENI 内容生成确定性组 ID。
+fn eni_group_id(eni_xml: &str) -> String {
+    let hash = deterministic_hash(eni_xml.as_bytes());
+    format!("eni_{:06x}", hash % 0x00FF_FFFF)
+}
+
+/// 从 ENI 从站信息派生设备 ID。
+fn eni_slave_device_id(slave: &EniSlave) -> String {
+    if let Some(product_code) = slave.product_code {
+        if let Some(addr) = slave.phys_addr {
+            return format!("{:06x}_{}", product_code % 1_000_000, addr);
+        }
+        return format!("{:06}", product_code % 1_000_000);
+    }
+    let label = slave
         .name
         .as_deref()
-        .map(sanitize_identifier)
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| format!("slave_{slave_address}"))
+        .unwrap_or("ethercat_slave");
+    let hash = deterministic_hash(label.as_bytes());
+    format!("{:06}", hash % 1_000_000)
+}
+
+/// 从 ENI 从站信息派生 model 标签。
+fn eni_slave_model(slave: &EniSlave) -> Option<String> {
+    let base = slave.name.as_deref()?;
+    let mut parts = Vec::new();
+    if let Some(product_code) = slave.product_code {
+        parts.push(format!("ProductCode 0x{product_code:08X}"));
+    }
+    if let Some(revision_no) = slave.revision_no {
+        parts.push(format!("Revision 0x{revision_no:08X}"));
+    }
+    if let Some(addr) = slave.phys_addr {
+        parts.push(format!("Addr {addr}"));
+    }
+    if parts.is_empty() {
+        Some(base.to_owned())
+    } else {
+        Some(format!("{base} ({})", parts.join(", ")))
+    }
 }
 
 fn eni_topology_summary(slaves: &[EniSlave]) -> Vec<String> {
@@ -922,10 +991,10 @@ fn unique_signal_id(
     }
 }
 
-/// 从 ProductCode 派生 6 位数字设备 ID。
+/// 从 `ProductCode` 派生 6 位数字设备 ID。
 ///
-/// 例如 Beckhoff EL1008（ProductCode 0x03F03052）→ `"195538"`。
-/// 没有 ProductCode 时，使用设备标签的稳定哈希值。
+/// 例如 Beckhoff EL1008（`ProductCode` `0x03F03052`）→ `"195538"`。
+/// 没有 `ProductCode` 时，使用设备标签的稳定哈希值。
 fn default_device_id(device: &EsiDevice) -> String {
     if let Some(product_code) = device.product_code {
         return format!("{:06}", product_code % 1_000_000);
@@ -942,10 +1011,10 @@ fn default_device_id(device: &EsiDevice) -> String {
 
 /// 对字节序列做确定性哈希（FNV-1a 风格的 32 位折半）。
 fn deterministic_hash(data: &[u8]) -> u64 {
-    let mut h: u64 = 0xcbf29ce484222325;
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
     for &byte in data {
-        h ^= byte as u64;
-        h = h.wrapping_mul(0x100000001b3);
+        h ^= u64::from(byte);
+        h = h.wrapping_mul(0x0100_0000_01b3);
     }
     h
 }
@@ -1168,7 +1237,8 @@ mod tests {
     #[test]
     fn esi_导入为_device_yaml() {
         let result = import_esi_to_device_yaml(SAMPLE_ESI).unwrap();
-        let spec = parse_device_yaml(&result.device_yaml).unwrap();
+        assert_eq!(result.device_yamls.len(), 1);
+        let spec = parse_device_yaml(&result.device_yamls[0]).unwrap();
         assert_eq!(spec.id, "072658");
         assert_eq!(spec.manufacturer.as_deref(), Some("Beckhoff"));
         assert!(spec.connection.is_none());
@@ -1189,25 +1259,23 @@ mod tests {
     #[test]
     fn esi_导入不生成_connection() {
         let result = import_esi_to_device_yaml(SAMPLE_ESI).unwrap();
-        let spec = parse_device_yaml(&result.device_yaml).unwrap();
+        let spec = parse_device_yaml(&result.device_yamls[0]).unwrap();
         assert_eq!(spec.id, "072658");
-        assert!(!result.device_yaml.contains("connection:"));
+        assert!(!result.device_yamls[0].contains("connection:"));
     }
 
     #[test]
     fn esi_导入默认不生成_connection() {
         let result = import_esi_to_device_yaml(SAMPLE_ESI).unwrap();
-        assert!(!result.device_yaml.contains("connection:"));
+        assert!(!result.device_yamls[0].contains("connection:"));
     }
 
     #[test]
-    fn eni_按激活_sm_pdo_导入多级拓扑() {
+    fn eni_每从站独立设备且共享组() {
         let result = import_esi_to_device_yaml(SAMPLE_ENI).unwrap();
-        let spec = parse_device_yaml(&result.device_yaml).unwrap();
 
-        assert_eq!(spec.id, "380836");
-        assert_eq!(spec.device_type, "ethercat_network");
-        assert_eq!(spec.signals.len(), 2);
+        // ENI 中只有 Slave 1002 有激活 PDO，Slave 1001 无 ProcessData
+        assert_eq!(result.device_yamls.len(), 1);
         assert!(
             result
                 .warnings
@@ -1220,8 +1288,16 @@ mod tests {
                 .iter()
                 .any(|item| item.contains("1002 Drive 2"))
         );
+
+        let spec = parse_device_yaml(&result.device_yamls[0]).unwrap();
+        assert_eq!(spec.device_type, "ethercat_slave");
+        assert_eq!(spec.signals.len(), 2);
+        assert!(spec.network_group.is_some());
+        assert!(spec.network_group.as_deref().unwrap().starts_with("eni_"));
+
+        // 信号不再有从站前缀（因为每个从站是独立设备）
         assert!(spec.signals.iter().any(|signal| {
-            signal.id == "drive_2_elmo_drive_position_actual_value"
+            signal.id == "position_actual_value"
                 && matches!(
                     signal.source,
                     SignalSource::EthercatPdo {
@@ -1233,7 +1309,7 @@ mod tests {
                 )
         }));
         assert!(spec.signals.iter().any(|signal| {
-            signal.id == "drive_2_elmo_drive_target_position"
+            signal.id == "target_position"
                 && matches!(
                     signal.source,
                     SignalSource::EthercatPdo {
@@ -1245,7 +1321,7 @@ mod tests {
                 )
         }));
         assert!(
-            !result.device_yaml.contains("control_word"),
+            !result.device_yamls[0].contains("control_word"),
             "未激活 PDO 不应导入"
         );
     }
