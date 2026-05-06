@@ -12,7 +12,7 @@
 
 - 每个 commit 必须 `git commit -s` 带 Signed-off-by
 - 代码注释、错误消息、日志消息、commit message 使用中文
-- 提交前跑：
+- 提交前在 Dev Container 或 CI 等价环境内跑：
   ```bash
   cargo test --workspace
   cargo clippy --workspace --all-targets -- -D warnings
@@ -47,8 +47,8 @@
 | 项目级规则、架构不变量、Critical Coding Constraints | `AGENTS.md` |
 | crate 局部契约、依赖约束、节点清单 | 最近的 `AGENTS.md` |
 | 非显然架构决策 | `docs/adr/` 与 `docs/adr/README.md` |
-| 较大功能或子系统设计 | `docs/superpowers/specs/` |
-| 多步骤实施工作 | `docs/superpowers/plans/` |
+| 较大功能或子系统设计 | `docs/specs/` |
+| 多步骤实施工作 | `docs/plans/` |
 | CI、Dev Container 或发布要求 | `README.md`、`AGENTS.md`、`.devcontainer/README.md` |
 | 生成代码流程或 ts-rs 类型 | `AGENTS.md`、`crates/tauri-bindings/AGENTS.md`、生成文件 |
 

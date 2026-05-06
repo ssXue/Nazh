@@ -2,7 +2,7 @@
 
 > **状态：** 提议中
 > **日期：** 2026-04-30
-> **对照基准：** `docs/superpowers/blueprints/ai_native_industrial_edge_workflow_review.md`（以下简称"蓝图文档"）
+> **对照基准：** `docs/blueprints/ai_native_industrial_edge_workflow_review.md`（以下简称"蓝图文档"）
 > **目的：** 逐项对照蓝图文档与当前项目（main 分支 7dd0d02）的实现状态，标记偏离项与偏离程度，为后续路线修正提供输入。
 
 ---

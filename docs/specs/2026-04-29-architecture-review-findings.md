@@ -126,4 +126,4 @@
 
 ## 解冻状态
 
-`docs/superpowers/plans/2026-04-28-architecture-review.md` 的退出标准 5 项已全勾，`AGENTS.md` freeze 段已删除，架构冻结于 2026-04-30 解除。本文档剩余 P1/P2 条目按正常 PR 流程推进。
+`docs/plans/2026-04-28-architecture-review.md` 的退出标准 5 项已全勾，`AGENTS.md` freeze 段已删除，架构冻结于 2026-04-30 解除。本文档剩余 P1/P2 条目按正常 PR 流程推进。

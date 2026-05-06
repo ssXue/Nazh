@@ -277,7 +277,7 @@ export function resolveDisplayType(value: unknown): KnownEditorNodeType | 'unkno
 
 ## 当前设计落点
 
-`docs/superpowers/specs/2026-05-02-node-definition-single-source-design.md` 是本契约在前端内置节点上的第一步落地：
+`docs/specs/2026-05-02-node-definition-single-source-design.md` 是本契约在前端内置节点上的第一步落地：
 
 - 从 `ALL_DEFS as const` 派生 Known Editor NodeType
 - 把 `NodeDefinition` 定位为编辑器事实源，而非 runtime authority

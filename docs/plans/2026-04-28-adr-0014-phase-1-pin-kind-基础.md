@@ -1880,7 +1880,7 @@ git commit -s -m "chore(bindings): 同步 ts-rs 生成产物"
 > 部署期校验拒绝跨 Kind 连接。
 
 详细设计与 4 个核心用例见
-`docs/superpowers/specs/2026-04-28-pin-kind-exec-data-design.md`。
+`docs/specs/2026-04-28-pin-kind-exec-data-design.md`。
 原"边二分"方案（`EdgeKind` 在边上）的问题与重写理由也在该 spec 中详述。
 ```
 
@@ -1892,7 +1892,7 @@ git commit -s -m "chore(bindings): 同步 ts-rs 生成产物"
 - ✅ **Phase 1（2026-04-28）**：基础设施骨架——Ring 0 加 PinKind + PinDefinition.kind；
   OutputCache + CachedOutput；部署期跨 Kind 校验 + Data 边独立环检测；Runner 双路径
   写入端骨架（cache 写但不读）；ts-rs 导出。生产 14 类节点 0 改动。详见
-  `docs/superpowers/plans/2026-04-28-adr-0014-phase-1-pin-kind-基础.md`。
+  `docs/plans/2026-04-28-adr-0014-phase-1-pin-kind-基础.md`。
 - 🟡 **Phase 2（待启动）**：第一个真实业务节点（候选 modbusRead `latest` Data 输出）
   + 前端 FlowGram 引脚渲染 + IPC describe_node_pins 返回 kind + 下游消费 cache
 - ⚪ Phase 3-5：UE5 风格 Pure 节点 / 缓存策略 / 视觉打磨（详见 spec）
@@ -1903,7 +1903,7 @@ git commit -s -m "chore(bindings): 同步 ts-rs 生成产物"
 打开 `CLAUDE.md`（`AGENTS.md` 的 symlink），找到 "ADR-0010 Pin 声明系统" 那一行下方的下一条 ADR 记录或 "Current batch of ADRs" 列表。在 ADR-0010 实施记录之后插入：
 
 ```markdown
-- ADR-0014 (执行边与数据边分离 → 重命名为「引脚求值语义二分」) — **已实施 Phase 1**（2026-04-28，Ring 0 加 `PinKind` + `OutputCache`；部署期跨 Kind 校验 + Data 边独立环检测；Runner 双路径写入骨架。生产 14 类节点 0 改动）。设计文档 `docs/superpowers/specs/2026-04-28-pin-kind-exec-data-design.md`；Phase 1 plan `docs/superpowers/plans/2026-04-28-adr-0014-phase-1-pin-kind-基础.md`
+- ADR-0014 (执行边与数据边分离 → 重命名为「引脚求值语义二分」) — **已实施 Phase 1**（2026-04-28，Ring 0 加 `PinKind` + `OutputCache`；部署期跨 Kind 校验 + Data 边独立环检测；Runner 双路径写入骨架。生产 14 类节点 0 改动）。设计文档 `docs/specs/2026-04-28-pin-kind-exec-data-design.md`；Phase 1 plan `docs/plans/2026-04-28-adr-0014-phase-1-pin-kind-基础.md`
 ```
 
 并把"ADR Execution Order"中 ADR-0014 那条改为：

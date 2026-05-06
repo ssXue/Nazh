@@ -25,7 +25,7 @@
 本次改动与 Phase 1 共享同一份 ADR；动手前请先看：
 
 - `docs/adr/0012-工作流变量.md`（决策原文 + Phase 1 落地记录的 8 个偏离点）
-- `docs/superpowers/plans/2026-04-27-workflow-variables.md`（Phase 1 plan，已合入 main）
+- `docs/plans/2026-04-27-workflow-variables.md`（Phase 1 plan，已合入 main）
 - `CLAUDE.md` → Critical Coding Constraints（`no unwrap / no unsafe / 节点不碰 DataStore / RAII`）
 - `crates/core/src/event.rs`（`ExecutionEvent` 已有变体 + 自定义 serde 影子枚举 `ExecutionEventSerde` + `From<&ExecutionEvent>` impl 模式）
 - `web/src/lib/tauri.ts`（IPC `invoke` + `listen<T>('workflow://...')` 既有模式；新增订阅函数照样写）
@@ -1400,7 +1400,7 @@ git commit -s -m "feat(web): RuntimeVariablesPanel 运行时变量面板 + Runti
 - Modify: `AGENTS.md`
 - Modify: `crates/core/AGENTS.md`
 - Modify: `~/.claude/projects/-home-zhihongniu-Nazh/memory/{project_system_architecture.md,project_architecture_review_2026_04.md,MEMORY.md}`
-- Modify: `docs/superpowers/plans/2026-04-27-workflow-variables-phase2.md`（本 plan）
+- Modify: `docs/plans/2026-04-27-workflow-variables-phase2.md`（本 plan）
 
 - [x] **Step 1: ADR-0012 加 Phase 2 落地记录**
 
@@ -1495,7 +1495,7 @@ execution order 区第 5 项相应更新。
 
 - [x] **Step 6: Plan 状态头 + checkbox**
 
-打开 `docs/superpowers/plans/2026-04-27-workflow-variables-phase2.md`（本文件）：
+打开 `docs/plans/2026-04-27-workflow-variables-phase2.md`（本文件）：
 
 a) 在文件最顶部（# 标题之后）加状态头：
 
@@ -1507,7 +1507,7 @@ a) 在文件最顶部（# 标题之后）加状态头：
 b) 全部 task 步骤 `- [ ]` → `- [x]`：
 
 ```bash
-sed -i 's/^- \[ \]/- [x]/g' docs/superpowers/plans/2026-04-27-workflow-variables-phase2.md
+sed -i 's/^- \[ \]/- [x]/g' docs/plans/2026-04-27-workflow-variables-phase2.md
 ```
 
 - [x] **Step 7: 全面回归 + 文档校对**

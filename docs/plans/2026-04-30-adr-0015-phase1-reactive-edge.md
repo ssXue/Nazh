@@ -10,7 +10,7 @@
 
 **Tech Stack:** Rust / tokio watch + mpsc / serde_json
 
-**关联 spec:** `docs/superpowers/specs/2026-04-30-adr-0015-reactive-data-pin-design.md`
+**关联 spec:** `docs/specs/2026-04-30-adr-0015-reactive-data-pin-design.md`
 **关联 ADR:** `docs/adr/0015-反应式数据引脚.md`
 
 ---
@@ -784,8 +784,8 @@ git commit -m "chore: fmt + clippy 修复"
 ### Task 9: 文档同步 + plan 状态更新
 
 **Files:**
-- Modify: `docs/superpowers/plans/2026-04-30-adr-0015-phase1-reactive-edge.md`
-- Modify: `docs/superpowers/plans/2026-04-28-architecture-review.md`
+- Modify: `docs/plans/2026-04-30-adr-0015-phase1-reactive-edge.md`
+- Modify: `docs/plans/2026-04-28-architecture-review.md`
 - Modify: `AGENTS.md`
 
 - [ ] **Step 1: 本 plan prepend Status**
@@ -794,12 +794,12 @@ git commit -m "chore: fmt + clippy 修复"
 
 - [ ] **Step 2: architecture review plan Phase A checkbox 更新**
 
-`docs/superpowers/plans/2026-04-28-architecture-review.md` ADR-0015 条目：
+`docs/plans/2026-04-28-architecture-review.md` ADR-0015 条目：
 
 ```markdown
 ### ADR-0015 反应式数据引脚
 
-- [x] 新建 plan：`docs/superpowers/plans/2026-04-30-adr-0015-phase1-reactive-edge.md`
+- [x] 新建 plan：`docs/plans/2026-04-30-adr-0015-phase1-reactive-edge.md`
 - [x] Phase 1 按 plan 实施（Reactive 边核心）
 - [ ] Phase 2 实施（变量 Reactive + IPC）
 - [ ] Phase 3 实施（前端 UI）

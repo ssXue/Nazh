@@ -2155,7 +2155,7 @@ git commit -s -m "test(e2e): ADR-0014 Phase 3 c2f pure-form DOM 烟雾"
   跨语言 fixture `tests/fixtures/pure_form_matrix.jsonc` 4 配对穷尽 Rust + Vitest
   共享。集成测试 `tests/pin_kind_phase3.rs` 用本地 stub 节点验证 source → c2f →
   sink 拉链：sink 收到的 payload 同时含 source Exec push 与 c2f Data pull。
-  详见 `docs/superpowers/plans/2026-04-28-adr-0014-phase-3-pure-nodes.md`。
+  详见 `docs/plans/2026-04-28-adr-0014-phase-3-pure-nodes.md`。
 - 🟡 **Phase 4-5（规划中）**：缓存空槽兜底策略 / TTL / 视觉打磨（节点头部色按
   capability 自动着色）/ AI prompt 携带 pure-form 信息。
 ```
@@ -2165,7 +2165,7 @@ git commit -s -m "test(e2e): ADR-0014 Phase 3 c2f pure-form DOM 烟雾"
 定位 `- ADR-0014（执行边与数据边分离 → 重命名为「引脚求值语义二分」）— **已实施 Phase 1 + Phase 2**`，更新为：
 
 ```markdown
-- ADR-0014（执行边与数据边分离 → 重命名为「引脚求值语义二分」）— **已实施 Phase 1 + Phase 2 + Phase 3**（2026-04-28）。Phase 3：UE5 风格 Pure 节点首发——`c2f` + `minutesSince` 在新 crate `crates/nodes-pure/` 落地，`is_pure_form` 自动推导，部署期跳过 Tokio task spawn，Runner 首次激活 pull 路径（`src/graph/pull.rs` 含递归求值 pure-form 上游 + 读 OutputCache 非 pure-form 上游），前端 `isPureForm` + 绿头圆角视觉。跨语言 fixture `pure_form_matrix.jsonc` 4 配对穷尽。集成测试覆盖 source→c2f→sink 三段拉链。Phase 3 plan `docs/superpowers/plans/2026-04-28-adr-0014-phase-3-pure-nodes.md`
+- ADR-0014（执行边与数据边分离 → 重命名为「引脚求值语义二分」）— **已实施 Phase 1 + Phase 2 + Phase 3**（2026-04-28）。Phase 3：UE5 风格 Pure 节点首发——`c2f` + `minutesSince` 在新 crate `crates/nodes-pure/` 落地，`is_pure_form` 自动推导，部署期跳过 Tokio task spawn，Runner 首次激活 pull 路径（`src/graph/pull.rs` 含递归求值 pure-form 上游 + 读 OutputCache 非 pure-form 上游），前端 `isPureForm` + 绿头圆角视觉。跨语言 fixture `pure_form_matrix.jsonc` 4 配对穷尽。集成测试覆盖 source→c2f→sink 三段拉链。Phase 3 plan `docs/plans/2026-04-28-adr-0014-phase-3-pure-nodes.md`
 ```
 
 ADR Execution Order 表里把 ADR-0014 行更新：

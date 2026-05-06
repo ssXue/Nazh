@@ -573,7 +573,7 @@ import type { PinKind, PinType } from '../types';
  * 判断"上游引脚 Kind `from` → 下游引脚 Kind `to`"是否可连。
  *
  * ADR-0014 求值语义二分：引脚 Kind 必须完全一致——Exec ↔ Exec、Data ↔ Data，
- * 跨 Kind 一律拒绝。理由见 `docs/superpowers/specs/2026-04-28-pin-kind-exec-data-design.md`。
+ * 跨 Kind 一律拒绝。理由见 `docs/specs/2026-04-28-pin-kind-exec-data-design.md`。
  *
  * 必须与 Rust 端 `PinKind::is_compatible_with`（在 `crates/core/src/pin.rs`）
  * 严格一致，由 `tests/fixtures/pin_kind_matrix.jsonc` 合约保证。
@@ -1094,7 +1094,7 @@ git commit -s -m "docs: ADR-0014 Phase 2 落地后状态同步
 
 ## Self-Review
 
-**1. Spec coverage check**（对照 `docs/superpowers/specs/2026-04-28-pin-kind-exec-data-design.md` §九 Phase 2）：
+**1. Spec coverage check**（对照 `docs/specs/2026-04-28-pin-kind-exec-data-design.md` §九 Phase 2）：
 - ✅ 选 1 个现有节点扩展 Data 引脚（方向 A：modbusRead `latest`）→ Task 1 + 2
 - ✅ IPC `describe_node_pins` 返回 PinKind → 已自动覆盖（PinDefinition.ts 已含 kind 字段，Phase 1 ts-rs 完成；本 plan **不需要** IPC 改动）
 - ✅ 前端 ts-rs 类型同步 + `pin-compat.ts` 升级 → Task 5

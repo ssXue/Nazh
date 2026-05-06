@@ -18,10 +18,10 @@
 
 ### ADR-0014 引脚求值语义二分
 
-- [x] **Phase 3** PURE 节点 — `docs/superpowers/plans/2026-04-28-adr-0014-phase-3-pure-nodes.md`（merged in f1f23a2）
-- [x] **Phase 3b** lookup + mixed input — `docs/superpowers/plans/2026-04-28-adr-0014-phase-3b-lookup-mixed-input.md`
-- [x] **Phase 4** cache lifecycle — `docs/superpowers/plans/2026-04-28-adr-0014-phase-4-cache-lifecycle.md`
-- [x] **Phase 5** visual + AI — `docs/superpowers/plans/2026-04-30-adr-0014-phase5-visual-ai.md`
+- [x] **Phase 3** PURE 节点 — `docs/plans/2026-04-28-adr-0014-phase-3-pure-nodes.md`（merged in f1f23a2）
+- [x] **Phase 3b** lookup + mixed input — `docs/plans/2026-04-28-adr-0014-phase-3b-lookup-mixed-input.md`
+- [x] **Phase 4** cache lifecycle — `docs/plans/2026-04-28-adr-0014-phase-4-cache-lifecycle.md`
+- [x] **Phase 5** visual + AI — `docs/plans/2026-04-30-adr-0014-phase5-visual-ai.md`
 
 ### Phase 6 EventBus + EdgeBackpressure + ConcurrencyPolicy（RFC-0002）
 
@@ -29,9 +29,9 @@
 
 ### ADR-0015 反应式数据引脚
 
-- [x] 设计 spec：`docs/superpowers/specs/2026-04-30-adr-0015-reactive-data-pin-design.md`（watch channel 方案，修订 ADR 原文 broadcast 设计）
-- [x] Phase 1 plan + 实施：`docs/superpowers/plans/2026-04-30-adr-0015-phase1-reactive-edge.md`（merged in 9019b90）
-- [x] Phase 2 实施（变量 Reactive + IPC）：`docs/superpowers/plans/2026-04-30-adr-0015-phase2-3-ipc-frontend.md`（merged in 9a838b1）
+- [x] 设计 spec：`docs/specs/2026-04-30-adr-0015-reactive-data-pin-design.md`（watch channel 方案，修订 ADR 原文 broadcast 设计）
+- [x] Phase 1 plan + 实施：`docs/plans/2026-04-30-adr-0015-phase1-reactive-edge.md`（merged in 9019b90）
+- [x] Phase 2 实施（变量 Reactive + IPC）：`docs/plans/2026-04-30-adr-0015-phase2-3-ipc-frontend.md`（merged in 9a838b1）
 - [x] Phase 3 实施（前端 UI）：同上 plan
 
 ### ADR-0016 边级可观测性
@@ -54,7 +54,7 @@
 
 ## Phase B: 接口与数据结构 Review（Day 4..8，按 crate 切片，可并行）
 
-每片产出独立 findings 文档：`docs/superpowers/specs/2026-05-XX-review-<topic>-findings.md`。
+每片产出独立 findings 文档：`docs/specs/2026-05-XX-review-<topic>-findings.md`。
 
 ### B1. Ring 0 接口审计（crates/core）
 
@@ -159,7 +159,7 @@
 
 ## Phase E: 整合与 PR 清单（Day 8）
 
-- [x] 写 `docs/superpowers/specs/2026-05-XX-architecture-review-findings.md`
+- [x] 写 `docs/specs/2026-05-XX-architecture-review-findings.md`
   - 按 P0（必修）/ P1（应修）/ P2（可选）排序所有发现
   - 每条标注：来源 phase / 影响面 / 建议 PR 范围
 - [x] 派生出修复 PR 列表（不要求 review 期内 merge，列出即可）

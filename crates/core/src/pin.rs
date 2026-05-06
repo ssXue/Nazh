@@ -1,7 +1,7 @@
 //! 节点引脚（Pin）声明系统：把节点的输入/输出端口提升为一等契约。
 //!
 //! 设计动机与决策见 ADR-0010；落地范围见
-//! `docs/superpowers/plans/2026-04-26-pin-declaration-system.md`。
+//! `docs/plans/2026-04-26-pin-declaration-system.md`。
 //!
 //! # 与 [`NodeCapabilities`](crate::NodeCapabilities) 的关系
 //!

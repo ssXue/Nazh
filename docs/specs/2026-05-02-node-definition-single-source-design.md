@@ -3,7 +3,7 @@
 > **状态**: 已实现（前端 NodeDefinition 单一声明源，2026-05-02）
 > **日期**: 2026-05-02
 > **动机**: commit `cc59350` 将 AI 编排器节点类型清单集中化到 `workflow-node-capabilities.ts`，但 humanLoop 节点暴露了机制缺口——前端仍有多处分散的 switch/map 需要手动同步。本次重构将 `NodeDefinition` 推为前端节点唯一的声明源，新增普通节点 = 写一个 `index.ts` + 加入 `ALL_DEFS`。
-> **关联**: `docs/superpowers/specs/2026-05-02-node-type-contract-design.md`
+> **关联**: `docs/specs/2026-05-02-node-type-contract-design.md`
 > **修订原则**: 反过度设计。只把“节点身份、目录、默认配置、端口、palette、AI 提示”收拢到 definition；渲染细节、复杂 settings 表单、连接协议匹配不强行塞进 schema。
 
 ## 目标

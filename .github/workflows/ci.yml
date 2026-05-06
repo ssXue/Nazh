@@ -16,6 +16,44 @@ env:
   NODE_VERSION: "24"
 
 jobs:
+  dco:
+    name: DCO Sign-off
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Check DCO sign-off
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            if git rev-parse -q --verify HEAD^2 >/dev/null; then
+              range="HEAD^1..HEAD"
+            else
+              range="${{ github.event.pull_request.base.sha }}..HEAD"
+            fi
+          else
+            before="${{ github.event.before }}"
+            after="${{ github.sha }}"
+            if printf '%s' "$before" | grep -Eq '^0+$'; then
+              range="${after}^!"
+            else
+              range="${before}..${after}"
+            fi
+          fi
+
+          missing=0
+          for commit in $(git rev-list --no-merges "$range"); do
+            if ! git log -1 --format=%B "$commit" | grep -qi '^Signed-off-by:'; then
+              echo "::error title=Missing DCO sign-off::Commit $commit does not contain a Signed-off-by trailer."
+              missing=1
+            fi
+          done
+
+          exit "$missing"
+
   changes:
     name: Changes
     runs-on: ubuntu-latest

@@ -4,7 +4,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 把 ADR-0014 spec 第九章 Phase 3 范围内、Phase 3 plan 显式 deferred 出去的两件事补回来——（1）引入第三个 pure-form 节点 `lookup`（配置驱动的 table 查表），让 spec 用例 3 "UE5 表达式树" 的三节点全部到齐；（2）正式拍板"混合输入节点（Exec ▶in + Data ●xxx 同时存在）"的 payload 合并语义并加合约测试。**前置条件**：Phase 3 (`docs/superpowers/plans/2026-04-28-adr-0014-phase-3-pure-nodes.md`) 已落地（`is_pure_form` / `pull_data_inputs` / `crates/nodes-pure/` / 前端 `isPureForm`）。
+**Goal:** 把 ADR-0014 spec 第九章 Phase 3 范围内、Phase 3 plan 显式 deferred 出去的两件事补回来——（1）引入第三个 pure-form 节点 `lookup`（配置驱动的 table 查表），让 spec 用例 3 "UE5 表达式树" 的三节点全部到齐；（2）正式拍板"混合输入节点（Exec ▶in + Data ●xxx 同时存在）"的 payload 合并语义并加合约测试。**前置条件**：Phase 3 (`docs/plans/2026-04-28-adr-0014-phase-3-pure-nodes.md`) 已落地（`is_pure_form` / `pull_data_inputs` / `crates/nodes-pure/` / 前端 `isPureForm`）。
 
 **Architecture:**
 - **`lookup` 节点（`crates/nodes-pure/src/lookup.rs`）**：仍为 pure-form——单 Data Any 输入 (`key`)、单 Data Any 输出 (`out`)；config 携带 `table: HashMap<String, Value>` + 可选 `default: Option<Value>`。语义：`out = table.get(stringify(key)).cloned().or(default).ok_or(KeyMissing)`。Stringify 规则：标量 (`Bool`/`Integer`/`Float`/`String`) 用 `to_string`，其他用 `serde_json::to_string` 后 trim 引号。

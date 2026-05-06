@@ -2,7 +2,7 @@
 
 > **状态**：待用户审
 > **日期**：2026-04-30
-> **关联**：ADR-0014（引脚求值语义二分）、`docs/superpowers/specs/2026-04-28-pin-kind-exec-data-design.md` 第九章 Phase 5
+> **关联**：ADR-0014（引脚求值语义二分）、`docs/specs/2026-04-28-pin-kind-exec-data-design.md` 第九章 Phase 5
 
 ---
 
@@ -236,5 +236,5 @@ EmptyPolicy::BlockUntilReady => {
 | 修改 | `src/graph/pull.rs` | `BlockUntilReady` 用 watch 等待 + `PureMemo::clear_trace` |
 | 修改 | `src/graph/runner.rs` | trace 结束调 `pure_memo.clear_trace` |
 | 修改 | `docs/adr/0014-执行边与数据边分离.md` | 实施进度加 Phase 5 |
-| 修改 | `docs/superpowers/plans/2026-04-28-architecture-review.md` | Phase A checkbox 更新 |
+| 修改 | `docs/plans/2026-04-28-architecture-review.md` | Phase A checkbox 更新 |
 | 修改 | `AGENTS.md` | ADR-0014 状态同步 |

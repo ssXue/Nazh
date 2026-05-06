@@ -25,7 +25,7 @@
 | 修改 | `src/graph/pull.rs` | `BlockUntilReady` 用 watch 等待 + `PureMemo::clear_trace` |
 | 修改 | `src/graph/runner.rs` | trace 结束调 `pure_memo.clear_trace` |
 | 修改 | `docs/adr/0014-执行边与数据边分离.md` | 实施进度加 Phase 5 |
-| 修改 | `docs/superpowers/plans/2026-04-28-architecture-review.md` | Phase A checkbox 更新 |
+| 修改 | `docs/plans/2026-04-28-architecture-review.md` | Phase A checkbox 更新 |
 | 修改 | `AGENTS.md` | ADR-0014 状态同步 |
 
 ---
@@ -665,8 +665,8 @@ git commit -s -m "feat(graph): ADR-0014 Phase 5 PureMemo trace 完成后清理"
 
 **Files:**
 - Modify: `docs/adr/0014-执行边与数据边分离.md`
-- Modify: `docs/superpowers/plans/2026-04-28-architecture-review.md`
-- Modify: `docs/superpowers/plans/2026-04-28-adr-0014-phase-4-cache-lifecycle.md`
+- Modify: `docs/plans/2026-04-28-architecture-review.md`
+- Modify: `docs/plans/2026-04-28-adr-0014-phase-4-cache-lifecycle.md`
 - Modify: `AGENTS.md`
 
 - [ ] **Step 1: ADR-0014 文档更新实施进度**
@@ -685,7 +685,7 @@ git commit -s -m "feat(graph): ADR-0014 Phase 5 PureMemo trace 完成后清理"
 
 - [ ] **Step 2: Phase 4 plan 文件 prepend Status**
 
-定位 `docs/superpowers/plans/2026-04-28-adr-0014-phase-4-cache-lifecycle.md`。把首行：
+定位 `docs/plans/2026-04-28-adr-0014-phase-4-cache-lifecycle.md`。把首行：
 ```
 > **Status:** deferred as Phase A backlog (not implemented as of 2026-04-29)
 ```
@@ -696,7 +696,7 @@ git commit -s -m "feat(graph): ADR-0014 Phase 5 PureMemo trace 完成后清理"
 
 - [ ] **Step 3: architecture review plan 更新 Phase A checkbox**
 
-定位 `docs/superpowers/plans/2026-04-28-architecture-review.md`。
+定位 `docs/plans/2026-04-28-architecture-review.md`。
 
 把 `- [ ] **Phase 4** cache lifecycle` 行改为 `- [x] **Phase 4** cache lifecycle`。
 
@@ -740,7 +740,7 @@ npm --prefix web run test
 - [ ] **Step 6: commit**
 
 ```bash
-git add docs/adr/0014-执行边与数据边分离.md docs/superpowers/plans/2026-04-28-adr-0014-phase-4-cache-lifecycle.md docs/superpowers/plans/2026-04-28-architecture-review.md AGENTS.md
+git add docs/adr/0014-执行边与数据边分离.md docs/plans/2026-04-28-adr-0014-phase-4-cache-lifecycle.md docs/plans/2026-04-28-architecture-review.md AGENTS.md
 git commit -s -m "docs(adr-0014): Phase 5 落地后状态同步 + Phase A checkbox 更新"
 ```
 

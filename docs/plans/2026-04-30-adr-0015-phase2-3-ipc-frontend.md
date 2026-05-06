@@ -10,8 +10,8 @@
 
 **Tech Stack:** Rust / tokio watch / Tauri v2 IPC / TypeScript / CSS
 
-**关联 spec:** `docs/superpowers/specs/2026-04-30-adr-0015-reactive-data-pin-design.md`
-**关联 Phase 1 plan:** `docs/superpowers/plans/2026-04-30-adr-0015-phase1-reactive-edge.md`（已 merged）
+**关联 spec:** `docs/specs/2026-04-30-adr-0015-reactive-data-pin-design.md`
+**关联 Phase 1 plan:** `docs/plans/2026-04-30-adr-0015-phase1-reactive-edge.md`（已 merged）
 
 ---
 
@@ -444,9 +444,9 @@ git commit -s -m "chore: fmt + clippy 修复"
 ### Task 8: 文档同步
 
 **Files:**
-- Modify: `docs/superpowers/plans/2026-04-30-adr-0015-phase1-reactive-edge.md`（已 merged，不改）
-- Modify: `docs/superpowers/specs/2026-04-30-adr-0015-reactive-data-pin-design.md`
-- Modify: `docs/superpowers/plans/2026-04-28-architecture-review.md`
+- Modify: `docs/plans/2026-04-30-adr-0015-phase1-reactive-edge.md`（已 merged，不改）
+- Modify: `docs/specs/2026-04-30-adr-0015-reactive-data-pin-design.md`
+- Modify: `docs/plans/2026-04-28-architecture-review.md`
 - Modify: `AGENTS.md`
 
 - [ ] **Step 1: architecture review plan ADR-0015 checkbox 更新**

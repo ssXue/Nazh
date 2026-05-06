@@ -982,7 +982,7 @@ git commit -s -m "feat(web): ADR-0014 Phase 4 EmptyPolicySelector + pin tooltip 
 
 **Files:**
 - Modify: `docs/adr/0014-执行边与数据边分离.md` — 实施进度 + spec 第十一章决策 1/2 拍板回写
-- Modify: `docs/superpowers/specs/2026-04-28-pin-kind-exec-data-design.md` — 第十一章勾掉决策 1/2
+- Modify: `docs/specs/2026-04-28-pin-kind-exec-data-design.md` — 第十一章勾掉决策 1/2
 - Modify: `crates/core/AGENTS.md` — `OutputCache` + `EmptyPolicy` 小节
 - Modify: `AGENTS.md` — ADR-0014 状态行 + 执行顺序
 
@@ -1033,7 +1033,7 @@ cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all -- --check
 npm --prefix web run test
-git add docs/adr/0014-执行边与数据边分离.md docs/superpowers/specs/2026-04-28-pin-kind-exec-data-design.md crates/core/AGENTS.md AGENTS.md
+git add docs/adr/0014-执行边与数据边分离.md docs/specs/2026-04-28-pin-kind-exec-data-design.md crates/core/AGENTS.md AGENTS.md
 git commit -s -m "docs(adr-0014): Phase 4 落地后状态同步 + spec 决策回写"
 ```
 

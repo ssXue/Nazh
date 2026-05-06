@@ -64,7 +64,7 @@ flowchart LR
 
 | ID | 优先级 | 位置 | 发现 | 建议动作 |
 |----|--------|------|------|----------|
-| B2-R1-01 | P1 | `docs/superpowers/plans/2026-04-28-architecture-review.md:62` | Phase B 仍写 “5 个 Ring 1 crate”，但 workspace 已有 `nodes-pure`，且 `pipeline` / `ai` 也是 Ring 1。按旧数字审计会漏项。 | 更新 plan / root AGENTS 的 crate 计数与 Ring 1 列表。 |
+| B2-R1-01 | P1 | `docs/plans/2026-04-28-architecture-review.md:62` | Phase B 仍写 “5 个 Ring 1 crate”，但 workspace 已有 `nodes-pure`，且 `pipeline` / `ai` 也是 Ring 1。按旧数字审计会漏项。 | 更新 plan / root AGENTS 的 crate 计数与 Ring 1 列表。 |
 | B2-R1-02 | P1 | `AGENTS.md` Project Overview / workspace layout | root AGENTS 仍写 “9 crates”，Cargo workspace 当前 members 含 root、8 个 `crates/*`、`tauri-bindings`、`src-tauri`；布局段也漏 `nodes-pure`。 | Phase E 更新 root AGENTS 和 README crate 表。 |
 | B2-R1-03 | P1 | `crates/connections/AGENTS.md:29` | `connections` AGENTS 的模块树列出 `guard.rs` / `health.rs` / `circuit_breaker.rs` / `pool.rs` / `metadata.rs`，但实际只有 `crates/connections/src/lib.rs`。 | 更新 crate AGENTS；若 Phase C 拆文件，再按真实拆分后的模块表写。 |
 | B2-R1-04 | P1 | `crates/ai/AGENTS.md:25` | `ai` AGENTS 的模块树列出 `error.rs` / `service.rs`，但实际文件只有 `lib.rs` / `config.rs` / `client.rs` / `types.rs`。 | 更新 crate AGENTS，避免后续 agent 按不存在文件搜索。 |

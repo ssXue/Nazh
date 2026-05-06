@@ -10,7 +10,7 @@
 
 **Tech Stack:** Rust（tokio oneshot + DashMap + chrono）、Tauri IPC（invoke/emit）、React 18 + TypeScript、ts-rs 类型导出。
 
-**Design spec:** `docs/superpowers/specs/2026-04-30-human-in-loop-node-design.md`
+**Design spec:** `docs/specs/2026-04-30-human-in-loop-node-design.md`
 
 ---
 

@@ -146,21 +146,26 @@ curl -fsSL https://nazh.dev/install.sh | bash
 nazh-desktop
 ```
 
-### 源码编译
+### Dev Container（默认开发入口）
+
+Nazh 默认不维护宿主机本地项目工具链路径。宿主机只需要 Git、Docker/OrbStack/Docker Desktop，以及支持 Dev Container 的编辑器或 AI agent；Rust、Node、Tauri Linux 依赖和 `cargo-deny` 都在容器内安装。
+
+先在宿主机设置稳定容器名：
 
 ```bash
-npm --prefix web ci
-cd src-tauri && ../web/node_modules/.bin/tauri dev --no-watch
+DEVCONTAINER_USER="$(id -un | tr -cs '[:alnum:]_.-' '-' | sed 's/^-//;s/-$//')"
+DEVCONTAINER_BRANCH="$(git branch --show-current | tr -cs '[:alnum:]_.-' '-' | sed 's/^-//;s/-$//')"
+test -n "$DEVCONTAINER_BRANCH"
+export DEVCONTAINER_NAME="nazh-devcontainer-${DEVCONTAINER_USER}-${DEVCONTAINER_BRANCH}"
 ```
 
-要求：Rust 1.94+、Node.js 24 LTS+。
-
-### Dev Container
-
-推荐使用 `.devcontainer/` 作为统一开发环境。宿主机只需要 Git、Docker/OrbStack/Docker Desktop，以及支持 Dev Container 的编辑器或 AI agent；Rust、Node、Tauri Linux 依赖和 `cargo-deny` 都在容器内安装。
+随后通过 Dev Container 编辑器/CLI 打开项目，或按 `.devcontainer/README.md` 的手动 Docker 流程创建同名常驻容器。后续项目命令通过 `docker exec "$DEVCONTAINER_NAME" ...`、`devcontainer exec`、编辑器容器终端或 CI 执行。
 
 Dev Container 当前基线：
 
+- Dev Container 镜像名：`nazh-devcontainer:latest`
+- Dev Container 显示名：`Nazh Dev Container`
+- 常驻 Dev Container 容器名：`nazh-devcontainer-{username}-{branch}`
 - `ubuntu:26.04`
 - Node 24 LTS
 - Rust stable + `rustfmt` / `clippy`
@@ -174,6 +179,17 @@ npm --prefix web ci
 cargo fetch --locked
 ```
 
+`target/` 和 `web/node_modules/` 在 Dev Container 中作为 Docker volume 缓存；需要发布、验收或回滚的产物必须写回宿主机可见的项目目录，例如 `dist/`、`web/dist/` 或发布文档声明的目录。
+
+### 源码编译（容器内执行）
+
+```bash
+npm --prefix web ci
+cd src-tauri && ../web/node_modules/.bin/tauri dev --no-watch
+```
+
+要求：容器内 Rust 1.94+、Node.js 24 LTS+。
+
 ## 项目结构
 
 ```text
@@ -182,7 +198,7 @@ src/             # DAG 编排与标准注册表
 src-tauri/       # Tauri 桌面壳（workspace package）
 web/             # React + FlowGram.AI 前端
 tests/           # 集成测试
-docs/            # ADR / RFC / specs / plans / conventions / templates
+docs/            # ADR / RFC / specs / plans / blueprints / conventions / templates
 ```
 
 工程工作路径是 DSL 资产的唯一持久化位置：设备在 `dsl/devices/*.device.yaml`，能力在 `dsl/capabilities/*.capability.yaml`，对应版本快照在各自的 `versions/` 子目录，AI 来源追溯在各自的 `sources/` 子目录。
@@ -196,6 +212,7 @@ docs/            # ADR / RFC / specs / plans / conventions / templates
 - `docs/git.md`：Git 工作流、commit message 和 DCO 规范
 - `docs/adr/`：架构决策记录
 - `docs/rfcs/`：较大设计空间和分阶段演进
-- `docs/superpowers/specs/`：功能或子系统设计文档
-- `docs/superpowers/plans/`：可执行实施计划
+- `docs/specs/`：功能或子系统设计文档
+- `docs/plans/`：可执行实施计划
+- `docs/blueprints/`：历史蓝图或评审基准
 - `docs/templates/`：局部 `AGENTS.md` 等可复制模板

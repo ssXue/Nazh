@@ -770,7 +770,7 @@ pub enum PinKind {
 本设计文档（spec）通过 user review 后，将产出：
 
 - 重写后的 `docs/adr/0014-执行边与数据边分离.md`（标题改为"引脚求值语义二分"，方案 C 由"边二分"改为"引脚二分"，引用本 spec）
-- `docs/superpowers/plans/2026-04-28-adr-0014-phase-1-pin-kind-基础.md`（Phase 1 实施计划）
+- `docs/plans/2026-04-28-adr-0014-phase-1-pin-kind-基础.md`（Phase 1 实施计划）
 - 后续每 Phase 一份 plan（Phase 2-5 各自独立）
 
 `AGENTS.md` 的 ADR 执行顺序 + 进度状态在每 Phase 落地后同步更新。

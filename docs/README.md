@@ -17,11 +17,11 @@ docs/
 ├── rfcs/                  # 决策前的较大设计空间
 │   ├── README.md          # RFC 索引与说明
 │   └── template.md        # RFC 模板
-├── superpowers/
-│   ├── specs/             # 功能或子系统设计文档
-│   │   └── template.md    # Spec 模板
-│   └── plans/             # 可执行实施计划
-│       └── template.md    # Plan 模板
+├── specs/                 # 功能或子系统设计文档
+│   └── template.md        # Spec 模板
+├── plans/                 # 可执行实施计划
+│   └── template.md        # Plan 模板
+├── blueprints/            # 历史蓝图或评审基准
 └── templates/             # 可复制的局部文档模板
     ├── README.md
     └── local-AGENTS.md
@@ -33,8 +33,8 @@ docs/
 |---------|----------|------|
 | 记录一个已做出的架构决策 | ADR | `docs/adr/` |
 | 在决策前探索较大设计方向 | RFC | `docs/rfcs/` |
-| 描述功能或子系统设计 | Spec | `docs/superpowers/specs/` |
-| 跟踪多步骤实施工作 | Plan | `docs/superpowers/plans/` |
+| 描述功能或子系统设计 | Spec | `docs/specs/` |
+| 跟踪多步骤实施工作 | Plan | `docs/plans/` |
 | 记录长期协作、生成物、安全、Dev Container 约定 | Conventions | `docs/conventions.md` |
 | 记录 Git 和 commit 规则 | Git guide | `docs/git.md` |
 | 描述模块职责和局部修改规则 | 局部 `AGENTS.md` | 对应 crate/module 根目录 |

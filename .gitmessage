@@ -3,9 +3,12 @@
 # type: feat|fix|refactor|perf|test|docs|build|ci|chore|style|revert
 # scope: optional, English identifier such as core, graph, tauri, web, docs, ci
 # subject: 中文优先，保留必要英文术语，不加句号，尽量不超过 72 个字符
+# breaking change: add ! before :, for example <type>(<scope>)!: <subject>
 #
-# body: optional，用中文说明为什么改、怎么改、风险是什么
+# body: trivial/mechanical changes may omit the body
+# body: substantive changes should explain why, what changed, risk/compatibility,
+# body: and validation that was actually run
 #
-# footer: optional
+# footer: add issue refs or BREAKING CHANGE only when applicable
 # BREAKING CHANGE: describe migration when needed
-# Signed-off-by: Your Name <you@example.com>
+# Signed-off-by is required by default; use git commit -s

@@ -1,8 +1,16 @@
 {
-  "name": "Nazh",
+  "name": "Nazh Dev Container",
   "build": {
-    "dockerfile": "Dockerfile"
+    "dockerfile": "Dockerfile",
+    "options": [
+      "--tag",
+      "nazh-devcontainer:latest"
+    ]
   },
+  "runArgs": [
+    "--name",
+    "${localEnv:DEVCONTAINER_NAME}"
+  ],
   "workspaceFolder": "/workspace/${localWorkspaceFolderBasename}",
   "postCreateCommand": "git config --global --add safe.directory ${containerWorkspaceFolder} && npm --prefix web ci && cargo fetch --locked && node --version && rustc --version && cargo-deny --version",
   "forwardPorts": [

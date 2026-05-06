@@ -14,6 +14,8 @@ Everything runs in one process — no HTTP/gRPC server, no external broker. AI f
 
 ## Build & Dev Commands
 
+Unless a command is explicitly described as a host-side Docker/Dev Container orchestration command, run project commands inside the Dev Container or an equivalent CI/self-hosted runner environment. The macOS host is not the project toolchain runtime.
+
 ```bash
 # Install frontend dependencies
 npm --prefix web ci
@@ -158,6 +160,8 @@ Industrial-reliability requirements. **Enforced by Cargo lints**; violations fai
 7. **`NodeTrait::transform(trace_id, payload) → NodeExecution` is the contract.** Nodes must not touch `DataStore`. The Runner is solely responsible for store reads/writes.
 8. **Execution metadata must not leak into payload.** Return metadata via `NodeOutput::metadata` (`Option<Map<String, Value>>`) + `NodeExecution::with_metadata()`, using non-underscore keys (`"timer"`, `"http"`, `"modbus"`, `"serial"`, `"sql_writer"`, `"debug_console"`, `"connection"`, `"bark"`, `"ai"`). The Runner merges metadata into `ExecutionEvent::Completed` events. Only routing context (`_loop`, `_error`) is allowed to remain in the payload. See ADR-0008.
 9. **Field visibility: prefer private + getters for stable core types.** `WorkflowNodeDefinition` is the reference pattern — fields are private, access via `id()` / `node_type()` / `connection_id()` / etc., mutations only through methods like `normalize()` and `config_mut()`. Apply the same to future stable types.
+10. **运行时配置必须显式声明并 fail fast.** 环境相关、部署相关、现场差异相关、硬件拓扑相关、诊断流程、实时调度、连接参数、安全阈值和 AI provider 等运行时配置不得硬编码在业务代码中。缺少配置时返回可定位错误，不得通过 `serde(default)`、`Default`、`unwrap_or(...)` 或等价 fallback 静默补值。协议常量、领域不变量、数据帧布局、算法内部约束、测试 fixture、消息零值和临时缓冲初始值不属于运行时配置。
+11. **不直接修改第三方代码或供应商交付物。** 需要适配第三方源码、固件、SDK、协议定义、ESI 文件或供应商资料时，优先通过上游修复、版本升级、配置、adapter/wrapper 或项目自有代码隔离处理。确需本地补丁时，必须记录来源、补丁文件或重放命令、验证方式、上游回传计划，以及第三方版本升级时如何重新应用或移除。
 
 ## Design Principles (team-aligned contract)
 
@@ -165,7 +169,7 @@ These principles guide day-to-day decisions. When in doubt, reach for the princi
 
 1. **ADR-driven architecture evolution.** Non-trivial architecture changes go through an ADR (`docs/adr/NNNN-title.md`). Existing code changes that embody a decision should be recorded retrospectively (e.g. ADR-0008 documents the metadata separation that landed before the ADR existed). "Evaluation ADRs" (like ADR-0020) record *decisions not to act*, with trigger conditions.
 2. **Control plane vs data plane separation.** Payload (business data) flows through `DataStore` + `ContextRef`. Metadata (observability, provenance) flows through `ExecutionEvent`. Configuration (setpoints, thresholds, shared state) flows through `WorkflowVariables` (ADR-0012 Phase 1+2 已实施). These planes do not cross-contaminate.
-3. **设备语义高于协议适配。** 业务工作流的主语应是 Device / Capability / Workflow：设备作为高级语义节点或由 DSL 编译生成的能力调用节点出现；CAN 卡、串口、Modbus 连接、MQTT broker 等物理/协议通道属于全局 `ConnectionManager` 的共享连接资源，普通画布不应把它们作为首选业务节点。`serialTrigger` / `modbusRead` / `canRead` / `canWrite` 等低层协议节点可以保留为适配器、调试工具和兼容层，但 AI 编排与产品主路径应优先生成设备信号读取与 `capabilityCall` 等高级节点。详见 `docs/superpowers/specs/2026-05-05-node-architecture-boundary-review.md`。
+3. **设备语义高于协议适配。** 业务工作流的主语应是 Device / Capability / Workflow：设备作为高级语义节点或由 DSL 编译生成的能力调用节点出现；CAN 卡、串口、Modbus 连接、MQTT broker 等物理/协议通道属于全局 `ConnectionManager` 的共享连接资源，普通画布不应把它们作为首选业务节点。`serialTrigger` / `modbusRead` / `canRead` / `canWrite` 等低层协议节点可以保留为适配器、调试工具和兼容层，但 AI 编排与产品主路径应优先生成设备信号读取与 `capabilityCall` 等高级节点。详见 `docs/specs/2026-05-05-node-architecture-boundary-review.md`。
 4. **Ring purity.** Ring 0 stays free of protocol-specific dependencies. Ring 1 crates depend on Ring 0 and may compose horizontally, but should avoid creating cross-Ring-1 fan-out cycles. Prefer **trait abstraction + dependency injection** over direct imports when coupling Ring 1 crates (ADR-0019 proposes this for AI).
 5. **RAII for resources.** Connections, lifecycle guards, and future resource holders use Drop-based cleanup, never explicit `close()` / `release()` call pairs. Examples: `ConnectionGuard`（连接借出）、`LifecycleGuard`（节点后台任务，ADR-0009）。
 6. **Plugin-first node registration.** Adding a node means implementing `NodeTrait` in a Ring 1 crate and registering via `Plugin::register(&mut NodeRegistry)`. Do not hardcode node types in the engine or facade. `standard_registry()` in `src/lib.rs` loads the baseline set (`FlowPlugin`, `IoPlugin`) — other plugins can be added to compose custom deployments.
@@ -184,6 +188,7 @@ These principles guide day-to-day decisions. When in doubt, reach for the princi
 - **Sign-off required** on every commit: `git commit -s`. CI rejects unsigned commits.
 - **Commit messages in Chinese**, prefixed by type: `feat:` / `fix:` / `refactor:` / `docs:` / `test:` / `chore:` / `perf:`.
 - **One concern per commit.** "One PR, many commits" is fine; "one commit, five concerns" makes bisecting painful.
+- **Commit hooks and validation run in the Dev Container.** Host-side wrappers may start or enter the container, but project toolchains and checks should run through `docker exec`, `devcontainer exec`, an editor Dev Container terminal, or CI.
 - **No `--amend` on pushed commits.** Revise via new commit.
 - **No `--no-verify` / `--no-gpg-sign`** unless explicitly approved.
 - **Destructive git ops (force push, reset --hard, branch -D)** require user confirmation before execution. Destroy nothing without asking.
@@ -192,7 +197,7 @@ These principles guide day-to-day decisions. When in doubt, reach for the princi
 
 - **Check invariants** from the "Critical Coding Constraints" list — they're not just style preferences, they are reliability claims.
 - **Trait signatures and public APIs** are contract changes. Flag them in the PR description. Private field changes behind getters are OK as long as the getter surface is preserved.
-- **Run `cargo test --workspace` + `cargo clippy --workspace --all-targets -- -D warnings` + `cargo fmt --all -- --check`** locally before requesting review. CI enforces all three.
+- **Run `cargo test --workspace` + `cargo clippy --workspace --all-targets -- -D warnings` + `cargo fmt --all -- --check`** inside the Dev Container or CI-equivalent environment before requesting review. CI enforces all three.
 - **Regenerate `web/src/generated/` types** if you changed any `#[ts(export)]` struct. Diff-check the generated TS before committing.
 - **UI/frontend changes:** start the dev server and exercise the feature in a browser. Type-checking passes ≠ feature works.
 
@@ -232,7 +237,7 @@ When `AGENTS.md` conflicts with any other doc (README / rustdoc / ADR / memory /
 3. **Date-stamp decay-prone sections.** `docs/project-status.md` 中的 "Project Status" / "Known tech debt" / "Current roadmap" 段必须带日期标头（YYYY-MM-DD），每次大版本发布前复查。
 4. **Evaluation ADRs must declare a revisit trigger.** Any "提议中 / 暂缓" ADR that intentionally defers action (e.g. ADR-0020) must list an observable condition (metric, row count, calendar date) that forces reconsideration.
 5. **Memory files are point-in-time observations.** Files in `~/.claude/projects/.../memory/` may be read for context but **must** be verified against current code before making a claim or recommendation. Stale memory = recorded lies; when detected, update in the same session.
-6. **Old plans and specs are kept as historical record.** Don't delete `docs/superpowers/plans/*.md` after merge — prepend a `> **Status:** merged in <SHA> / superseded by <new plan>` line at the top. Future archaeologists rely on this.
+6. **Old plans and specs are kept as historical record.** Don't delete `docs/plans/*.md` or `docs/specs/*.md` after merge — prepend a `> **Status:** merged in <SHA> / superseded by <new plan>` line at the top when a working document closes. Future archaeologists rely on this.
 
 ### Documentation Triggers (When X → Update Y)
 
@@ -246,6 +251,7 @@ When `AGENTS.md` conflicts with any other doc (README / rustdoc / ADR / memory /
 | Accept / implement / deprecate an ADR | The ADR's own status + `docs/adr/README.md` index row (do **not** update past ADRs with new implementation details — put those in the relevant crate `AGENTS.md`) |
 | Add a Tauri IPC command or event channel | Root `AGENTS.md` Tauri IPC surface + root `README.md` IPC tables + `crates/tauri-bindings/AGENTS.md` if it introduces new response types |
 | Change any Critical Coding Constraint | Root `AGENTS.md` (this file) + signal explicitly in PR description |
+| Add / update third-party source, vendor asset, firmware, protocol definition, or local patch | `docs/conventions.md` third-party record + source/version/license/verification notes |
 | Complete a roadmap item in RFC-0002 | Update the RFC's "Implementation Progress" section |
 | Land work matching a 提案 in architecture review memory | Update `memory/project_architecture_review_2026_04.md` status mapping |
 | Add or rewrite a large module | Ensure `//!` module-level doc reflects purpose; run `cargo doc --no-deps` to sanity-check; update crate `AGENTS.md` if the module is part of public API |
@@ -260,7 +266,7 @@ When `AGENTS.md` conflicts with any other doc (README / rustdoc / ADR / memory /
 - Evaluation: deciding *not* to act, with revisit trigger
 
 **When NOT to write an ADR:**
-- "How to implement feature X" — that's an implementation plan (`docs/superpowers/plans/`)
+- "How to implement feature X" — that's an implementation plan (`docs/plans/`)
 - Pure implementation detail with no architectural implication
 - Decisions obvious from the code itself
 
@@ -318,9 +324,9 @@ Never move backward (已接受 → 提议中 is invalid; write a new ADR that up
 
 ### Plan & Spec Writing Requirements
 
-Located in `docs/superpowers/plans/` and `docs/superpowers/specs/`. These are **working documents** for implementation.
+Located in `docs/plans/` and `docs/specs/`. These are **working documents** for implementation.
 
-**Plans** (`docs/superpowers/plans/YYYY-MM-DD-topic.md`):
+**Plans** (`docs/plans/YYYY-MM-DD-topic.md`):
 - Use when implementation will touch > 2 files or take > 1 day
 - Required header: `**Goal:**`, `**Architecture:**`, `**Tech Stack:**`
 - Body is checkbox tasks (`- [ ]`) organized by logical steps
@@ -328,10 +334,14 @@ Located in `docs/superpowers/plans/` and `docs/superpowers/specs/`. These are **
 - On merge, prepend a status line at top: `> **Status:** merged in <commit-SHA>`
 - Plans are never deleted — they're historical record of how things got built
 
-**Specs** (`docs/superpowers/specs/YYYY-MM-DD-topic-design.md`):
+**Specs** (`docs/specs/YYYY-MM-DD-topic-design.md`):
 - Use for "design phase" output before a plan
 - Longer prose, design tradeoffs, UI mockups, API sketches
 - When a spec converts to a plan, cross-link both: spec notes "implemented via <plan-file>", plan notes "designed in <spec-file>"
+
+### Code Organization
+
+Hand-written source files should stay reviewable and single-purpose. 100-200 lines is the preferred range; crossing 300 lines is a review signal to check whether responsibilities or layers are mixed; crossing 500 lines requires a clear reason or a split plan in the PR. Generated files, lockfiles, fixtures, snapshots, migrations, schema/IDL files, large static data, third-party/vendor files, and framework-mandated entry files may be exceptions when their source or reason is documented.
 
 ### Code Comments
 

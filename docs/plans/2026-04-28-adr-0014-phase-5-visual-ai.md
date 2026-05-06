@@ -53,7 +53,7 @@
 | 修改 | `web/src/lib/pin-compat.ts` | 新增 `pinTypeChineseLabel(pin_type) -> string` 与 `pinKindChineseLabel(kind) -> string` 中文标签函数 |
 | 创建 | `web/e2e/pin-kind-theme-toggle.spec.ts` | Playwright DOM 烟雾：toggle theme 后节点头部背景色变化 |
 | 修改 | `docs/adr/0014-执行边与数据边分离.md` | 实施进度追加 Phase 5 段（标记 ADR-0014 全部 5 phase 完结） |
-| 修改 | `docs/superpowers/specs/2026-04-28-pin-kind-exec-data-design.md` | 第十一章勾掉决策 3/4 |
+| 修改 | `docs/specs/2026-04-28-pin-kind-exec-data-design.md` | 第十一章勾掉决策 3/4 |
 | 修改 | `AGENTS.md` | ADR-0014 状态行 → "**已实施 Phase 1~5**（YYYY-MM-DD，spec 第十一章 5 项决策全部回写）"；ADR Execution Order #8 标记完结 |
 
 ---
@@ -689,7 +689,7 @@ git commit -s -m "test(e2e): ADR-0014 Phase 5 theme toggle + 节点头色烟雾"
 
 **Files:**
 - Modify: `docs/adr/0014-执行边与数据边分离.md`
-- Modify: `docs/superpowers/specs/2026-04-28-pin-kind-exec-data-design.md`
+- Modify: `docs/specs/2026-04-28-pin-kind-exec-data-design.md`
 - Modify: `AGENTS.md`
 
 - [ ] **Step 1: ADR 实施进度章节加 Phase 5 + 标 ADR 整体完结**
@@ -733,7 +733,7 @@ cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all -- --check
 npm --prefix web run test
-git add docs/adr/0014-执行边与数据边分离.md docs/superpowers/specs/2026-04-28-pin-kind-exec-data-design.md AGENTS.md
+git add docs/adr/0014-执行边与数据边分离.md docs/specs/2026-04-28-pin-kind-exec-data-design.md AGENTS.md
 git commit -s -m "docs(adr-0014): Phase 5 落地 + ADR-0014 全部完结状态同步"
 ```
 
