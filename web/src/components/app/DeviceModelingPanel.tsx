@@ -238,7 +238,6 @@ export function DeviceModelingPanel({
           importDrawerOpen ? (
             <DeviceImportDrawer
               workspacePath={workspacePath}
-              existingDeviceIds={assets.map((asset) => asset.id)}
               onClose={() => setImportDrawerOpen(false)}
               onSaved={() => { setImportDrawerOpen(false); void loadAssets(); }}
               onStatusMessage={onStatusMessage}

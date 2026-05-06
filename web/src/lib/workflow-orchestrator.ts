@@ -443,11 +443,9 @@ function toWorkflowNodeRefPrefix(value: string): string {
 }
 
 function buildInitialNodeRefs(graph: WorkflowGraph): Record<string, string> {
-  const usedRefs = new Set<string>();
   return Object.entries(graph.nodes).reduce<Record<string, string>>((acc, [nodeId, node]) => {
     const prefix = toWorkflowNodeRefPrefix(node.type);
-    const ref = allocateNodeId(prefix, usedRefs);
-    usedRefs.add(ref);
+    const ref = `${prefix}_${allocateNodeId().slice(0, 8)}`;
     acc[ref] = nodeId;
     return acc;
   }, {});
@@ -1008,11 +1006,7 @@ export function applyWorkflowOrchestrationOperation(
     case 'create_node': {
       const defaultSeed = buildDefaultNodeSeed(operation.nodeType);
       const existingNodeId = nextNodeRefs[operation.ref];
-      const usedNodeIds = new Set([
-        ...Object.keys(nextNodes),
-        ...Object.values(nextNodeRefs),
-      ]);
-      const nodeId = existingNodeId ?? allocateNodeId(defaultSeed.idPrefix, usedNodeIds);
+      const nodeId = existingNodeId ?? allocateNodeId();
       const existingNode = nextNodes[nodeId];
       const mergedConfig = mergeJsonValue(
         (existingNode?.config ?? defaultSeed.config) as JsonValue,

@@ -872,14 +872,6 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
     [syncSelectionState, emitCurrentGraphChange, reportFlowgramError],
   );
 
-  function nextNodeId(prefix: string): string {
-    const currentIds = new Set(
-      editorCtx?.document.getAllNodes().map((node) => node.id) ?? Object.keys(resolvedGraph?.nodes ?? {}),
-    );
-
-    return allocateNodeId(prefix, currentIds);
-  }
-
   function buildInsertionPosition(anchorNode: FlowNodeEntity | null) {
     if (!anchorNode) {
       return undefined;
@@ -905,7 +897,7 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
 
     try {
       const anchorNode = mode === 'downstream' ? selectedNodeRef.current : null;
-      const nextId = nextNodeId(seed.idPrefix);
+      const nextId = allocateNodeId();
       const node = editorCtx.document.createWorkflowNodeByType(
         seed.kind,
         buildInsertionPosition(anchorNode),

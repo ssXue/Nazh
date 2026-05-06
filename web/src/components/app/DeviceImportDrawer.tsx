@@ -3,7 +3,6 @@ import { useCallback, useRef, useState } from 'react';
 import { useDeviceAssets } from '../../hooks/use-device-assets';
 import type { ExtractionProposal } from '../../hooks/use-device-assets';
 import { useCapabilities } from '../../hooks/use-capabilities';
-import { allocateNodeId } from '../../lib/workflow-node-id';
 import {
   SparklesIcon,
   FileJsonIcon,
@@ -64,7 +63,6 @@ const ESI_PHASES: PhaseInfo[] = [
 
 interface DeviceImportDrawerProps {
   workspacePath: string;
-  existingDeviceIds: readonly string[];
   onClose: () => void;
   onSaved: () => void;
   onStatusMessage: (message: string) => void;
@@ -74,7 +72,6 @@ type InputMode = 'text' | 'pdf' | 'esi';
 
 export function DeviceImportDrawer({
   workspacePath,
-  existingDeviceIds,
   onClose,
   onSaved,
   onStatusMessage,
@@ -307,7 +304,7 @@ export function DeviceImportDrawer({
       const idMatch = extractedYaml.match(/^id:\s*(.+)$/m);
       const typeMatch = extractedYaml.match(/^type:\s*(.+)$/m);
       const modelMatch = extractedYaml.match(/^model:\s*(.+)$/m);
-      const deviceId = stripYamlQuotes(idMatch?.[1]) ?? allocateNodeId('device', new Set(existingDeviceIds));
+      const deviceId = stripYamlQuotes(idMatch?.[1]) ?? `device_${Date.now()}`;
       const deviceType = stripYamlQuotes(typeMatch?.[1]) ?? 'unknown';
       const name =
         stripYamlQuotes(modelMatch?.[1]) ?? deviceId.replace(/_/g, ' ');
@@ -350,7 +347,6 @@ export function DeviceImportDrawer({
     proposal,
     saveAsset,
     saveCapability,
-    existingDeviceIds,
     mode,
     onSaved,
     onClose,
