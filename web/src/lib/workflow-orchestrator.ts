@@ -21,7 +21,7 @@ import {
 import { toFlowgramWorkflowJson } from './flowgram';
 import { copilotCompleteStream, type AiAssetContext } from './tauri';
 import { isUsableGlobalAiProvider, resolveGlobalAiProvider } from './workflow-ai';
-import { allocateScopedId } from './id-allocation';
+import { allocateNodeId } from './workflow-node-id';
 import {
   buildWorkflowAiNodeGuideText,
   getWorkflowAiAllowedNodeKinds,
@@ -446,7 +446,7 @@ function buildInitialNodeRefs(graph: WorkflowGraph): Record<string, string> {
   const usedRefs = new Set<string>();
   return Object.entries(graph.nodes).reduce<Record<string, string>>((acc, [nodeId, node]) => {
     const prefix = toWorkflowNodeRefPrefix(node.type);
-    const ref = allocateScopedId(prefix, usedRefs);
+    const ref = allocateNodeId(prefix, usedRefs);
     usedRefs.add(ref);
     acc[ref] = nodeId;
     return acc;
@@ -1012,7 +1012,7 @@ export function applyWorkflowOrchestrationOperation(
         ...Object.keys(nextNodes),
         ...Object.values(nextNodeRefs),
       ]);
-      const nodeId = existingNodeId ?? allocateScopedId(defaultSeed.idPrefix, usedNodeIds);
+      const nodeId = existingNodeId ?? allocateNodeId(defaultSeed.idPrefix, usedNodeIds);
       const existingNode = nextNodes[nodeId];
       const mergedConfig = mergeJsonValue(
         (existingNode?.config ?? defaultSeed.config) as JsonValue,

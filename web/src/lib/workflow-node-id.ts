@@ -1,6 +1,9 @@
-import { allocateScopedId } from './id-allocation';
+/** 分配 `${prefix}_${index}` 形式的稳定 ID，可用于节点、设备等实体。 */
+export function allocateNodeId(prefix: string, usedIds: ReadonlySet<string>): string {
+  let index = 1;
+  while (usedIds.has(`${prefix}_${index}`)) {
+    index += 1;
+  }
 
-/** 兼容旧命名：后续逐步迁移到 allocateScopedId。 */
-export const allocateNodeId = allocateScopedId;
-
-export { allocateScopedId };
+  return `${prefix}_${index}`;
+}

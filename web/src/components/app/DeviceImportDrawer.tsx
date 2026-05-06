@@ -3,7 +3,7 @@ import { useCallback, useRef, useState } from 'react';
 import { useDeviceAssets } from '../../hooks/use-device-assets';
 import type { ExtractionProposal } from '../../hooks/use-device-assets';
 import { useCapabilities } from '../../hooks/use-capabilities';
-import { allocateScopedId } from '../../lib/id-allocation';
+import { allocateNodeId } from '../../lib/workflow-node-id';
 import {
   SparklesIcon,
   FileJsonIcon,
@@ -307,7 +307,7 @@ export function DeviceImportDrawer({
       const idMatch = extractedYaml.match(/^id:\s*(.+)$/m);
       const typeMatch = extractedYaml.match(/^type:\s*(.+)$/m);
       const modelMatch = extractedYaml.match(/^model:\s*(.+)$/m);
-      const deviceId = stripYamlQuotes(idMatch?.[1]) ?? allocateScopedId('device', new Set(existingDeviceIds));
+      const deviceId = stripYamlQuotes(idMatch?.[1]) ?? allocateNodeId('device', new Set(existingDeviceIds));
       const deviceType = stripYamlQuotes(typeMatch?.[1]) ?? 'unknown';
       const name =
         stripYamlQuotes(modelMatch?.[1]) ?? deviceId.replace(/_/g, ' ');
