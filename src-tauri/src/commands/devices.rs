@@ -1199,7 +1199,7 @@ fn build_proposal_request(text: &str, provider_id: String) -> AiCompletionReques
             max_tokens: None,
             ..Default::default()
         },
-        timeout_ms: None,
+        timeout_ms: Some(120_000),
     }
 }
 

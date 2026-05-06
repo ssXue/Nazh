@@ -1,4 +1,6 @@
-import { useCallback, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
+
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { useDeviceAssets } from '../../hooks/use-device-assets';
 import type { ExtractionProposal } from '../../hooks/use-device-assets';
@@ -46,10 +48,8 @@ interface PhaseInfo {
 }
 
 const PDF_PHASES: PhaseInfo[] = [
-  { phase: 'reading-pdf', label: '读取 PDF 文件...' },
   { phase: 'extracting-text', label: '提取文本内容...' },
   { phase: 'calling-ai', label: 'AI 分析说明书中...' },
-  { phase: 'parsing-result', label: '解析抽取结果...' },
 ];
 
 const TEXT_PHASES: PhaseInfo[] = [
@@ -76,7 +76,7 @@ export function DeviceImportDrawer({
   onSaved,
   onStatusMessage,
 }: DeviceImportDrawerProps) {
-  const { extractFromText, extractProposal, extractTextFromPdf, extractFromPdf, importEthercatEsi, saveAsset } =
+  const { extractFromText, extractProposal, extractTextFromPdf, extractProposalStream, importEthercatEsi, saveAsset } =
     useDeviceAssets(workspacePath);
   const { saveCapability } = useCapabilities(workspacePath);
 
@@ -88,8 +88,6 @@ export function DeviceImportDrawer({
   // PDF 上传状态
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [pdfBase64, setPdfBase64] = useState<string | null>(null);
-  const [extractedText, setExtractedText] = useState('');
-  const [showTextPreview, setShowTextPreview] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -101,12 +99,29 @@ export function DeviceImportDrawer({
 
   // AI 抽取状态
   const [extractedYaml, setExtractedYaml] = useState('');
+  const [streamingText, setStreamingText] = useState('');
+  const [thinkingText, setThinkingText] = useState('');
   const [phase, setPhase] = useState<ExtractionPhase>('idle');
   const [extractError, setExtractError] = useState<string | null>(null);
   const [proposal, setProposal] = useState<ExtractionProposal | null>(null);
 
   const extracting = phase !== 'idle' && phase !== 'done' && phase !== 'error';
   const phases = mode === 'pdf' ? PDF_PHASES : mode === 'esi' ? ESI_PHASES : TEXT_PHASES;
+
+  // 流式区域自动滚动到底部
+  const streamingPreRef = useRef<HTMLPreElement>(null);
+  const thinkingPreRef = useRef<HTMLPreElement>(null);
+
+  useEffect(() => {
+    streamingPreRef.current?.scrollTo(0, streamingPreRef.current.scrollHeight);
+  }, [streamingText]);
+
+  useEffect(() => {
+    thinkingPreRef.current?.scrollTo(0, thinkingPreRef.current.scrollHeight);
+  }, [thinkingText]);
+
+  // 自动抽取的 ref（避免 handleFile ↔ handleExtractFromPdf 循环依赖）
+  const extractFromPdfRef = useRef<(base64: string) => Promise<void>>(undefined as unknown as (base64: string) => Promise<void>);
 
   // ---- PDF 文件处理 ----
 
@@ -122,8 +137,8 @@ export function DeviceImportDrawer({
       }
 
       setPdfFile(file);
-      setExtractedText('');
       setExtractedYaml('');
+      setStreamingText('');
       setProposal(null);
       setPhase('idle');
       setExtractError(null);
@@ -133,6 +148,10 @@ export function DeviceImportDrawer({
         const dataUrl = reader.result as string;
         const base64 = dataUrl.split(',')[1] ?? '';
         setPdfBase64(base64);
+        // 自动开始抽取
+        if (extractFromPdfRef.current) {
+          setTimeout(() => void extractFromPdfRef.current?.(base64), 0);
+        }
       };
       reader.readAsDataURL(file);
     },
@@ -242,23 +261,54 @@ export function DeviceImportDrawer({
     }
   }, [importText, extractProposal, extractFromText, onStatusMessage]);
 
-  const handleExtractFromPdf = useCallback(async () => {
-    if (!pdfBase64) return;
+  const handleExtractFromPdf = useCallback(async (base64?: string) => {
+    const b64 = base64 ?? pdfBase64;
+    if (!b64) return;
     setExtractError(null);
     setExtractedYaml('');
+    setStreamingText('');
+    setThinkingText('');
     setProposal(null);
     try {
       // 阶段 1：提取文本
       setPhase('extracting-text');
-      const text = await extractTextFromPdf(pdfBase64);
-      setExtractedText(text);
+      const text = await extractTextFromPdf(b64);
 
-      // 阶段 2：AI 结构化抽取
+      // 阶段 2：流式 AI 结构化抽取（含 thinking + 自动重试）
       setPhase('calling-ai');
-      const result = await extractFromPdf(pdfBase64);
+      const rawJson = await extractProposalStream(
+        text,
+        (accumulated) => {
+          flushSync(() => setStreamingText(accumulated));
+        },
+        (thinking) => {
+          flushSync(() => setThinkingText(thinking));
+        },
+      );
 
-      // 阶段 3：解析结果
-      setPhase('parsing-result');
+      // 解析 AI 输出（streamingText 会在 extractedYaml 设置后被条件隐藏）
+      const trimmed = rawJson.trim();
+      let jsonStr = trimmed;
+      // 去掉 ```json ... ``` 包裹
+      if (jsonStr.startsWith('```json') || jsonStr.startsWith('```')) {
+        const start = jsonStr.indexOf('\n') + 1;
+        const end = jsonStr.lastIndexOf('```');
+        if (end > start) {
+          jsonStr = jsonStr.slice(start, end).trim();
+        }
+      }
+      const raw = JSON.parse(jsonStr) as {
+        deviceYaml: string;
+        capabilityYamls?: string[];
+        uncertainties?: Array<{ fieldPath: string; guessedValue: string; reason: string }>;
+        warnings?: string[];
+      };
+      const result: ExtractionProposal = {
+        deviceYamls: [raw.deviceYaml],
+        capabilityYamls: raw.capabilityYamls ?? [],
+        uncertainties: raw.uncertainties ?? [],
+        warnings: raw.warnings ?? [],
+      };
       setProposal(result);
       setExtractedYaml(result.deviceYamls[0] ?? '');
       const msg = [
@@ -272,7 +322,10 @@ export function DeviceImportDrawer({
       setExtractError(`PDF 抽取失败: ${error}`);
       setPhase('error');
     }
-  }, [pdfBase64, extractTextFromPdf, extractFromPdf, onStatusMessage]);
+  }, [pdfBase64, extractTextFromPdf, extractProposalStream, onStatusMessage]);
+
+  // 注册到 ref 供 handleFile 自动调用
+  extractFromPdfRef.current = handleExtractFromPdf;
 
   const handleImportEsi = useCallback(async () => {
     if (!esiXml.trim()) return;
@@ -330,12 +383,13 @@ export function DeviceImportDrawer({
   const resetState = useCallback(() => {
     setProposal(null);
     setExtractedYaml('');
+    setStreamingText('');
+    setThinkingText('');
     setImportText('');
     setPdfFile(null);
     setPdfBase64(null);
     setEsiFile(null);
     setEsiXml('');
-    setExtractedText('');
     setExtractError(null);
     setPhase('idle');
   }, []);
@@ -394,7 +448,8 @@ export function DeviceImportDrawer({
     setPdfBase64(null);
     setEsiFile(null);
     setEsiXml('');
-    setExtractedText('');
+    setStreamingText('');
+    setThinkingText('');
     setExtractedYaml('');
     setProposal(null);
     setExtractError(null);
@@ -450,8 +505,6 @@ export function DeviceImportDrawer({
             <PdfUploadView
               file={pdfFile}
               dragOver={dragOver}
-              extractedText={extractedText}
-              showTextPreview={showTextPreview}
               onDragOver={(e) => {
                 e.preventDefault();
                 setDragOver(true);
@@ -459,7 +512,6 @@ export function DeviceImportDrawer({
               onDragLeave={() => setDragOver(false)}
               onDrop={handleDrop}
               onFileInputChange={handleFileInputChange}
-              onTogglePreview={() => setShowTextPreview((v) => !v)}
               fileInputRef={fileInputRef}
             />
           ) : (
@@ -485,16 +537,22 @@ export function DeviceImportDrawer({
 
           {extractError && <div className="dm-drawer__error">{extractError}</div>}
 
-          {mode === 'pdf' && pdfBase64 && !extractedYaml && !extracting && (
-            <div className="dm-drawer__actions">
-              <button
-                type="button"
-                className="dm-drawer__extract-btn"
-                onClick={() => void handleExtractFromPdf()}
-              >
-                <SparklesIcon width={14} height={14} />
-                AI 抽取
-              </button>
+          {/* AI 思考过程（结果出来后自动隐藏） */}
+          {thinkingText && !extractedYaml && (
+            <details className="dm-drawer__thinking" open>
+              <summary>AI 思考中...</summary>
+              <pre className="dm-drawer__thinking-text" ref={thinkingPreRef}>{thinkingText}</pre>
+            </details>
+          )}
+
+          {/* 流式输出区（结果出来后自动隐藏） */}
+          {streamingText && !extractedYaml && (
+            <div className="dm-drawer__streaming">
+              <div className="dm-drawer__streaming-header">
+                <span className="dm-drawer__spinner" />
+                AI 输出中...
+              </div>
+              <pre className="dm-drawer__streaming-text" ref={streamingPreRef}>{streamingText}</pre>
             </div>
           )}
 
@@ -597,24 +655,18 @@ function TextPasteView({
 function PdfUploadView({
   file,
   dragOver,
-  extractedText,
-  showTextPreview,
   onDragOver,
   onDragLeave,
   onDrop,
   onFileInputChange,
-  onTogglePreview,
   fileInputRef,
 }: {
   file: File | null;
   dragOver: boolean;
-  extractedText: string;
-  showTextPreview: boolean;
   onDragOver: (e: React.DragEvent) => void;
   onDragLeave: () => void;
   onDrop: (e: React.DragEvent) => void;
   onFileInputChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  onTogglePreview: () => void;
   fileInputRef: React.RefObject<HTMLInputElement | null>;
 }) {
   return (
@@ -644,20 +696,6 @@ function PdfUploadView({
         hidden
         onChange={onFileInputChange}
       />
-
-      {extractedText && (
-        <details open={showTextPreview} className="dm-drawer__preview">
-          <summary onClick={(e) => { e.preventDefault(); onTogglePreview(); }}>
-            提取文本（{extractedText.length} 字符）
-          </summary>
-          <pre className="dm-drawer__preview-text">{extractedText}</pre>
-          {extractedText.length > 5000 && (
-            <span className="dm-drawer__preview-hint">
-              完整文本已送入 AI 抽取，预览区域可滚动查看
-            </span>
-          )}
-        </details>
-      )}
     </div>
   );
 }

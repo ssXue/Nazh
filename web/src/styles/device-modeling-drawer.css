@@ -459,3 +459,80 @@
 @keyframes dm-spinner-rotate {
   to { transform: rotate(360deg); }
 }
+
+/* ── AI 思考过程 ── */
+
+.dm-drawer__thinking {
+  margin-top: 12px;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-sm, 8px);
+  overflow: hidden;
+}
+
+.dm-drawer__thinking summary {
+  padding: 6px 12px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dm-drawer__thinking summary:hover {
+  color: var(--text);
+}
+
+.dm-drawer__thinking[open] summary {
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.dm-drawer__thinking-text {
+  margin: 0;
+  padding: 8px 12px;
+  max-height: 160px;
+  overflow-y: auto;
+  font-size: 10px;
+  font-family: var(--font-mono, monospace);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: var(--surface-elevated);
+  color: var(--text-soft);
+  opacity: 0.7;
+}
+
+/* ── 流式输出区 ── */
+
+.dm-drawer__streaming {
+  margin-top: 16px;
+  border: 1px solid var(--accent-border, var(--panel-border));
+  border-radius: var(--radius-md, 12px);
+  overflow: hidden;
+}
+
+.dm-drawer__streaming-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.dm-drawer__streaming-text {
+  margin: 0;
+  padding: 10px 12px;
+  max-height: 300px;
+  overflow-y: auto;
+  font-size: 11px;
+  font-family: var(--font-mono, monospace);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: var(--surface-elevated);
+  color: var(--text-soft);
+}

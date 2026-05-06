@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 
-import { hasTauriRuntime } from '../lib/tauri';
+import { hasTauriRuntime, tauriEventStream } from '../lib/tauri';
 
 /** 设备资产摘要。 */
 export interface DeviceAssetSummary {
@@ -143,6 +143,26 @@ export function useDeviceAssets(workspacePath = '') {
         text,
         providerId: providerId ?? null,
       });
+    },
+    [],
+  );
+
+  /** 流式 AI 结构化抽取（复用 tauriEventStream 通用机制）。 */
+  const extractProposalStream = useCallback(
+    async (
+      text: string,
+      onDelta: (accumulated: string) => void,
+      onThinking?: (accumulated: string) => void,
+      providerId?: string,
+    ): Promise<string> => {
+      if (!hasTauriRuntime()) throw new Error('需要 Tauri 运行时');
+      const result = await tauriEventStream(
+        'extract_device_proposal_stream',
+        { text, providerId: providerId ?? null },
+        onDelta,
+        onThinking,
+      );
+      return result.text;
     },
     [],
   );
@@ -361,6 +381,7 @@ export function useDeviceAssets(workspacePath = '') {
     deleteAsset,
     extractFromText,
     extractProposal,
+    extractProposalStream,
     generatePinSchema,
     loadSources,
     saveSources,
@@ -379,3 +400,4 @@ export function useDeviceAssets(workspacePath = '') {
     importEthercatEsi,
   };
 }
+
