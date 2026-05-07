@@ -154,11 +154,17 @@ export function useDeviceAssets(workspacePath = '') {
       onDelta: (accumulated: string) => void,
       onThinking?: (accumulated: string) => void,
       providerId?: string,
+      correction?: { yaml: string; error: string },
     ): Promise<string> => {
       if (!hasTauriRuntime()) throw new Error('需要 Tauri 运行时');
       const result = await tauriEventStream(
         'extract_device_proposal_stream',
-        { text, providerId: providerId ?? null },
+        {
+          text,
+          providerId: providerId ?? null,
+          correctionYaml: correction?.yaml ?? null,
+          correctionError: correction?.error ?? null,
+        },
         onDelta,
         onThinking,
       );

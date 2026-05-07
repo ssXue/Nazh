@@ -805,10 +805,16 @@ pub(crate) async fn extract_device_proposal_stream(
     state: State<'_, DesktopState>,
     text: String,
     provider_id: Option<String>,
+    // 校正模式：提供失败的 YAML 和错误信息，让 AI 修正输出。
+    correction_yaml: Option<String>,
+    correction_error: Option<String>,
     stream_id: String,
 ) -> Result<(), String> {
     let resolved = resolve_provider_id(&state, provider_id).await?;
-    let request = build_proposal_request(&text, resolved);
+    let request = match (&correction_yaml, &correction_error) {
+        (Some(yaml), Some(err)) => build_correction_request(yaml, err, resolved),
+        _ => build_proposal_request(&text, resolved),
+    };
     let service = Arc::clone(&state.ai_service);
     let mut rx = service
         .stream_complete(request)
@@ -1192,6 +1198,35 @@ fn build_proposal_request(text: &str, provider_id: String) -> AiCompletionReques
             AiMessage {
                 role: AiMessageRole::User,
                 content: build_proposal_prompt(text),
+            },
+        ],
+        params: AiGenerationParams {
+            temperature: Some(0.1),
+            max_tokens: None,
+            ..Default::default()
+        },
+        timeout_ms: Some(120_000),
+    }
+}
+
+/// 构建 AI 校正请求：将失败的 YAML + 错误信息回传给 AI 进行修正。
+fn build_correction_request(failed_yaml: &str, error: &str, provider_id: String) -> AiCompletionRequest {
+    AiCompletionRequest {
+        provider_id,
+        model: None,
+        messages: vec![
+            AiMessage {
+                role: AiMessageRole::System,
+                content: PROPOSAL_SYSTEM_PROMPT.to_owned(),
+            },
+            AiMessage {
+                role: AiMessageRole::User,
+                content: format!(
+                    "之前生成的设备 DSL YAML 保存时验证失败，请根据错误信息修正 YAML。\n\n\
+                     失败的 deviceYaml：\n```yaml\n{failed_yaml}\n```\n\n\
+                     错误信息：{error}\n\n\
+                     请输出修正后的完整 JSON（与首次抽取相同的 JSON 结构）。"
+                ),
             },
         ],
         params: AiGenerationParams {
