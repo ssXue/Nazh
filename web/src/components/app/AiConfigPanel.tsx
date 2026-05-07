@@ -35,6 +35,7 @@ interface AgentSettingsFormState {
   maxTokens: string;
   topP: string;
   timeoutMs: string;
+  thinkingEnabled: boolean;
 }
 
 const EMPTY_AGENT_SETTINGS_FORM: AgentSettingsFormState = {
@@ -43,6 +44,7 @@ const EMPTY_AGENT_SETTINGS_FORM: AgentSettingsFormState = {
   maxTokens: '',
   topP: '',
   timeoutMs: '',
+  thinkingEnabled: false,
 };
 
 interface ProviderPreset {
@@ -110,7 +112,6 @@ function buildProviderUpserts(
     defaultModel: provider.defaultModel,
     extraHeaders: provider.extraHeaders,
     enabled: provider.id === resolvedActiveProviderId,
-    thinkingEnabled: provider.thinkingEnabled,
     apiKey: { kind: 'keep' } as AiSecretInput,
   }));
 }
@@ -154,6 +155,7 @@ function toAgentSettingsForm(
     maxTokens: readNumberInput(aiConfig.copilotParams.maxTokens),
     topP: readNumberInput(aiConfig.copilotParams.topP),
     timeoutMs: readNumberInput(aiConfig.agentSettings.timeoutMs),
+    thinkingEnabled: aiConfig.agentSettings.thinkingEnabled,
   };
 }
 
@@ -254,13 +256,11 @@ export function AiConfigPanel({
   }
 
   function handleSelectPreset(preset: ProviderPreset) {
-    const isDeepSeek = preset.baseUrl === 'https://api.deepseek.com';
     setForm((prev) => ({
       ...prev,
       name: preset.name,
       baseUrl: preset.baseUrl,
       defaultModel: preset.defaultModel,
-      thinkingEnabled: isDeepSeek ? true : prev.thinkingEnabled,
     }));
   }
 
@@ -277,7 +277,6 @@ export function AiConfigPanel({
       defaultModel: form.defaultModel.trim(),
       extraHeaders: {},
       enabled: true,
-      thinkingEnabled: form.thinkingEnabled,
     };
 
     void onAiProviderTest(draft);
@@ -301,7 +300,6 @@ export function AiConfigPanel({
       defaultModel: provider.defaultModel,
       extraHeaders: provider.extraHeaders,
       enabled: provider.enabled,
-      thinkingEnabled: provider.thinkingEnabled,
     });
   }
 
@@ -343,7 +341,6 @@ export function AiConfigPanel({
       defaultModel: form.defaultModel.trim(),
       extraHeaders: editingProvider?.extraHeaders ?? {},
       enabled: nextProviderId === nextActiveProviderId,
-      thinkingEnabled: form.thinkingEnabled,
       apiKey: resolveProviderApiKeyInput(form.apiKey, editingProviderId, clearSavedApiKey),
     };
     const nextProviders = isEditingProvider
@@ -391,6 +388,7 @@ export function AiConfigPanel({
         agentSettings: {
           systemPrompt: agentSettingsForm.systemPrompt.trim() || undefined,
           timeoutMs: parseOptionalPositiveInteger(agentSettingsForm.timeoutMs),
+          thinkingEnabled: agentSettingsForm.thinkingEnabled,
         },
       }),
     );
@@ -689,20 +687,6 @@ export function AiConfigPanel({
                   />
                 </article>
 
-                <article className="settings-row">
-                  <label className="settings-row__label" htmlFor="ai-provider-thinking">
-                    启用 Thinking（深度思考）
-                  </label>
-                  <input
-                    id="ai-provider-thinking"
-                    type="checkbox"
-                    checked={form.thinkingEnabled}
-                    onChange={(e) =>
-                      setForm((prev) => ({ ...prev, thinkingEnabled: e.target.checked }))
-                    }
-                  />
-                </article>
-
                 <article className="settings-row settings-row--stacked ai-config-panel__field--wide">
                   <label className="settings-row__label" htmlFor="ai-provider-key">
                     API Key
@@ -881,6 +865,23 @@ export function AiConfigPanel({
               value={agentSettingsForm.timeoutMs}
               onChange={(event) =>
                 handleAgentSettingsChange('timeoutMs', event.target.value)
+              }
+            />
+          </article>
+
+          <article className="settings-row">
+            <label className="settings-row__label" htmlFor="ai-agent-thinking">
+              启用 Thinking（深度思考）
+            </label>
+            <input
+              id="ai-agent-thinking"
+              type="checkbox"
+              checked={agentSettingsForm.thinkingEnabled}
+              onChange={(e) =>
+                setAgentSettingsForm((prev) => ({
+                  ...prev,
+                  thinkingEnabled: e.target.checked,
+                }))
               }
             />
           </article>

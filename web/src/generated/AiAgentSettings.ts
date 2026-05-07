@@ -3,4 +3,4 @@
 /**
  * 全局脚本 AI 代理设置。
  */
-export type AiAgentSettings = { systemPrompt?: string, timeoutMs?: bigint, };
+export type AiAgentSettings = { systemPrompt?: string, timeoutMs?: bigint, thinkingEnabled: boolean, };

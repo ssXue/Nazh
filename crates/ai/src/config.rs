@@ -129,7 +129,6 @@ fn merge_provider_upsert(
         default_model: upsert.default_model,
         extra_headers: upsert.extra_headers,
         enabled: upsert.enabled,
-        thinking_enabled: upsert.thinking_enabled,
     }
 }
 
@@ -180,6 +179,8 @@ pub struct AiAgentSettings {
     #[serde(default)]
     #[cfg_attr(feature = "ts-export", ts(optional))]
     pub timeout_ms: Option<u64>,
+    #[serde(default)]
+    pub thinking_enabled: bool,
 }
 
 /// 磁盘中的单个 AI 提供商记录（含密钥）。
@@ -195,8 +196,6 @@ pub struct AiProviderSecretRecord {
     pub extra_headers: HashMap<String, String>,
     #[serde(default = "default_true")]
     pub enabled: bool,
-    #[serde(default)]
-    pub thinking_enabled: bool,
 }
 
 impl AiProviderSecretRecord {
@@ -209,7 +208,6 @@ impl AiProviderSecretRecord {
             default_model: self.default_model.clone(),
             extra_headers: self.extra_headers.clone(),
             enabled: self.enabled,
-            thinking_enabled: self.thinking_enabled,
             has_api_key: !self.api_key.trim().is_empty(),
         }
     }
@@ -247,8 +245,6 @@ pub struct AiProviderView {
     #[serde(default = "default_true")]
     pub enabled: bool,
     #[serde(default)]
-    pub thinking_enabled: bool,
-    #[serde(default)]
     pub has_api_key: bool,
 }
 
@@ -266,8 +262,6 @@ pub struct AiProviderUpsert {
     pub extra_headers: HashMap<String, String>,
     #[serde(default = "default_true")]
     pub enabled: bool,
-    #[serde(default)]
-    pub thinking_enabled: bool,
     #[serde(default)]
     pub api_key: AiSecretInput,
 }
@@ -303,8 +297,6 @@ pub struct AiProviderDraft {
     pub extra_headers: HashMap<String, String>,
     #[serde(default = "default_true")]
     pub enabled: bool,
-    #[serde(default)]
-    pub thinking_enabled: bool,
 }
 
 #[cfg(test)]
@@ -320,7 +312,6 @@ mod tests {
             default_model: "test-model".to_owned(),
             extra_headers: HashMap::new(),
             enabled: true,
-            thinking_enabled: false,
         }
     }
 
@@ -373,7 +364,6 @@ mod tests {
                 default_model: "new-model".to_owned(),
                 extra_headers: HashMap::new(),
                 enabled: true,
-                thinking_enabled: false,
                 api_key: AiSecretInput::Keep,
             }],
             active_provider_id: Some("p1".to_owned()),
@@ -404,7 +394,6 @@ mod tests {
                 default_model: "model".to_owned(),
                 extra_headers: HashMap::new(),
                 enabled: true,
-                thinking_enabled: false,
                 api_key: AiSecretInput::Clear,
             }],
             active_provider_id: None,
@@ -426,7 +415,6 @@ mod tests {
                 default_model: "model".to_owned(),
                 extra_headers: HashMap::new(),
                 enabled: true,
-                thinking_enabled: false,
                 api_key: AiSecretInput::Set("sk-brand-new".to_owned()),
             }],
             active_provider_id: None,
@@ -449,7 +437,6 @@ mod tests {
                     default_model: "model-a".to_owned(),
                     extra_headers: HashMap::new(),
                     enabled: true,
-                    thinking_enabled: false,
                     api_key: AiSecretInput::Set("sk-a".to_owned()),
                 },
                 AiProviderUpsert {
@@ -459,7 +446,6 @@ mod tests {
                     default_model: "model-b".to_owned(),
                     extra_headers: HashMap::new(),
                     enabled: true,
-                    thinking_enabled: false,
                     api_key: AiSecretInput::Set("sk-b".to_owned()),
                 },
             ],
@@ -486,7 +472,6 @@ mod tests {
                     default_model: "model-a".to_owned(),
                     extra_headers: HashMap::new(),
                     enabled: false,
-                    thinking_enabled: false,
                     api_key: AiSecretInput::Set("sk-a".to_owned()),
                 },
                 AiProviderUpsert {
@@ -496,7 +481,6 @@ mod tests {
                     default_model: "model-b".to_owned(),
                     extra_headers: HashMap::new(),
                     enabled: true,
-                    thinking_enabled: false,
                     api_key: AiSecretInput::Set("sk-b".to_owned()),
                 },
             ],
@@ -520,6 +504,7 @@ mod tests {
             agent_settings: AiAgentSettings {
                 system_prompt: Some("你是全局代理".to_owned()),
                 timeout_ms: Some(12_000),
+                thinking_enabled: false,
             },
         };
 
