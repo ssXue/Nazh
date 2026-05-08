@@ -329,6 +329,28 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn 无连接时走_mock_回退并标记模拟() {
+        let node = CanWriteNode::new(
+            "can-write-1",
+            CanWriteNodeConfig {
+                connection_id: None,
+                can_id: Some(0x123),
+                is_extended: false,
+            },
+            shared_connection_manager(),
+        );
+
+        let execution = node
+            .transform(Uuid::new_v4(), json!({ "data": [1, 2, 3] }))
+            .await
+            .unwrap();
+        let metadata = execution.outputs[0].metadata.as_ref().unwrap();
+
+        assert_eq!(metadata["can"]["simulated"], Value::Bool(true));
+        assert!(metadata["can"].get("connection").is_none());
+    }
+
+    #[tokio::test]
     async fn 绑定连接时连续发送复用同一_can_会话() {
         let manager = shared_connection_manager();
         manager

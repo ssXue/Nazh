@@ -149,17 +149,28 @@ async fn open_shared_session(
     connection_manager: &SharedConnectionManager,
     configure: impl Fn(&mut CanBusConfig) -> Result<(), CanError>,
 ) -> Result<SharedCanBusSession, EngineError> {
-    // 获取连接元数据（不使用 ConnectionGuard 的排他借用）
-    let record = connection_manager.get(connection_id).await.ok_or_else(|| {
-        EngineError::node_config(
+    // 获取连接元数据（不使用 ConnectionGuard 的排他借用）。
+    // 无 connection_id 的 CAN 节点会使用内部 mock key，不要求用户注册连接资源。
+    let record = connection_manager.get(connection_id).await;
+    if record.is_none() && !is_implicit_mock_connection(connection_id) {
+        return Err(EngineError::node_config(
             node_id.to_owned(),
             format!("CAN 连接 `{connection_id}` 不存在"),
-        )
-    })?;
+        ));
+    }
 
-    let mut config = if record.kind == "mock" || record.kind.is_empty() {
+    let mut config = if record
+        .as_ref()
+        .is_none_or(|record| record.kind == "mock" || record.kind.is_empty())
+    {
         mock_config()
     } else {
+        let Some(record) = record.as_ref() else {
+            return Err(EngineError::node_config(
+                node_id.to_owned(),
+                format!("CAN 连接 `{connection_id}` 不存在"),
+            ));
+        };
         CanBusConfig::from_metadata(&record.metadata)
             .map_err(|error| EngineError::node_config(node_id.to_owned(), error.to_string()))?
     };
@@ -184,17 +195,19 @@ async fn open_shared_session(
     };
 
     let channel_info = bus.channel_info();
-    let simulated = record.kind.is_empty();
-    let lease = ConnectionLease {
+    let simulated = record.is_none();
+    let lease = record.as_ref().map(|record| ConnectionLease {
         id: record.id.clone(),
         kind: record.kind.clone(),
         metadata: record.metadata.clone(),
         borrowed_at: chrono::Utc::now(),
-    };
+    });
 
-    let _ = connection_manager
-        .record_connect_success(connection_id, "CAN 总线共享会话已建立", None)
-        .await;
+    if record.is_some() {
+        let _ = connection_manager
+            .record_connect_success(connection_id, "CAN 总线共享会话已建立", None)
+            .await;
+    }
 
     tracing::info!(connection_id, channel_info, "CAN 总线共享会话已建立");
 
@@ -203,8 +216,12 @@ async fn open_shared_session(
         connection_id: connection_id.to_owned(),
         channel_info,
         simulated,
-        lease: Some(lease),
+        lease,
     })
+}
+
+fn is_implicit_mock_connection(connection_id: &str) -> bool {
+    connection_id == "mock-can"
 }
 
 fn mock_config() -> CanBusConfig {

@@ -32,6 +32,7 @@
 - `record_connect_success` / `record_connect_failure` / `record_timeout` / `record_heartbeat` — 运行时状态反馈
 - `mark_invalid_configuration` / `mark_disconnected` / `mark_all_idle` — 标记生命周期状态
 - `get` / `list` — 读取快照（用于 IPC `list_connections`）
+- `ensure_shared_session` / `remove_shared_session` / `cleanup_and_remove_shared_session` — 连接级共享会话缓存（CAN/EtherCAT 等长生命周期总线使用）
 
 ts-rs 导出：`ConnectionDefinition` / `ConnectionHealthSnapshot` / `ConnectionHealthState` / `ConnectionRecord`（由 `ts-export` feature 门控）。
 
@@ -40,10 +41,13 @@ ts-rs 导出：`ConnectionDefinition` / `ConnectionHealthSnapshot` / `Connection
 1. **RAII 归还是强制约定**。`ConnectionGuard` 的 Drop 在任何退出路径（正常 / 错误 / panic）都自动释放连接；禁止写显式 `release()` / `close()`。
 2. **状态反馈是节点义务**。成功走 `guard.mark_success()`；失败路径由 Drop 自动计入失败统计，手动 `mark_failure()` 附加原因。未标记即 Drop 视为异常退出（Pending → Degraded + 诊断日志）。
 3. **锁粒度**：`ConnectionManager` 用 `RwLock<HashMap<..., Arc<Mutex<ConnectionRecord>>>>`——外层 RwLock 保护连接表，内层 `Mutex` 保护单连接的治理状态，避免一把大锁。
-4. **定义与实例分离**：`ConnectionDefinition` 只描述"怎么连"，实际的 `tokio-modbus` / `rumqttc` / `reqwest::Client` 实例由 `nodes-io` 在 `acquire` 后惰性建立；本 crate 只管治理状态机。
-5. **治理策略从 metadata 读取**。`ConnectionGovernancePolicy` 从 `metadata.governance` JSON 中读取可调参数（超时、限流窗口、熔断阈值等），有合理默认值和下限。改熔断算法请同步更新本文件，若改语义走 ADR。
-6. **不做节点实现**。本 crate 只提供连接原语。
-7. **超时检测**：`acquire` 前调用 `reconcile_timed_state` 处理过期的限流 / 熔断 / 退避窗口；`finalize_release`（Guard Drop 时）检查占用时长是否超过 `operation_timeout_ms`。
+4. **共享会话按连接 ID 合流初始化**。`ensure_shared_session` 对同一 `connection_id` 使用 per-key async 锁，首次并发建连只允许一个 factory 运行；成功后写入共享缓存，后续调用复用同一 `Arc<T>`。
+5. **运行中连接不静默替换**。`upsert_connection` / `upsert_connections` 遇到正在借出的旧 record 或已有共享会话时保留旧定义；`replace_connections` 遇到任一正在借出的 record 或共享会话时跳过整体替换。未来若需要热切换，应先实现 draining / shutdown 再切换配置。
+6. **定义与实例分离**：`ConnectionDefinition` 只描述"怎么连"，实际的 `tokio-modbus` / `rumqttc` / `reqwest::Client` 实例由 `nodes-io` 在 `acquire` 后惰性建立；本 crate 只管治理状态机。
+7. **治理策略从 metadata 读取**。`ConnectionGovernancePolicy` 从 `metadata.governance` JSON 中读取可调参数（超时、限流窗口、熔断阈值等），有合理默认值和下限。改熔断算法请同步更新本文件，若改语义走 ADR。
+8. **失败出口推进治理状态机**。`guard.mark_failure(reason)` 在 Drop 时会更新 failure counters、退避和熔断；若节点已在同一次 lease 内手动调用 `record_connect_failure`，Drop 不重复计数。
+9. **不做节点实现**。本 crate 只提供连接原语。
+10. **超时检测**：`acquire` 前调用 `reconcile_timed_state` 处理过期的限流 / 熔断 / 退避窗口；`finalize_release`（Guard Drop 时）检查占用时长是否超过 `operation_timeout_ms`。
 
 ## 依赖约束
 
@@ -57,6 +61,7 @@ ts-rs 导出：`ConnectionDefinition` / `ConnectionHealthSnapshot` / `Connection
 | 改 `ConnectionGuard` API / Drop 行为 | 所有 `nodes-io` 中 `acquire` 的调用点；`connection_metadata` 可能需要调整 |
 | 改 `ConnectionDefinition` 字段 | ts-rs 重新生成 + 前端连接管理 UI |
 | 改熔断/健康判定算法 | 本文件"内部约定"小节 + 相关集成测试 + 若语义变化则开 ADR |
+| 改共享会话初始化、清理或连接替换策略 | 本文件"内部约定"小节 + `cargo test -p connections` + 相关 `nodes-io` 会话测试 |
 | 加新的连接类型（如 OPC-UA / CAN） | `validate_connection_definition` 中的匹配分支 + `ConnectionDefinition` 的 type 字段 + `nodes-io` 的使用方 + 文档 |
 | 改 `ConnectionHealthSnapshot` 字段 | ts-rs 重新生成 + 前端连接状态 UI |
 

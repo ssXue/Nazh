@@ -257,4 +257,20 @@ mod tests {
             .unwrap_err();
         assert!(matches!(err, EngineError::NodeConfig { .. }));
     }
+
+    #[tokio::test]
+    async fn 无连接时走_mock_回退并标记模拟() {
+        let node = make_node(CanReadNodeConfig {
+            connection_id: None,
+            can_id: None,
+            is_extended: false,
+            timeout_ms: 1,
+        });
+
+        let execution = node.transform(Uuid::new_v4(), Value::Null).await.unwrap();
+        let metadata = execution.outputs[0].metadata.as_ref().unwrap();
+
+        assert_eq!(metadata["can"]["simulated"], Value::Bool(true));
+        assert!(metadata["can"].get("connection").is_none());
+    }
 }

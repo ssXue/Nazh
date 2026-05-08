@@ -22,6 +22,7 @@ RUN apt-get update && apt-get upgrade -y && \
     libwebkit2gtk-4.1-dev \
     libxdo-dev \
     libssl-dev \
+    libudev-dev \
     libayatana-appindicator3-dev \
     librsvg2-dev \
     libgtk-3-dev \

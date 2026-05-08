@@ -6,14 +6,14 @@
 
 use std::{
     any::Any,
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     sync::{Arc, Mutex},
 };
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex as AsyncMutex, RwLock};
 #[cfg(feature = "ts-export")]
 use ts_rs::TS;
 use url::Url;
@@ -374,6 +374,8 @@ pub struct ConnectionManager {
     attempt_windows: Mutex<HashMap<String, VecDeque<DateTime<Utc>>>>,
     /// 连接级共享会话缓存。key 为 `connection_id`，value 为类型擦除的会话实例。
     shared_sessions: RwLock<HashMap<String, Arc<dyn Any + Send + Sync>>>,
+    /// 按连接 ID 合流首次建连，避免并发任务重复打开同一硬件会话。
+    shared_session_initializers: Mutex<HashMap<String, Arc<AsyncMutex<()>>>>,
 }
 
 /// 创建一个空的 [`ConnectionManager`]，包装在 `Arc<...>` 中。
@@ -407,8 +409,16 @@ impl ConnectionManager {
     /// 插入或替换连接定义（幂等操作）。
     pub async fn upsert_connection(&self, definition: ConnectionDefinition) {
         let id = definition.id.clone();
+        if self.has_shared_session(&id).await {
+            return;
+        }
+
         let record = build_record(definition);
         let mut connections = self.connections.write().await;
+        if connections.get(&id).is_some_and(connection_record_in_use) {
+            return;
+        }
+
         connections.insert(id.clone(), Arc::new(Mutex::new(record)));
         drop(connections);
 
@@ -425,9 +435,18 @@ impl ConnectionManager {
             .iter()
             .map(|definition| definition.id.clone())
             .collect::<Vec<_>>();
+        let active_session_ids = self.shared_session_ids().await;
 
         let mut connections = self.connections.write().await;
         for definition in next_definitions {
+            if connections
+                .get(&definition.id)
+                .is_some_and(connection_record_in_use)
+                || active_session_ids.contains(&definition.id)
+            {
+                continue;
+            }
+
             connections.insert(
                 definition.id.clone(),
                 Arc::new(Mutex::new(build_record(definition))),
@@ -443,6 +462,10 @@ impl ConnectionManager {
         &self,
         definitions: impl IntoIterator<Item = ConnectionDefinition>,
     ) {
+        if self.has_any_shared_session().await {
+            return;
+        }
+
         let next_definitions = definitions.into_iter().collect::<Vec<_>>();
         let next_ids = next_definitions
             .iter()
@@ -458,6 +481,10 @@ impl ConnectionManager {
         }
 
         let mut connections = self.connections.write().await;
+        if connections.values().any(connection_record_in_use) {
+            return;
+        }
+
         *connections = next_connections;
         drop(connections);
 
@@ -493,6 +520,40 @@ impl ConnectionManager {
             .into_iter()
             .map(|connection_id| (connection_id, VecDeque::new()))
             .collect();
+    }
+
+    async fn has_shared_session(&self, connection_id: &str) -> bool {
+        let sessions = self.shared_sessions.read().await;
+        sessions.contains_key(connection_id)
+    }
+
+    async fn has_any_shared_session(&self) -> bool {
+        let sessions = self.shared_sessions.read().await;
+        !sessions.is_empty()
+    }
+
+    async fn shared_session_ids(&self) -> HashSet<String> {
+        let sessions = self.shared_sessions.read().await;
+        sessions.keys().cloned().collect()
+    }
+
+    fn initializer_lock(&self, connection_id: &str) -> Arc<AsyncMutex<()>> {
+        let mut initializers = self
+            .shared_session_initializers
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        initializers
+            .entry(connection_id.to_owned())
+            .or_insert_with(|| Arc::new(AsyncMutex::new(())))
+            .clone()
+    }
+
+    fn remove_initializer_lock(&self, connection_id: &str) {
+        let mut initializers = self
+            .shared_session_initializers
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        initializers.remove(connection_id);
     }
 
     fn register_attempt(
@@ -906,7 +967,22 @@ impl ConnectionManager {
             }
         }
 
-        // 慢路径：不在写锁期间执行 factory（避免阻塞其他读者）
+        let initializer = self.initializer_lock(connection_id);
+        let _initializer_guard = initializer.lock().await;
+
+        {
+            let sessions = self.shared_sessions.read().await;
+            if let Some(existing) = sessions.get(connection_id) {
+                return existing.clone().downcast::<T>().map_err(|_| {
+                    EngineError::node_config(
+                        connection_id.to_owned(),
+                        "共享会话类型不匹配".to_owned(),
+                    )
+                });
+            }
+        }
+
+        // 慢路径：按连接 ID 串行执行 factory，但不占用缓存写锁。
         let session = factory().await?;
 
         let mut sessions = self.shared_sessions.write().await;
@@ -922,6 +998,9 @@ impl ConnectionManager {
             EngineError::node_config(connection_id.to_owned(), "共享会话类型不匹配".to_owned())
         })?;
         sessions.insert(connection_id.to_owned(), arc);
+        drop(sessions);
+
+        self.remove_initializer_lock(connection_id);
         Ok(result)
     }
 
@@ -994,22 +1073,13 @@ fn finalize_release(
             record.health.circuit_open_until = None;
         }
         ConnectionOutcome::Failure(reason) => {
-            if !matches!(
-                record.health.phase,
-                ConnectionHealthState::CircuitOpen
-                    | ConnectionHealthState::RateLimited
-                    | ConnectionHealthState::Invalid
-                    | ConnectionHealthState::Timeout
-                    | ConnectionHealthState::Reconnecting
-            ) {
-                record.health.phase = ConnectionHealthState::Degraded;
-                record.health.last_state_changed_at = Some(now);
-                record.health.diagnosis = Some("节点执行失败，连接已安全释放".to_owned());
-                record.health.recommended_action =
-                    Some("优先检查节点业务逻辑或上游输入，连接本身未被判定为致命故障".to_owned());
-                if !reason.is_empty() {
-                    record.health.last_failure_reason = Some(reason.clone());
-                }
+            let failure_reason = if reason.is_empty() {
+                "连接操作失败，节点未提供具体原因"
+            } else {
+                reason
+            };
+            if !connection_failure_recorded_during_lease(record, borrowed_at) {
+                let _ = apply_runtime_failure(record, &policy, now, failure_reason, false);
             }
         }
         ConnectionOutcome::Pending => {
@@ -1021,6 +1091,21 @@ fn finalize_release(
                 Some("检查节点执行路径是否在所有分支都调用了 mark_success/mark_failure".to_owned());
         }
     }
+}
+
+fn connection_failure_recorded_during_lease(
+    record: &ConnectionRecord,
+    borrowed_at: DateTime<Utc>,
+) -> bool {
+    matches!(
+        record.health.phase,
+        ConnectionHealthState::Reconnecting
+            | ConnectionHealthState::CircuitOpen
+            | ConnectionHealthState::Timeout
+    ) && record
+        .health
+        .last_failure_at
+        .is_some_and(|last_failure_at| last_failure_at >= borrowed_at)
 }
 
 fn build_record(definition: ConnectionDefinition) -> ConnectionRecord {
@@ -1035,6 +1120,13 @@ fn build_record(definition: ConnectionDefinition) -> ConnectionRecord {
 
     refresh_definition_diagnosis(&mut record);
     record
+}
+
+fn connection_record_in_use(entry: &Arc<Mutex<ConnectionRecord>>) -> bool {
+    let record = entry
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    record.in_use
 }
 
 fn refresh_definition_diagnosis(record: &mut ConnectionRecord) {
@@ -1402,4 +1494,182 @@ fn duration_ms(value: u64) -> chrono::Duration {
 #[allow(clippy::cast_sign_loss)]
 fn remaining_ms(target: DateTime<Utc>, now: DateTime<Utc>) -> u64 {
     (target - now).num_milliseconds().max(0) as u64
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+    use std::time::Duration;
+
+    use serde_json::json;
+    use tokio::sync::Barrier;
+
+    use super::*;
+
+    fn http_connection(id: &str, url: &str) -> ConnectionDefinition {
+        ConnectionDefinition {
+            id: id.to_owned(),
+            kind: "http".to_owned(),
+            metadata: json!({
+                "url": url,
+                "method": "GET",
+            }),
+        }
+    }
+
+    fn http_connection_with_failure_threshold(id: &str, threshold: u32) -> ConnectionDefinition {
+        ConnectionDefinition {
+            id: id.to_owned(),
+            kind: "http".to_owned(),
+            metadata: json!({
+                "url": "http://127.0.0.1/health",
+                "method": "GET",
+                "governance": {
+                    "circuit_failure_threshold": threshold,
+                    "circuit_open_ms": 1_000,
+                },
+            }),
+        }
+    }
+
+    #[tokio::test]
+    async fn ensure_shared_session_同一连接并发只初始化一次() {
+        let manager = Arc::new(ConnectionManager::default());
+        let factory_calls = Arc::new(AtomicUsize::new(0));
+        let barrier = Arc::new(Barrier::new(8));
+        let mut handles = Vec::new();
+
+        for _ in 0..8 {
+            let manager = Arc::clone(&manager);
+            let factory_calls = Arc::clone(&factory_calls);
+            let barrier = Arc::clone(&barrier);
+            handles.push(tokio::spawn(async move {
+                barrier.wait().await;
+                manager
+                    .ensure_shared_session("shared-can", || async move {
+                        factory_calls.fetch_add(1, Ordering::SeqCst);
+                        tokio::time::sleep(Duration::from_millis(20)).await;
+                        Ok::<usize, EngineError>(42)
+                    })
+                    .await
+                    .unwrap()
+            }));
+        }
+
+        let mut sessions = Vec::new();
+        for handle in handles {
+            sessions.push(handle.await.unwrap());
+        }
+
+        assert_eq!(factory_calls.load(Ordering::SeqCst), 1);
+        for session in &sessions[1..] {
+            assert!(Arc::ptr_eq(&sessions[0], session));
+        }
+    }
+
+    #[tokio::test]
+    async fn upsert_connection_不替换正在借出的连接记录() {
+        let manager = ConnectionManager::default();
+        manager
+            .register_connection(http_connection("http-main", "http://127.0.0.1/old"))
+            .await
+            .unwrap();
+        let guard = manager.acquire("http-main").await.unwrap();
+
+        manager
+            .upsert_connection(http_connection("http-main", "http://127.0.0.1/new"))
+            .await;
+
+        let Err(err) = manager.acquire("http-main").await else {
+            panic!("正在借出的连接不应被新记录替换为可再次借出");
+        };
+        assert!(matches!(err, EngineError::ConnectionBusy(id) if id == "http-main"));
+
+        drop(guard);
+        let record = manager.get("http-main").await.unwrap();
+        assert_eq!(record.metadata["url"], "http://127.0.0.1/old");
+    }
+
+    #[tokio::test]
+    async fn replace_connections_不替换正在借出的连接记录() {
+        let manager = ConnectionManager::default();
+        manager
+            .register_connection(http_connection("http-main", "http://127.0.0.1/old"))
+            .await
+            .unwrap();
+        let guard = manager.acquire("http-main").await.unwrap();
+
+        manager
+            .replace_connections([http_connection("http-main", "http://127.0.0.1/new")])
+            .await;
+
+        let Err(err) = manager.acquire("http-main").await else {
+            panic!("整体替换不应绕过正在借出的旧记录");
+        };
+        assert!(matches!(err, EngineError::ConnectionBusy(id) if id == "http-main"));
+
+        drop(guard);
+        let record = manager.get("http-main").await.unwrap();
+        assert_eq!(record.metadata["url"], "http://127.0.0.1/old");
+    }
+
+    #[tokio::test]
+    async fn mark_failure_推进失败计数并进入熔断() {
+        let manager = ConnectionManager::default();
+        manager
+            .register_connection(http_connection_with_failure_threshold("http-main", 2))
+            .await
+            .unwrap();
+
+        for expected_failures in 1..=2 {
+            let mut guard = manager.acquire("http-main").await.unwrap();
+            guard.mark_failure("连接被对端拒绝");
+            drop(guard);
+
+            let record = manager.get("http-main").await.unwrap();
+            assert_eq!(record.health.total_failures, expected_failures);
+            assert_eq!(record.health.consecutive_failures, expected_failures);
+        }
+
+        let record = manager.get("http-main").await.unwrap();
+        assert_eq!(record.health.phase, ConnectionHealthState::CircuitOpen);
+        assert!(record.health.circuit_open_until.is_some());
+
+        let Err(err) = manager.acquire("http-main").await else {
+            panic!("达到失败阈值后应进入熔断并拒绝继续借出");
+        };
+        assert!(matches!(
+            err,
+            EngineError::ConnectionCircuitOpen {
+                connection_id,
+                ..
+            } if connection_id == "http-main"
+        ));
+    }
+
+    #[tokio::test]
+    async fn mark_failure_已手动记录连接失败时不重复计数() {
+        let manager = ConnectionManager::default();
+        manager
+            .register_connection(http_connection_with_failure_threshold("http-main", 3))
+            .await
+            .unwrap();
+
+        let mut guard = manager.acquire("http-main").await.unwrap();
+        let _retry_after_ms = manager
+            .record_connect_failure("http-main", "连接被对端拒绝")
+            .await
+            .unwrap();
+        guard.mark_failure("连接被对端拒绝");
+        drop(guard);
+
+        let record = manager.get("http-main").await.unwrap();
+        assert_eq!(record.health.total_failures, 1);
+        assert_eq!(record.health.consecutive_failures, 1);
+        assert_eq!(record.health.phase, ConnectionHealthState::Reconnecting);
+    }
 }

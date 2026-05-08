@@ -93,6 +93,7 @@ Plugin 注册入口：`IoPlugin::register(&mut NodeRegistry)`，在 `lib.rs` 集
 - 同一 `connection_id` 的所有 CAN 节点共享同一个总线实例，存储在 `ConnectionManager::shared_sessions` 缓存中；
 - `can::session::CanBusRuntime` 是轻量级操作句柄，按需创建，内部委托给 `ConnectionManager::ensure_shared_session`；
 - 部署期（有 `connection_id`）或首帧（无连接 Mock）建立后端，后续 transform 复用；
+- 无 `connection_id` 时使用内部 `mock-can` key 创建隐式 Mock 会话，不要求在 `ConnectionManager` 中预先注册 `mock-can`；显式连接仍应通过 `backend/interface: mock` 绑定可观测连接资源；
 - SLCAN 只在建连时执行 `C` / `S{bitrate}` / `O` 初始化序列，避免 1M CAN 场景下被串口独占锁、连接限流和初始化延迟拖垮；
 - 共享会话不使用 `ConnectionGuard` 的排他借用，改用 `record_connect_success` / `record_connect_failure` 直接报告健康状态；
 - 节点级 CAN ID 过滤在接收到帧后本地执行，共享总线不做过滤；
