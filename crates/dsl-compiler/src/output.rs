@@ -1,7 +1,5 @@
 //! 编译器核心：`WorkflowSpec` + `CompilerContext` → `WorkflowGraph` JSON。
 
-use std::collections::HashMap;
-
 use nazh_dsl_core::capability::CapabilityImpl;
 use nazh_dsl_core::workflow::{ActionSpec, ActionTarget, StateSpec, WorkflowSpec};
 use serde_json::{Map, Value};
@@ -27,6 +25,7 @@ use crate::validate::{determine_initial_state, validate_workflow_spec};
 pub fn compile(ctx: &CompilerContext, spec: &WorkflowSpec) -> Result<Value, CompileError> {
     ctx.validate_references(spec)?;
     validate_workflow_spec(spec)?;
+    validate_supported_runtime_features(spec)?;
     let initial_state = determine_initial_state(spec)?;
 
     let mut builder = GraphBuilder::new(ctx, spec, &initial_state);
@@ -51,6 +50,7 @@ pub fn compile_with_safety(
 ) -> Result<(Value, SafetyReport), CompileError> {
     ctx.validate_references(spec)?;
     validate_workflow_spec(spec)?;
+    validate_supported_runtime_features(spec)?;
     let initial_state = determine_initial_state(spec)?;
 
     // 安全编译器校验
@@ -76,15 +76,17 @@ pub fn compile_with_safety(
 
 // ---- 内部构建器 ----
 
-/// 所有唯一 action 的描述——用于去重生成 capabilityCall 节点。
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-struct ActionKey {
+/// 单个 action 实例的描述，用于生成 action port 对应的节点。
+#[derive(Debug, Clone)]
+struct ActionInstance {
     /// 动作端口 ID（如 `entry_approaching_0`、`trans_idle_approaching`）。
     port_id: String,
     /// Capability ID 或 system action 名称。
     target_id: String,
     /// true = Capability，false = Action。
     is_capability: bool,
+    /// 当前 action 实例自己的参数，不能按 target 回查。
+    args: Map<String, Value>,
 }
 
 struct GraphBuilder<'a> {
@@ -93,10 +95,10 @@ struct GraphBuilder<'a> {
     initial_state: &'a str,
     /// stateMachine 节点的 ID。
     sm_node_id: String,
-    /// 所有唯一 action（去重后）。
-    actions: Vec<ActionKey>,
     /// 已生成的节点 JSON。
     nodes: Map<String, Value>,
+    /// 所有 action 实例。
+    actions: Vec<ActionInstance>,
     /// 已生成的边。
     edges: Vec<Value>,
     /// 已生成的变量。
@@ -111,72 +113,62 @@ impl<'a> GraphBuilder<'a> {
             spec,
             initial_state,
             sm_node_id,
-            actions: Vec::new(),
             nodes: Map::new(),
+            actions: Vec::new(),
             edges: Vec::new(),
             variables: Map::new(),
         }
     }
 
-    /// 收集所有唯一 action，为每个分配端口 ID。
+    /// 收集所有 action 实例，为每个分配端口 ID。
     fn collect_actions(&mut self) {
-        let mut seen = HashMap::new();
-
         // Entry / exit actions
         for (state_name, state) in &self.spec.states {
-            self.collect_state_actions(state_name, state, &mut seen);
+            self.collect_state_actions(state_name, state);
         }
 
         // Transition actions
-        for trans in &self.spec.transitions {
+        for (i, trans) in self.spec.transitions.iter().enumerate() {
             if let Some(action) = &trans.action {
                 let port_id = format!(
-                    "trans_{}_{}",
+                    "trans_{}_{}_{i}",
                     sanitize_id(&trans.from),
                     sanitize_id(&trans.to)
                 );
                 let target_id = action_target_id(&action.target);
-                let key = ActionKey {
+                let instance = ActionInstance {
                     port_id,
                     target_id: target_id.to_owned(),
                     is_capability: matches!(action.target, ActionTarget::Capability(_)),
+                    args: map_to_json_map(&action.args),
                 };
-                if seen.insert(key.port_id.clone(), key.clone()).is_none() {
-                    self.actions.push(key);
-                }
+                self.actions.push(instance);
             }
         }
     }
 
-    fn collect_state_actions(
-        &mut self,
-        state_name: &str,
-        state: &StateSpec,
-        seen: &mut HashMap<String, ActionKey>,
-    ) {
+    fn collect_state_actions(&mut self, state_name: &str, state: &StateSpec) {
         for (i, action) in state.entry.iter().enumerate() {
             let port_id = format!("entry_{}_{i}", sanitize_id(state_name));
             let target_id = action_target_id(&action.target);
-            let key = ActionKey {
+            let instance = ActionInstance {
                 port_id,
                 target_id: target_id.to_owned(),
                 is_capability: matches!(action.target, ActionTarget::Capability(_)),
+                args: map_to_json_map(&action.args),
             };
-            if seen.insert(key.port_id.clone(), key.clone()).is_none() {
-                self.actions.push(key);
-            }
+            self.actions.push(instance);
         }
         for (i, action) in state.exit.iter().enumerate() {
             let port_id = format!("exit_{}_{i}", sanitize_id(state_name));
             let target_id = action_target_id(&action.target);
-            let key = ActionKey {
+            let instance = ActionInstance {
                 port_id,
                 target_id: target_id.to_owned(),
                 is_capability: matches!(action.target, ActionTarget::Capability(_)),
+                args: map_to_json_map(&action.args),
             };
-            if seen.insert(key.port_id.clone(), key.clone()).is_none() {
-                self.actions.push(key);
-            }
+            self.actions.push(instance);
         }
     }
 
@@ -204,10 +196,10 @@ impl<'a> GraphBuilder<'a> {
         }
 
         let mut transitions_config = Vec::new();
-        for trans in &self.spec.transitions {
+        for (i, trans) in self.spec.transitions.iter().enumerate() {
             let action_port = trans.action.as_ref().map(|_| {
                 format!(
-                    "trans_{}_{}",
+                    "trans_{}_{}_{i}",
                     sanitize_id(&trans.from),
                     sanitize_id(&trans.to)
                 )
@@ -282,15 +274,10 @@ impl<'a> GraphBuilder<'a> {
                     "implementation".to_owned(),
                     capability_impl_to_json(&cap.implementation),
                 );
-
-                // 查找对应的 action spec 的 args
-                let args = self.find_action_args(&action_key.target_id);
-                config.insert("args".to_owned(), Value::Object(args));
+                config.insert("args".to_owned(), Value::Object(action_key.args.clone()));
 
                 // 设置 connection_id：设备对应的连接 ID（设备未指定时留空，由运行时解析）
-                let connection_id = self
-                    .ctx
-                    .connection_id_for_device(&cap.device_id);
+                let connection_id = self.ctx.connection_id_for_device(&cap.device_id);
 
                 let mut node = serde_json::json!({
                     "id": node_id,
@@ -303,27 +290,12 @@ impl<'a> GraphBuilder<'a> {
                 }
                 self.nodes.insert(node_id.clone(), node);
             } else {
-                // System action → 生成 code 节点（Rhai 脚本占位）
-                config.insert(
-                    "capability_id".to_owned(),
-                    Value::String(action_key.target_id.clone()),
-                );
-                config.insert("device_id".to_owned(), Value::String(String::new()));
-                config.insert(
-                    "implementation".to_owned(),
-                    serde_json::json!({ "type": "script", "content": "" }),
-                );
-
-                let args = self.find_action_args(&action_key.target_id);
-                config.insert("args".to_owned(), Value::Object(args));
-
-                let node = serde_json::json!({
-                    "id": node_id,
-                    "type": "code",
-                    "config": Value::Object(config),
-                    "buffer": 32,
+                return Err(CompileError::CapabilityCall {
+                    detail: format!(
+                        "系统动作 `{}` 尚未实现，不能生成可执行节点",
+                        action_key.target_id
+                    ),
                 });
-                self.nodes.insert(node_id.clone(), node);
             }
         }
         Ok(())
@@ -379,27 +351,6 @@ impl<'a> GraphBuilder<'a> {
             "edges": self.edges,
             "variables": Value::Object(self.variables),
         })
-    }
-
-    /// 查找 action spec 中的 args（通过 capability/action ID 匹配）。
-    fn find_action_args(&self, target_id: &str) -> Map<String, Value> {
-        // 遍历所有 entry/exit/transition actions 查找匹配的 args
-        for state in self.spec.states.values() {
-            if let Some(args) = find_args_in_actions(target_id, &state.entry) {
-                return args;
-            }
-            if let Some(args) = find_args_in_actions(target_id, &state.exit) {
-                return args;
-            }
-        }
-        for trans in &self.spec.transitions {
-            if let Some(action) = &trans.action
-                && action_target_id(&action.target) == target_id
-            {
-                return map_to_json_map(&action.args);
-            }
-        }
-        Map::new()
     }
 }
 
@@ -464,18 +415,8 @@ fn action_target_id(target: &ActionTarget) -> &str {
     }
 }
 
-/// 在 action 列表中查找匹配目标 ID 的 args。
-fn find_args_in_actions(target_id: &str, actions: &[ActionSpec]) -> Option<Map<String, Value>> {
-    for action in actions {
-        if action_target_id(&action.target) == target_id && !action.args.is_empty() {
-            return Some(map_to_json_map(&action.args));
-        }
-    }
-    None
-}
-
 /// 将 `HashMap<String, Value>` 转为 `serde_json::Map`。
-fn map_to_json_map(map: &HashMap<String, Value>) -> Map<String, Value> {
+fn map_to_json_map(map: &std::collections::HashMap<String, Value>) -> Map<String, Value> {
     let mut result = Map::new();
     for (k, v) in map {
         result.insert(k.clone(), v.clone());
@@ -491,6 +432,197 @@ fn sanitize_node_id(s: &str) -> String {
 /// 将状态/端口名称中的特殊字符替换。
 fn sanitize_id(s: &str) -> String {
     s.replace(['.', '-', ' '], "_")
+}
+
+/// 拒绝编译当前运行时尚未闭环的 Workflow DSL 特性。
+fn validate_supported_runtime_features(spec: &WorkflowSpec) -> Result<(), CompileError> {
+    if !spec.timeout.is_empty() || spec.on_timeout.is_some() {
+        return Err(CompileError::StateMachine {
+            detail: "timeout/on_timeout 已建模但 stateMachine 运行时尚未实现超时触发".to_owned(),
+        });
+    }
+
+    for state in spec.states.values() {
+        validate_actions_supported(&state.entry)?;
+        validate_actions_supported(&state.exit)?;
+    }
+    for trans in &spec.transitions {
+        validate_transition_condition_supported(trans)?;
+        if let Some(action) = &trans.action {
+            validate_action_supported(action)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_actions_supported(actions: &[ActionSpec]) -> Result<(), CompileError> {
+    for action in actions {
+        validate_action_supported(action)?;
+    }
+    Ok(())
+}
+
+fn validate_action_supported(action: &ActionSpec) -> Result<(), CompileError> {
+    if let ActionTarget::Action(id) = &action.target {
+        return Err(CompileError::CapabilityCall {
+            detail: format!("系统动作 `{id}` 尚未实现，不能生成可执行节点"),
+        });
+    }
+    Ok(())
+}
+
+fn validate_transition_condition_supported(
+    trans: &nazh_dsl_core::workflow::TransitionSpec,
+) -> Result<(), CompileError> {
+    let without_strings = strip_string_literals(&trans.when);
+    let without_payload_paths = strip_payload_paths(&without_strings);
+    let bare_identifiers = extract_bare_identifiers(&without_payload_paths);
+
+    if bare_identifiers.is_empty() {
+        return Ok(());
+    }
+
+    Err(CompileError::StateMachine {
+        detail: format!(
+            "transition `{} -> {}` 的条件 `{}` 引用了裸变量 `{}`；stateMachine 运行时只注入 `payload`，请改用 `payload.{}`",
+            trans.from, trans.to, trans.when, bare_identifiers[0], bare_identifiers[0]
+        ),
+    })
+}
+
+fn strip_string_literals(expr: &str) -> String {
+    let mut result = String::with_capacity(expr.len());
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+
+    for ch in expr.chars() {
+        match quote {
+            Some(q) => {
+                result.push(' ');
+                if escaped {
+                    escaped = false;
+                } else if ch == '\\' {
+                    escaped = true;
+                } else if ch == q {
+                    quote = None;
+                }
+            }
+            None if ch == '"' || ch == '\'' => {
+                quote = Some(ch);
+                result.push(' ');
+            }
+            None => result.push(ch),
+        }
+    }
+
+    result
+}
+
+fn strip_payload_paths(expr: &str) -> String {
+    let chars: Vec<char> = expr.chars().collect();
+    let mut result = String::with_capacity(expr.len());
+    let mut i = 0;
+
+    while i < chars.len() {
+        if starts_payload_path(&chars, i) {
+            let end = payload_path_end(&chars, i + "payload".chars().count());
+            for _ in i..end {
+                result.push(' ');
+            }
+            i = end;
+        } else {
+            result.push(chars[i]);
+            i += 1;
+        }
+    }
+
+    result
+}
+
+fn starts_payload_path(chars: &[char], start: usize) -> bool {
+    let payload: Vec<char> = "payload".chars().collect();
+    if start > 0 && is_identifier_continue(chars[start - 1]) {
+        return false;
+    }
+    if chars.len() < start + payload.len() {
+        return false;
+    }
+    if chars[start..start + payload.len()] != payload {
+        return false;
+    }
+
+    let after = start + payload.len();
+    after < chars.len() && chars[after] == '.'
+}
+
+fn payload_path_end(chars: &[char], mut i: usize) -> usize {
+    while i < chars.len() && chars[i] == '.' {
+        let next = i + 1;
+        if next >= chars.len() || !is_identifier_start(chars[next]) {
+            break;
+        }
+        i = next + 1;
+        while i < chars.len() && is_identifier_continue(chars[i]) {
+            i += 1;
+        }
+    }
+    i
+}
+
+fn extract_bare_identifiers(expr: &str) -> Vec<String> {
+    let chars: Vec<char> = expr.chars().collect();
+    let mut identifiers = Vec::new();
+    let mut i = 0;
+
+    while i < chars.len() {
+        if is_identifier_start(chars[i]) {
+            let start = i;
+            i += 1;
+            while i < chars.len() && is_identifier_continue(chars[i]) {
+                i += 1;
+            }
+            let ident: String = chars[start..i].iter().collect();
+            if !is_condition_reserved_word(&ident) && ident.parse::<f64>().is_err() {
+                identifiers.push(ident);
+            }
+        } else {
+            i += 1;
+        }
+    }
+
+    identifiers
+}
+
+fn is_identifier_start(ch: char) -> bool {
+    ch == '_' || ch.is_ascii_alphabetic()
+}
+
+fn is_identifier_continue(ch: char) -> bool {
+    ch == '_' || ch.is_ascii_alphanumeric()
+}
+
+fn is_condition_reserved_word(s: &str) -> bool {
+    matches!(
+        s,
+        "true"
+            | "false"
+            | "payload"
+            | "let"
+            | "if"
+            | "else"
+            | "and"
+            | "or"
+            | "not"
+            | "while"
+            | "loop"
+            | "for"
+            | "in"
+            | "return"
+            | "fn"
+            | "import"
+            | "export"
+    )
 }
 
 #[cfg(test)]
@@ -576,7 +708,7 @@ states:
 transitions:
   - from: idle
     to: running
-    when: "start == true"
+    when: "payload.start == true"
 "#;
         let spec: WorkflowSpec = serde_yaml::from_str(yaml).unwrap();
         let ctx = CompilerContext::new(vec![sample_device("dev1", "conn1")], vec![]);
@@ -624,7 +756,7 @@ states:
 transitions:
   - from: idle
     to: pressing
-    when: "start == true"
+    when: "payload.start == true"
 "#;
         let spec: WorkflowSpec = serde_yaml::from_str(yaml).unwrap();
         let ctx = CompilerContext::new(
@@ -663,7 +795,129 @@ transitions:
     }
 
     #[test]
-    fn 混合capability和action调用() {
+    fn 同一capability多次调用_保留各自动作参数() {
+        let yaml = r#"
+id: repeated_capability_args
+version: "1.0.0"
+devices:
+  - dev1
+variables:
+  approach_position: 100.0
+states:
+  idle:
+  approaching:
+    entry:
+      - capability: cap.move_to
+        args:
+          position: "${approach_position}"
+  returning:
+    entry:
+      - capability: cap.move_to
+        args:
+          position: 0.0
+transitions:
+  - from: idle
+    to: approaching
+    when: "payload.start == true"
+  - from: approaching
+    to: returning
+    when: "payload.done == true"
+"#;
+        let spec: WorkflowSpec = serde_yaml::from_str(yaml).unwrap();
+        let ctx = CompilerContext::new(
+            vec![sample_device("dev1", "conn1")],
+            vec![sample_capability_modbus("cap.move_to", "dev1", 40010)],
+        );
+        let output = compile(&ctx, &spec).unwrap();
+        let nodes = output["nodes"].as_object().unwrap();
+
+        let approaching = nodes
+            .get("cap_cap_move_to_entry_approaching_0")
+            .expect("应生成 approaching entry 节点");
+        let returning = nodes
+            .get("cap_cap_move_to_entry_returning_0")
+            .expect("应生成 returning entry 节点");
+
+        assert_eq!(
+            approaching["config"]["args"]["position"],
+            "${approach_position}"
+        );
+        assert_eq!(returning["config"]["args"]["position"], 0.0);
+    }
+
+    #[test]
+    fn timeout未实现时_编译期拒绝() {
+        let yaml = r#"
+id: timeout_not_supported
+version: "1.0.0"
+states:
+  idle:
+  pressing:
+  fault:
+transitions:
+  - from: idle
+    to: pressing
+    when: "payload.start == true"
+timeout:
+  pressing: 60s
+on_timeout: fault
+"#;
+        let spec: WorkflowSpec = serde_yaml::from_str(yaml).unwrap();
+        let ctx = CompilerContext::new(vec![], vec![]);
+
+        let err = compile(&ctx, &spec).expect_err("timeout 运行时未实现时应拒绝编译");
+
+        assert!(err.to_string().contains("timeout"));
+    }
+
+    #[test]
+    fn 裸变量条件_编译期拒绝() {
+        let yaml = r#"
+id: bare_condition
+version: "1.0.0"
+states:
+  idle:
+  running:
+transitions:
+  - from: idle
+    to: running
+    when: "start_button == true"
+"#;
+        let spec: WorkflowSpec = serde_yaml::from_str(yaml).unwrap();
+        let ctx = CompilerContext::new(vec![], vec![]);
+
+        let err = compile(&ctx, &spec).expect_err("裸变量条件应在编译期被拒绝");
+
+        assert!(err.to_string().contains("payload"));
+    }
+
+    #[test]
+    fn system_action未实现时_编译期拒绝() {
+        let yaml = r#"
+id: system_action_not_supported
+version: "1.0.0"
+states:
+  idle:
+  fault:
+    entry:
+      - action: alarm.raise
+        args:
+          msg: "error"
+transitions:
+  - from: idle
+    to: fault
+    when: "payload.fault == true"
+"#;
+        let spec: WorkflowSpec = serde_yaml::from_str(yaml).unwrap();
+        let ctx = CompilerContext::new(vec![], vec![]);
+
+        let err = compile(&ctx, &spec).expect_err("system action 未实现时应拒绝编译");
+
+        assert!(err.to_string().contains("alarm.raise"));
+    }
+
+    #[test]
+    fn 混合capability和system_action调用_拒绝未实现动作() {
         let yaml = r#"
 id: mixed
 version: "1.0.0"
@@ -687,21 +941,9 @@ transitions:
             vec![sample_device("dev1", "conn1")],
             vec![sample_capability_script("cap.stop", "dev1")],
         );
-        let output = compile(&ctx, &spec).unwrap();
+        let err = compile(&ctx, &spec).expect_err("system action 未实现时应拒绝编译");
 
-        let nodes = output["nodes"].as_object().unwrap();
-        // capabilityCall 节点（cap.stop）
-        assert!(nodes.keys().any(|k| k.starts_with("cap_cap_stop")));
-        // code 节点（alarm.raise system action）
-        let action_node = nodes
-            .iter()
-            .find(|(_, v)| v["type"] == "code")
-            .expect("system action 应生成 code 节点");
-        assert!(action_node.1["config"]["capability_id"].as_str() == Some("alarm.raise"));
-
-        // 两条边
-        let edges = output["edges"].as_array().unwrap();
-        assert_eq!(edges.len(), 2);
+        assert!(err.to_string().contains("alarm.raise"));
     }
 
     #[test]

@@ -84,7 +84,7 @@ states:
 transitions:
   - from: idle
     to: running
-    when: "start == true"
+    when: "payload.start == true"
 "#;
         let spec: WorkflowSpec = serde_yaml::from_str(yaml).unwrap();
         let ctx = CompilerContext::new(vec![sample_device("dev1", "conn1")], vec![]);
@@ -136,33 +136,26 @@ states:
   fault:
     entry:
       - capability: hydraulic_axis.stop
-      - action: alarm.raise
-        args:
-          message: "压装循环异常停机"
 transitions:
   - from: idle
     to: approaching
-    when: "start_button == true"
+    when: "payload.start_button == true"
   - from: approaching
     to: pressing
-    when: "position >= approach_position"
+    when: "payload.position >= payload.approach_position"
   - from: pressing
     to: holding
-    when: "pressure >= target_pressure"
+    when: "payload.pressure >= payload.target_pressure"
   - from: holding
     to: returning
-    when: "hold_timer >= hold_time"
+    when: "payload.hold_timer >= payload.hold_time"
   - from: returning
     to: idle
-    when: "position <= 1.0"
+    when: "payload.position <= 1.0"
   - from: "*"
     to: fault
-    when: "pressure > 34"
+    when: "payload.pressure > 34"
     priority: 100
-timeout:
-  pressing: 60s
-  holding: 30s
-on_timeout: fault
 "#;
         let spec: WorkflowSpec = serde_yaml::from_str(yaml).unwrap();
 
@@ -193,7 +186,7 @@ on_timeout: fault
         let output = compile(&ctx, &spec).unwrap();
         let graph = assert_conformance(&output);
 
-        // 验证节点数：1 stateMachine + 5 个唯一 capability 调用 + 1 system action
+        // 验证节点数：1 stateMachine + 5 个 capability 调用
         // (move_to 被 approaching/returning 共享但 port 不同，所以有 2 个节点)
         assert!(
             graph.nodes.len() >= 6,
@@ -232,10 +225,10 @@ states:
 transitions:
   - from: idle
     to: active
-    when: "start"
+    when: "payload.start"
   - from: active
     to: done
-    when: "completed"
+    when: "payload.completed"
 "#;
         let spec: WorkflowSpec = serde_yaml::from_str(yaml).unwrap();
         let ctx = CompilerContext::new(vec![], vec![]);
@@ -248,7 +241,7 @@ transitions:
     }
 
     #[test]
-    fn 混合action类型一致性() {
+    fn system_action未实现时拒绝编译() {
         let yaml = r#"
 id: mixed_actions
 version: "1.0.0"
@@ -265,18 +258,15 @@ states:
 transitions:
   - from: idle
     to: error
-    when: "fault"
+    when: "payload.fault"
 "#;
         let spec: WorkflowSpec = serde_yaml::from_str(yaml).unwrap();
         let ctx = CompilerContext::new(
             vec![sample_device("dev1", "conn1")],
             vec![sample_modbus_cap("cap.stop", "dev1", 40100, "0")],
         );
-        let output = compile(&ctx, &spec).unwrap();
-        let graph = assert_conformance(&output);
+        let err = compile(&ctx, &spec).expect_err("system action 未实现时应拒绝编译");
 
-        // sm + cap.stop + alarm.raise = 3 nodes
-        assert_eq!(graph.nodes.len(), 3);
-        assert_eq!(graph.edges.len(), 2);
+        assert!(err.to_string().contains("alarm.raise"));
     }
 }

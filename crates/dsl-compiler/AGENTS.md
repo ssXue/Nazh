@@ -20,9 +20,16 @@ RFC-0004 Phase 3 + Phase 5 核心组件：将 `WorkflowSpec`（状态机 YAML）
 
 1. `context::CompilerContext::validate_references()` — 设备/能力引用存在性
 2. `validate::validate_workflow_spec()` — 状态机语义校验（6 条规则）
-3. `validate::determine_initial_state()` — 初始状态选择（idle 优先 → 字典序）
-4. `safety::run_safety_checks()` — 安全编译器校验（6 条规则，仅 `compile_with_safety` 调用）
-5. `output::GraphBuilder` — 收集 actions → 生成 stateMachine 节点 → capabilityCall 节点 → edges → variables
+3. `output::validate_supported_runtime_features()` — 拒绝当前运行时尚未闭环的 DSL 特性：`timeout/on_timeout`、`ActionTarget::Action`，以及 transition 条件中的裸变量
+4. `validate::determine_initial_state()` — 初始状态选择（idle 优先 → 字典序）
+5. `safety::run_safety_checks()` — 安全编译器校验（6 条规则，仅 `compile_with_safety` 调用）
+6. `output::GraphBuilder` — 收集 actions → 生成 stateMachine 节点 → capabilityCall 节点 → edges → variables
+
+## 当前运行时支持边界
+
+- transition `when` 条件必须显式引用 `payload.*` 或使用字面量/布尔表达式。不要生成 `start_button == true` 这类裸变量；stateMachine 运行时只注入 `payload`。
+- `timeout` / `on_timeout` 仍由 `dsl-core` 建模，但 stateMachine 运行时尚未实现超时 tick/触发闭环；编译器必须 fail-fast。
+- `action: <id>` system action 仍由 `dsl-core` 建模，但当前没有可执行节点承接；编译器必须 fail-fast，不能生成缺少 `script` 的伪 `code` 节点。
 
 ## 安全编译器规则（Phase 5）
 
@@ -45,7 +52,7 @@ RFC-0004 Phase 3 + Phase 5 核心组件：将 `WorkflowSpec`（状态机 YAML）
 - capabilityCall 节点：`cap_{target_id}_{port_id}`（经 sanitize）
 - entry port：`entry_{state}_{index}`
 - exit port：`exit_{state}_{index}`
-- transition port：`trans_{from}_{to}`
+- transition port：`trans_{from}_{to}_{transition_index}`
 - sanitize 规则：`.` / `-` / ` ` → `_`
 
 ## 变量类型推断
@@ -62,3 +69,4 @@ RFC-0004 Phase 3 + Phase 5 核心组件：将 `WorkflowSpec`（状态机 YAML）
 - 新增校验规则须同步 `validate.rs` 的 tests 模块
 - 新增安全校验规则须同步 `safety.rs` 的 tests 模块
 - `output.rs` 的 `build_*` 方法变更须确认生成的 JSON 仍可被 `stateMachine` / `capabilityCall` 节点反序列化
+- 改变 DSL 支持边界时，同步更新本文件和 `dsl-core` 示例，避免 AI/前端继续生成能解析但不能运行的工作流

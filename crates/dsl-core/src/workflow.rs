@@ -405,13 +405,13 @@ states:
 transitions:
   - from: idle
     to: approaching
-    when: "start_button == true"
+    when: "payload.start_button == true"
   - from: approaching
     to: pressing
-    when: "position >= approach_position"
+    when: "payload.position >= payload.approach_position"
   - from: "*"
     to: fault
-    when: "pressure > 34"
+    when: "payload.pressure > 34"
     priority: 100
 timeout:
   pressing: 60s
