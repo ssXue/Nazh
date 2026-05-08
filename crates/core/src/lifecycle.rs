@@ -128,8 +128,13 @@ impl NodeHandle {
 
         // 3. 广播 ContextRef 到下游
         let ctx_ref = ContextRef::new(trace_id, data_id, Some(inner.node_id.clone()));
+        if inner.downstream.is_empty() {
+            inner.store.release(&data_id);
+        }
+
         for sender in &inner.downstream {
             if sender.send(ctx_ref.clone()).await.is_err() {
+                inner.store.release(&data_id);
                 tracing::debug!(
                     node_id = %inner.node_id,
                     "下游 channel 已关闭，触发数据丢弃"
@@ -404,17 +409,35 @@ mod tests {
 
     #[tokio::test]
     async fn node_handle_emit_下游关闭不报错() {
-        let store: Arc<dyn DataStore> = Arc::new(ArenaDataStore::new());
+        let store = Arc::new(ArenaDataStore::new());
+        let store_dyn: Arc<dyn DataStore> = store.clone();
         let (event_tx, _event_rx) = mpsc::channel(8);
         let (downstream_tx, downstream_rx) = mpsc::channel::<ContextRef>(1);
         drop(downstream_rx); // 立即关闭下游
-        let handle = NodeHandle::new("trigger-3", store, vec![downstream_tx], event_tx);
+        let handle = NodeHandle::new("trigger-3", store_dyn, vec![downstream_tx], event_tx);
 
         // 不应返回 Err；只是 tracing::debug! 记录
         handle
             .emit(serde_json::Value::Null, Map::new())
             .await
             .unwrap();
+
+        assert!(store.is_empty(), "发送失败的数据引用必须被释放");
+    }
+
+    #[tokio::test]
+    async fn node_handle_emit_无下游时释放_payload() {
+        let store = Arc::new(ArenaDataStore::new());
+        let store_dyn: Arc<dyn DataStore> = store.clone();
+        let (event_tx, _event_rx) = mpsc::channel(8);
+        let handle = NodeHandle::new("trigger-empty", store_dyn, vec![], event_tx);
+
+        handle
+            .emit(serde_json::json!({"value": 42}), Map::new())
+            .await
+            .unwrap();
+
+        assert!(store.is_empty(), "无下游时不应留下无人消费的 payload");
     }
 
     #[tokio::test]

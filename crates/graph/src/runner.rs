@@ -278,6 +278,15 @@ pub(crate) async fn run_node(
                         }
                     }
 
+                    if output_is_data_only(
+                        &node_output.dispatch,
+                        &matching_targets,
+                        &data_output_pin_ids,
+                        &reactive_output_pin_ids,
+                    ) {
+                        continue;
+                    }
+
                     let consumer_count = if matching_targets.is_empty() {
                         1
                     } else {
@@ -295,19 +304,25 @@ pub(crate) async fn run_node(
                     let new_ref = ContextRef::new(trace_id, data_id, Some(node_id.clone()));
 
                     let write_result = if matching_targets.is_empty() {
-                        result_tx
-                            .send(new_ref)
-                            .await
-                            .map_err(|_| EngineError::ChannelClosed {
+                        if result_tx.send(new_ref).await.is_err() {
+                            store.release(&data_id);
+                            Err(EngineError::ChannelClosed {
                                 stage: node_id.clone(),
                             })
+                        } else {
+                            Ok(())
+                        }
                     } else {
                         let mut downstream_error = None;
-                        for target in &matching_targets {
+                        let consumer_count = matching_targets.len();
+                        for (sent_count, target) in matching_targets.iter().enumerate() {
                             if target.sender.send(new_ref.clone()).await.is_err() {
                                 downstream_error = Some(EngineError::ChannelClosed {
                                     stage: node_id.clone(),
                                 });
+                                for _ in sent_count..consumer_count {
+                                    store.release(&data_id);
+                                }
                                 break;
                             }
                             // ADR-0016：记录边传输统计。
@@ -395,4 +410,153 @@ fn data_cache_value_for_pin(pin_id: &str, payload: &serde_json::Value) -> serde_
         return value.clone();
     }
     payload.clone()
+}
+
+fn output_is_data_only(
+    dispatch: &NodeDispatch,
+    matching_targets: &[&DownstreamTarget],
+    data_output_pin_ids: &HashSet<String>,
+    reactive_output_pin_ids: &HashSet<String>,
+) -> bool {
+    if !matching_targets.is_empty() {
+        return false;
+    }
+
+    match dispatch {
+        NodeDispatch::Broadcast => {
+            !data_output_pin_ids.is_empty() && reactive_output_pin_ids.is_empty()
+        }
+        NodeDispatch::Route(port_ids) => {
+            !port_ids.is_empty()
+                && port_ids
+                    .iter()
+                    .all(|port_id| data_output_pin_ids.contains(port_id))
+        }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use nazh_core::{ArenaDataStore, NodeExecution, Uuid};
+    use serde_json::{Value, json};
+
+    struct EchoNode;
+
+    #[async_trait::async_trait]
+    impl NodeTrait for EchoNode {
+        fn id(&self) -> &'static str {
+            "echo"
+        }
+
+        fn kind(&self) -> &'static str {
+            "testEcho"
+        }
+
+        async fn transform(
+            &self,
+            _trace_id: Uuid,
+            payload: Value,
+        ) -> Result<NodeExecution, EngineError> {
+            Ok(NodeExecution::broadcast(payload))
+        }
+    }
+
+    #[tokio::test]
+    async fn downstream_channel_closed_释放_output_payload() {
+        let store = Arc::new(ArenaDataStore::new());
+        let store_dyn: Arc<dyn DataStore> = store.clone();
+        let (input_tx, input_rx) = mpsc::channel(1);
+        let (downstream_tx, downstream_rx) = mpsc::channel(1);
+        drop(downstream_rx);
+        let (result_tx, _result_rx) = mpsc::channel(1);
+        let (event_tx, _event_rx) = mpsc::channel(8);
+
+        let trace_id = Uuid::new_v4();
+        let data_id = store.write(json!({"value": 42}), 1).unwrap();
+        input_tx
+            .send(ContextRef::new(trace_id, data_id, None))
+            .await
+            .unwrap();
+        drop(input_tx);
+
+        run_node(
+            Arc::new(EchoNode),
+            None,
+            input_rx,
+            vec![DownstreamTarget {
+                source_port_id: None,
+                sender: downstream_tx,
+                target_node_id: "closed-downstream".to_owned(),
+                target_port_id: None,
+                edge_kind: PinKind::Exec,
+            }],
+            result_tx,
+            event_tx,
+            store_dyn,
+            Arc::new(OutputCache::new()),
+            HashSet::new(),
+            Arc::new(EdgesByConsumer::default()),
+            Arc::new(HashMap::new()),
+            Arc::new(HashMap::new()),
+            Arc::new(HashMap::new()),
+            Arc::new(PureMemo::new()),
+            HashSet::new(),
+        )
+        .await;
+
+        assert!(store.is_empty(), "下游关闭时 output payload 必须释放");
+    }
+
+    #[tokio::test]
+    async fn data_only_output_不进入_result_stream() {
+        let store = Arc::new(ArenaDataStore::new());
+        let store_dyn: Arc<dyn DataStore> = store.clone();
+        let (input_tx, input_rx) = mpsc::channel(1);
+        let (result_tx, mut result_rx) = mpsc::channel(1);
+        let (event_tx, _event_rx) = mpsc::channel(8);
+        let output_cache = Arc::new(OutputCache::new());
+        output_cache.prepare_slot("out");
+
+        let trace_id = Uuid::new_v4();
+        let data_id = store.write(json!({"value": 42}), 1).unwrap();
+        input_tx
+            .send(ContextRef::new(trace_id, data_id, None))
+            .await
+            .unwrap();
+        drop(input_tx);
+
+        run_node(
+            Arc::new(EchoNode),
+            None,
+            input_rx,
+            vec![],
+            result_tx,
+            event_tx,
+            store_dyn,
+            Arc::clone(&output_cache),
+            HashSet::from(["out".to_owned()]),
+            Arc::new(EdgesByConsumer::default()),
+            Arc::new(HashMap::new()),
+            Arc::new(HashMap::new()),
+            Arc::new(HashMap::new()),
+            Arc::new(PureMemo::new()),
+            HashSet::new(),
+        )
+        .await;
+
+        assert!(
+            result_rx.try_recv().is_err(),
+            "Data-only 输出不应产生 result"
+        );
+        assert!(
+            store.is_empty(),
+            "Data-only 输出不应写入无人消费的 DataStore entry"
+        );
+        assert_eq!(
+            output_cache.read("out", None).unwrap().value,
+            json!({"value": 42})
+        );
+    }
 }

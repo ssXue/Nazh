@@ -338,6 +338,8 @@ Expected: 重复 id 和 sanitize 碰撞在编译期失败。
 
 ### CR-P1-06 共享会话首次并发初始化竞态
 
+> **状态：** 2026-05-08 已修复。`ConnectionManager::ensure_shared_session` 增加 per-key 初始化锁，新增并发初始化回归测试。
+
 **影响文件：**
 
 - `crates/connections/src/lib.rs:896`
@@ -371,6 +373,8 @@ cargo test -p connections shared_session
 Expected: 并发 N 次初始化时 factory 只执行一次，失败/成功竞态有确定行为。
 
 ### CR-P1-07 连接定义替换破坏 in-use 排他语义
+
+> **状态：** 2026-05-08 已修复。运行中 record 或共享会话存在时不再静默替换连接定义，新增 `upsert` / `replace` 回归测试。
 
 **影响文件：**
 
@@ -406,6 +410,8 @@ cargo test -p connections upsert
 Expected: in-use 连接无法被静默替换；替换后的 guard/health/session 行为一致。
 
 ### CR-P2-05 连接失败统计与熔断不闭合
+
+> **状态：** 2026-05-08 已修复。`mark_failure()` Drop 出口推进失败计数与熔断；同一 lease 已手动 `record_connect_failure` 时不重复计数。
 
 **影响文件：**
 
@@ -473,6 +479,8 @@ cargo test -p connections validate_connection_definition
 Expected: 未知连接类型在保存/部署前失败。
 
 ### CR-P1-08 CAN mock 文档与实现不一致
+
+> **状态：** 2026-05-08 已修复。无 `connection_id` 的 `canRead` / `canWrite` 使用内部 `mock-can` key 创建隐式 Mock 会话，不要求注册连接资源。
 
 **影响文件：**
 
@@ -684,6 +692,8 @@ Expected: 损坏 schema 返回明确错误，不 panic、不误判。
 
 ### CR-P2-11 DataStore 写入后发送失败会泄漏引用
 
+> **状态：** 2026-05-08 部分修复。`NodeHandle::emit`、`WorkflowIngress::submit_to` / `blocking_submit_to`、runner downstream 发送失败均补偿释放 DataStore 引用；多根 `submit` 明确为 partial accepted 语义。
+
 **影响文件：**
 
 - `crates/core/src/lifecycle.rs:116`
@@ -722,6 +732,8 @@ cargo test -p core lifecycle
 Expected: 下游关闭时 DataStore 引用计数闭合，测试能观测 entry 被释放。
 
 ### CR-P2-12 Data-only 输出被当成 workflow result
+
+> **状态：** 2026-05-08 已修复。runner 对纯 Data 输出只写 `OutputCache`，不再写入 result stream 或创建无人消费的 DataStore entry。
 
 **影响文件：**
 
@@ -1349,10 +1361,12 @@ Expected: 后续修复不继续扩大最重文件；拆分后模块边界可由 
 - Test: `crates/dsl-compiler/tests/*`
 - Test: `crates/nodes-flow/src/*`
 
-- [ ] 为重复 capability target + 不同 args 写失败测试。
-- [ ] 对未实现 timeout/system action/capability execution 路径先 fail-fast。
-- [ ] 明确 DSL 表达式作用域，并补编译期校验。
-- [ ] 更新 DSL/RFC 示例或 crate AGENTS。
+- [x] 为重复 capability target + 不同 args 写失败测试。
+- [x] 对未实现 timeout/system action 路径先 fail-fast。
+- [x] 明确 DSL 表达式作用域，并补编译期校验。
+- [x] 更新 DSL 示例与 crate AGENTS。
+
+> 进度：2026-05-08 已完成 `dsl-compiler` 层面的 fail-fast 与参数绑定修复；`capabilityCall` 真实协议执行闭环仍保留在后续连接/I/O 修复批次中。
 
 ### Task 2: 修连接治理的并发与替换语义
 
@@ -1364,10 +1378,12 @@ Expected: 后续修复不继续扩大最重文件；拆分后模块边界可由 
 - Test: `crates/connections/src/*`
 - Test: `crates/nodes-io/src/*`
 
-- [ ] 为 shared session 并发初始化写测试。
-- [ ] 为 in-use 连接替换写测试。
-- [ ] 收紧 failure outcome 与 guard failure 统计。
-- [ ] 明确 mock/simulation 策略。
+- [x] 为 shared session 并发初始化写测试。
+- [x] 为 in-use 连接替换写测试。
+- [x] 收紧 failure outcome 与 guard failure 统计。
+- [x] 明确 mock/simulation 策略。
+
+> 进度：2026-05-08 已完成 `connections` 共享会话合流、运行中替换保护、failure outcome 计数闭环，以及 CAN 隐式 Mock 回退。`nodes-io` 后续协议失败清理（如 EtherCAT/SLCAN 细分错误）仍按后续 P2 条目推进。
 
 ### Task 3: 修 DataStore/背压生命周期闭环
 
@@ -1380,10 +1396,12 @@ Expected: 后续修复不继续扩大最重文件；拆分后模块边界可由 
 - Test: `crates/graph/src/*`
 - Test: `crates/core/src/*`
 
-- [ ] 为 downstream/root channel closed 写 DataStore 释放测试。
-- [ ] 定义 ingress partial submit 语义。
-- [ ] 修 Data-only output result 噪声。
+- [x] 为 downstream/root channel closed 写 DataStore 释放测试。
+- [x] 定义 ingress partial submit 语义。
+- [x] 修 Data-only output result 噪声。
 - [ ] 统一变量事件背压日志和计数。
+
+> 进度：2026-05-08 已完成 DataStore 引用补偿释放与 Data-only result 噪声修复；变量事件背压日志/计数仍保留为 Task 3 后续子项。
 
 ### Task 4: 收紧脚本、AI 和类型契约
 

@@ -174,6 +174,9 @@ impl WorkflowIngress {
     /// # Errors
     ///
     /// 无根节点发送端或通道已关闭时返回错误。
+    ///
+    /// 若多根提交期间部分发送成功后遇到关闭通道，已发送的根节点继续拥有
+    /// payload 引用；失败及尚未发送的引用会立即释放。
     pub async fn submit(&self, ctx: WorkflowContext) -> Result<(), EngineError> {
         if self.root_senders.is_empty() {
             return Err(EngineError::invalid_graph(
@@ -191,13 +194,15 @@ impl WorkflowIngress {
             source_node: None,
         };
 
-        for sender in self.root_senders.values() {
-            sender
-                .send(ctx_ref.clone())
-                .await
-                .map_err(|_| EngineError::ChannelClosed {
+        for (sent_count, sender) in self.root_senders.values().enumerate() {
+            if sender.send(ctx_ref.clone()).await.is_err() {
+                for _ in sent_count..consumer_count {
+                    self.store.release(&data_id);
+                }
+                return Err(EngineError::ChannelClosed {
                     stage: "workflow-ingress".to_owned(),
-                })?;
+                });
+            }
         }
         Ok(())
     }
@@ -220,12 +225,13 @@ impl WorkflowIngress {
             data_id,
             source_node: None,
         };
-        sender
-            .send(ctx_ref)
-            .await
-            .map_err(|_| EngineError::ChannelClosed {
+        if sender.send(ctx_ref).await.is_err() {
+            self.store.release(&data_id);
+            return Err(EngineError::ChannelClosed {
                 stage: "workflow-ingress".to_owned(),
-            })
+            });
+        }
+        Ok(())
     }
 
     /// 阻塞式提交，用于同步硬件监听线程。
@@ -250,11 +256,13 @@ impl WorkflowIngress {
             data_id,
             source_node: None,
         };
-        sender
-            .blocking_send(ctx_ref)
-            .map_err(|_| EngineError::ChannelClosed {
+        if sender.blocking_send(ctx_ref).is_err() {
+            self.store.release(&data_id);
+            return Err(EngineError::ChannelClosed {
                 stage: "workflow-ingress".to_owned(),
-            })
+            });
+        }
+        Ok(())
     }
 
     pub fn root_nodes(&self) -> &[String] {
@@ -394,6 +402,19 @@ impl WorkflowDeployment {
 #[allow(clippy::unwrap_used)]
 mod variables_schema_tests {
     use super::*;
+    use nazh_core::ArenaDataStore;
+
+    fn ingress_with_sender(
+        node_id: &str,
+        sender: mpsc::Sender<ContextRef>,
+        store: Arc<dyn DataStore>,
+    ) -> WorkflowIngress {
+        WorkflowIngress {
+            root_nodes: vec![node_id.to_owned()],
+            root_senders: HashMap::from([(node_id.to_owned(), sender)]),
+            store,
+        }
+    }
 
     #[test]
     fn 旧图无_variables_字段反序列化不报错() {
@@ -441,5 +462,47 @@ mod variables_schema_tests {
         assert_eq!(vars.len(), 2);
         assert_eq!(vars["setpoint"].variable_type, nazh_core::PinType::Float);
         assert_eq!(vars["mode"].initial, serde_json::Value::from("auto"));
+    }
+
+    #[tokio::test]
+    async fn submit_to_channel_closed_释放_payload() {
+        let store = Arc::new(ArenaDataStore::new());
+        let store_dyn: Arc<dyn DataStore> = store.clone();
+        let (tx, rx) = mpsc::channel::<ContextRef>(1);
+        drop(rx);
+        let ingress = ingress_with_sender("root", tx, store_dyn);
+
+        let err = ingress
+            .submit_to(
+                "root",
+                WorkflowContext::new(serde_json::json!({"value": 42})),
+            )
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, EngineError::ChannelClosed { .. }));
+        assert!(store.is_empty(), "submit_to 发送失败时必须释放 payload");
+    }
+
+    #[test]
+    fn blocking_submit_to_channel_closed_释放_payload() {
+        let store = Arc::new(ArenaDataStore::new());
+        let store_dyn: Arc<dyn DataStore> = store.clone();
+        let (tx, rx) = mpsc::channel::<ContextRef>(1);
+        drop(rx);
+        let ingress = ingress_with_sender("root", tx, store_dyn);
+
+        let err = ingress
+            .blocking_submit_to(
+                "root",
+                WorkflowContext::new(serde_json::json!({"value": 42})),
+            )
+            .unwrap_err();
+
+        assert!(matches!(err, EngineError::ChannelClosed { .. }));
+        assert!(
+            store.is_empty(),
+            "blocking_submit_to 发送失败时必须释放 payload"
+        );
     }
 }
