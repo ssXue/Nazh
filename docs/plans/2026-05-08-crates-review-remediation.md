@@ -1295,6 +1295,8 @@ Expected: 只有 root generated 目录参与契约，侧目录不存在或明确
 
 ### CR-P3-08 crates/graph 缺 crate-local AGENTS.md
 
+> **状态：** 2026-05-09 已修复。已新增 `crates/graph/AGENTS.md`，覆盖 DAG 调度模型、Exec/Data/Reactive 边语义、DataStore 引用计数、OutputCache/PureMemo 生命周期、依赖约束和测试清单。
+
 **影响文件：**
 
 - `AGENTS.md:227`
@@ -1441,7 +1443,7 @@ Expected: 后续修复不继续扩大最重文件；拆分后模块边界可由 
 - Modify: `docs/project-status.md`
 - Modify: `README.md` if node/catalog behavior changes
 
-- [ ] 补 `crates/graph/AGENTS.md`。
+- [x] 补 `crates/graph/AGENTS.md`。
 - [ ] 修 `scripting`、`nodes-flow`、`dsl-core`、`ai` AGENTS 中和实现冲突的规则。
 - [ ] 大文件拆分仅跟随功能修复推进，不单独做无目标重构。
 
