@@ -1,6 +1,6 @@
 # Crates 大文件拆分计划
 
-> **状态：** 进行中。2026-05-09 已完成第一轮 move-only 拆分、Slice 1 `connections` 续拆、Slice 2 `dsl-compiler::safety` 规则域拆分、Slice 3 `ai::client` 协议/响应/流式解析拆分与 Slice 4 `serialTrigger` 帧/循环拆分；本计划用于后续工作确认。
+> **状态：** 进行中。2026-05-09 已完成第一轮 move-only 拆分、Slice 1 `connections` 续拆、Slice 2 `dsl-compiler::safety` 规则域拆分、Slice 3 `ai::client` 协议/响应/流式解析拆分、Slice 4 `serialTrigger` 帧/循环拆分、Slice 5 `connections::health` 状态机拆分与 Slice 6 `connections::guard` RAII 守卫拆分；本计划用于后续工作确认。
 
 **Goal:** 在不改变运行时语义和 public API 的前提下，逐步降低 `crates/` 中大文件的职责混合风险，让后续修复可以沿清晰模块边界推进。
 
@@ -22,7 +22,7 @@
 
 | 文件 | 当前处理 | 状态 |
 |------|----------|------|
-| `crates/connections/src/lib.rs` | 抽出 `types.rs`、`policy.rs`、`validation.rs` 与 `tests.rs` | Slice 1 完成，后续可评估 manager/guard |
+| `crates/connections/src/lib.rs` | 抽出 `types.rs`、`policy.rs`、`validation.rs`、`health.rs`、`guard.rs` 与 `tests.rs` | Slice 1 + Slice 5 + Slice 6 完成，后续可评估 manager |
 | `crates/dsl-compiler/src/safety.rs` | 抽出 `safety/report.rs`、`safety/template.rs` 与 4 个规则域模块 | Slice 2 完成，后续可评估测试外移 |
 | `crates/ai/src/client.rs` | 改为 `client/mod.rs` 并抽出 `types.rs`、`protocol.rs`、`provider_policy.rs`、`response.rs`、`stream.rs` 与 `tests.rs` | Slice 3 完成 |
 | `crates/nodes-io/src/serial_trigger.rs` | 改为 `serial_trigger/mod.rs` 并抽出 `frame.rs`、`loop.rs` 与 `tests.rs` | Slice 4 完成 |
@@ -35,6 +35,8 @@
 - [x] `connections::tests`：抽出连接治理回归测试，降低 `lib.rs` review 噪声。
 - [x] `connections::policy`：抽出 `ConnectionGovernancePolicy`、governance JSON 读取 helper 与退避窗口计算。
 - [x] `connections::validation`：抽出连接类型 allowlist、normalize 与协议字段校验。
+- [x] `connections::health`：抽出 Guard Drop 释放、限流、退避、熔断、心跳超时与失败计数状态推进 helper。
+- [x] `connections::guard`：抽出 `ConnectionGuard` RAII 守卫、`mark_success` / `mark_failure` API 与 Drop 归还入口，crate root 保持 re-export。
 - [x] `dsl-compiler::safety::report`：抽出 `SafetyReport` / `SafetyDiagnostic` 与诊断写入 helper。
 - [x] `dsl-compiler::safety::template`：抽出 action 参数模板分类 helper。
 - [x] `dsl-compiler::safety::state_graph`：抽出状态可达性、死胡同、循环检测与无条件循环判断。
@@ -120,6 +122,34 @@ cargo test -p nazh-engine --test workflow serial_trigger_node_normalizes_ascii_a
 cargo clippy -p nodes-io --all-targets -- -D warnings
 ```
 
+### Slice 5: 拆 `connections::health`
+
+目标：把连接健康状态机从 `lib.rs` 抽出，保留 `ConnectionManager` / `ConnectionGuard` 对外 API 不变。
+
+- [x] 抽出 `health.rs`：`ConnectionOutcome`、`finalize_release`、配置诊断刷新、限流 / 熔断 / 退避窗口过期处理、失败状态推进与时间 helper。
+- [x] 保留 `ConnectionManager` / `ConnectionGuard` 在 `lib.rs`，后续如继续拆分再评估 `manager.rs` / `guard.rs`。
+
+验证：
+
+```bash
+cargo test -p connections
+cargo clippy -p connections --all-targets -- -D warnings
+```
+
+### Slice 6: 拆 `connections::guard`
+
+目标：把 RAII 守卫本体从 `lib.rs` 抽出，保留 `connections::ConnectionGuard` 对外路径与 `ConnectionManager::acquire` 返回类型不变。
+
+- [x] 抽出 `guard.rs`：`ConnectionGuard`、`lease` / `id` / `metadata` getter、`mark_success` / `mark_failure` 与 Drop 归还入口。
+- [x] `lib.rs` 通过 `pub use guard::ConnectionGuard` 保持 public API 稳定。
+
+验证：
+
+```bash
+cargo test -p connections
+cargo clippy -p connections --all-targets -- -D warnings
+```
+
 ## 暂缓项
 
 - `crates/core/src/variables.rs`：生产职责仍集中，文件大主要来自内联测试。下一次变量功能改动时，优先只搬测试。
@@ -192,6 +222,28 @@ cargo test -p nazh-engine --test workflow serial_trigger_node_normalizes_ascii_a
 cargo clippy -p nodes-io --all-targets -- -D warnings
 cargo fmt --all -- --check
 git diff --check
+```
+
+结果：上述命令均通过。
+
+## Slice 5 验证记录
+
+2026-05-09 拆分 `connections::health` 状态机 helper 后已在 Dev Container `nazh-devcontainer-nzh-main` 内运行：
+
+```bash
+cargo test -p connections
+cargo clippy -p connections --all-targets -- -D warnings
+```
+
+结果：上述命令均通过。
+
+## Slice 6 验证记录
+
+2026-05-09 拆分 `connections::guard` RAII 守卫后已在 Dev Container `nazh-devcontainer-nzh-main` 内运行：
+
+```bash
+cargo test -p connections
+cargo clippy -p connections --all-targets -- -D warnings
 ```
 
 结果：上述命令均通过。

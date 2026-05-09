@@ -16,7 +16,9 @@
 
 ```text
 crates/connections/src/
-├── lib.rs        # ConnectionGuard、ConnectionManager 与连接状态机
+├── lib.rs        # ConnectionManager 与连接注册 / 借出 / 共享会话缓存
+├── guard.rs      # ConnectionGuard RAII 归还与 mark_success / mark_failure API
+├── health.rs     # Guard Drop 释放、限流 / 熔断 / 退避 / 心跳超时状态推进
 ├── policy.rs     # ConnectionGovernancePolicy 与治理 metadata 读取 / 退避计算
 ├── validation.rs # 连接类型 allowlist、normalize 与协议字段校验
 ├── types.rs      # 连接 DTO、健康快照与 connection_metadata
@@ -58,7 +60,7 @@ ts-rs 导出：`ConnectionDefinition` / `ConnectionHealthSnapshot` / `Connection
 7. **未知连接类型默认拒绝**。`validation.rs` 的 `validate_connection_definition` 只接受显式支持的连接类型（serial / modbus / mqtt / http / bark / can / ethercat 及既有别名），错误消息必须列出支持类型；如果需要 opaque/tool 连接，必须新增 allowlist 分支并限制可用节点。
 8. **总线参数必须显式配置**。CAN/SLCAN 连接必须声明 `interface` / `channel` / `baud_rate` / `bitrate`；EtherCAT 连接必须声明 `backend` / `interface` / `cycle_time_ms` / `op_timeout_ms`。测试或 demo 的 mock 连接也要显式写出这些字段，不在连接层静默补默认值。
 9. **治理策略从 metadata 读取**。`policy.rs` 的 `ConnectionGovernancePolicy` 从 `metadata.governance` JSON 中读取可调参数（超时、限流窗口、熔断阈值等），有合理默认值和下限。改熔断算法请同步更新本文件，若改语义走 ADR。
-10. **失败出口推进治理状态机**。`guard.mark_failure(reason)` 在 Drop 时会更新 failure counters、退避和熔断；若节点已在同一次 lease 内手动调用 `record_connect_failure`，Drop 不重复计数。
+10. **失败出口推进治理状态机**。`health.rs` 统一承载 Guard Drop 释放、限流、退避、熔断与心跳超时状态推进；`guard.mark_failure(reason)` 在 Drop 时会更新 failure counters、退避和熔断；若节点已在同一次 lease 内手动调用 `record_connect_failure`，Drop 不重复计数。
 11. **不做节点实现**。本 crate 只提供连接原语。
 12. **超时检测**：`acquire` 前调用 `reconcile_timed_state` 处理过期的限流 / 熔断 / 退避窗口；`finalize_release`（Guard Drop 时）检查占用时长是否超过 `operation_timeout_ms`。
 
