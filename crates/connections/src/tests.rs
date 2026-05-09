@@ -6,6 +6,7 @@ use std::sync::{
 };
 use std::time::Duration;
 
+use nazh_core::EngineError;
 use serde_json::json;
 use tokio::sync::Barrier;
 

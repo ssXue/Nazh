@@ -16,7 +16,11 @@
 
 ```text
 crates/connections/src/
-├── lib.rs        # ConnectionManager 与连接注册 / 借出 / 共享会话缓存
+├── lib.rs        # crate root re-export + ts-rs export_bindings 入口
+├── manager/
+│   ├── mod.rs        # ConnectionManager 注册 / 借出 / 快照读取
+│   ├── health_ops.rs # record_* / mark_* 运行时健康反馈 API
+│   └── session.rs    # ensure_shared_session / 共享会话缓存与清理
 ├── guard.rs      # ConnectionGuard RAII 归还与 mark_success / mark_failure API
 ├── health.rs     # Guard Drop 释放、限流 / 熔断 / 退避 / 心跳超时状态推进
 ├── policy.rs     # ConnectionGovernancePolicy 与治理 metadata 读取 / 退避计算

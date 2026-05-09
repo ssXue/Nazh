@@ -32,7 +32,12 @@ RFC-0004 Phase 3 + Phase 5 核心组件：将 `WorkflowSpec`（状态机 YAML）
 crates/dsl-compiler/src/
 ├── context.rs
 ├── error.rs
-├── output.rs
+├── output/
+│   ├── mod.rs         # compile / compile_with_safety 入口
+│   ├── builder.rs     # GraphBuilder 编排 stateMachine / capabilityCall / edges / variables
+│   ├── guards.rs      # runtime feature 支持边界与 sanitize 碰撞校验
+│   ├── json.rs        # capability implementation / pin type JSON 映射
+│   └── tests.rs       # output 构建回归测试
 ├── safety.rs           # 安全编译器入口与规则编排
 ├── safety/
 │   ├── action_rules.rs # 单位一致性、量程边界与危险动作审批规则
@@ -40,7 +45,8 @@ crates/dsl-compiler/src/
 │   ├── preconditions.rs # Capability 前置条件可达性规则
 │   ├── report.rs       # SafetyReport / SafetyDiagnostic 与诊断写入 helper
 │   ├── state_graph.rs  # 状态可达性、死胡同与循环规则
-│   └── template.rs     # action 参数模板分类 helper
+│   ├── template.rs     # action 参数模板分类 helper
+│   └── tests/          # safety 规则域回归测试
 └── validate.rs
 ```
 
@@ -81,12 +87,12 @@ crates/dsl-compiler/src/
 
 ## Capability implementation 映射
 
-`output.rs::capability_impl_to_json` 必须输出 `nodes-io::CapabilityImplSnapshot` 能反序列化的格式：`modbus-write.value` → `value_template`，`mqtt-publish.payload` → `payload_template`，`serial-command.command` → `command_template`，`can-write.data` → `data_template`，`script.content` 保持 `content`。
+`output/json.rs::capability_impl_to_json` 必须输出 `nodes-io::CapabilityImplSnapshot` 能反序列化的格式：`modbus-write.value` → `value_template`，`mqtt-publish.payload` → `payload_template`，`serial-command.command` → `command_template`，`can-write.data` → `data_template`，`script.content` 保持 `content`。
 
 ## 修改本 crate 时
 
 - 编译输出格式变更必须同步更新 `WorkflowGraph` serde 格式 + 更新 conformance test
 - 新增校验规则须同步 `validate.rs` 的 tests 模块
-- 新增安全校验规则须同步 `safety.rs` 的 tests 模块；规则实现按域放入 `safety/action_rules.rs`、`safety/preconditions.rs`、`safety/state_graph.rs` 或 `safety/interlock.rs`；诊断结构放在 `safety/report.rs`，模板分类 helper 放在 `safety/template.rs`
-- `output.rs` 的 `build_*` 方法变更须确认生成的 JSON 仍可被 `stateMachine` / `capabilityCall` 节点反序列化
+- 新增安全校验规则须同步 `safety/tests/` 的对应规则域测试；规则实现按域放入 `safety/action_rules.rs`、`safety/preconditions.rs`、`safety/state_graph.rs` 或 `safety/interlock.rs`；诊断结构放在 `safety/report.rs`，模板分类 helper 放在 `safety/template.rs`
+- `output/builder.rs` 的 `build_*` 方法变更须确认生成的 JSON 仍可被 `stateMachine` / `capabilityCall` 节点反序列化
 - 改变 DSL 支持边界时，同步更新本文件和 `dsl-core` 示例，避免 AI/前端继续生成能解析但不能运行的工作流

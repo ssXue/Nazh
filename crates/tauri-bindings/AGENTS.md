@@ -19,18 +19,26 @@
 
 ```text
 crates/tauri-bindings/src/
-└── lib.rs    # IPC 类型 + list_node_types_response + export_all
+├── lib.rs               # crate root re-export + 模块边界
+├── workflow.rs          # workflow lifecycle / node catalog / pin 描述 IPC 类型
+├── variables.rs         # workflow/global variable IPC 类型与事件 payload
+├── runtime.rs           # runtime workflow / dead letter / focus IPC 类型
+├── observability.rs     # observability 查询与清理 IPC 类型
+├── serial.rs            # serial port 列表 / 测试连接 IPC 类型
+├── deployment_session.rs # deployment session 文件态 IPC 类型
+├── export.rs            # ts-rs export_all 汇总入口
+└── tests.rs             # IPC helper 回归测试
 ```
 
 关键类型与函数：
-- `DeployResponse` / `DispatchResponse` / `UndeployResponse` — `src/lib.rs:17+`
-- `NodeTypeEntry` / `ListNodeTypesResponse` — `src/lib.rs:59+`
+- `DeployResponse` / `DispatchResponse` / `UndeployResponse` — `src/workflow.rs`
+- `NodeTypeEntry` / `ListNodeTypesResponse` — `src/workflow.rs`
 - `SnapshotWorkflowVariablesRequest` / `SnapshotWorkflowVariablesResponse` — ADR-0012 Phase 1 引入，供 `snapshot_workflow_variables` IPC 命令序列化；包含对 `TypedVariableSnapshot` / `VariableDeclaration`（来自 `nazh-core`，ADR-0012 Phase 1 引入）的透传
 - `SetWorkflowVariableRequest` / `SetWorkflowVariableResponse`（ADR-0012 Phase 2）— 供 `set_workflow_variable` IPC 命令序列化；`Response` 含写入后读回的 `TypedVariableSnapshot`（类型不匹配 / 变量未声明通过 `Err(String)` 上抛）
 - `DeleteWorkflowVariableRequest` / `ResetWorkflowVariableRequest` / `QueryVariableHistoryRequest` / `SetGlobalVariableRequest` / `GetGlobalVariableRequest` / `ListGlobalVariablesRequest` / `DeleteGlobalVariableRequest` 及对应响应类型（ADR-0012 Phase 3 / ADR-0022）— 供变量删除、重置、历史查询与全局变量 CRUD IPC 命令序列化
 - `VariableChangedPayload`（ADR-0012 Phase 2）— `workflow://variable-changed` 事件载荷；包含 `workflow_id` / `name` / `value` / `updated_at` / `updated_by`；`updated_by` 加 `#[serde(skip_serializing_if = "Option::is_none")]` 与 ts(optional) 契约对齐
-- `list_node_types_response(&NodeRegistry)` — `src/lib.rs:85`
-- `export_all()`（仅 `ts-export` feature） — `src/lib.rs:107`
+- `list_node_types_response(&NodeRegistry)` — `src/workflow.rs`
+- `export_all()`（仅 `ts-export` feature） — `src/export.rs`
 
 ## 内部约定
 

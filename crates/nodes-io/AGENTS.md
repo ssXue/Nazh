@@ -47,10 +47,19 @@ crates/nodes-io/src/
 ├── native.rs
 ├── modbus_read.rs
 ├── http_client.rs
-├── mqtt_client.rs
+├── http_client_tests.rs
+├── mqtt_client/
+│   ├── mod.rs        # MQTT publish/subscribe 节点结构、配置与 transform/on_deploy 编排
+│   ├── subscribe.rs  # 订阅长连接循环、CONNACK 等待与消息转发
+│   └── tests.rs      # MQTT mode 与 pin 声明回归测试
 ├── can/
 ├── ethercat/
-├── bark_push.rs
+├── bark_push/
+│   ├── mod.rs        # barkPush 节点结构、连接继承与 transform 编排
+│   ├── config.rs     # Bark 配置、默认值与 mode 规范化
+│   ├── request.rs    # endpoint 解析、请求体构建、HTTP 响应校验
+│   ├── metadata.rs   # Bark / HTTP metadata 构造
+│   └── tests.rs      # endpoint、模板渲染、业务错误码回归测试
 ├── sql_writer.rs
 ├── capability_call.rs
 ├── capability_call/

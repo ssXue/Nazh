@@ -1,6 +1,6 @@
 # Crates 大文件拆分计划
 
-> **状态：** 进行中。2026-05-09 已完成第一轮 move-only 拆分、Slice 1 `connections` 续拆、Slice 2 `dsl-compiler::safety` 规则域拆分、Slice 3 `ai::client` 协议/响应/流式解析拆分、Slice 4 `serialTrigger` 帧/循环拆分、Slice 5 `connections::health` 状态机拆分与 Slice 6 `connections::guard` RAII 守卫拆分；本计划用于后续工作确认。
+> **状态：** 2026-05-09 已完成 crates 范围内可低风险拆分的文件治理。当前 `crates/` 下已无超过 500 行的 Rust 源文件；后续不建议继续为行数本身做跨职责重构。
 
 **Goal:** 在不改变运行时语义和 public API 的前提下，逐步降低 `crates/` 中大文件的职责混合风险，让后续修复可以沿清晰模块边界推进。
 
@@ -22,12 +22,13 @@
 
 | 文件 | 当前处理 | 状态 |
 |------|----------|------|
-| `crates/connections/src/lib.rs` | 抽出 `types.rs`、`policy.rs`、`validation.rs`、`health.rs`、`guard.rs` 与 `tests.rs` | Slice 1 + Slice 5 + Slice 6 完成，后续可评估 manager |
-| `crates/dsl-compiler/src/safety.rs` | 抽出 `safety/report.rs`、`safety/template.rs` 与 4 个规则域模块 | Slice 2 完成，后续可评估测试外移 |
+| `crates/connections/src/lib.rs` / `manager.rs` | 抽出 `types.rs`、`policy.rs`、`validation.rs`、`health.rs`、`guard.rs`、`manager/{mod,health_ops,session}.rs` 与 `tests.rs` | 完成 |
+| `crates/dsl-compiler/src/safety.rs` / `output.rs` | 抽出 `safety/*` 规则域、`safety/tests/*`、`output/{mod,builder,guards,json,tests}.rs` | 完成 |
 | `crates/ai/src/client.rs` | 改为 `client/mod.rs` 并抽出 `types.rs`、`protocol.rs`、`provider_policy.rs`、`response.rs`、`stream.rs` 与 `tests.rs` | Slice 3 完成 |
 | `crates/nodes-io/src/serial_trigger.rs` | 改为 `serial_trigger/mod.rs` 并抽出 `frame.rs`、`loop.rs` 与 `tests.rs` | Slice 4 完成 |
-| `crates/core/src/variables.rs` | 暂缓生产拆分 | 仅建议未来先搬测试 |
-| `crates/tauri-bindings/src/lib.rs` | 暂缓拆分 | 作为 IPC / ts-rs 汇总入口保留 |
+| `crates/core/src/variables.rs` | 改为 `variables/mod.rs` 并抽出 `events.rs`、`types.rs`、`value.rs` 与 `tests/*` | 完成 |
+| `crates/tauri-bindings/src/lib.rs` | 按 IPC 域抽出 `workflow.rs`、`variables.rs`、`runtime.rs`、`observability.rs`、`serial.rs`、`deployment_session.rs`、`export.rs`、`tests.rs` | 完成 |
+| `crates/nodes-io/src/mqtt_client.rs` / `bark_push.rs` / `http_client.rs` | `mqtt_client/subscribe.rs`、`bark_push/{config,request,metadata}.rs`、HTTP client 测试外移 | 完成 |
 
 ## 已完成切片
 
@@ -52,10 +53,20 @@
 - [x] `nodes-io::serial_trigger::frame`：抽出串口帧字段读取、ASCII/HEX 规范化与 payload 构造 helper。
 - [x] `nodes-io::serial_trigger::loop`：抽出阻塞串口读循环、delimiter 解析、serialport 参数映射、健康反馈与重连逻辑。
 - [x] `nodes-io::serial_trigger::tests`：抽出 serialTrigger 帧规范化与 delimiter 回归测试。
+- [x] `core::*_tests`：将 `variables`、`pin`、`plugin`、`node`、`lifecycle` 等内联测试外移；`variables` 进一步按 basic / events / watch 拆分。
+- [x] `core::variables`：抽出事件发送、变量 DTO、PinType/JSON 运行时类型校验，保留 `nazh_core::variables` 对外路径稳定。
+- [x] `tauri-bindings::*`：按 workflow / variables / runtime / observability / serial / deployment_session / export 拆分 IPC 类型与 ts-rs 汇总入口。
+- [x] `dsl-compiler::output`：抽出 GraphBuilder、runtime feature guard、sanitize 校验、JSON 映射与 output 回归测试。
+- [x] `dsl-compiler::safety::tests`：按 action_rules / preconditions / state_graph / interlock 拆分安全规则回归测试。
+- [x] `connections::manager`：抽出共享会话缓存与运行时健康反馈 API，保留 `ConnectionManager` 对外 API 稳定。
+- [x] `nodes-io::mqtt_client`：抽出订阅长连接循环，保留 publish / subscribe mode 对外语义稳定。
+- [x] `nodes-io::bark_push`：抽出配置、请求/响应、metadata 构造，并补 endpoint / 模板 / 业务错误码回归测试。
+- [x] `nodes-io::http_client::tests`：外移 HTTP client pin 与请求体回归测试。
 - [x] 同步 `crates/connections/AGENTS.md`、`crates/dsl-compiler/AGENTS.md` 与 remediation 跟踪文档。
 - [x] 同步 `crates/ai/AGENTS.md`、`crates/nodes-io/AGENTS.md`。
+- [x] 同步 `crates/core/AGENTS.md`、`crates/tauri-bindings/AGENTS.md`。
 
-## 下一步建议
+## 执行切片记录
 
 ### Slice 1: 继续拆 `connections`
 
@@ -150,10 +161,10 @@ cargo test -p connections
 cargo clippy -p connections --all-targets -- -D warnings
 ```
 
-## 暂缓项
+## 后续边界
 
-- `crates/core/src/variables.rs`：生产职责仍集中，文件大主要来自内联测试。下一次变量功能改动时，优先只搬测试。
-- `crates/tauri-bindings/src/lib.rs`：保留为 IPC / ts-rs 单一汇总入口。若未来拆，只按命令域拆内部模块，`lib.rs` 仍保留 re-export 与 `export_all()`。
+- 本计划只覆盖 `crates/` Rust 源文件。`src-tauri/` 与 `web/src/` 仍有大文件，但它们属于壳层命令/UI 组件治理，应单独按命令域或页面职责拆分，不混入 crates PR。
+- 当前 `crates/` 下已经没有超过 500 行的 Rust 源文件。后续只有在功能修改触及对应模块时再做职责重构，不再为行数本身拆分。
 
 ## 第一轮验证记录
 
@@ -247,3 +258,20 @@ cargo clippy -p connections --all-targets -- -D warnings
 ```
 
 结果：上述命令均通过。
+
+## 收尾验证记录
+
+2026-05-09 完成 `core::variables`、`tauri-bindings`、`dsl-compiler::output`、`connections::manager`、`nodes-io::mqtt_client` / `bark_push` 与剩余测试文件拆分后，已在 Dev Container `nazh-devcontainer-nzh-main` 内运行：
+
+```bash
+cargo test --workspace
+cargo test -p tauri-bindings --features ts-export export_bindings
+git diff --exit-code -- web/src/generated
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+git diff --check
+find crates -type f -name '*.rs' -not -path '*/target/*' -print0 \
+  | xargs -0 wc -l | awk '$1 >= 500 {print}' | sort -nr
+```
+
+结果：上述验证均通过，`web/src/generated/` 无漂移；最后一条只输出总行数，表示 `crates/` 下没有单个 Rust 源文件仍超过 500 行。

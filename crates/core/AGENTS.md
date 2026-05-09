@@ -40,7 +40,12 @@ crates/core/src/
 ├── node.rs             # NodeTrait / NodeCapabilities / NodeOutput / is_pure_form / into_payload_map
 ├── pin.rs              # PinDefinition / PinType / PinDirection / PinKind / EmptyPolicy（ADR-0010 + ADR-0014）
 ├── plugin.rs           # NodeRegistry / Plugin / PluginHost / RuntimeResources / WorkflowNodeDefinition
-└── variables.rs        # WorkflowVariables / TypedVariable / TypedVariableSnapshot / VariableDeclaration（ADR-0012）
+└── variables/
+    ├── mod.rs         # WorkflowVariables 编排与 set / reset / CAS / remove
+    ├── events.rs      # WorkflowVariableEvent / emit_variable_event / EventSink
+    ├── types.rs       # TypedVariable / TypedVariableSnapshot / VariableDeclaration
+    ├── value.rs       # PinType ↔ JSON Value 运行时类型校验
+    └── tests/         # 变量基础、事件、watch channel 回归测试
 ```
 
 关键类型：
@@ -56,7 +61,7 @@ crates/core/src/
 - `WorkflowNodeDefinition` — `src/plugin.rs`（字段私有，getter 访问，`probe` 工厂方法）
 - `CancellationToken` re-export from `tokio_util::sync`
 - `AiService` trait + 请求/响应/错误类型 — `src/ai.rs`
-- `WorkflowVariables` / `TypedVariable` / `TypedVariableSnapshot` / `VariableDeclaration` — `src/variables.rs`
+- `WorkflowVariables` / `TypedVariable` / `TypedVariableSnapshot` / `VariableDeclaration` — `src/variables/`
   - `set_event_sender` — 注入事件通道（OnceCell 仅设一次）
   - `subscribe(name)` — 变更通知 watch receiver（ADR-0015 Phase 2）
   - `reset(name, updated_by)` — 恢复到声明初值（ADR-0012 Phase 3）
