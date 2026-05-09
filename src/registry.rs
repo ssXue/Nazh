@@ -80,11 +80,8 @@ mod tests {
 
         // 流程控制
         expect("code", NodeCapabilities::empty());
-        expect("if", NodeCapabilities::PURE | NodeCapabilities::BRANCHING);
-        expect(
-            "switch",
-            NodeCapabilities::PURE | NodeCapabilities::BRANCHING,
-        );
+        expect("if", NodeCapabilities::BRANCHING);
+        expect("switch", NodeCapabilities::BRANCHING);
         expect("tryCatch", NodeCapabilities::BRANCHING);
         expect(
             "loop",

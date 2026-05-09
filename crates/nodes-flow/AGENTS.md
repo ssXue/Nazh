@@ -17,7 +17,7 @@
 | `loop` | 循环展开 | 每个元素产出一条 `Route(["body"])`，末尾 `Route(["done"])` |
 | `tryCatch` | 异常捕获 | `Route(["try"])` / `Route(["catch"])` |
 | `code` | 任意 Rhai 脚本 | `Broadcast` |
-| `stateMachine` | 状态机子运行时（RFC-0004 Phase 3） | 每条命中的 `transition.to` 一条 `Route([state_id])` |
+| `stateMachine` | 状态机子运行时（RFC-0004 Phase 3） | 命中迁移后路由到 exit / transition / entry action ports |
 | `subgraphInput` | 子图展开后的入口桥接节点 | `Broadcast` |
 | `subgraphOutput` | 子图展开后的出口桥接节点 | `Broadcast` |
 
@@ -50,12 +50,12 @@ Plugin 注册入口：`FlowPlugin::register(&mut NodeRegistry)`，在 `lib.rs:36
 
 | 节点 | 能力 | 原因 |
 |------|------|------|
-| `if` | `PURE \| BRANCHING` | 纯 Rhai 布尔表达式，路由到 true/false 端口 |
-| `switch` | `PURE \| BRANCHING` | 纯 Rhai 匹配，路由到其中一个分支 |
+| `if` | `BRANCHING` | Rhai 表达式可读取时间、随机数或写变量，不能声明 PURE |
+| `switch` | `BRANCHING` | Rhai 表达式可读取时间、随机数或写变量，不能声明 PURE |
 | `loop` | `BRANCHING \| MULTI_OUTPUT` | 一次产出多条（每个元素一条 + done） |
 | `tryCatch` | `BRANCHING` | 成功/失败分支 |
 | `code` | `empty()` | 用户脚本可能含任意副作用（AI 调用、Rhai 自定义函数等）——无法静态保证 PURE |
-| `stateMachine` | `BRANCHING \| MULTI_OUTPUT` | 状态机迁移可能命中多条 `transition`，分别路由到各 `to` 状态端口 |
+| `stateMachine` | `BRANCHING \| MULTI_OUTPUT` | 状态机迁移可能触发多条 action port |
 | `subgraphInput` | `PURE` | 子图入口桥接节点只原样透传 JSON payload |
 | `subgraphOutput` | `PURE` | 子图出口桥接节点只原样透传 JSON payload |
 
@@ -70,20 +70,20 @@ Plugin 注册入口：`FlowPlugin::register(&mut NodeRegistry)`，在 `lib.rs:36
 | `switch` | `in: Any`（默认） | **动态**：每个 `branches[i].key` 一个 `Any` 输出 + `default_branch`（去重） |
 | `loop` | `in: Any`（默认） | `body: Any` / `done: Any` |
 | `tryCatch` | `in: Any`（默认） | `try: Any` / `catch: Any` |
-| `stateMachine` | `in: Any`（默认） | **动态**：每个声明的 `state.id` 一个 `Any` 输出（命中迁移后路由到 `transition.to`） |
+| `stateMachine` | `in: Any`（默认） | **动态**：所有唯一 `entry_actions` / `exit_actions` / `transition.action_port` 输出 |
 | `subgraphInput` | `in: Json` | `out: Json` |
 | `subgraphOutput` | `in: Json` | `out: Json` |
 
 **Phase 1 输入端均为默认 `Any`**——脚本节点天然吃任何 payload，没有理由收紧。输出端的具名 pin 与 `transform` 路径上 `NodeDispatch::Route([id])` 的字符串严格一致；改 pin id 必须同步改 transform，反之亦然。
 
-**`switch` / `stateMachine` 的动态 pin 由 `output_pins(&self)` 实例方法在每次调用时读取实例配置生成**（`switch` 读 `branches` + `default_branch`，`stateMachine` 读 `states`），避免把每个用户配置都注册成新类型。这是 ADR-0010 把 `output_pins` 设计为实例方法（而非 `'static` 表）的典型原因。
+**`switch` / `stateMachine` 的动态 pin 由 `output_pins(&self)` 实例方法在每次调用时读取实例配置生成**（`switch` 读 `branches` + `default_branch`，`stateMachine` 收集 `entry_actions` / `exit_actions` / `transition.action_port`），避免把每个用户配置都注册成新类型。这是 ADR-0010 把 `output_pins` 设计为实例方法（而非 `'static` 表）的典型原因。
 
 ### 共同契约
 
 1. **5 个脚本节点（`if` / `switch` / `loop` / `tryCatch` / `code`）嵌入 `ScriptNodeBase`**，`NodeTrait` 元数据（`id` / `kind`）用 `scripting::delegate_node_base!` 宏委托。`stateMachine` 自带状态/迁移逻辑，不复用 `ScriptNodeBase`，但 `transition.condition` 仍走 `rhai::Engine` 评估；`subgraphInput` / `subgraphOutput` 复用 `PassthroughNode`。**能力标签不走 trait**，而是在 `FlowPlugin::register` 时通过 `register_with_capabilities` 声明——详见 `crates/core/AGENTS.md` 的"为什么 `NodeTrait` 没有 `capabilities()` 方法"。
 2. **脚本执行遵循 `scripting` crate 的约定**（`max_operations`、payload 变量名、Scope 单次使用）。
 3. **不借用连接、不做 I/O**。`code` 节点可以通过 `ai_complete()` 发 AI 请求，但走的是 Ring 0 的 `nazh_core::ai::AiService` trait（具体实现由壳层注入）；本 crate 不直接用 `reqwest` / `rusqlite` / 其他协议，**也不依赖 `ai` crate**（ADR-0019）。
-4. **分支端口名固定**：`if` 用 `"true"` / `"false"`，`tryCatch` 用 `"try"` / `"catch"`，`loop` 用 `"body"` / `"done"`，`switch` 用配置里声明的分支名，`stateMachine` 用 `states[i].id`。改端口名是前端画布的 breaking change。
+4. **分支端口名固定**：`if` 用 `"true"` / `"false"`，`tryCatch` 用 `"try"` / `"catch"`，`loop` 用 `"body"` / `"done"`，`switch` 用配置里声明的分支名加 `default_branch`，`stateMachine` 用 action port（`entry_actions` / `exit_actions` / `transition.action_port`）。改端口名是前端画布的 breaking change。
 5. **子图桥接节点只服务部署后的扁平 DAG**。`subgraph` 容器本身不进入 Rust Runner；前端 `flattenSubgraphs()` 会把容器改写成 `<subgraph-id>/...` 前缀节点，并把外部边接到 `subgraphInput` / `subgraphOutput`。
 
 ## 依赖约束

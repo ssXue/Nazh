@@ -911,6 +911,8 @@ Expected: 返回未知分支时走 default 或明确失败。
 
 ### CR-P2-15 if/switch 标记 PURE 但脚本环境非纯
 
+> **状态：** 2026-05-09 已修复。`if` / `switch` 能力标签已移除 `PURE`，保留 `BRANCHING`；标准注册表契约测试与 `nodes-flow` / `scripting` AGENTS 已同步说明默认 Rhai 环境不是纯函数环境。
+
 **影响文件：**
 
 - `crates/nodes-flow/src/lib.rs:49`
@@ -978,6 +980,8 @@ Expected: 超步数 transition 条件返回错误，不阻塞 runtime。
 
 ### CR-P3-03 脚本文档与实际 package 不一致
 
+> **状态：** 2026-05-09 已修复。`crates/scripting/AGENTS.md` 已删除不存在的 `sleep_ms()` 描述，并区分 `NazhScriptPackage` helper 与 `ScriptNodeBase::new()` 单独注入的 `ai_complete()`。
+
 **影响文件：**
 
 - `crates/scripting/AGENTS.md:20`
@@ -1007,6 +1011,8 @@ cargo test -p scripting package
 Expected: 文档列出的 helper 与实际导出一致。
 
 ### CR-P3-04 nodes-flow stateMachine output pin 文档漂移
+
+> **状态：** 2026-05-09 已修复。`crates/nodes-flow/AGENTS.md` 已改为当前 action-port 语义：`stateMachine` 动态输出来自 `entry_actions` / `exit_actions` / `transition.action_port`，而不是 `state.id` / `transition.to`。
 
 **影响文件：**
 
@@ -1429,7 +1435,7 @@ Expected: 后续修复不继续扩大最重文件；拆分后模块边界可由 
 - Modify: `crates/tauri-bindings/src/lib.rs`
 - Modify: `web/src/generated/*`
 
-- [ ] 移除或隔离非纯脚本能力。
+- [x] 移除或隔离非纯脚本能力。
 - [x] 修 DeepSeek provider policy 和 streaming 错误传播。
 - [x] 给 `WorkflowRuntimePolicyInput` 补 `ts(optional)` 并重新导出。
 - [x] 删除或废弃 stale generated 目录。
@@ -1444,7 +1450,7 @@ Expected: 后续修复不继续扩大最重文件；拆分后模块边界可由 
 - Modify: `README.md` if node/catalog behavior changes
 
 - [x] 补 `crates/graph/AGENTS.md`。
-- [ ] 修 `scripting`、`nodes-flow`、`dsl-core`、`ai` AGENTS 中和实现冲突的规则。
+- [x] 修 `scripting`、`nodes-flow`、`dsl-core`、`ai` AGENTS 中和实现冲突的规则。
 - [ ] 大文件拆分仅跟随功能修复推进，不单独做无目标重构。
 
 ---

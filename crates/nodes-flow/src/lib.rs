@@ -46,33 +46,25 @@ impl Plugin for FlowPlugin {
             )?))
         });
 
-        registry.register_with_capabilities(
-            "if",
-            NodeCapabilities::PURE | NodeCapabilities::BRANCHING,
-            |def, res| {
-                let config: IfNodeConfig = def.parse_config()?;
-                let variables = res.get::<Arc<WorkflowVariables>>();
-                Ok(Arc::new(IfNode::new(
-                    def.id().to_owned(),
-                    config,
-                    variables,
-                )?))
-            },
-        );
+        registry.register_with_capabilities("if", NodeCapabilities::BRANCHING, |def, res| {
+            let config: IfNodeConfig = def.parse_config()?;
+            let variables = res.get::<Arc<WorkflowVariables>>();
+            Ok(Arc::new(IfNode::new(
+                def.id().to_owned(),
+                config,
+                variables,
+            )?))
+        });
 
-        registry.register_with_capabilities(
-            "switch",
-            NodeCapabilities::PURE | NodeCapabilities::BRANCHING,
-            |def, res| {
-                let config: SwitchNodeConfig = def.parse_config()?;
-                let variables = res.get::<Arc<WorkflowVariables>>();
-                Ok(Arc::new(SwitchNode::new(
-                    def.id().to_owned(),
-                    config,
-                    variables,
-                )?))
-            },
-        );
+        registry.register_with_capabilities("switch", NodeCapabilities::BRANCHING, |def, res| {
+            let config: SwitchNodeConfig = def.parse_config()?;
+            let variables = res.get::<Arc<WorkflowVariables>>();
+            Ok(Arc::new(SwitchNode::new(
+                def.id().to_owned(),
+                config,
+                variables,
+            )?))
+        });
 
         registry.register_with_capabilities("tryCatch", NodeCapabilities::BRANCHING, |def, res| {
             let config: TryCatchNodeConfig = def.parse_config()?;
