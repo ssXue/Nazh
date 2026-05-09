@@ -164,7 +164,8 @@ impl Plugin for IoPlugin {
             "capabilityCall",
             NodeCapabilities::DEVICE_IO,
             |def, res| {
-                let config: CapabilityCallConfig = def.parse_config()?;
+                let mut config: CapabilityCallConfig = def.parse_config()?;
+                inherit_connection_id(&mut config.connection_id, def);
                 let variables = res.get::<Arc<WorkflowVariables>>();
                 let cm = downcast_connection_manager(&res)?;
                 Ok(Arc::new(CapabilityCallNode::new(

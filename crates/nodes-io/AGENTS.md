@@ -26,7 +26,7 @@
 | `barkPush` | HTTP | 向 Bark 服务推送 iOS 通知 |
 | `sqlWriter` | sqlite | 本地持久化写入（内部 `spawn_blocking` 包装 `rusqlite`） |
 | `debugConsole` | — | 格式化 payload 打印到控制台 |
-| `capabilityCall` | DSL 适配 | Workflow DSL 编译出的设备能力调用快照 |
+| `capabilityCall` | DSL 适配 | Workflow DSL 编译出的设备能力调用快照，运行时通过连接资源执行 Modbus/MQTT/Serial/CAN 动作 |
 | `humanLoop` | 人机协同 | 人工审批 / 表单确认节点 |
 
 **模板引擎** (`template` 模块)：给 `httpClient` / `barkPush` 等节点用，支持 `{{ payload.field }}` /
@@ -49,6 +49,9 @@ crates/nodes-io/src/
 ├── bark_push.rs
 ├── sql_writer.rs
 ├── capability_call.rs
+├── capability_call/
+│   ├── executor.rs   # capabilityCall 协议执行入口
+│   └── protocol.rs   # capabilityCall 协议参数解析 helper
 ├── human_loop/
 └── debug_console.rs
 ```
@@ -84,7 +87,8 @@ Plugin 注册入口：`IoPlugin::register(&mut NodeRegistry)`，在 `lib.rs` 集
 
 1. **所有硬件/网络 I/O 都借用连接**。要么走 `ConnectionManager::acquire(id)`，要么显式声明为"无连接工具节点"（`timer` / `debugConsole` / 无 config 的 `native`）。
 2. **连接 id 可从 `WorkflowNodeDefinition` 顶层字段继承**。辅助函数 `inherit_connection_id(&mut config.connection_id, def)` 实现这个 fallback；新节点添加连接支持时沿用这个模式。
-3. **Drop 自动归还**：`ConnectionGuard` 离开作用域时归还，不要手写 `drop(guard)` 或 `release`。必要时 `guard.mark_success()` 通知连接池健康反馈。
+3. **`capabilityCall` 是高级设备动作入口**。它必须保存/继承 `connection_id`，按 `CapabilityImplSnapshot` 执行底层协议 helper，并同时输出 `"capability_call"` 与底层协议 metadata。缺少连接、连接类型不匹配、模板值无法编码或 `script` implementation 未接入真实执行器时必须 fail-fast，不能返回意图成功。
+4. **Drop 自动归还**：`ConnectionGuard` 离开作用域时归还，不要手写 `drop(guard)` 或 `release`。必要时 `guard.mark_success()` 通知连接池健康反馈。
 
 ### CAN/SLCAN 连接级共享会话
 

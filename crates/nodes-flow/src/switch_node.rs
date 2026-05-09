@@ -131,8 +131,12 @@ impl NodeTrait for SwitchNode {
             let normalized = branch.trim();
             if normalized.is_empty() || normalized == "()" {
                 self.default_branch.clone()
-            } else {
+            } else if normalized == self.default_branch
+                || self.branches.iter().any(|branch| branch.key == normalized)
+            {
                 normalized.to_owned()
+            } else {
+                self.default_branch.clone()
             }
         };
         Ok(NodeExecution::route(new_payload, [next_branch]))
@@ -203,5 +207,37 @@ mod tests {
         assert_eq!(pins.len(), 1);
         assert_eq!(pins[0].id, "default");
         assert_eq!(pins[0].label, "默认"); // 用户 label 优先
+    }
+
+    #[tokio::test]
+    async fn transform_未知非空分支名路由到默认端口() {
+        let node = build_node(
+            vec![
+                SwitchBranchConfig {
+                    key: "high".to_owned(),
+                    label: None,
+                },
+                SwitchBranchConfig {
+                    key: "low".to_owned(),
+                    label: None,
+                },
+            ],
+            "default",
+        );
+
+        let result = node
+            .transform(Uuid::new_v4(), serde_json::json!({ "k": "unexpected" }))
+            .await
+            .unwrap();
+
+        assert_eq!(result.outputs.len(), 1);
+        match &result.outputs[0].dispatch {
+            nazh_core::NodeDispatch::Route(ports) => {
+                assert_eq!(ports, &vec!["default".to_owned()]);
+            }
+            other @ nazh_core::NodeDispatch::Broadcast => {
+                panic!("未知分支应路由到 default，实际为 {other:?}");
+            }
+        }
     }
 }

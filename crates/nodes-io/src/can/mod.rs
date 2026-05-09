@@ -37,7 +37,7 @@ pub mod hex;
 mod backends;
 mod can_read;
 mod can_write;
-mod session;
+pub(crate) mod session;
 
 use std::time::Duration;
 

@@ -1,6 +1,6 @@
 # 节点架构边界评审
 
-> **状态：** 评审结论，待收口
+> **状态：** 评审结论，部分收口（2026-05-09：`capabilityCall` 真实协议执行已接入；设备信号读取/事件入口仍待后续设计）
 > **日期：** 2026-05-05
 > **触发：** 复核项目初始原则：设备是高级节点，CAN 卡、串口等物理通道是全局连接资源
 > **关联：** RFC-0004、ADR-0005、ADR-0009、ADR-0018、ADR-0021
@@ -19,7 +19,7 @@
 | 连接治理 | 方向正确。串口、Modbus、MQTT、HTTP、Bark、CAN 的连接配置校验集中在 `crates/connections/src/lib.rs:1113`。 |
 | 节点暴露面 | 偏离初衷。前端普通节点库仍直接列出 `serialTrigger`、`modbusRead`、`mqttClient`、`canRead`、`canWrite`、`capabilityCall`，见 `web/src/components/flowgram/flowgram-node-library.ts:94`。 |
 | DSL 高级层 | 已有骨架。`DeviceSpec` 已包含 `connection` 与 `SignalSource::{Register, Topic, SerialCommand, CanFrame}`，见 `crates/dsl-core/src/device.rs:10` 与 `crates/dsl-core/src/device.rs:53`。`CapabilityImpl` 已覆盖底层动作快照，见 `crates/dsl-core/src/capability.rs:58`。 |
-| 运行时高级节点 | 未完成闭环。编译器已经把设备连接 ID 写入 `capabilityCall` 节点顶层字段，见 `crates/dsl-compiler/src/output.rs:290`；但 `CapabilityCallNode` 没保存该连接 ID，`connection_manager` 当前未使用，见 `crates/nodes-io/src/capability_call.rs:58`。 |
+| 运行时高级节点 | 部分闭环。编译器把设备连接 ID 写入 `capabilityCall` 节点顶层字段，运行时已继承/保存该连接 ID，并通过协议 helper 执行 Modbus/MQTT/Serial/CAN 动作；`script` implementation 未接入执行器时 fail-fast。设备输入侧的高级信号读取/事件入口仍未完成。 |
 
 结论：**不要删除低层协议节点，但不要让它们继续作为业务构图主路径。** 它们应该成为高级设备节点背后的协议后端，或保留在高级/调试入口中。
 
@@ -41,7 +41,9 @@
 
 ### 1. 先修 `capabilityCall` 的真实执行闭环
 
-这是最高优先级。`dsl-compiler` 已经生成 `connection_id`，但 `CapabilityCallNode` 没读取这个顶层字段。收口应包括：
+> **状态：** 2026-05-09 已完成第一轮收口：`CapabilityCallConfig` 支持 `connection_id`，`IoPlugin` 从 `WorkflowNodeDefinition` 顶层字段继承连接 ID，Modbus/MQTT/Serial/CAN 均有执行入口与底层 metadata；`script` implementation 在没有真实执行器时显式失败。
+
+这是最高优先级。2026-05-05 评审时，`dsl-compiler` 已经生成 `connection_id`，但 `CapabilityCallNode` 尚未读取这个顶层字段；2026-05-09 已补第一轮执行闭环。后续继续演进时仍应保持：
 
 - 在 `IoPlugin::register("capabilityCall", ...)` 中继承 `WorkflowNodeDefinition::connection_id()`，或把连接 ID 明确纳入 `CapabilityCallConfig`。
 - `CapabilityImplSnapshot::ModbusWrite` 真实执行 Modbus 写入。

@@ -137,6 +137,8 @@ Expected: timeout 未实现时部署失败；实现后测试能证明超时 tran
 
 ### CR-P1-04 capabilityCall 未真实借连接执行协议动作
 
+> **状态：** 2026-05-09 已修复。`capabilityCall` 现在继承/保存 `connection_id`，Modbus/MQTT/Serial/CAN 分支通过协议 helper 执行动作并写入底层 metadata；缺连接、连接类型不匹配和未接入执行器的 `script` implementation 均 fail-fast。CAN 覆盖 mock 后端成功路径。
+
 **影响文件：**
 
 - `crates/dsl-compiler/src/output.rs:301`
@@ -802,6 +804,8 @@ Expected: Data/Reactive 边参与或不参与拓扑的规则被测试固定。
 
 ### CR-P2-13 变量事件背压丢失只打 debug
 
+> **状态：** 2026-05-09 已修复。Changed/Deleted 变量事件统一走 `EventSink::emit()`，channel full/closed 时以 `tracing::error!` 记录 workflow、变量名、事件类型、累计丢弃数和 dropped event；新增 full/closed 回归测试。
+
 **影响文件：**
 
 - `crates/core/src/variables.rs:58`
@@ -872,6 +876,8 @@ cargo test -p nodes-flow code_node
 Expected: 并发 AI 脚本调用不会阻塞 Tokio worker，timeout 可稳定触发。
 
 ### CR-P1-09 switch 未知分支不落 default
+
+> **状态：** 2026-05-09 已修复。`switch` 只路由到已声明分支或 `default_branch`；未知非空分支名、空字符串和 unit 均落到 default，并新增回归测试。
 
 **影响文件：**
 
@@ -1366,7 +1372,7 @@ Expected: 后续修复不继续扩大最重文件；拆分后模块边界可由 
 - [x] 明确 DSL 表达式作用域，并补编译期校验。
 - [x] 更新 DSL 示例与 crate AGENTS。
 
-> 进度：2026-05-08 已完成 `dsl-compiler` 层面的 fail-fast 与参数绑定修复；`capabilityCall` 真实协议执行闭环仍保留在后续连接/I/O 修复批次中。
+> 进度：2026-05-09 已完成 `dsl-compiler` 层面的 fail-fast 与参数绑定修复，并完成 `capabilityCall` 对 `connection_id` 继承、Modbus/MQTT/Serial/CAN 真实执行入口、CAN mock 成功路径与 script implementation fail-fast。
 
 ### Task 2: 修连接治理的并发与替换语义
 
@@ -1399,9 +1405,9 @@ Expected: 后续修复不继续扩大最重文件；拆分后模块边界可由 
 - [x] 为 downstream/root channel closed 写 DataStore 释放测试。
 - [x] 定义 ingress partial submit 语义。
 - [x] 修 Data-only output result 噪声。
-- [ ] 统一变量事件背压日志和计数。
+- [x] 统一变量事件背压日志和计数。
 
-> 进度：2026-05-08 已完成 DataStore 引用补偿释放与 Data-only result 噪声修复；变量事件背压日志/计数仍保留为 Task 3 后续子项。
+> 进度：2026-05-09 已完成 DataStore 引用补偿释放、Data-only result 噪声修复，以及变量事件背压日志/计数闭环。
 
 ### Task 4: 收紧脚本、AI 和类型契约
 

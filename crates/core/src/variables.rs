@@ -22,6 +22,7 @@
 
 use std::collections::HashMap;
 use std::hash::BuildHasher;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
@@ -61,13 +62,39 @@ pub enum WorkflowVariableEvent {
 /// 通道满或关闭时通过 `tracing::error!` 报告——事件丢失即丢帧，不可接受。
 pub fn emit_variable_event(tx: &mpsc::Sender<WorkflowVariableEvent>, event: WorkflowVariableEvent) {
     if let Err(err) = tx.try_send(event) {
-        match err {
-            mpsc::error::TrySendError::Full(dropped) => {
-                tracing::error!(?dropped, "变量事件通道已满，事件被丢弃");
-            }
-            mpsc::error::TrySendError::Closed(dropped) => {
-                tracing::error!(?dropped, "变量事件通道已关闭，事件消费者可能已崩溃");
-            }
+        record_variable_event_send_failure(err, None, None, None, "unknown");
+    }
+}
+
+fn record_variable_event_send_failure(
+    err: mpsc::error::TrySendError<WorkflowVariableEvent>,
+    dropped_events: Option<&AtomicU64>,
+    workflow_id: Option<&str>,
+    variable_name: Option<&str>,
+    event_kind: &'static str,
+) {
+    let dropped_total =
+        dropped_events.map_or(0, |counter| counter.fetch_add(1, Ordering::Relaxed) + 1);
+    match err {
+        mpsc::error::TrySendError::Full(dropped) => {
+            tracing::error!(
+                workflow_id = workflow_id.unwrap_or("<unknown>"),
+                variable_name = variable_name.unwrap_or("<unknown>"),
+                event_kind,
+                dropped_total,
+                ?dropped,
+                "变量事件通道已满，事件被丢弃"
+            );
+        }
+        mpsc::error::TrySendError::Closed(dropped) => {
+            tracing::error!(
+                workflow_id = workflow_id.unwrap_or("<unknown>"),
+                variable_name = variable_name.unwrap_or("<unknown>"),
+                event_kind,
+                dropped_total,
+                ?dropped,
+                "变量事件通道已关闭，事件消费者可能已崩溃"
+            );
         }
     }
 }
@@ -166,6 +193,21 @@ impl From<TypedVariable> for TypedVariableSnapshot {
 struct EventSink {
     workflow_id: String,
     sender: mpsc::Sender<WorkflowVariableEvent>,
+    dropped_events: AtomicU64,
+}
+
+impl EventSink {
+    fn emit(&self, variable_name: &str, event_kind: &'static str, event: WorkflowVariableEvent) {
+        if let Err(err) = self.sender.try_send(event) {
+            record_variable_event_send_failure(
+                err,
+                Some(&self.dropped_events),
+                Some(&self.workflow_id),
+                Some(variable_name),
+                event_kind,
+            );
+        }
+    }
 }
 
 /// 工作流级共享变量存储。
@@ -274,6 +316,7 @@ impl WorkflowVariables {
             .set(EventSink {
                 workflow_id,
                 sender,
+                dropped_events: AtomicU64::new(0),
             })
             .is_err()
         {
@@ -300,13 +343,7 @@ impl WorkflowVariables {
             updated_at,
             updated_by,
         };
-        if let Err(error) = sink.sender.try_send(event) {
-            tracing::debug!(
-                ?error,
-                ?name,
-                "WorkflowVariableEvent::Changed try_send 失败"
-            );
-        }
+        sink.emit(name, "changed", event);
     }
 
     /// 类型化写入。`updated_by` 一般是节点 id；为 `None` 表示外部接入（IPC、初始化）。
@@ -452,13 +489,7 @@ impl WorkflowVariables {
                 workflow_id: sink.workflow_id.clone(),
                 name: name.to_owned(),
             };
-            if let Err(error) = sink.sender.try_send(event) {
-                tracing::debug!(
-                    ?error,
-                    ?name,
-                    "WorkflowVariableEvent::Deleted try_send 失败"
-                );
-            }
+            sink.emit(name, "deleted", event);
         }
         Some(removed)
     }
@@ -528,6 +559,15 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
+
+    impl WorkflowVariables {
+        fn dropped_variable_event_count_for_test(&self) -> u64 {
+            let Some(sink) = self.event_sink.get() else {
+                return 0;
+            };
+            sink.dropped_events.load(Ordering::Relaxed)
+        }
+    }
 
     fn vars_with(name: &str, ty: PinType, initial: Value) -> Arc<WorkflowVariables> {
         Arc::new(
@@ -832,6 +872,57 @@ mod tests {
         assert!(
             result.is_err(),
             "退化情形 (new == expected == current) 不应发事件，但收到：{result:?}"
+        );
+    }
+
+    #[test]
+    fn set_事件通道满时记录丢弃计数且不回滚变量() {
+        let (tx, _rx) = mpsc::channel(1);
+        let mut decls = HashMap::new();
+        decls.insert(
+            "x".to_owned(),
+            VariableDeclaration {
+                variable_type: PinType::Integer,
+                initial: Value::from(0_i64),
+            },
+        );
+        let vars = WorkflowVariables::from_declarations(&decls).unwrap();
+        vars.set_event_sender("wf-1".to_owned(), tx);
+
+        vars.set("x", Value::from(1_i64), Some("node-A")).unwrap();
+        vars.set("x", Value::from(2_i64), Some("node-A")).unwrap();
+
+        assert_eq!(vars.get_value("x"), Some(Value::from(2_i64)));
+        assert_eq!(
+            vars.dropped_variable_event_count_for_test(),
+            1,
+            "事件通道满时应记录一次丢弃"
+        );
+    }
+
+    #[test]
+    fn remove_事件通道关闭时记录丢弃计数且删除变量() {
+        let (tx, rx) = mpsc::channel(1);
+        let mut decls = HashMap::new();
+        decls.insert(
+            "x".to_owned(),
+            VariableDeclaration {
+                variable_type: PinType::Integer,
+                initial: Value::from(1_i64),
+            },
+        );
+        let vars = WorkflowVariables::from_declarations(&decls).unwrap();
+        vars.set_event_sender("wf-1".to_owned(), tx);
+        drop(rx);
+
+        let removed = vars.remove("x").expect("应返回旧值");
+
+        assert_eq!(removed.value, Value::from(1_i64));
+        assert!(vars.get("x").is_none(), "事件发送失败不应回滚删除");
+        assert_eq!(
+            vars.dropped_variable_event_count_for_test(),
+            1,
+            "事件通道关闭时应记录一次丢弃"
         );
     }
 

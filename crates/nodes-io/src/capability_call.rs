@@ -5,18 +5,26 @@
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Map, Value};
 use uuid::Uuid;
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use connections::SharedConnectionManager;
+use connections::{ConnectionGuard, SharedConnectionManager};
 use nazh_core::{EngineError, NodeExecution, NodeTrait, WorkflowVariables};
+
+mod executor;
+mod protocol;
+
+use self::protocol::connection_kind_matches;
 
 /// 能力调用节点配置——编译期烘焙。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CapabilityCallConfig {
+    /// 连接 ID（来自节点顶层 `connection_id` 或 config）。
+    #[serde(default)]
+    pub connection_id: Option<String>,
     /// 能力 ID（如 `hydraulic_axis.move_to`）。
     pub capability_id: String,
     /// 设备 ID。
@@ -120,6 +128,61 @@ impl CapabilityCallNode {
         // 未解析 → 保留原始占位
         format!("${{{var_name}}}")
     }
+
+    fn connection_id(&self) -> Result<&str, EngineError> {
+        self.config
+            .connection_id
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| {
+                EngineError::node_config(
+                    self.id.clone(),
+                    "capabilityCall 执行协议动作必须配置 connection_id".to_owned(),
+                )
+            })
+    }
+
+    async fn acquire_for_protocol(
+        &self,
+        protocol: &str,
+        allowed_kinds: &[&str],
+    ) -> Result<ConnectionGuard, EngineError> {
+        let connection_id = self.connection_id()?;
+        let mut guard = self.connection_manager.acquire(connection_id).await?;
+        if !connection_kind_matches(&guard.lease().kind, allowed_kinds) {
+            let reason = format!(
+                "capabilityCall `{}` 需要 {protocol} 连接，实际连接 `{connection_id}` 类型为 `{}`",
+                self.config.capability_id,
+                guard.lease().kind
+            );
+            guard.mark_failure(&reason);
+            return Err(EngineError::node_config(self.id.clone(), reason));
+        }
+        Ok(guard)
+    }
+
+    fn capability_metadata(&self) -> Map<String, Value> {
+        Map::from_iter([(
+            "capability_call".to_owned(),
+            serde_json::json!({
+                "capability_id": self.config.capability_id,
+                "device_id": self.config.device_id,
+                "connection_id": self.config.connection_id,
+            }),
+        )])
+    }
+
+    fn output(&self, payload: Value, protocol_metadata: Option<(&str, Value)>) -> NodeExecution {
+        let mut metadata = self.capability_metadata();
+        if let Some((key, value)) = protocol_metadata {
+            metadata.insert(key.to_owned(), value);
+        }
+        NodeExecution::from_outputs(vec![nazh_core::NodeOutput {
+            payload,
+            metadata: Some(metadata),
+            dispatch: nazh_core::NodeDispatch::Broadcast,
+        }])
+    }
 }
 
 fn value_to_string(val: &Value) -> String {
@@ -159,22 +222,15 @@ impl NodeTrait for CapabilityCallNode {
             }
         }
 
-        // 根据 implementation 类型执行对应操作
-        let result_payload = match &self.config.implementation {
+        // 根据 implementation 类型执行对应协议操作。
+        match &self.config.implementation {
             CapabilityImplSnapshot::ModbusWrite {
                 register,
                 value_template,
             } => {
                 let resolved_value = self.resolve_template(value_template, &payload);
-                // 构造结果 payload：记录执行了什么操作
-                serde_json::json!({
-                    "capability_id": self.config.capability_id,
-                    "device_id": self.config.device_id,
-                    "operation": "modbus-write",
-                    "register": register,
-                    "value": resolved_value,
-                    "args": resolved_args,
-                })
+                self.execute_modbus_write(_trace_id, *register, resolved_value, resolved_args)
+                    .await
             }
             CapabilityImplSnapshot::MqttPublish {
                 topic,
@@ -182,24 +238,18 @@ impl NodeTrait for CapabilityCallNode {
             } => {
                 let resolved_topic = self.resolve_template(topic, &payload);
                 let resolved_payload = self.resolve_template(payload_template, &payload);
-                serde_json::json!({
-                    "capability_id": self.config.capability_id,
-                    "device_id": self.config.device_id,
-                    "operation": "mqtt-publish",
-                    "topic": resolved_topic,
-                    "payload": resolved_payload,
-                    "args": resolved_args,
-                })
+                self.execute_mqtt_publish(
+                    _trace_id,
+                    resolved_topic,
+                    resolved_payload,
+                    resolved_args,
+                )
+                .await
             }
             CapabilityImplSnapshot::SerialCommand { command_template } => {
                 let resolved_cmd = self.resolve_template(command_template, &payload);
-                serde_json::json!({
-                    "capability_id": self.config.capability_id,
-                    "device_id": self.config.device_id,
-                    "operation": "serial-command",
-                    "command": resolved_cmd,
-                    "args": resolved_args,
-                })
+                self.execute_serial_command(_trace_id, resolved_cmd, resolved_args)
+                    .await
             }
             CapabilityImplSnapshot::CanWrite {
                 can_id,
@@ -207,42 +257,23 @@ impl NodeTrait for CapabilityCallNode {
                 is_extended,
             } => {
                 let resolved_data = self.resolve_template(data_template, &payload);
-                serde_json::json!({
-                    "capability_id": self.config.capability_id,
-                    "device_id": self.config.device_id,
-                    "operation": "can-write",
-                    "can_id": can_id,
-                    "data": resolved_data,
-                    "is_extended": is_extended,
-                    "args": resolved_args,
-                })
+                self.execute_can_write(
+                    _trace_id,
+                    *can_id,
+                    resolved_data,
+                    *is_extended,
+                    resolved_args,
+                )
+                .await
             }
             CapabilityImplSnapshot::Script { content } => {
-                let resolved_script = self.resolve_template(content, &payload);
-                serde_json::json!({
-                    "capability_id": self.config.capability_id,
-                    "device_id": self.config.device_id,
-                    "operation": "script",
-                    "content": resolved_script,
-                    "args": resolved_args,
-                })
+                let _ = (content, resolved_args);
+                Err(EngineError::node_config(
+                    self.id.clone(),
+                    "capabilityCall 的 script implementation 尚未接入实际执行器，不能返回意图成功",
+                ))
             }
-        };
-
-        let mut metadata = serde_json::Map::new();
-        metadata.insert(
-            "capability_call".to_owned(),
-            serde_json::json!({
-                "capability_id": self.config.capability_id,
-                "device_id": self.config.device_id,
-            }),
-        );
-
-        Ok(NodeExecution::from_outputs(vec![nazh_core::NodeOutput {
-            payload: result_payload,
-            metadata: Some(metadata),
-            dispatch: nazh_core::NodeDispatch::Broadcast,
-        }]))
+        }
     }
 }
 
@@ -253,6 +284,7 @@ mod tests {
 
     fn sample_config() -> CapabilityCallConfig {
         CapabilityCallConfig {
+            connection_id: None,
             capability_id: "axis.move_to".to_owned(),
             device_id: "press_1".to_owned(),
             implementation: CapabilityImplSnapshot::ModbusWrite {
@@ -318,21 +350,91 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn modbus_write_执行成功() {
+    async fn script_implementation_尚未接入执行器时失败() {
+        let config = CapabilityCallConfig {
+            connection_id: None,
+            capability_id: "axis.calculate".to_owned(),
+            device_id: "press_1".to_owned(),
+            implementation: CapabilityImplSnapshot::Script {
+                content: "let target = ${target_pos};".to_owned(),
+            },
+            args: HashMap::new(),
+        };
+        let cm = connections::shared_connection_manager();
+        let node = CapabilityCallNode::new("test_node", config, None, cm);
+
+        let err = node
+            .transform(Uuid::new_v4(), serde_json::json!({ "target_pos": 50.0 }))
+            .await
+            .unwrap_err();
+
+        assert!(
+            err.to_string()
+                .contains("script implementation 尚未接入实际执行器"),
+            "错误应明确说明脚本 implementation 不会伪成功，实际为: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn 缺少连接_id_时拒绝协议动作() {
         let config = sample_config();
         let cm = connections::shared_connection_manager();
         let node = CapabilityCallNode::new("test_node", config, None, cm);
 
-        let payload = serde_json::json!({ "target_pos": 50.0 });
-        let result = node.transform(Uuid::new_v4(), payload).await.unwrap();
+        let err = node
+            .transform(Uuid::new_v4(), serde_json::json!({ "target_pos": 50 }))
+            .await
+            .unwrap_err();
+
+        assert!(
+            err.to_string().contains("connection_id"),
+            "错误应明确指出 capabilityCall 缺少 connection_id，实际为: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn can_write_绑定连接时发送并返回底层元数据() {
+        let config: CapabilityCallConfig = serde_json::from_value(serde_json::json!({
+            "connection_id": "can-fast",
+            "capability_id": "axis.send_frame",
+            "device_id": "press_1",
+            "implementation": {
+                "type": "can-write",
+                "can_id": 0x123,
+                "data_template": "01 02 03",
+                "is_extended": false
+            }
+        }))
+        .unwrap();
+        let cm = connections::shared_connection_manager();
+        cm.register_connection(connections::ConnectionDefinition {
+            id: "can-fast".to_owned(),
+            kind: "can".to_owned(),
+            metadata: serde_json::json!({
+                "interface": "mock",
+                "channel": "mock-can-fast",
+                "baud_rate": 115_200,
+                "bitrate": 500_000
+            }),
+        })
+        .await
+        .unwrap();
+        let node = CapabilityCallNode::new("test_node", config, None, cm);
+
+        let result = node
+            .transform(Uuid::new_v4(), serde_json::json!({}))
+            .await
+            .unwrap();
 
         let output = &result.outputs[0];
-        assert_eq!(output.payload["capability_id"], "axis.move_to");
-        assert_eq!(output.payload["operation"], "modbus-write");
-        assert_eq!(output.payload["register"], 40010);
+        assert_eq!(output.payload["operation"], "can-write");
+        assert_eq!(output.payload["sent"]["id"], 0x123);
+        assert_eq!(output.payload["sent"]["data_hex"], "010203");
 
         let meta = output.metadata.as_ref().unwrap();
-        assert_eq!(meta["capability_call"]["capability_id"], "axis.move_to");
+        assert_eq!(meta["capability_call"]["capability_id"], "axis.send_frame");
+        assert_eq!(meta["can"]["simulated"], false);
+        assert_eq!(meta["can"]["connection"]["id"], "can-fast");
     }
 
     #[test]
