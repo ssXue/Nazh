@@ -25,6 +25,8 @@ $RECYCLE.BIN/
 /target
 /src-tauri/target
 /bindings
+/crates/ai/bindings/
+/crates/ai/web/src/generated/
 *.d
 *.rlib
 *.rmeta

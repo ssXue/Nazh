@@ -1255,6 +1255,8 @@ Expected: TS 生成类型字段可选，前端使用 generated type。
 
 ### CR-P2-20 stale AI 生成物目录仍被跟踪
 
+> **状态：** 2026-05-09 已修复。已删除并 ignore `crates/ai/bindings/` 与 `crates/ai/web/src/generated/` 两套侧生成物；`crates/ai/AGENTS.md` 明确只有 root `web/src/generated/` 是提交和 CI 校验的 TS 契约真值源。
+
 **影响文件：**
 
 - `crates/ai/bindings/`
@@ -1428,7 +1430,7 @@ Expected: 后续修复不继续扩大最重文件；拆分后模块边界可由 
 - [ ] 移除或隔离非纯脚本能力。
 - [x] 修 DeepSeek provider policy 和 streaming 错误传播。
 - [x] 给 `WorkflowRuntimePolicyInput` 补 `ts(optional)` 并重新导出。
-- [ ] 删除或废弃 stale generated 目录。
+- [x] 删除或废弃 stale generated 目录。
 
 ### Task 5: 文档与治理收口
 

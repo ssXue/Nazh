@@ -36,7 +36,7 @@ crates/ai/src/
 - 通过 trait（Ring 0）：`complete` / `stream_complete`
 - 配置层：`AiConfigFile::to_view()` / `AiConfigFile::merge_update()` / `AiConfigFile::normalize()`
 
-ts-rs 导出：`AiAgentSettings` / `AiConfigView` / `AiConfigUpdate` / `AiProviderView` / `AiProviderUpsert` / `AiProviderDraft` / `AiSecretInput` / `AiTestResult`（由 `ts-export` feature 门控）。
+ts-rs 导出：`AiAgentSettings` / `AiConfigView` / `AiConfigUpdate` / `AiProviderView` / `AiProviderUpsert` / `AiProviderDraft` / `AiSecretInput` / `AiTestResult`（由 `ts-export` feature 门控）。提交到仓库的 TypeScript 契约只有 root `web/src/generated/`，由 `tauri-bindings::export_all()` 统一生成和 CI 校验；不要提交 `crates/ai/bindings/` 或 `crates/ai/web/src/generated/` 这类 crate-local 侧输出。
 
 ## 内部约定
 
