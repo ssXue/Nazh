@@ -1,6 +1,6 @@
 # Crates 大文件拆分计划
 
-> **状态：** 进行中。2026-05-09 已完成第一轮 move-only 拆分；本计划用于后续工作确认。
+> **状态：** 进行中。2026-05-09 已完成第一轮 move-only 拆分、Slice 1 `connections` 续拆与 Slice 2 `dsl-compiler::safety` 规则域拆分；本计划用于后续工作确认。
 
 **Goal:** 在不改变运行时语义和 public API 的前提下，逐步降低 `crates/` 中大文件的职责混合风险，让后续修复可以沿清晰模块边界推进。
 
@@ -22,8 +22,8 @@
 
 | 文件 | 当前处理 | 状态 |
 |------|----------|------|
-| `crates/connections/src/lib.rs` | 抽出 `types.rs` 与 `tests.rs` | 第一轮完成，仍可继续拆 |
-| `crates/dsl-compiler/src/safety.rs` | 抽出 `safety/report.rs` 与 `safety/template.rs` | 第一轮完成，仍可继续拆 |
+| `crates/connections/src/lib.rs` | 抽出 `types.rs`、`policy.rs`、`validation.rs` 与 `tests.rs` | Slice 1 完成，后续可评估 manager/guard |
+| `crates/dsl-compiler/src/safety.rs` | 抽出 `safety/report.rs`、`safety/template.rs` 与 4 个规则域模块 | Slice 2 完成，后续可评估测试外移 |
 | `crates/ai/src/client.rs` | 尚未拆 | 待处理 |
 | `crates/nodes-io/src/serial_trigger.rs` | 尚未拆 | 视后续串口功能改动处理 |
 | `crates/core/src/variables.rs` | 暂缓生产拆分 | 仅建议未来先搬测试 |
@@ -33,8 +33,14 @@
 
 - [x] `connections::types`：抽出 `ConnectionDefinition`、`ConnectionLease`、`ConnectionHealthState`、`ConnectionHealthSnapshot`、`ConnectionRecord` 与 `connection_metadata`。
 - [x] `connections::tests`：抽出连接治理回归测试，降低 `lib.rs` review 噪声。
+- [x] `connections::policy`：抽出 `ConnectionGovernancePolicy`、governance JSON 读取 helper 与退避窗口计算。
+- [x] `connections::validation`：抽出连接类型 allowlist、normalize 与协议字段校验。
 - [x] `dsl-compiler::safety::report`：抽出 `SafetyReport` / `SafetyDiagnostic` 与诊断写入 helper。
 - [x] `dsl-compiler::safety::template`：抽出 action 参数模板分类 helper。
+- [x] `dsl-compiler::safety::state_graph`：抽出状态可达性、死胡同、循环检测与无条件循环判断。
+- [x] `dsl-compiler::safety::action_rules`：抽出单位一致性、量程边界和危险动作审批检查。
+- [x] `dsl-compiler::safety::preconditions`：抽出前置条件可达性、表达式标识符提取、信号可读性判断。
+- [x] `dsl-compiler::safety::interlock`：抽出机械互锁与寄存器冲突检查。
 - [x] 同步 `crates/connections/AGENTS.md`、`crates/dsl-compiler/AGENTS.md` 与 remediation 跟踪文档。
 
 ## 下一步建议
@@ -43,9 +49,9 @@
 
 目标：把连接治理策略和校验逻辑从 `lib.rs` 中拆出，继续保持 `ConnectionManager` 外部 API 不变。
 
-- [ ] 抽出 `policy.rs`：`ConnectionGovernancePolicy`、governance JSON 读取 helper、退避窗口计算相关纯 helper。
-- [ ] 抽出 `validation.rs`：`SUPPORTED_CONNECTION_TYPES`、`validate_connection_definition`、连接类型 normalize 与协议字段校验。
-- [ ] 保留 `ConnectionManager` / `ConnectionGuard` 在 `lib.rs`，等 policy/validation 稳定后再评估是否拆 `manager.rs` / `guard.rs` / `health.rs`。
+- [x] 抽出 `policy.rs`：`ConnectionGovernancePolicy`、governance JSON 读取 helper、退避窗口计算相关纯 helper。
+- [x] 抽出 `validation.rs`：`SUPPORTED_CONNECTION_TYPES`、`validate_connection_definition`、连接类型 normalize 与协议字段校验。
+- [x] 保留 `ConnectionManager` / `ConnectionGuard` 在 `lib.rs`，等 policy/validation 稳定后再评估是否拆 `manager.rs` / `guard.rs` / `health.rs`。
 
 验证：
 
@@ -58,10 +64,10 @@ cargo clippy -p connections --all-targets -- -D warnings
 
 目标：把安全规则按规则域拆开，保留 `run_safety_checks` 作为唯一编排入口。
 
-- [ ] 抽出 `state_graph.rs`：状态可达性、死胡同、循环检测与无条件循环判断。
-- [ ] 抽出 `action_rules.rs`：单位一致性、量程边界和危险动作审批检查。
-- [ ] 抽出 `preconditions.rs`：前置条件可达性、表达式标识符提取、信号可读性判断。
-- [ ] 抽出 `interlock.rs`：机械互锁与寄存器冲突检查。
+- [x] 抽出 `state_graph.rs`：状态可达性、死胡同、循环检测与无条件循环判断。
+- [x] 抽出 `action_rules.rs`：单位一致性、量程边界和危险动作审批检查。
+- [x] 抽出 `preconditions.rs`：前置条件可达性、表达式标识符提取、信号可读性判断。
+- [x] 抽出 `interlock.rs`：机械互锁与寄存器冲突检查。
 
 验证：
 
@@ -123,3 +129,29 @@ git diff --check
 ```
 
 结果：上述命令均通过，`web/src/generated/` 无漂移。
+
+## Slice 1 验证记录
+
+2026-05-09 继续拆分 `connections::policy` / `connections::validation` 后已在 Dev Container `nazh-devcontainer-nzh-main` 内运行：
+
+```bash
+cargo test -p connections
+cargo clippy -p connections --all-targets -- -D warnings
+cargo fmt --all -- --check
+git diff --check
+```
+
+结果：上述命令均通过。
+
+## Slice 2 验证记录
+
+2026-05-09 拆分 `dsl-compiler::safety` 规则域后已在 Dev Container `nazh-devcontainer-nzh-main` 内运行：
+
+```bash
+cargo test -p dsl-compiler safety
+cargo test -p dsl-compiler
+cargo clippy -p dsl-compiler --all-targets -- -D warnings
+cargo fmt --all -- --check
+```
+
+结果：上述命令均通过。

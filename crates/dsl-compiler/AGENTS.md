@@ -35,7 +35,11 @@ crates/dsl-compiler/src/
 ├── output.rs
 ├── safety.rs           # 安全编译器入口与规则编排
 ├── safety/
+│   ├── action_rules.rs # 单位一致性、量程边界与危险动作审批规则
+│   ├── interlock.rs    # 机械互锁 / 寄存器写冲突规则
+│   ├── preconditions.rs # Capability 前置条件可达性规则
 │   ├── report.rs       # SafetyReport / SafetyDiagnostic 与诊断写入 helper
+│   ├── state_graph.rs  # 状态可达性、死胡同与循环规则
 │   └── template.rs     # action 参数模板分类 helper
 └── validate.rs
 ```
@@ -83,6 +87,6 @@ crates/dsl-compiler/src/
 
 - 编译输出格式变更必须同步更新 `WorkflowGraph` serde 格式 + 更新 conformance test
 - 新增校验规则须同步 `validate.rs` 的 tests 模块
-- 新增安全校验规则须同步 `safety.rs` 的 tests 模块；诊断结构放在 `safety/report.rs`，模板分类 helper 放在 `safety/template.rs`
+- 新增安全校验规则须同步 `safety.rs` 的 tests 模块；规则实现按域放入 `safety/action_rules.rs`、`safety/preconditions.rs`、`safety/state_graph.rs` 或 `safety/interlock.rs`；诊断结构放在 `safety/report.rs`，模板分类 helper 放在 `safety/template.rs`
 - `output.rs` 的 `build_*` 方法变更须确认生成的 JSON 仍可被 `stateMachine` / `capabilityCall` 节点反序列化
 - 改变 DSL 支持边界时，同步更新本文件和 `dsl-core` 示例，避免 AI/前端继续生成能解析但不能运行的工作流
