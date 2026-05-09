@@ -39,7 +39,11 @@ crates/nodes-io/src/
 ├── lib.rs            # IoPlugin + re-exports + connection/资源辅助
 ├── template.rs       # pub mod — 模板渲染
 ├── timer.rs
-├── serial_trigger.rs
+├── serial_trigger/
+│   ├── mod.rs       # serialTrigger 节点结构、配置、transform/on_deploy 编排
+│   ├── frame.rs     # 串口帧字段读取、ASCII/HEX 规范化与 payload 构造
+│   ├── loop.rs      # spawn_blocking 内同步串口读循环、serialport 参数映射与健康反馈
+│   └── tests.rs     # serialTrigger 帧规范化与 delimiter 回归测试
 ├── native.rs
 ├── modbus_read.rs
 ├── http_client.rs
