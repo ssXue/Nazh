@@ -38,7 +38,7 @@ impl OpenAiCompatibleService {
     /// 创建新的客户端实例。
     pub fn new(config: Arc<RwLock<AiConfigFile>>) -> Self {
         let http = reqwest::Client::builder()
-            .timeout(Duration::from_secs(300))
+            .timeout(Duration::from_mins(5))
             .build()
             .unwrap_or_default();
         Self { config, http }

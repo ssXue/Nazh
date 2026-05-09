@@ -23,22 +23,81 @@ use window_vibrancy::apply_blur;
 #[cfg(target_os = "macos")]
 use window_vibrancy::{NSVisualEffectMaterial, apply_vibrancy};
 
-/// 初始化全局 tracing subscriber，输出到 stderr。
+/// 初始化全局 tracing subscriber，同时输出到 stderr 和滚动日志文件。
 ///
-/// 通过 `RUST_LOG` 环境变量控制日志级别，默认为 `nazh_engine=info,nazh_desktop_lib=info`。
-fn init_tracing() {
-    use tracing_subscriber::EnvFilter;
+/// `log_dir` 为 `None` 时仅输出到 stderr；为 `Some(dir)` 时在 `dir` 下创建按天轮转的
+/// 日志文件，最多保留 7 个文件。返回的 `WorkerGuard` 必须在调用者处持有以保证异步
+/// 写入在进程退出前刷盘。
+fn init_tracing(
+    log_dir: Option<&std::path::Path>,
+) -> Option<tracing_appender::non_blocking::WorkerGuard> {
+    use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
     let filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new("nazh_engine=info,nazh_desktop_lib=info,ai=info"));
 
-    tracing_subscriber::fmt()
-        .with_env_filter(filter)
+    let stderr_layer = fmt::layer()
         .with_target(true)
         .with_thread_ids(false)
         .with_file(false)
-        .with_line_number(false)
-        .init();
+        .with_line_number(false);
+
+    let Some(log_dir) = log_dir else {
+        tracing_subscriber::registry()
+            .with(filter)
+            .with(stderr_layer)
+            .init();
+        return None;
+    };
+
+    match std::fs::create_dir_all(log_dir) {
+        Ok(()) => {
+            let file_appender = tracing_appender::rolling::RollingFileAppender::builder()
+                .rotation(tracing_appender::rolling::Rotation::DAILY)
+                .max_log_files(7)
+                .filename_prefix("nazh")
+                .filename_suffix("log")
+                .build(log_dir);
+
+            match file_appender {
+                Ok(appender) => {
+                    let (non_blocking, guard) = tracing_appender::non_blocking(appender);
+                    let file_layer = fmt::layer()
+                        .with_target(true)
+                        .with_thread_ids(false)
+                        .with_file(false)
+                        .with_line_number(false)
+                        .with_ansi(false)
+                        .with_writer(non_blocking);
+
+                    tracing_subscriber::registry()
+                        .with(filter)
+                        .with(stderr_layer)
+                        .with(file_layer)
+                        .init();
+
+                    tracing::info!(path = ?log_dir, "日志文件持久化已启用（按天轮转，最多保留 7 个文件）");
+                    Some(guard)
+                }
+                Err(error) => {
+                    tracing_subscriber::registry()
+                        .with(filter)
+                        .with(stderr_layer)
+                        .init();
+                    tracing::warn!(?error, path = ?log_dir, "无法创建日志文件 appender，仅使用 stderr");
+                    None
+                }
+            }
+        }
+        Err(error) => {
+            tracing_subscriber::registry()
+                .with(filter)
+                .with(stderr_layer)
+                .init();
+            tracing::warn!(?error, path = ?log_dir, "无法创建日志目录，仅使用 stderr");
+            None
+        }
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -91,11 +150,24 @@ fn init_persistent_store(app: &tauri::App) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 #[allow(clippy::too_many_lines)]
 pub fn run() {
-    init_tracing();
-
     let builder = tauri::Builder::default()
         .manage(DesktopState::default())
         .setup(|app| {
+            // 在 setup 内初始化 tracing，以便使用 AppHandle 解析日志目录
+            let log_dir = workspace::resolve_project_workspace_dir(app.handle(), None)
+                .ok()
+                .map(|(dir, _)| dir.join("logs"));
+            let guard = init_tracing(log_dir.as_deref());
+            if let Some(guard) = guard {
+                let state: State<'_, DesktopState> = app.state();
+                match state.tracing_guard.lock() {
+                    Ok(mut slot) => *slot = Some(guard),
+                    Err(error) => {
+                        tracing::warn!(?error, "tracing_guard 锁 poisoned，日志文件可能无法正常刷盘");
+                    }
+                }
+            }
+
             if let Some(window) = app.get_webview_window("main") {
                 apply_window_glass(&window);
             } else {

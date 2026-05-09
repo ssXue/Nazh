@@ -26,6 +26,8 @@ pub(crate) struct DesktopState {
     pub(crate) approval_registry: Arc<nazh_engine::ApprovalRegistry>,
     /// 持久化存储。`setup` 阶段从内存 Store 替换为文件 Store。
     pub(crate) store: std::sync::RwLock<Option<StoreHandle>>,
+    /// 日志异步写入守护。持有到进程退出以保证刷盘。
+    pub(crate) tracing_guard: std::sync::Mutex<Option<tracing_appender::non_blocking::WorkerGuard>>,
 }
 
 impl Default for DesktopState {
@@ -39,6 +41,7 @@ impl Default for DesktopState {
             ai_config,
             ai_service,
             approval_registry: Arc::new(nazh_engine::ApprovalRegistry::new()),
+            tracing_guard: std::sync::Mutex::new(None),
             store: std::sync::RwLock::new(match Store::open_unpersisted() {
                 Ok(store) => Some(StoreHandle::new(store)),
                 Err(error) => {
