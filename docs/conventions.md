@@ -37,7 +37,7 @@ docs/
 - 根目录不放开发用 `Dockerfile`；只有发布生产容器镜像时才允许新增生产镜像构建文件，并在 `README.md` 说明。
 - 大模块如果有独立架构边界、依赖约束或修改 checklist，应在模块根目录放局部 `AGENTS.md`。
 - 第三方源码、固件、供应商 SDK 等若需要随仓库固定版本，应优先用 git submodule 或明确的下载脚本记录来源、版本、许可证和校验方式。
-- `docs/specs/` 保存功能或子系统设计，`docs/plans/` 保存可执行实施计划，`docs/blueprints/` 保存历史蓝图或评审基准。不要再新增 `docs/superpowers/` 路径。
+- `docs/specs/` 保存仍具当前约束力的功能或子系统设计，`docs/plans/` 保存仍在执行或需要短期交接的实施计划。已关闭的 working docs 清理后由 git 历史追溯。不要再新增 `docs/superpowers/` 路径。
 
 ## 代码组织与文件规模
 

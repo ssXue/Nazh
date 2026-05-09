@@ -753,24 +753,23 @@ pub enum PinKind {
 
 ---
 
-## 十一、待审定问题（不阻塞 spec 审）
+## 十一、已审定问题
 
-以下问题可在对应 Phase 的 plan 文档里展开决策，不在本设计文档内拍板：
+以下问题已在 ADR-0014 Phase 4/5 实施中拍板。历史 phase plan 已清理，长期状态以 ADR-0014 与当前代码为准：
 
-- **Phase 4 决策**：缓存空槽兜底策略的默认行为（block / skip / default_value）
-- **Phase 4 决策**：是否引入 TTL（"超过 N 秒未更新视为过期"）
-- **Phase 5 决策**：颜色集是否需要色盲友好替代（红绿色弱）
-- **Phase 5 决策**：节点头部形状（圆角胶囊 vs 圆角矩形）的具体 CSS
-- **跨 Phase**：AI 脚本生成器如何在 prompt 里描述 PinKind（Phase 2/5 同步推进）
+- **Phase 4 决策**：缓存空槽兜底策略采用引脚级 `EmptyPolicy`。
+- **Phase 4 决策**：引入 TTL，过期缓存按 `EmptyPolicy` 处理。
+- **Phase 5 决策**：节点头部按 capability 着色，颜色由 CSS 变量承载。
+- **Phase 5 决策**：Pure/Data 视觉保留与 Exec 的形态差异。
+- **跨 Phase**：AI prompt 携带 PinKind 信息。
 
 ---
 
 ## 十二、产出物清单
 
-本设计文档（spec）通过 user review 后，将产出：
+本设计文档（spec）已沉淀为 ADR-0014 的设计依据：
 
-- 重写后的 `docs/adr/0014-执行边与数据边分离.md`（标题改为"引脚求值语义二分"，方案 C 由"边二分"改为"引脚二分"，引用本 spec）
-- `docs/plans/2026-04-28-adr-0014-phase-1-pin-kind-基础.md`（Phase 1 实施计划）
-- 后续每 Phase 一份 plan（Phase 2-5 各自独立）
+- `docs/adr/0014-执行边与数据边分离.md` 记录最终决策、后果与实施进度。
+- 历史 phase plan 已删除，具体实施过程通过 git 历史追溯。
 
 `AGENTS.md` 的 ADR 执行顺序 + 进度状态在每 Phase 落地后同步更新。

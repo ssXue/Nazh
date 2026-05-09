@@ -53,7 +53,7 @@ flowchart TB
     end
 
     subgraph Shell["Tauri v2 桌面壳 (nazh-desktop)"]
-        S1["68 IPC 命令 · 8 workflow/copilot 事件通道"]
+        S1["77 IPC 命令 · 9 workflow/copilot 事件通道"]
         S2["运行时调度 · 部署会话 · 工程库文件"]
         S3["AI Provider 配置 · 观测日志 · 工程库文件"]
     end
@@ -193,12 +193,12 @@ cd src-tauri && ../web/node_modules/.bin/tauri dev --no-watch
 ## 项目结构
 
 ```text
-crates/          # Rust 引擎库、DSL 编译器、Store 与 IPC bindings（15 crates）
-src/             # DAG 编排与标准注册表
+crates/          # Rust 引擎库、DSL 编译器、Store 与 IPC bindings（13 crates；workspace 共 15 package）
+src/             # 根 facade crate 与标准注册表
 src-tauri/       # Tauri 桌面壳（workspace package）
 web/             # React + FlowGram.AI 前端
 tests/           # 集成测试
-docs/            # ADR / RFC / specs / plans / blueprints / conventions / templates
+docs/            # ADR / RFC / specs / plans / conventions / templates
 ```
 
 工程工作路径是 DSL 资产的唯一持久化位置：设备在 `dsl/devices/*.device.yaml`，能力在 `dsl/capabilities/*.capability.yaml`，对应版本快照在各自的 `versions/` 子目录，AI 来源追溯在各自的 `sources/` 子目录。
@@ -214,5 +214,4 @@ docs/            # ADR / RFC / specs / plans / blueprints / conventions / templa
 - `docs/rfcs/`：较大设计空间和分阶段演进
 - `docs/specs/`：功能或子系统设计文档
 - `docs/plans/`：可执行实施计划
-- `docs/blueprints/`：历史蓝图或评审基准
 - `docs/templates/`：局部 `AGENTS.md` 等可复制模板

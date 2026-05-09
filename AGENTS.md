@@ -127,12 +127,12 @@ IPC boundary types are defined once in Rust and auto-generated to TypeScript via
 
 Workflow commands are split across `workflow_deploy.rs` / `workflow_dispatch.rs` / `workflow_undeploy.rs` (since 2026-05-03, was single `workflow.rs`). Other command domains remain in their respective files (`ai.rs`, `catalog.rs`, `connections.rs`, `variables.rs`, `devices.rs`, etc.).
 
-68 commands covering:
+77 commands covering:
 - workflow lifecycle/runtime: `deploy_workflow`, `dispatch_payload`, `undeploy_workflow`, `list_runtime_workflows`, `set_active_runtime_workflow`, `list_dead_letters`
 - node / pin catalog: `list_node_types`, `describe_node_pins`
 - workflow variables: `snapshot_workflow_variables`, `set_workflow_variable`, `delete_workflow_variable`, `reset_workflow_variable`, `query_variable_history`, `set_global_variable`, `get_global_variable`, `list_global_variables`, `delete_global_variable`
 - connections: `list_connections`, `load_connection_definitions`, `save_connection_definitions`
-- device assets（RFC-0004 Phase 1）: `list_device_assets`, `load_device_asset`, `save_device_asset`, `delete_device_asset`, `list_asset_versions`, `load_asset_version`, `extract_device_from_text`, `extract_device_from_text_stream`, `generate_pin_schema`, `save_device_asset_sources`, `load_device_asset_sources`, `extract_text_from_pdf`, `extract_device_from_pdf`, `import_ethercat_esi`
+- device assets（RFC-0004 Phase 1）: `list_device_assets`, `load_device_asset`, `save_device_asset`, `delete_device_asset`, `list_asset_versions`, `load_asset_version`, `list_device_snapshots`, `create_device_snapshot`, `rollback_device_snapshot`, `delete_device_snapshot`, `patch_device_field`, `add_device_signal`, `remove_device_signal`, `add_device_alarm`, `remove_device_alarm`, `extract_device_from_text`, `extract_device_from_text_stream`, `generate_pin_schema`, `save_device_asset_sources`, `load_device_asset_sources`, `extract_text_from_pdf`, `extract_device_from_pdf`, `import_ethercat_esi`
 - device AI extraction（RFC-0004 Phase 4A）: `extract_device_proposal`, `extract_device_proposal_stream`
 - capabilities（RFC-0004 Phase 2）: `list_capabilities`, `load_capability`, `save_capability`, `delete_capability`, `list_capability_versions`, `load_capability_version`, `generate_capabilities_from_device_cmd`, `save_capability_sources`, `load_capability_sources`
 - observability: `query_observability`, `clear_observability`
@@ -145,7 +145,7 @@ Workflow commands are split across `workflow_deploy.rs` / `workflow_dispatch.rs`
 
 Device / Capability DSL assets are persisted only as reviewable YAML under the active workspace: `dsl/devices/*.device.yaml`, `dsl/devices/versions/*.device.yaml`, `dsl/devices/sources/*.sources.yaml`, `dsl/capabilities/*.capability.yaml`, `dsl/capabilities/versions/*.capability.yaml`, and `dsl/capabilities/sources/*.sources.yaml`. They are not stored in SQLite. The canvas AI edit path reads these reviewed YAML files via `load_ai_asset_context` before asking the model to modify a workflow.
 
-Event channels: `workflow://node-status`, `workflow://result`, `workflow://deployed`, `workflow://undeployed`, `workflow://runtime-focus`, `workflow://variable-changed`（ADR-0012 Phase 2，write-on-change 变量变更广播；内部走独立 `WorkflowVariableEvent` 通道，不混入 `ExecutionEvent`——B1-R0-01/B1-R0-05，2026-05-03）, `workflow://reactive-update/{workflow_id}/{node_id}/{pin_id}`（ADR-0015 Phase 2，Reactive 引脚值变更推送） and dynamic `copilot://stream/{stream_id}`. Runtime result/status events are scoped payloads with `workflow_id`.
+Event channels: `workflow://node-status`, `workflow://result`, `workflow://deployed`, `workflow://undeployed`, `workflow://runtime-focus`, `workflow://variable-changed`, `workflow://variable-deleted`（ADR-0012 Phase 2/3，变量变更/删除广播；内部走独立 `WorkflowVariableEvent` 通道，不混入 `ExecutionEvent`——B1-R0-01/B1-R0-05，2026-05-03）, `workflow://reactive-update/{workflow_id}/{node_id}/{pin_id}`（ADR-0015 Phase 2，Reactive 引脚值变更推送） and dynamic `copilot://stream/{stream_id}`. Runtime result/status events are scoped payloads with `workflow_id`.
 
 ## Critical Coding Constraints
 
@@ -237,7 +237,7 @@ When `AGENTS.md` conflicts with any other doc (README / rustdoc / ADR / memory /
 3. **Date-stamp decay-prone sections.** `docs/project-status.md` 中的 "Project Status" / "Known tech debt" / "Current roadmap" 段必须带日期标头（YYYY-MM-DD），每次大版本发布前复查。
 4. **Evaluation ADRs must declare a revisit trigger.** Any "提议中 / 暂缓" ADR that intentionally defers action (e.g. ADR-0020) must list an observable condition (metric, row count, calendar date) that forces reconsideration.
 5. **Memory files are point-in-time observations.** Files in `~/.claude/projects/.../memory/` may be read for context but **must** be verified against current code before making a claim or recommendation. Stale memory = recorded lies; when detected, update in the same session.
-6. **Old plans and specs are kept as historical record.** Don't delete `docs/plans/*.md` or `docs/specs/*.md` after merge — prepend a `> **Status:** merged in <SHA> / superseded by <new plan>` line at the top when a working document closes. Future archaeologists rely on this.
+6. **Working plans/specs are temporary unless they remain authoritative.** Completed implementation plans, bug-fix plans, review findings, and one-off design drafts may be deleted after their durable conclusions have been moved into the relevant ADR/RFC, `AGENTS.md`, crate `AGENTS.md`, `README.md`, or `docs/project-status.md`. Keep only active plans/specs or documents that still define a current contract. Git history is the archive for deleted working documents.
 
 ### Documentation Triggers (When X → Update Y)
 
@@ -331,13 +331,14 @@ Located in `docs/plans/` and `docs/specs/`. These are **working documents** for 
 - Required header: `**Goal:**`, `**Architecture:**`, `**Tech Stack:**`
 - Body is checkbox tasks (`- [ ]`) organized by logical steps
 - Cross off (`- [x]`) as work progresses, **in the same PR as the code change**
-- On merge, prepend a status line at top: `> **Status:** merged in <commit-SHA>`
-- Plans are never deleted — they're historical record of how things got built
+- On merge, either delete the plan after durable conclusions have moved to the owning long-lived docs, or prepend a status line if it must stay temporarily discoverable: `> **Status:** merged in <commit-SHA>`
+- Do not keep closed plans only as history. If the implementation details matter later, cite the merge commit or ADR/RFC instead.
 
 **Specs** (`docs/specs/YYYY-MM-DD-topic-design.md`):
 - Use for "design phase" output before a plan
 - Longer prose, design tradeoffs, UI mockups, API sketches
 - When a spec converts to a plan, cross-link both: spec notes "implemented via <plan-file>", plan notes "designed in <spec-file>"
+- Delete superseded drafts once their decisions land in ADR/RFC or current contract docs. Keep specs only while they define an active design boundary, product contract, or unresolved decision.
 
 ### Code Organization
 

@@ -21,7 +21,6 @@ docs/
 │   └── template.md        # Spec 模板
 ├── plans/                 # 可执行实施计划
 │   └── template.md        # Plan 模板
-├── blueprints/            # 历史蓝图或评审基准
 └── templates/             # 可复制的局部文档模板
     ├── README.md
     └── local-AGENTS.md
@@ -45,6 +44,7 @@ docs/
 - 改动导致文档失效时，必须在同一个 PR 更新文档。
 - 易过期内容必须带日期，例如 roadmap、已知技术债、状态说明。
 - 文件路径、命令或事件通道变化时，更新引用，不保留死路径。
+- 已合入的 implementation plan、bugfix plan、review findings 和一次性设计草稿不作为长期档案保留；关键结论进入 ADR/RFC/AGENTS/README/project-status 后即可删除。
 - AI memory 只能作为 point-in-time 线索，引用前必须回到仓库文件验证。
 
 ## 生成 API 文档
