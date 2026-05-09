@@ -410,18 +410,25 @@ impl Default for WorkflowRuntimePolicy {
 #[serde(rename_all = "camelCase")]
 pub struct WorkflowRuntimePolicyInput {
     #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
     pub manual_queue_capacity: Option<usize>,
     #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
     pub trigger_queue_capacity: Option<usize>,
     #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
     pub manual_backpressure_strategy: Option<RuntimeBackpressureStrategy>,
     #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
     pub trigger_backpressure_strategy: Option<RuntimeBackpressureStrategy>,
     #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
     pub max_retry_attempts: Option<u32>,
     #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(optional, type = "number"))]
     pub initial_retry_backoff_ms: Option<u64>,
     #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(optional, type = "number"))]
     pub max_retry_backoff_ms: Option<u64>,
 }
 

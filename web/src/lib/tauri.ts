@@ -18,25 +18,15 @@ import type {
   DispatchResponse,
   ListNodeTypesResponse,
   ObservabilityQueryResult,
-  RuntimeBackpressureStrategy,
   RuntimeWorkflowSummary,
   UndeployResponse,
+  WorkflowRuntimePolicyInput,
   WorkflowResult,
 } from '../types';
 import type {
   PersistedDeploymentSession,
   PersistedDeploymentSessionState,
 } from './deployment-session';
-
-export interface WorkflowRuntimePolicyInput {
-  manualQueueCapacity?: number;
-  triggerQueueCapacity?: number;
-  manualBackpressureStrategy?: RuntimeBackpressureStrategy;
-  triggerBackpressureStrategy?: RuntimeBackpressureStrategy;
-  maxRetryAttempts?: number;
-  initialRetryBackoffMs?: number;
-  maxRetryBackoffMs?: number;
-}
 
 export interface ProjectWorkspaceStorageInfo {
   workspacePath: string;

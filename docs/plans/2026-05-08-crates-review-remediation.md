@@ -1214,6 +1214,8 @@ Expected: 单次请求使用同一版本配置。
 
 ### CR-P2-19 WorkflowRuntimePolicyInput 的 Option TS 契约不一致
 
+> **状态：** 2026-05-09 已修复。`WorkflowRuntimePolicyInput` 的 Option 字段已补 `ts(optional)` 并重新导出；毫秒字段显式导出为 `number`，前端 `deployWorkflow` 删除手写镜像接口，改用生成类型。
+
 **影响文件：**
 
 - `crates/tauri-bindings/AGENTS.md:42`
@@ -1421,7 +1423,7 @@ Expected: 后续修复不继续扩大最重文件；拆分后模块边界可由 
 
 - [ ] 移除或隔离非纯脚本能力。
 - [ ] 修 DeepSeek provider policy 和 streaming 错误传播。
-- [ ] 给 `WorkflowRuntimePolicyInput` 补 `ts(optional)` 并重新导出。
+- [x] 给 `WorkflowRuntimePolicyInput` 补 `ts(optional)` 并重新导出。
 - [ ] 删除或废弃 stale generated 目录。
 
 ### Task 5: 文档与治理收口

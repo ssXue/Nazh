@@ -4,4 +4,4 @@ import type { RuntimeBackpressureStrategy } from "./RuntimeBackpressureStrategy"
 /**
  * 工作流运行时策略输入（所有字段可选，缺省用默认值填充）。
  */
-export type WorkflowRuntimePolicyInput = { manualQueueCapacity: number | null, triggerQueueCapacity: number | null, manualBackpressureStrategy: RuntimeBackpressureStrategy | null, triggerBackpressureStrategy: RuntimeBackpressureStrategy | null, maxRetryAttempts: number | null, initialRetryBackoffMs: bigint | null, maxRetryBackoffMs: bigint | null, };
+export type WorkflowRuntimePolicyInput = { manualQueueCapacity?: number, triggerQueueCapacity?: number, manualBackpressureStrategy?: RuntimeBackpressureStrategy, triggerBackpressureStrategy?: RuntimeBackpressureStrategy, maxRetryAttempts?: number, initialRetryBackoffMs?: number, maxRetryBackoffMs?: number, };

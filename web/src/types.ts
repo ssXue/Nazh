@@ -36,6 +36,7 @@ export type {
   BackpressurePolicy,
 } from './generated';
 
+export type { WorkflowRuntimePolicyInput } from './generated/WorkflowRuntimePolicyInput';
 export type { WorkflowContext as WorkflowResult } from './generated';
 
 // ── 前端扩展类型（补充 Rust 侧不需要的画布/UI 字段） ───────
