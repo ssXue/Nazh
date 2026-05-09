@@ -26,6 +26,20 @@ RFC-0004 Phase 3 + Phase 5 核心组件：将 `WorkflowSpec`（状态机 YAML）
 6. `safety::run_safety_checks()` — 安全编译器校验（6 条规则，仅 `compile_with_safety` 调用）
 7. `output::GraphBuilder` — 收集 actions → 生成 stateMachine 节点 → capabilityCall 节点 → edges → variables
 
+## 文件结构
+
+```text
+crates/dsl-compiler/src/
+├── context.rs
+├── error.rs
+├── output.rs
+├── safety.rs           # 安全编译器入口与规则编排
+├── safety/
+│   ├── report.rs       # SafetyReport / SafetyDiagnostic 与诊断写入 helper
+│   └── template.rs     # action 参数模板分类 helper
+└── validate.rs
+```
+
 ## 当前运行时支持边界
 
 - transition `when` 条件必须显式引用 `payload.*` 或使用字面量/布尔表达式。不要生成 `start_button == true` 这类裸变量；stateMachine 运行时只注入 `payload`。
@@ -69,6 +83,6 @@ RFC-0004 Phase 3 + Phase 5 核心组件：将 `WorkflowSpec`（状态机 YAML）
 
 - 编译输出格式变更必须同步更新 `WorkflowGraph` serde 格式 + 更新 conformance test
 - 新增校验规则须同步 `validate.rs` 的 tests 模块
-- 新增安全校验规则须同步 `safety.rs` 的 tests 模块
+- 新增安全校验规则须同步 `safety.rs` 的 tests 模块；诊断结构放在 `safety/report.rs`，模板分类 helper 放在 `safety/template.rs`
 - `output.rs` 的 `build_*` 方法变更须确认生成的 JSON 仍可被 `stateMachine` / `capabilityCall` 节点反序列化
 - 改变 DSL 支持边界时，同步更新本文件和 `dsl-core` 示例，避免 AI/前端继续生成能解析但不能运行的工作流

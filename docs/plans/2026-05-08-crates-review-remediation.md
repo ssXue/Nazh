@@ -1374,7 +1374,8 @@ Expected: 每个 `crates/*` 都有一个 crate-local AGENTS。
 
 ### CR-P3-09 大文件职责混合影响长期维护
 
-> **状态：** 持续治理项。按本节修复方案，本项不做一次性大重构；本轮只在功能修复触及处拆出 `store::handle` 与 graph topology helper，后续继续随具体修复推进。
+> **状态：** 持续治理项。按本节修复方案，本项不做一次性大重构；已拆出 `store::handle`、graph topology helper、`connections::types` / `connections::tests`，并将 `dsl-compiler::safety` 的诊断与模板 helper 移入子模块；后续继续随具体修复推进。
+> **后续计划：** `docs/plans/2026-05-09-crates-large-file-split-plan.md`
 
 **影响文件：**
 
@@ -1398,8 +1399,8 @@ Expected: 每个 `crates/*` 都有一个 crate-local AGENTS。
 **修复方案：**
 
 - 不做一次性大重构；每个 P1/P2 修复顺手提取最相关的小模块。
-- `connections/src/lib.rs` 可拆：types/policy/manager/validation/shared_session。
-- `dsl-compiler/src/safety.rs` 可拆：state_graph/capability_rules/report。
+- `connections/src/lib.rs` 可继续拆：types/policy/manager/validation/shared_session。
+- `dsl-compiler/src/safety.rs` 可继续拆：state_graph/capability_rules。
 - `ai/src/client.rs` 可拆：payload/streaming/provider_policy。
 - `tauri-bindings` 如果保持聚合，应在 AGENTS 中说明例外原因。
 

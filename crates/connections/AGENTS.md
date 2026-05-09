@@ -12,7 +12,16 @@
 
 ## 对外暴露
 
-全部类型定义在 `src/lib.rs`（单文件模块）。
+当前结构：
+
+```text
+crates/connections/src/
+├── lib.rs    # 治理策略、ConnectionGuard、ConnectionManager 与校验实现
+├── types.rs  # 连接 DTO、健康快照与 connection_metadata
+└── tests.rs  # crate 内部回归测试
+```
+
+生产治理逻辑暂时仍集中在 `src/lib.rs`；后续拆分应保持 `connections::{...}` 对外 API 稳定，通过 crate root `pub use` 兼容现有调用方。
 
 关键类型：
 - `ConnectionManager` — 全局连接池，按连接 id 管理 RAII 排他借出
