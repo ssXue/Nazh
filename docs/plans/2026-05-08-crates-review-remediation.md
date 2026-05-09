@@ -1076,6 +1076,8 @@ Expected: 错误信息携带具体节点 ID。
 
 ### CR-P2-17 DeepSeek thinking 字段注入边界错误
 
+> **状态：** 2026-05-09 已修复。`ai` crate 新增 DeepSeek provider/model 判定；非 DeepSeek provider 完全省略 `thinking` / `reasoning_effort`，DeepSeek 且全局 thinking 开启时才注入扩展字段；测试连接同样遵守该边界。
+
 **影响文件：**
 
 - `crates/ai/AGENTS.md:45`
@@ -1110,6 +1112,8 @@ cargo test -p ai thinking
 Expected: 非 DeepSeek payload 不含 DeepSeek 私有字段。
 
 ### CR-P2-18 streaming 内置重试和吞错违背 crate 约定
+
+> **状态：** 2026-05-09 已修复。streaming 路径移除内部伪断点续传；SSE read error 直接转 `AiError::NetworkError`，事件 JSON parse error 转 `AiError::ResponseParseError` 并携带 event preview，由上层 orchestrator 负责重试策略。
 
 **影响文件：**
 
@@ -1422,7 +1426,7 @@ Expected: 后续修复不继续扩大最重文件；拆分后模块边界可由 
 - Modify: `web/src/generated/*`
 
 - [ ] 移除或隔离非纯脚本能力。
-- [ ] 修 DeepSeek provider policy 和 streaming 错误传播。
+- [x] 修 DeepSeek provider policy 和 streaming 错误传播。
 - [x] 给 `WorkflowRuntimePolicyInput` 补 `ts(optional)` 并重新导出。
 - [ ] 删除或废弃 stale generated 目录。
 

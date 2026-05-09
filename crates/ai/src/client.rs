@@ -163,10 +163,102 @@ mod tests {
             panic!("payload serializes");
         };
 
-        assert_eq!(json["thinking"]["type"], "disabled");
+        assert!(json.get("thinking").is_none());
         assert!(json.get("reasoning_effort").is_none());
         assert!((json["temperature"].as_f64().unwrap_or_default() - 0.3).abs() < 0.001);
         assert!((json["top_p"].as_f64().unwrap_or_default() - 0.8).abs() < 0.001);
+    }
+
+    #[tokio::test]
+    async fn stream_invalid_json_event_propagates_parse_error() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::net::TcpListener;
+
+        let listener = match TcpListener::bind("127.0.0.1:0").await {
+            Ok(listener) => listener,
+            Err(error) => panic!("绑定本地 SSE 测试服务失败: {error}"),
+        };
+        let local_addr = match listener.local_addr() {
+            Ok(addr) => addr,
+            Err(error) => panic!("读取本地 SSE 测试地址失败: {error}"),
+        };
+        let base_url = format!("http://{local_addr}");
+
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = match listener.accept().await {
+                Ok(accepted) => accepted,
+                Err(error) => panic!("接收 SSE 测试请求失败: {error}"),
+            };
+            let mut buffer = [0_u8; 1024];
+            if let Err(error) = socket.read(&mut buffer).await {
+                panic!("读取 SSE 测试请求失败: {error}");
+            }
+            if let Err(error) = socket
+                .write_all(
+                    concat!(
+                        "HTTP/1.1 200 OK\r\n",
+                        "content-type: text/event-stream\r\n",
+                        "\r\n",
+                        "data: {not-json}\n\n"
+                    )
+                    .as_bytes(),
+                )
+                .await
+            {
+                panic!("写入 SSE 测试响应失败: {error}");
+            }
+        });
+
+        let config = AiConfigFile {
+            version: 1,
+            providers: vec![AiProviderSecretRecord {
+                id: "local".to_owned(),
+                name: "本地测试".to_owned(),
+                base_url,
+                api_key: "sk-test".to_owned(),
+                default_model: "gpt-test".to_owned(),
+                extra_headers: HashMap::new(),
+                enabled: true,
+            }],
+            active_provider_id: Some("local".to_owned()),
+            copilot_params: AiGenerationParams::default(),
+            agent_settings: crate::config::AiAgentSettings::default(),
+        };
+        let service = OpenAiCompatibleService::new(Arc::new(RwLock::new(config)));
+        let stream_result = service
+            .stream_complete(AiCompletionRequest {
+                provider_id: "local".to_owned(),
+                model: None,
+                messages: vec![AiMessage {
+                    role: AiMessageRole::User,
+                    content: "Hi".to_owned(),
+                }],
+                params: AiGenerationParams::default(),
+                timeout_ms: Some(1_000),
+            })
+            .await;
+        let Ok(mut rx) = stream_result else {
+            panic!("创建 stream receiver 失败: {stream_result:?}");
+        };
+
+        let Some(result) = rx.recv().await else {
+            panic!("stream should yield parse error");
+        };
+        let Err(error) = result else {
+            panic!("stream should return error, got {result:?}");
+        };
+        assert!(
+            matches!(error, AiError::ResponseParseError(_)),
+            "invalid JSON should propagate parse error, got {error:?}"
+        );
+        assert!(
+            error.to_string().contains("{not-json}"),
+            "parse error should include event preview, got {error}"
+        );
+
+        if let Err(error) = server.await {
+            panic!("SSE 测试服务异常结束: {error}");
+        }
     }
 
     #[test]
@@ -198,19 +290,17 @@ struct ResolvedProvider {
     extra_headers: HashMap<String, String>,
 }
 
-/// 续传上下文：spawned task 内部发起续传请求所需的所有数据。
-struct StreamRetryContext {
+/// 流式请求上下文：spawned task 内部发起请求所需的所有数据。
+struct StreamRequestContext {
     http: reqwest::Client,
     url: String,
     api_key: String,
     extra_headers: HashMap<String, String>,
     model: String,
     params: AiGenerationParams,
-    thinking_enabled: bool,
+    include_deepseek_options: bool,
     timeout_ms: u64,
 }
-
-const MAX_STREAM_RETRIES: u32 = 1;
 
 #[derive(Debug, Serialize)]
 struct ChatCompletionPayload {
@@ -327,6 +417,12 @@ fn is_thinking_enabled(params: &AiGenerationParams) -> bool {
         .is_some_and(|thinking| thinking.kind == AiThinkingMode::Enabled)
 }
 
+fn provider_accepts_deepseek_options(base_url: &str, model: &str) -> bool {
+    let normalized_base_url = base_url.to_ascii_lowercase();
+    let normalized_model = model.to_ascii_lowercase();
+    normalized_base_url.contains("deepseek") || normalized_model.contains("deepseek")
+}
+
 fn build_chat_payload(
     model: String,
     messages: Vec<ChatMessagePayload>,
@@ -339,13 +435,9 @@ fn build_chat_payload(
     ChatCompletionPayload {
         model,
         messages,
-        thinking: if include_thinking_options {
-            params.thinking.clone()
-        } else {
-            Some(AiThinkingConfig {
-                kind: AiThinkingMode::Disabled,
-            })
-        },
+        thinking: include_thinking_options
+            .then(|| params.thinking.clone())
+            .flatten(),
         reasoning_effort: include_thinking_options
             .then(|| params.reasoning_effort.clone())
             .flatten(),
@@ -364,6 +456,19 @@ fn build_chat_payload(
     }
 }
 
+fn response_preview(text: &str) -> String {
+    const PREVIEW_CHARS: usize = 200;
+
+    let mut preview = String::new();
+    for (index, ch) in text.chars().enumerate() {
+        if index >= PREVIEW_CHARS {
+            return format!("{preview}...（共 {} 字节）", text.len());
+        }
+        preview.push(ch);
+    }
+    preview
+}
+
 fn build_connection_test_params(disable_deepseek_thinking: bool) -> AiGenerationParams {
     AiGenerationParams {
         temperature: Some(0.0),
@@ -374,6 +479,67 @@ fn build_connection_test_params(disable_deepseek_thinking: bool) -> AiGeneration
         }),
         reasoning_effort: None,
     }
+}
+
+fn parse_chat_response(body_text: &str) -> Result<ChatCompletionApiResponse, AiError> {
+    serde_json::from_str(body_text).map_err(|error| {
+        AiError::ResponseParseError(format!(
+            "{error}；原始响应: {}；\
+             常见原因：AI 输出超过 max_tokens 被截断导致 JSON 不完整，\
+             或上游返回了非标准 OpenAI 格式",
+            response_preview(body_text)
+        ))
+    })
+}
+
+enum StreamEventAction {
+    Ignore,
+    Done,
+    Chunk(StreamChunk),
+}
+
+fn parse_stream_event_data(data: &str) -> Result<StreamEventAction, AiError> {
+    if data == "[DONE]" {
+        return Ok(StreamEventAction::Done);
+    }
+
+    let parsed: StreamApiResponse = serde_json::from_str(data).map_err(|error| {
+        AiError::ResponseParseError(format!(
+            "流式事件 JSON 解析失败: {error}；事件预览: {}",
+            response_preview(data)
+        ))
+    })?;
+
+    let Some(choice) = parsed.choices.first() else {
+        return Ok(StreamEventAction::Ignore);
+    };
+
+    let content_delta = choice.delta.content.clone().unwrap_or_default();
+    let thinking_delta = choice.delta.thinking.clone();
+    let has_content = !content_delta.is_empty();
+    let has_thinking = thinking_delta
+        .as_ref()
+        .is_some_and(|value| !value.is_empty());
+    let is_done = choice
+        .finish_reason
+        .as_deref()
+        .map(str::trim)
+        .is_some_and(|value| !value.is_empty());
+    let finish_reason = choice
+        .finish_reason
+        .clone()
+        .filter(|value| !value.trim().is_empty());
+
+    if !has_content && !has_thinking && !is_done {
+        return Ok(StreamEventAction::Ignore);
+    }
+
+    Ok(StreamEventAction::Chunk(StreamChunk {
+        delta: content_delta,
+        thinking: has_thinking.then_some(thinking_delta).flatten(),
+        finish_reason,
+        done: is_done,
+    }))
 }
 
 fn parse_api_error(status: u16, body: &str) -> AiError {
@@ -394,7 +560,7 @@ fn parse_api_error(status: u16, body: &str) -> AiError {
 
 /// 发送流式 HTTP 请求并返回 SSE Response。
 async fn send_stream_request(
-    ctx: &StreamRetryContext,
+    ctx: &StreamRequestContext,
     messages: Vec<ChatMessagePayload>,
 ) -> Result<reqwest::Response, AiError> {
     let body = build_chat_payload(
@@ -402,7 +568,7 @@ async fn send_stream_request(
         messages,
         &ctx.params,
         true,
-        ctx.thinking_enabled,
+        ctx.include_deepseek_options,
     );
 
     let mut builder = ctx
@@ -446,6 +612,8 @@ impl AiService for OpenAiCompatibleService {
         let model = request.model.as_deref().unwrap_or(&provider.default_model);
         let timeout_ms = request.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS);
         let thinking_enabled = self.config.read().await.agent_settings.thinking_enabled;
+        let include_deepseek_options =
+            thinking_enabled && provider_accepts_deepseek_options(&provider.base_url, model);
 
         tracing::info!(
             provider = %request.provider_id,
@@ -453,6 +621,7 @@ impl AiService for OpenAiCompatibleService {
             messages = request.messages.len(),
             timeout_ms,
             thinking_enabled,
+            include_deepseek_options,
             "AI completion 请求发送"
         );
 
@@ -461,7 +630,7 @@ impl AiService for OpenAiCompatibleService {
             build_chat_messages(&request.messages),
             &request.params,
             false,
-            thinking_enabled,
+            include_deepseek_options,
         );
 
         let url = build_url(&provider.base_url, "/chat/completions")?;
@@ -492,19 +661,7 @@ impl AiService for OpenAiCompatibleService {
             .text()
             .await
             .map_err(|error| AiError::ResponseParseError(error.to_string()))?;
-        let chat_response: ChatCompletionApiResponse =
-            serde_json::from_str(&body_text).map_err(|error| {
-                let preview = if body_text.len() > 200 {
-                    format!("{}...（共 {} 字节）", &body_text[..200], body_text.len())
-                } else {
-                    body_text.clone()
-                };
-                AiError::ResponseParseError(format!(
-                    "{error}；原始响应: {preview}；\
-                     常见原因：AI 输出超过 max_tokens 被截断导致 JSON 不完整，\
-                     或上游返回了非标准 OpenAI 格式"
-                ))
-            })?;
+        let chat_response = parse_chat_response(&body_text)?;
 
         let content = chat_response
             .choices
@@ -555,15 +712,17 @@ impl AiService for OpenAiCompatibleService {
         let url = build_url(&provider.base_url, "/chat/completions")?;
         let messages = build_chat_messages(&request.messages);
         let thinking_enabled = self.config.read().await.agent_settings.thinking_enabled;
+        let include_deepseek_options =
+            thinking_enabled && provider_accepts_deepseek_options(&provider.base_url, &model);
 
-        let ctx = StreamRetryContext {
+        let ctx = StreamRequestContext {
             http: self.http.clone(),
             url,
             api_key: provider.api_key,
             extra_headers: provider.extra_headers,
             model,
             params: request.params,
-            thinking_enabled,
+            include_deepseek_options,
             timeout_ms,
         };
 
@@ -574,20 +733,24 @@ impl AiService for OpenAiCompatibleService {
         tokio::spawn(async move {
             use futures_util::StreamExt;
 
-            let mut response = response;
-            let mut accumulated_content = String::new();
-            let mut retry_count = 0_u32;
+            let mut stream = sseer::response_to_stream(response);
 
-            loop {
-                let mut stream = sseer::response_to_stream(response);
+            while let Some(event_result) = stream.next().await {
+                let event = match event_result {
+                    Ok(event) => event,
+                    Err(error) => {
+                        let _ = tx
+                            .send(Err(AiError::NetworkError(format!(
+                                "AI 流式响应读取失败: {error}"
+                            ))))
+                            .await;
+                        return;
+                    }
+                };
 
-                loop {
-                    let event = match stream.next().await {
-                        Some(Ok(event)) => event,
-                        Some(Err(_)) | None => break,
-                    };
-
-                    if event.data == "[DONE]" {
+                match parse_stream_event_data(&event.data) {
+                    Ok(StreamEventAction::Ignore) => {}
+                    Ok(StreamEventAction::Done) => {
                         let _ = tx
                             .send(Ok(StreamChunk {
                                 delta: String::new(),
@@ -598,86 +761,24 @@ impl AiService for OpenAiCompatibleService {
                             .await;
                         return;
                     }
-
-                    let parsed: StreamApiResponse = match serde_json::from_str(&event.data) {
-                        Ok(value) => value,
-                        Err(_) => continue,
-                    };
-
-                    let Some(choice) = parsed.choices.first() else {
-                        continue;
-                    };
-
-                    let content_delta = choice.delta.content.clone().unwrap_or_default();
-                    let thinking_delta = choice.delta.thinking.clone();
-                    let has_content = !content_delta.is_empty();
-                    let has_thinking = thinking_delta
-                        .as_ref()
-                        .is_some_and(|value| !value.is_empty());
-                    let is_done = choice
-                        .finish_reason
-                        .as_deref()
-                        .map(str::trim)
-                        .is_some_and(|value| !value.is_empty());
-                    let finish_reason = choice
-                        .finish_reason
-                        .clone()
-                        .filter(|value| !value.trim().is_empty());
-
-                    if has_content {
-                        accumulated_content.push_str(&content_delta);
-                    }
-
-                    if has_content || has_thinking || is_done {
-                        if tx
-                            .send(Ok(StreamChunk {
-                                delta: content_delta,
-                                thinking: if has_thinking { thinking_delta } else { None },
-                                finish_reason,
-                                done: is_done,
-                            }))
-                            .await
-                            .is_err()
-                        {
-                            return;
-                        }
-                        if is_done {
+                    Ok(StreamEventAction::Chunk(chunk)) => {
+                        let is_done = chunk.done;
+                        if tx.send(Ok(chunk)).await.is_err() || is_done {
                             return;
                         }
                     }
-                }
-
-                // 到达这里说明流中断（正常结束路径均已 return）
-                if accumulated_content.is_empty() || retry_count >= MAX_STREAM_RETRIES {
-                    let _ = tx
-                        .send(Err(AiError::NetworkError(
-                            "AI 流式输出意外中断，未收到结束信号".to_owned(),
-                        )))
-                        .await;
-                    return;
-                }
-
-                let mut continuation_messages = messages.clone();
-                continuation_messages.push(ChatMessagePayload {
-                    role: "assistant".to_owned(),
-                    content: accumulated_content.clone(),
-                });
-
-                tracing::info!(
-                    accumulated_len = accumulated_content.len(),
-                    retry_count,
-                    "AI 流式输出中断，发起伪断点续传"
-                );
-
-                retry_count += 1;
-                match send_stream_request(&ctx, continuation_messages).await {
-                    Ok(new_response) => response = new_response,
                     Err(error) => {
                         let _ = tx.send(Err(error)).await;
                         return;
                     }
                 }
             }
+
+            let _ = tx
+                .send(Err(AiError::NetworkError(
+                    "AI 流式输出意外中断，未收到结束信号".to_owned(),
+                )))
+                .await;
         });
 
         Ok(rx)
@@ -699,6 +800,8 @@ impl OpenAiCompatibleService {
         let thinking_enabled = self.config.read().await.agent_settings.thinking_enabled;
 
         let model = provider.default_model.clone();
+        let include_deepseek_options =
+            thinking_enabled && provider_accepts_deepseek_options(&provider.base_url, &model);
         let body = build_chat_payload(
             model.clone(),
             vec![ChatMessagePayload {
@@ -707,7 +810,7 @@ impl OpenAiCompatibleService {
             }],
             &build_connection_test_params(thinking_enabled),
             false,
-            thinking_enabled,
+            include_deepseek_options,
         );
 
         let mut builder = self
