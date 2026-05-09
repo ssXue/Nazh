@@ -7,11 +7,32 @@ import {
   createEmptyWorkflowDraft,
   createWorkflowOrchestrationState,
   streamWorkflowOrchestration,
+  type WorkflowOrchestrationSessionState,
 } from '../workflow-orchestrator';
 
 vi.mock('../../lib/tauri', () => ({
   copilotCompleteStream: vi.fn(),
 }));
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+function requireNodeId(state: WorkflowOrchestrationSessionState, ref: string): string {
+  const nodeId = state.nodeRefs[ref];
+  if (!nodeId) {
+    throw new Error(`测试缺少节点 ref: ${ref}`);
+  }
+  return nodeId;
+}
+
+function requireRefForNodeId(state: WorkflowOrchestrationSessionState, nodeId: string): string {
+  const ref = Object.entries(state.nodeRefs).find(
+    ([, currentNodeId]) => currentNodeId === nodeId,
+  )?.[0];
+  if (!ref) {
+    throw new Error(`测试缺少节点 ${nodeId} 的 ref`);
+  }
+  return ref;
+}
 
 describe('buildWorkflowOrchestrationPrompt', () => {
   it('create 模式会要求输出 JSON Lines 流式编排协议', () => {
@@ -55,7 +76,7 @@ describe('buildWorkflowOrchestrationPrompt', () => {
     });
 
     expect(messages[1].content).toContain('edit（基于当前工作流流式修改）');
-    expect(messages[1].content).toContain('"ref": "code_1"');
+    expect(messages[1].content).toMatch(/"ref": "code_[0-9a-f]{8}"/);
     expect(messages[1].content).toContain('"node_id": "code_clean"');
     expect(messages[1].content).toContain('把输出改成 HTTP 上报');
   });
@@ -165,21 +186,23 @@ describe('applyWorkflowOrchestrationOperation', () => {
     expect(state.draft.name).toBe('锅炉巡检');
     expect(state.draft.description).toBe('AI 生成的巡检流程');
     expect(state.draft.payloadText).toContain('"manual": true');
-    expect(state.nodeRefs.timer).toBe('timer_node_1');
-    expect(state.nodeRefs.debug).toBe('debug_console_1');
-    expect(state.draft.graph.nodes['timer_node_1']?.type).toBe('timer');
-    expect(state.draft.graph.nodes['debug_console_1']?.type).toBe('debugConsole');
-    expect(state.nodeLabels['timer_node_1']).toBe('定时触发');
+    const timerNodeId = requireNodeId(state, 'timer');
+    const debugNodeId = requireNodeId(state, 'debug');
+    expect(timerNodeId).toMatch(UUID_PATTERN);
+    expect(debugNodeId).toMatch(UUID_PATTERN);
+    expect(state.draft.graph.nodes[timerNodeId]?.type).toBe('timer');
+    expect(state.draft.graph.nodes[debugNodeId]?.type).toBe('debugConsole');
+    expect(state.nodeLabels[timerNodeId]).toBe('定时触发');
     expect(state.draft.graph.edges).toEqual([
       {
-        from: 'timer_node_1',
-        to: 'debug_console_1',
+        from: timerNodeId,
+        to: debugNodeId,
         source_port_id: undefined,
         target_port_id: undefined,
       },
     ]);
     expect(
-      state.draft.graph.editor_graph?.nodes.find((node) => node.id === 'timer_node_1')?.data,
+      state.draft.graph.editor_graph?.nodes.find((node) => node.id === timerNodeId)?.data,
     ).toMatchObject({
       label: '定时触发',
     });
@@ -205,10 +228,11 @@ describe('applyWorkflowOrchestrationOperation', () => {
         edges: [],
       },
     });
+    const httpRef = requireRefForNodeId(state, 'http_alarm');
 
     state = applyWorkflowOrchestrationOperation(state, {
       type: 'update_node',
-      ref: 'http_client_1',
+      ref: httpRef,
       config: {
         body_mode: 'template',
         body_template: '告警：{{payload}}',
@@ -241,6 +265,7 @@ describe('applyWorkflowOrchestrationOperation', () => {
         edges: [],
       },
     });
+    const existingTimerRef = requireRefForNodeId(state, 'timer_node_1');
 
     state = applyWorkflowOrchestrationOperation(state, {
       type: 'create_node',
@@ -251,9 +276,11 @@ describe('applyWorkflowOrchestrationOperation', () => {
       },
     });
 
-    expect(state.nodeRefs.timer_1).toBe('timer_node_1');
-    expect(state.nodeRefs.new_timer).toBe('timer_node_2');
-    expect(state.draft.graph.nodes['timer_node_2']?.config).toMatchObject({
+    const newTimerNodeId = requireNodeId(state, 'new_timer');
+    expect(state.nodeRefs[existingTimerRef]).toBe('timer_node_1');
+    expect(newTimerNodeId).toMatch(UUID_PATTERN);
+    expect(newTimerNodeId).not.toBe('timer_node_1');
+    expect(state.draft.graph.nodes[newTimerNodeId]?.config).toMatchObject({
       interval_ms: 5000,
     });
   });
@@ -271,7 +298,8 @@ describe('applyWorkflowOrchestrationOperation', () => {
       },
     });
 
-    const loopNode = state.draft.graph.editor_graph?.nodes.find((node) => node.id === 'loop_node_1');
+    const loopNodeId = requireNodeId(state, 'loop_items');
+    const loopNode = state.draft.graph.editor_graph?.nodes.find((node) => node.id === loopNodeId);
 
     expect((loopNode?.data as { label?: string } | undefined)?.label).toBe('逐项处理');
     expect(loopNode?.blocks).toEqual([
@@ -310,9 +338,10 @@ describe('applyWorkflowOrchestrationOperation', () => {
       },
     });
 
-    const loopNode = state.draft.graph.editor_graph?.nodes.find((node) => node.id === 'loop_node_1');
+    const loopNodeId = requireNodeId(state, 'loop_items');
+    const loopNode = state.draft.graph.editor_graph?.nodes.find((node) => node.id === loopNodeId);
 
-    expect(state.nodeLabels.loop_node_1).toBe('Loop Node');
+    expect(state.nodeLabels[loopNodeId]).toBe('Loop Node');
     expect((loopNode?.data as { label?: string } | undefined)?.label).toBe('Loop Node');
   });
 });
@@ -360,7 +389,7 @@ describe('streamWorkflowOrchestration', () => {
     expect(result.draft.name).toBe('AI 巡检工程');
     expect(result.summary).toBe('完成');
     expect(result.draft.graph.edges).toHaveLength(1);
-    expect(result.draft.graph.nodes['timer_node_1']?.type).toBe('timer');
+    expect(result.draft.graph.nodes[requireNodeId(result, 'timer')]?.type).toBe('timer');
   });
 
   it('流结束但缺少 done 操作时会抛出中断错误，并保留已解析的草稿', async () => {
@@ -411,12 +440,14 @@ describe('streamWorkflowOrchestration', () => {
 
     expect(retries).toEqual(['resume']);
     expect(result.summary).toBe('续传完成');
-    expect(result.draft.graph.nodes['timer_node_1']?.type).toBe('timer');
-    expect(result.draft.graph.nodes['debug_console_1']?.type).toBe('debugConsole');
+    const timerNodeId = requireNodeId(result, 'timer');
+    const debugNodeId = requireNodeId(result, 'debug');
+    expect(result.draft.graph.nodes[timerNodeId]?.type).toBe('timer');
+    expect(result.draft.graph.nodes[debugNodeId]?.type).toBe('debugConsole');
     expect(result.draft.graph.edges).toEqual([
       {
-        from: 'timer_node_1',
-        to: 'debug_console_1',
+        from: timerNodeId,
+        to: debugNodeId,
         source_port_id: undefined,
         target_port_id: undefined,
       },
@@ -528,6 +559,6 @@ describe('streamWorkflowOrchestration', () => {
     expect(requestMessages[1]).toBe(requestMessages[2]);
     expect(requestMessages[0]).not.toBe(requestMessages[1]);
     expect(result.summary).toBe('续传完成');
-    expect(result.draft.graph.nodes['debug_console_1']?.type).toBe('debugConsole');
+    expect(result.draft.graph.nodes[requireNodeId(result, 'debug')]?.type).toBe('debugConsole');
   });
 });
