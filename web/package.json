@@ -30,15 +30,15 @@
     "@tauri-apps/api": "^2.10.1",
     "js-yaml": "^4.1.1",
     "modern-screenshot": "^4.7.0",
-    "react": "^19.2.5",
-    "react-dom": "^19.2.5",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
     "react-json-view-lite": "^2.5.0",
     "recharts": "^3.8.1",
     "reflect-metadata": "^0.2.2"
   },
   "devDependencies": {
     "@playwright/test": "^1.59.1",
-    "@tauri-apps/cli": "^2.10.1",
+    "@tauri-apps/cli": "^2.11.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
@@ -50,7 +50,7 @@
     "jsdom": "^29.1.1",
     "jsonc-parser": "^3.3.1",
     "typescript": "^6.0.3",
-    "vite": "^8.0.10",
+    "vite": "^8.0.11",
     "vitest": "^4.1.5"
   },
   "overrides": {
