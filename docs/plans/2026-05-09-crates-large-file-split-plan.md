@@ -1,6 +1,6 @@
 # Crates 大文件拆分计划
 
-> **状态：** 进行中。2026-05-09 已完成第一轮 move-only 拆分、Slice 1 `connections` 续拆与 Slice 2 `dsl-compiler::safety` 规则域拆分；本计划用于后续工作确认。
+> **状态：** 进行中。2026-05-09 已完成第一轮 move-only 拆分、Slice 1 `connections` 续拆、Slice 2 `dsl-compiler::safety` 规则域拆分与 Slice 3 `ai::client` 协议/响应/流式解析拆分；本计划用于后续工作确认。
 
 **Goal:** 在不改变运行时语义和 public API 的前提下，逐步降低 `crates/` 中大文件的职责混合风险，让后续修复可以沿清晰模块边界推进。
 
@@ -24,7 +24,7 @@
 |------|----------|------|
 | `crates/connections/src/lib.rs` | 抽出 `types.rs`、`policy.rs`、`validation.rs` 与 `tests.rs` | Slice 1 完成，后续可评估 manager/guard |
 | `crates/dsl-compiler/src/safety.rs` | 抽出 `safety/report.rs`、`safety/template.rs` 与 4 个规则域模块 | Slice 2 完成，后续可评估测试外移 |
-| `crates/ai/src/client.rs` | 尚未拆 | 待处理 |
+| `crates/ai/src/client.rs` | 改为 `client/mod.rs` 并抽出 `types.rs`、`protocol.rs`、`provider_policy.rs`、`response.rs`、`stream.rs` 与 `tests.rs` | Slice 3 完成 |
 | `crates/nodes-io/src/serial_trigger.rs` | 尚未拆 | 视后续串口功能改动处理 |
 | `crates/core/src/variables.rs` | 暂缓生产拆分 | 仅建议未来先搬测试 |
 | `crates/tauri-bindings/src/lib.rs` | 暂缓拆分 | 作为 IPC / ts-rs 汇总入口保留 |
@@ -41,7 +41,14 @@
 - [x] `dsl-compiler::safety::action_rules`：抽出单位一致性、量程边界和危险动作审批检查。
 - [x] `dsl-compiler::safety::preconditions`：抽出前置条件可达性、表达式标识符提取、信号可读性判断。
 - [x] `dsl-compiler::safety::interlock`：抽出机械互锁与寄存器冲突检查。
+- [x] `ai::client::types`：抽出 provider 快照、agent settings 快照与 stream request context。
+- [x] `ai::client::protocol`：抽出 OpenAI-compatible payload / response / SSE / API-error DTO 与 payload builder。
+- [x] `ai::client::provider_policy`：抽出 DeepSeek thinking / reasoning_effort / 轻量 probe 参数策略。
+- [x] `ai::client::response`：抽出普通响应解析、HTTP error 解析与响应预览 helper。
+- [x] `ai::client::stream`：抽出 SSE event 解析、流式请求发送与 channel 转发。
+- [x] `ai::client::tests`：抽出 client 模块回归测试。
 - [x] 同步 `crates/connections/AGENTS.md`、`crates/dsl-compiler/AGENTS.md` 与 remediation 跟踪文档。
+- [x] 同步 `crates/ai/AGENTS.md`。
 
 ## 下一步建议
 
@@ -81,11 +88,11 @@ cargo clippy -p dsl-compiler --all-targets -- -D warnings
 
 目标：隔离 OpenAI-compatible 协议 DTO、provider policy、response/stream parsing，避免 `client.rs` 继续混合配置快照、HTTP 请求和 SSE 解析。
 
-- [ ] 将 `client.rs` 改成 `client/mod.rs`，保持 `pub use client::OpenAiCompatibleService` 不变。
-- [ ] 抽出 `client/types.rs`：`ResolvedProvider`、`ResolvedProviderSnapshot`、`StreamRequestContext`。
-- [ ] 抽出 `client/protocol.rs`：chat payload / response / API error DTO 与 payload builder。
-- [ ] 抽出 `client/provider_policy.rs`：DeepSeek thinking 判定和采样参数处理。
-- [ ] 抽出 `client/response.rs` 与 `client/stream.rs`：普通响应、HTTP error、SSE event 解析和 stream request helper。
+- [x] 将 `client.rs` 改成 `client/mod.rs`，保持 `pub use client::OpenAiCompatibleService` 不变。
+- [x] 抽出 `client/types.rs`：`ResolvedProvider`、`ResolvedProviderSnapshot`、`StreamRequestContext`。
+- [x] 抽出 `client/protocol.rs`：chat payload / response / API error DTO 与 payload builder。
+- [x] 抽出 `client/provider_policy.rs`：DeepSeek thinking 判定和采样参数处理。
+- [x] 抽出 `client/response.rs` 与 `client/stream.rs`：普通响应、HTTP error、SSE event 解析和 stream request helper。
 
 验证：
 
@@ -155,3 +162,18 @@ cargo fmt --all -- --check
 ```
 
 结果：上述命令均通过。
+
+## Slice 3 验证记录
+
+2026-05-09 拆分 `ai::client` 协议/响应/流式解析模块后已在 Dev Container `nazh-devcontainer-nzh-main` 内运行：
+
+```bash
+cargo test -p ai
+cargo test -p tauri-bindings --features ts-export export_bindings
+cargo clippy -p ai --all-targets -- -D warnings
+cargo fmt --all -- --check
+git diff --exit-code -- web/src/generated
+git diff --check
+```
+
+结果：上述命令均通过，`web/src/generated/` 无漂移。

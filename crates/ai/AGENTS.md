@@ -10,7 +10,7 @@
 
 自 ADR-0019（已实施）起，`AiService` trait 与请求/响应类型全部上移到 Ring 0（`nazh_core::ai`）。本 crate 职责瘦身为：
 
-1. **`OpenAiCompatibleService`** — Ring 0 `AiService` 的 OpenAI 兼容实现，跑 `reqwest` + SSE 解析（`src/client.rs`）。含 DeepSeek 思考模式 / 推理强度的特殊处理。
+1. **`OpenAiCompatibleService`** — Ring 0 `AiService` 的 OpenAI 兼容实现，跑 `reqwest` + SSE 解析（`src/client/`）。含 DeepSeek 思考模式 / 推理强度的特殊处理。
 2. **壳层私有配置模型**（`src/config.rs`）：`AiConfigFile`（磁盘层）/ `AiConfigView`（前端读取）/ `AiConfigUpdate`（前端写入）/ `AiProviderSecretRecord`（含密钥）/ `AiProviderView` / `AiProviderUpsert` / `AiSecretInput` / `AiAgentSettings`——只服务于 Tauri 壳层 IPC，不参与运行时类型契约。
 3. **`AiTestResult`**（`src/types.rs`）+ **`OpenAiCompatibleService::test_connection`**（inherent 方法）——配置态测试连接。
 4. **向后兼容 re-export**：`lib.rs` 重新导出 `OpenAiCompatibleService` 与配置类型，老代码 `use ai::...` 仍可工作。
@@ -24,10 +24,17 @@
 
 ```text
 crates/ai/src/
-├── lib.rs       # re-exports（含 nazh_core::ai 类型 pass-through）+ ts-rs export_bindings 入口
-├── client.rs    # OpenAiCompatibleService（impl AiService）+ inherent test_connection
-├── config.rs    # AiConfigFile / AiConfigView / AiConfigUpdate / AiProvider* / AiSecretInput / AiAgentSettings
-└── types.rs     # AiTestResult（壳层私有）
+├── lib.rs        # re-exports（含 nazh_core::ai 类型 pass-through）+ ts-rs export_bindings 入口
+├── client/       # OpenAiCompatibleService（impl AiService）+ inherent test_connection
+│   ├── mod.rs              # 服务结构、配置快照解析、complete/stream/test_connection 编排入口
+│   ├── types.rs            # 请求内不可变 provider 快照与 stream request context
+│   ├── protocol.rs         # OpenAI-compatible payload/response/SSE/API-error DTO 与 payload builder
+│   ├── provider_policy.rs  # DeepSeek thinking / reasoning_effort / probe 参数策略
+│   ├── response.rs         # 普通响应与 HTTP error 解析
+│   ├── stream.rs           # SSE 事件解析、流式请求发送与 channel 转发
+│   └── tests.rs            # client 模块回归测试
+├── config.rs     # AiConfigFile / AiConfigView / AiConfigUpdate / AiProvider* / AiSecretInput / AiAgentSettings
+└── types.rs      # AiTestResult（壳层私有）
 ```
 
 关键 API：
