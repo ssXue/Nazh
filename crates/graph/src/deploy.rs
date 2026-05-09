@@ -138,7 +138,9 @@ pub async fn deploy_workflow_with_ai_and_variable_overrides<S: BuildHasher>(
         edge_count = graph.edges.len(),
         "开始部署工作流 DAG"
     );
-    let topology = graph.topology()?;
+    // 先做一次全边结构校验，确保节点引用存在且整体无环。真正的触发拓扑
+    // 会在节点实例化并完成 PinKind 分类后，只用 Exec + Reactive 边重建。
+    let structural_topology = graph.topology()?;
 
     // ---- 阶段 0：构造工作流变量（早于 connection 装配、Pin 校验）----
     //
@@ -156,10 +158,6 @@ pub async fn deploy_workflow_with_ai_and_variable_overrides<S: BuildHasher>(
             );
         }
     }
-
-    connection_manager
-        .upsert_connections(graph.connections)
-        .await;
 
     let runtime = tokio::runtime::Handle::try_current()
         .map_err(|_| EngineError::invalid_graph("deploy_workflow 必须在 Tokio 运行时中调用"))?;
@@ -217,7 +215,7 @@ pub async fn deploy_workflow_with_ai_and_variable_overrides<S: BuildHasher>(
     //
     // 设计决策见 ADR-0010。
     let mut nodes_by_id: HashMap<String, Arc<dyn NodeTrait>> = HashMap::new();
-    for node_id in &topology.deployment_order {
+    for node_id in &structural_topology.deployment_order {
         let node_definition = graph.nodes.get(node_id).ok_or_else(|| {
             EngineError::invalid_graph(format!("拓扑序中的节点 `{node_id}` 在图中不存在"))
         })?;
@@ -230,6 +228,21 @@ pub async fn deploy_workflow_with_ai_and_variable_overrides<S: BuildHasher>(
     // Data + Reactive 子图独立环检测
     let classified = classify_edges(&graph.edges, &nodes_by_id)?;
     detect_non_exec_edge_cycle(&classified)?;
+
+    // ADR-0014 / ADR-0015：Data 边只表达缓存拉取依赖，不触发下游任务；
+    // 因此 root 识别、on_deploy 顺序、NodeHandle fan-out 和 run_node 下游 sender
+    // 都基于 Exec + Reactive 主拓扑，避免 Data 依赖把真实入口节点遮蔽掉。
+    let topology = graph.topology_for_edges(
+        classified
+            .exec_edges
+            .iter()
+            .chain(classified.reactive_edges.iter())
+            .copied(),
+    )?;
+
+    connection_manager
+        .upsert_connections(graph.connections)
+        .await;
 
     // ADR-0014 Phase 3：构造 Data 入边反向索引（每个 consumer → 其 Data 入边列表）
     let edges_by_consumer = Arc::new(super::pull::build_edges_by_consumer(&classified.data_edges));
@@ -480,9 +493,76 @@ pub async fn deploy_workflow_with_ai_and_variable_overrides<S: BuildHasher>(
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use nazh_core::{PinType, VariableDeclaration, WorkflowVariables};
-    use serde_json::json;
+    use async_trait::async_trait;
+    use nazh_core::{
+        EmptyPolicy, EngineError as CoreError, NodeCapabilities, NodeExecution, PinDefinition,
+        PinDirection, PinKind, PinType, VariableDeclaration, WorkflowVariables,
+    };
+    use serde_json::{Value, json};
     use std::collections::HashMap;
+    use uuid::Uuid;
+
+    struct DataOnlyEdgeProbeNode {
+        id: String,
+        is_source: bool,
+    }
+
+    #[async_trait]
+    impl NodeTrait for DataOnlyEdgeProbeNode {
+        fn id(&self) -> &str {
+            &self.id
+        }
+
+        fn kind(&self) -> &'static str {
+            "dataOnlyEdgeProbe"
+        }
+
+        fn input_pins(&self) -> Vec<PinDefinition> {
+            if self.is_source {
+                vec![PinDefinition::default_input()]
+            } else {
+                vec![
+                    PinDefinition::default_input(),
+                    PinDefinition {
+                        id: "sensor".to_owned(),
+                        label: "sensor".to_owned(),
+                        pin_type: PinType::Any,
+                        direction: PinDirection::Input,
+                        required: false,
+                        kind: PinKind::Data,
+                        description: None,
+                        empty_policy: EmptyPolicy::default(),
+                        block_timeout_ms: None,
+                        ttl_ms: None,
+                    },
+                ]
+            }
+        }
+
+        fn output_pins(&self) -> Vec<PinDefinition> {
+            if self.is_source {
+                vec![
+                    PinDefinition::default_output(),
+                    PinDefinition::output_named_data(
+                        "latest",
+                        "latest",
+                        PinType::Any,
+                        "测试用 Data 输出",
+                    ),
+                ]
+            } else {
+                vec![PinDefinition::default_output()]
+            }
+        }
+
+        async fn transform(
+            &self,
+            _trace_id: Uuid,
+            _payload: Value,
+        ) -> Result<NodeExecution, CoreError> {
+            Ok(NodeExecution::broadcast(Value::Null))
+        }
+    }
 
     #[tokio::test]
     async fn 变量覆盖值在_on_deploy_前恢复且保留声明初值() {
@@ -525,5 +605,48 @@ mod tests {
         assert_eq!(counter.value, json!(42));
         assert_eq!(counter.initial, json!(0));
         assert_eq!(counter.updated_by.as_deref(), Some("restore"));
+    }
+
+    #[tokio::test]
+    async fn data_边不影响部署入口_root_识别() {
+        let mut registry = NodeRegistry::new();
+        registry.register_with_capabilities("probeSource", NodeCapabilities::empty(), |def, _| {
+            Ok(Arc::new(DataOnlyEdgeProbeNode {
+                id: def.id().to_owned(),
+                is_source: true,
+            }))
+        });
+        registry.register_with_capabilities("probeSink", NodeCapabilities::empty(), |def, _| {
+            Ok(Arc::new(DataOnlyEdgeProbeNode {
+                id: def.id().to_owned(),
+                is_source: false,
+            }))
+        });
+
+        let graph: WorkflowGraph = serde_json::from_value(json!({
+            "name": "data_edge_root_regression",
+            "nodes": {
+                "source": { "id": "source", "type": "probeSource", "config": {} },
+                "sink": { "id": "sink", "type": "probeSink", "config": {} }
+            },
+            "edges": [
+                { "from": "source", "to": "sink", "source_port_id": "latest", "target_port_id": "sensor" }
+            ],
+            "connections": []
+        }))
+        .unwrap();
+
+        let deployment =
+            deploy_workflow(graph, connections::shared_connection_manager(), &registry)
+                .await
+                .unwrap();
+
+        assert_eq!(
+            deployment.ingress.root_nodes(),
+            &["sink".to_owned(), "source".to_owned()],
+            "Data-only 边不应把 sink 从外部触发入口中移除"
+        );
+
+        deployment.shutdown().await;
     }
 }

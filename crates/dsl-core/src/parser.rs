@@ -17,6 +17,15 @@ pub fn parse_device_yaml(yaml: &str) -> Result<DeviceSpec, DslError> {
     serde_yaml::from_str(yaml).map_err(Into::into)
 }
 
+/// 从 YAML 文本解析并校验 [`DeviceSpec`]。
+///
+/// # Errors
+///
+/// YAML 解析失败或设备语义校验失败时返回 [`DslError`]。
+pub fn parse_device_yaml_validated(yaml: &str) -> Result<DeviceSpec, DslError> {
+    parse_device_yaml(yaml)
+}
+
 /// 从 YAML 文本解析 [`CapabilitySpec`]。
 ///
 /// # Errors
@@ -26,6 +35,17 @@ pub fn parse_capability_yaml(yaml: &str) -> Result<CapabilitySpec, DslError> {
     serde_yaml::from_str(yaml).map_err(Into::into)
 }
 
+/// 从 YAML 文本解析并校验 [`CapabilitySpec`]。
+///
+/// # Errors
+///
+/// YAML 解析失败或能力语义校验失败时返回 [`DslError`]。
+pub fn parse_capability_yaml_validated(yaml: &str) -> Result<CapabilitySpec, DslError> {
+    let spec = parse_capability_yaml(yaml)?;
+    spec.validate()?;
+    Ok(spec)
+}
+
 /// 从 YAML 文本解析 [`WorkflowSpec`]。
 ///
 /// # Errors
@@ -33,6 +53,15 @@ pub fn parse_capability_yaml(yaml: &str) -> Result<CapabilitySpec, DslError> {
 /// 同 [`parse_device_yaml`]。
 pub fn parse_workflow_yaml(yaml: &str) -> Result<WorkflowSpec, DslError> {
     serde_yaml::from_str(yaml).map_err(Into::into)
+}
+
+/// 从 YAML 文本解析并校验 [`WorkflowSpec`]。
+///
+/// # Errors
+///
+/// YAML 解析失败或工作流语义校验失败时返回 [`DslError`]。
+pub fn parse_workflow_yaml_validated(yaml: &str) -> Result<WorkflowSpec, DslError> {
+    parse_workflow_yaml(yaml)
 }
 
 #[cfg(test)]
@@ -90,6 +119,28 @@ safety:
         let json = serde_json::to_string(&spec).unwrap();
         let from_json: CapabilitySpec = serde_json::from_str(&json).unwrap();
         assert_eq!(spec, from_json);
+    }
+
+    #[test]
+    fn parse_capability_yaml_validated_拒绝未声明模板变量() {
+        let yaml = r#"
+id: test.cap
+device_id: dev1
+inputs:
+  - id: position
+    range: [0, 100]
+    required: true
+implementation:
+  type: modbus-write
+  register: 40010
+  value: "${target_position}"
+safety:
+  level: low
+"#;
+        let err = parse_capability_yaml_validated(yaml).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("test.cap"));
+        assert!(msg.contains("target_position"));
     }
 
     #[test]

@@ -6,8 +6,8 @@
 #![allow(clippy::expect_used)]
 
 use nazh_dsl_core::{
-    CapabilityImpl, CapabilitySpec, SafetyLevel, generate_capabilities_from_device,
-    parse_capability_yaml, parse_device_yaml,
+    CapabilityImpl, CapabilitySpec, SafetyLevel, capability::try_generate_capabilities_from_device,
+    generate_capabilities_from_device, parse_capability_yaml, parse_device_yaml,
 };
 
 const SAMPLE_CAPABILITY_YAML: &str = r#"
@@ -57,23 +57,34 @@ signals:
     unit: mm
     range: [0, 150]
     source:
-      type: register
-      register: 40010
-      access: write
-      data_type: float32
+      type: topic
+      topic: "press/target_position"
   - id: servo_enable
     signal_type: digital_output
+    range: [0, 1]
     source:
-      type: register
-      register: 40200
-      access: write
-      data_type: u16
-      bit: 0
+      type: serial_command
+      command: "SERVO ENABLE"
 alarms:
   - id: over_pressure
     condition: "pressure > 34"
     severity: critical
 "#;
+
+const MODBUS_OUTPUT_DEVICE_YAML: &str = r"
+id: hydraulic_press_1
+type: hydraulic_press
+signals:
+  - id: target_position
+    signal_type: analog_output
+    unit: mm
+    range: [0, 150]
+    source:
+      type: register
+      register: 40010
+      access: write
+      data_type: float32
+";
 
 #[test]
 fn capability_yaml_解析_验证_和_round_trip() {
@@ -116,7 +127,7 @@ fn 从设备信号自动生成能力() {
     assert_eq!(write_target.inputs[0].range.map(|r| r.max), Some(150.0));
     assert!(matches!(
         &write_target.implementation,
-        CapabilityImpl::ModbusWrite { register, .. } if *register == 40010
+        CapabilityImpl::MqttPublish { topic, .. } if topic == "press/target_position"
     ));
     assert_eq!(write_target.safety.level, SafetyLevel::Low);
 
@@ -127,7 +138,7 @@ fn 从设备信号自动生成能力() {
         .expect("应有 servo_enable 能力");
     assert!(matches!(
         &write_servo.implementation,
-        CapabilityImpl::ModbusWrite { register, .. } if *register == 40200
+        CapabilityImpl::SerialCommand { command } if command == "SERVO ENABLE ${value}"
     ));
 
     // 3. 验证生成的能力通过校验
@@ -142,6 +153,20 @@ fn 从设备信号自动生成能力() {
         let reparsed = parse_capability_yaml(&yaml).expect("重新解析应成功");
         assert_eq!(reparsed.device_id, "hydraulic_press_1");
     }
+}
+
+#[test]
+fn 从寄存器信号自动生成能力_拒绝丢失编码语义() {
+    let device = parse_device_yaml(MODBUS_OUTPUT_DEVICE_YAML).expect("Device YAML 解析应成功");
+    let err =
+        try_generate_capabilities_from_device(&device).expect_err("Modbus 编码语义不能被静默丢弃");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("target_position"),
+        "错误应定位信号，实际: {msg}"
+    );
+    assert!(msg.contains("Modbus"), "错误应说明协议语义，实际: {msg}");
+    assert!(msg.contains("data_type"), "错误应保留编码线索，实际: {msg}");
 }
 
 #[test]

@@ -2,6 +2,9 @@
 //!
 //! 使用 Kahn 算法计算拓扑序，同时检测环和无效边引用。
 //! 入度为零的节点被识别为根节点，用作工作流数据入口。
+//!
+//! 部署期主拓扑只应使用会推送 `ContextRef` 的 Exec / Reactive 边；Data 边
+//! 只参与 pull path 索引与独立环检测，避免缓存依赖污染触发入口。
 
 mod classify;
 
@@ -56,8 +59,22 @@ impl WorkflowGraph {
         Ok(())
     }
 
-    /// 计算拓扑序（Kahn 算法）并检测环。
+    /// 计算全边拓扑序（Kahn 算法）并检测环。
     pub(crate) fn topology(&self) -> Result<WorkflowTopology, EngineError> {
+        self.topology_for_edges(self.edges.iter())
+    }
+
+    /// 在调用方给定的边集合上计算拓扑序。
+    ///
+    /// 部署阶段会传入 Exec + Reactive 边集合，让 Data 边不影响 root 识别与
+    /// 任务部署顺序；`from_json` 的结构校验仍可传入全边集合做保守环检查。
+    pub(crate) fn topology_for_edges<'a, I>(
+        &self,
+        edges: I,
+    ) -> Result<WorkflowTopology, EngineError>
+    where
+        I: IntoIterator<Item = &'a crate::types::WorkflowEdge>,
+    {
         let mut incoming: HashMap<String, usize> = self
             .nodes
             .keys()
@@ -69,7 +86,7 @@ impl WorkflowGraph {
             .map(|node_id| (node_id.clone(), Vec::new()))
             .collect();
 
-        for edge in &self.edges {
+        for edge in edges {
             if !self.nodes.contains_key(&edge.from) {
                 return Err(EngineError::invalid_graph(format!(
                     "边的源节点 `{}` 不存在",
@@ -185,5 +202,39 @@ mod tests {
         });
         let result = WorkflowGraph::from_json(&serde_json::to_string(&json).unwrap());
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn 主拓扑可忽略_data_边对_root_的影响() {
+        let graph: WorkflowGraph = serde_json::from_value(serde_json::json!({
+            "nodes": {
+                "a": { "type": "source" },
+                "b": { "type": "sink" },
+                "c": { "type": "dataSource" }
+            },
+            "edges": [
+                { "from": "a", "to": "b", "source_port_id": "out", "target_port_id": "in" },
+                { "from": "c", "to": "a", "source_port_id": "latest", "target_port_id": "sensor" }
+            ]
+        }))
+        .unwrap();
+
+        let full_topology = graph.topology().unwrap();
+        assert_eq!(full_topology.root_nodes, vec!["c"]);
+
+        let exec_topology = graph
+            .topology_for_edges(graph.edges.iter().take(1))
+            .unwrap();
+        assert_eq!(exec_topology.root_nodes, vec!["a", "c"]);
+        assert!(
+            exec_topology
+                .deployment_order
+                .iter()
+                .position(|node_id| node_id == "a")
+                < exec_topology
+                    .deployment_order
+                    .iter()
+                    .position(|node_id| node_id == "b")
+        );
     }
 }

@@ -20,7 +20,7 @@ use crate::can::{CanBus, CanBusConfig, CanError, create_can_bus};
 /// 并在 `cleanup` 时安全取出总线执行关闭。
 #[allow(dead_code)]
 pub struct SharedCanBusSession {
-    bus: Mutex<Option<Box<dyn CanBus>>>,
+    bus: Mutex<Option<Arc<dyn CanBus>>>,
     connection_id: String,
     channel_info: String,
     simulated: bool,
@@ -32,9 +32,17 @@ impl SharedCanBusSession {
     pub fn bus(
         &self,
         node_id: &str,
-    ) -> Result<MutexGuard<'_, Option<Box<dyn CanBus>>>, EngineError> {
+    ) -> Result<MutexGuard<'_, Option<Arc<dyn CanBus>>>, EngineError> {
         self.bus.try_lock().map_err(|_| {
             EngineError::node_config(node_id.to_owned(), "CAN 总线会话锁竞争".to_owned())
+        })
+    }
+
+    /// 等待并克隆总线句柄，避免读等待期间阻塞同连接写入。
+    pub async fn bus_handle(&self, node_id: &str) -> Result<Arc<dyn CanBus>, EngineError> {
+        let guard = self.bus.lock().await;
+        guard.as_ref().cloned().ok_or_else(|| {
+            EngineError::node_config(node_id.to_owned(), "CAN 总线会话已被清理".to_owned())
         })
     }
 
@@ -194,6 +202,7 @@ async fn open_shared_session(
         }
     };
 
+    let bus: Arc<dyn CanBus> = Arc::from(bus);
     let channel_info = bus.channel_info();
     let simulated = record.is_none();
     let lease = record.as_ref().map(|record| ConnectionLease {

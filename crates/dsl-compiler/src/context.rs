@@ -16,6 +16,7 @@ pub struct CompilerContext {
     pub devices: HashMap<String, DeviceSpec>,
     /// 能力资产快照（key = capability id）。
     pub capabilities: HashMap<String, nazh_dsl_core::capability::CapabilitySpec>,
+    duplicate_asset_errors: Vec<String>,
 }
 
 impl CompilerContext {
@@ -24,12 +25,27 @@ impl CompilerContext {
         devices: Vec<DeviceSpec>,
         capabilities: Vec<nazh_dsl_core::capability::CapabilitySpec>,
     ) -> Self {
+        let mut duplicate_asset_errors = Vec::new();
+        let mut device_map = HashMap::new();
+        for device in devices {
+            let id = device.id.clone();
+            if device_map.insert(id.clone(), device).is_some() {
+                duplicate_asset_errors.push(format!("重复设备 id `{id}`"));
+            }
+        }
+
+        let mut capability_map = HashMap::new();
+        for capability in capabilities {
+            let id = capability.id.clone();
+            if capability_map.insert(id.clone(), capability).is_some() {
+                duplicate_asset_errors.push(format!("重复能力 id `{id}`"));
+            }
+        }
+
         Self {
-            devices: devices.into_iter().map(|d| (d.id.clone(), d)).collect(),
-            capabilities: capabilities
-                .into_iter()
-                .map(|c| (c.id.clone(), c))
-                .collect(),
+            devices: device_map,
+            capabilities: capability_map,
+            duplicate_asset_errors,
         }
     }
 
@@ -42,7 +58,7 @@ impl CompilerContext {
     ///
     /// 收集所有错误后一次性报告（不 fail-fast）。
     pub fn validate_references(&self, spec: &WorkflowSpec) -> Result<(), CompileError> {
-        let mut missing = Vec::new();
+        let mut missing = self.duplicate_asset_errors.clone();
 
         // 校验设备引用
         for device_id in &spec.devices {
@@ -216,6 +232,37 @@ transitions:
         let msg = err.to_string();
         assert!(msg.contains("设备 `dev1`"));
         assert!(msg.contains("能力 `cap1`"));
+    }
+
+    #[test]
+    fn 重复设备id_不会静默覆盖并在校验时报错() {
+        let ctx = CompilerContext::new(
+            vec![sample_device("dev1"), sample_device("dev1")],
+            vec![sample_capability("cap1", "dev1")],
+        );
+        let spec = minimal_spec();
+
+        let err = ctx.validate_references(&spec).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("重复设备 id"));
+        assert!(msg.contains("dev1"));
+    }
+
+    #[test]
+    fn 重复能力id_不会静默覆盖并在校验时报错() {
+        let ctx = CompilerContext::new(
+            vec![sample_device("dev1")],
+            vec![
+                sample_capability("cap1", "dev1"),
+                sample_capability("cap1", "dev1"),
+            ],
+        );
+        let spec = minimal_spec();
+
+        let err = ctx.validate_references(&spec).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("重复能力 id"));
+        assert!(msg.contains("cap1"));
     }
 
     #[test]

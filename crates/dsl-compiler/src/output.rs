@@ -26,6 +26,7 @@ pub fn compile(ctx: &CompilerContext, spec: &WorkflowSpec) -> Result<Value, Comp
     ctx.validate_references(spec)?;
     validate_workflow_spec(spec)?;
     validate_supported_runtime_features(spec)?;
+    validate_sanitized_ids(spec)?;
     let initial_state = determine_initial_state(spec)?;
 
     let mut builder = GraphBuilder::new(ctx, spec, &initial_state);
@@ -51,6 +52,7 @@ pub fn compile_with_safety(
     ctx.validate_references(spec)?;
     validate_workflow_spec(spec)?;
     validate_supported_runtime_features(spec)?;
+    validate_sanitized_ids(spec)?;
     let initial_state = determine_initial_state(spec)?;
 
     // 安全编译器校验
@@ -58,9 +60,8 @@ pub fn compile_with_safety(
 
     // 安全错误阻止编译
     if safety_report.has_errors() {
-        let error_count = safety_report.errors().count();
-        return Err(CompileError::CapabilityCall {
-            detail: format!("安全编译器校验失败，共 {error_count} 个错误"),
+        return Err(CompileError::Safety {
+            report: safety_report,
         });
     }
 
@@ -456,6 +457,70 @@ fn validate_supported_runtime_features(spec: &WorkflowSpec) -> Result<(), Compil
     Ok(())
 }
 
+fn validate_sanitized_ids(spec: &WorkflowSpec) -> Result<(), CompileError> {
+    let mut port_origins = Map::new();
+    let mut node_origins = Map::new();
+
+    for (state_name, state) in &spec.states {
+        for (i, action) in state.entry.iter().enumerate() {
+            let port_id = format!("entry_{}_{i}", sanitize_id(state_name));
+            let origin = format!("state `{state_name}` entry action {i}");
+            insert_unique_sanitized_id(&mut port_origins, &port_id, origin.clone())?;
+            insert_action_node_origin(&mut node_origins, action, &port_id, &origin)?;
+        }
+        for (i, action) in state.exit.iter().enumerate() {
+            let port_id = format!("exit_{}_{i}", sanitize_id(state_name));
+            let origin = format!("state `{state_name}` exit action {i}");
+            insert_unique_sanitized_id(&mut port_origins, &port_id, origin.clone())?;
+            insert_action_node_origin(&mut node_origins, action, &port_id, &origin)?;
+        }
+    }
+
+    for (i, trans) in spec.transitions.iter().enumerate() {
+        if let Some(action) = &trans.action {
+            let port_id = format!(
+                "trans_{}_{}_{i}",
+                sanitize_id(&trans.from),
+                sanitize_id(&trans.to)
+            );
+            let origin = format!("transition `{}` -> `{}` action {i}", trans.from, trans.to);
+            insert_unique_sanitized_id(&mut port_origins, &port_id, origin.clone())?;
+            insert_action_node_origin(&mut node_origins, action, &port_id, &origin)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn insert_action_node_origin(
+    node_origins: &mut Map<String, Value>,
+    action: &ActionSpec,
+    port_id: &str,
+    origin: &str,
+) -> Result<(), CompileError> {
+    let target_id = action_target_id(&action.target);
+    let node_id = sanitize_node_id(&format!("cap_{target_id}_{port_id}"));
+    insert_unique_sanitized_id(
+        node_origins,
+        &node_id,
+        format!("{origin}, target `{target_id}`"),
+    )
+}
+
+fn insert_unique_sanitized_id(
+    origins: &mut Map<String, Value>,
+    sanitized: &str,
+    origin: String,
+) -> Result<(), CompileError> {
+    if let Some(existing) = origins.get(sanitized).and_then(Value::as_str) {
+        return Err(CompileError::OutputBuild {
+            detail: format!("sanitize 后 ID `{sanitized}` 发生碰撞：{existing} 与 {origin}"),
+        });
+    }
+    origins.insert(sanitized.to_owned(), Value::String(origin));
+    Ok(())
+}
+
 fn validate_actions_supported(actions: &[ActionSpec]) -> Result<(), CompileError> {
     for action in actions {
         validate_action_supported(action)?;
@@ -843,6 +908,75 @@ transitions:
             "${approach_position}"
         );
         assert_eq!(returning["config"]["args"]["position"], 0.0);
+    }
+
+    #[test]
+    fn sanitize后端口id碰撞_编译期报错并列出原始状态() {
+        let yaml = r#"
+id: collision
+version: "1.0.0"
+devices:
+  - dev1
+states:
+  a.b:
+    entry:
+      - capability: cap.move
+  a_b:
+    entry:
+      - capability: cap.move
+"#;
+        let spec: WorkflowSpec = serde_yaml::from_str(yaml).unwrap();
+        let ctx = CompilerContext::new(
+            vec![sample_device("dev1", "conn1")],
+            vec![sample_capability_script("cap.move", "dev1")],
+        );
+
+        let err = compile(&ctx, &spec).expect_err("sanitize 后端口 ID 碰撞应拒绝编译");
+        let msg = err.to_string();
+        assert!(msg.contains("entry_a_b_0"));
+        assert!(msg.contains("a.b"));
+        assert!(msg.contains("a_b"));
+    }
+
+    #[test]
+    fn compile_with_safety_失败时保留完整诊断报告() {
+        let yaml = r#"
+id: safety_error
+version: "1.0.0"
+devices:
+  - dev1
+states:
+  idle:
+    entry:
+      - capability: cap.move
+        args:
+          position: 200.0
+"#;
+        let spec: WorkflowSpec = serde_yaml::from_str(yaml).unwrap();
+        let mut cap = sample_capability_modbus("cap.move", "dev1", 40010);
+        cap.inputs = vec![nazh_dsl_core::capability::CapabilityParam {
+            id: "position".to_owned(),
+            unit: Some("mm".to_owned()),
+            range: Some(nazh_dsl_core::workflow::Range {
+                min: 0.0,
+                max: 100.0,
+            }),
+            required: true,
+        }];
+        let ctx = CompilerContext::new(vec![sample_device("dev1", "conn1")], vec![cap]);
+
+        let err = compile_with_safety(&ctx, &spec).expect_err("越界参数应阻止安全编译");
+        match err {
+            CompileError::Safety { report } => {
+                assert!(report.has_errors());
+                assert!(
+                    report
+                        .errors()
+                        .any(|d| d.rule == "range_boundary" && d.message.contains("200"))
+                );
+            }
+            other => panic!("应返回完整 SafetyReport，实际: {other:?}"),
+        }
     }
 
     #[test]

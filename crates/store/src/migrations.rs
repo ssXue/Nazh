@@ -1,6 +1,6 @@
 //! Schema 版本管理与 migration 执行器（RFC-0003 Phase 1，ADR-0022）。
 
-use rusqlite::Connection;
+use rusqlite::{Connection, Error};
 
 /// 内联 SQL migrations，按版本号顺序执行。
 const MIGRATIONS: &[(&str, &str)] = &[(
@@ -47,22 +47,67 @@ const MIGRATIONS: &[(&str, &str)] = &[(
 
 /// 检查 `schema_version` 表，执行尚未应用的 migrations。
 pub(crate) fn run(db: &Connection) -> Result<(), rusqlite::Error> {
+    let tx = db.unchecked_transaction()?;
     for (version, sql) in MIGRATIONS {
-        let applied: bool = db
-            .query_row(
-                "SELECT COUNT(*) > 0 FROM schema_version WHERE version = ?1",
-                [version],
-                |row| row.get(0),
-            )
-            .unwrap_or(false);
+        let applied = match tx.query_row(
+            "SELECT COUNT(*) > 0 FROM schema_version WHERE version = ?1",
+            [version],
+            |row| row.get(0),
+        ) {
+            Ok(applied) => applied,
+            Err(error) if is_missing_schema_version_table(&error) => false,
+            Err(error) => return Err(error),
+        };
         if applied {
             continue;
         }
-        db.execute_batch(sql)?;
-        db.execute(
+        tx.execute_batch(sql)?;
+        tx.execute(
             "INSERT INTO schema_version (version, applied_at) VALUES (?1, datetime('now'))",
             [version],
         )?;
     }
-    Ok(())
+    tx.commit()
+}
+
+fn is_missing_schema_version_table(error: &Error) -> bool {
+    matches!(
+        error,
+        Error::SqliteFailure(_, Some(message)) if message.contains("no such table: schema_version")
+    )
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn schema_version_缺失时执行_bootstrap() {
+        let db = Connection::open_in_memory().unwrap();
+
+        run(&db).unwrap();
+
+        let variables_count: i64 = db
+            .query_row("SELECT COUNT(*) FROM variables", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(variables_count, 0);
+    }
+
+    #[test]
+    fn schema_version_结构损坏时返回原始错误且不留下半套_schema() {
+        let db = Connection::open_in_memory().unwrap();
+        db.execute_batch("CREATE TABLE schema_version (applied_at TEXT NOT NULL);")
+            .unwrap();
+
+        let error = run(&db).unwrap_err();
+
+        assert!(error.to_string().contains("no such column: version"));
+        assert!(
+            db.query_row("SELECT COUNT(*) FROM variables", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .is_err()
+        );
+    }
 }

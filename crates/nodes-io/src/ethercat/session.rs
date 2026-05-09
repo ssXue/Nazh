@@ -121,6 +121,15 @@ impl EthercatRuntime {
             .await;
     }
 
+    /// 记录运行期总线失败并清理共享会话，下一次操作会重新建连。
+    pub async fn record_failure_and_shutdown(&self, reason: &str) {
+        let _ = self
+            .connection_manager
+            .record_connect_failure(&self.connection_id, reason)
+            .await;
+        self.shutdown().await;
+    }
+
     #[allow(dead_code)]
     pub fn connection_id(&self) -> &str {
         &self.connection_id

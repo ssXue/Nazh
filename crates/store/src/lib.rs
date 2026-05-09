@@ -6,11 +6,16 @@
 
 mod error;
 mod global_variables;
+mod handle;
 mod history;
 pub(crate) mod migrations;
 mod variables;
 
 pub use error::StoreError;
+pub use global_variables::StoredGlobalVariable;
+pub use handle::StoreHandle;
+pub use history::HistoryEntry;
+pub use variables::StoredVariable;
 
 use rusqlite::Connection;
 use std::path::Path;
@@ -32,17 +37,25 @@ impl Store {
     /// - `StoreError::Rusqlite` — migration 执行失败。
     pub fn open(path: &Path) -> Result<Self, StoreError> {
         let db = Connection::open(path)?;
-        db.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
-        migrations::run(&db)?;
-        Ok(Self {
-            db: std::sync::Mutex::new(db),
-        })
+        Self::from_connection(db)
     }
 
     /// 仅用于测试：打开内存数据库。
     #[cfg(test)]
     pub fn open_in_memory() -> Result<Self, StoreError> {
         let db = Connection::open_in_memory()?;
+        Self::from_connection(db)
+    }
+
+    /// 打开内存数据库（非持久化）。用于 Default 构造或无需持久化的场景。
+    ///
+    /// 启动后壳层 `setup` 会替换为文件持久化 Store。
+    pub fn open_unpersisted() -> Result<Self, StoreError> {
+        let db = Connection::open_in_memory()?;
+        Self::from_connection(db)
+    }
+
+    fn from_connection(db: Connection) -> Result<Self, StoreError> {
         db.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
         migrations::run(&db)?;
         Ok(Self {
@@ -50,23 +63,34 @@ impl Store {
         })
     }
 
-    /// 打开内存数据库（非持久化）。用于 Default 构造或无需持久化的场景。
-    ///
-    /// 启动后壳层 `setup` 会替换为文件持久化 Store。
-    #[allow(clippy::expect_used, clippy::missing_panics_doc)]
-    pub fn open_unpersisted() -> Self {
-        let db = Connection::open_in_memory().expect("内存 `SQLite` 应始终成功");
-        db.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")
-            .expect("PRAGMA 设置应成功");
-        migrations::run(&db).expect("migration 应成功");
-        Self {
-            db: std::sync::Mutex::new(db),
-        }
-    }
-
     /// 获取数据库连接的 Mutex 守卫。
     #[allow(clippy::expect_used)]
     pub(crate) fn db(&self) -> std::sync::MutexGuard<'_, Connection> {
         self.db.lock().expect("Store Mutex 不应被 poisoned")
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn open_unpersisted_返回_result_并传播初始化错误() {
+        let store = Store::open_unpersisted().expect("内存 Store 应可打开");
+        assert!(store.load_variables("wf-missing").unwrap().is_empty());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn store_handle_把同步_sqlite_调用移到_blocking_线程() {
+        let handle = StoreHandle::new(Store::open_unpersisted().expect("内存 Store 应可打开"));
+        let async_thread = std::thread::current().id();
+
+        let blocking_thread = handle
+            .run_blocking(|_| Ok(std::thread::current().id()))
+            .await
+            .unwrap();
+
+        assert_ne!(async_thread, blocking_thread);
     }
 }

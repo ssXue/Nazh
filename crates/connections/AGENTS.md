@@ -44,10 +44,12 @@ ts-rs 导出：`ConnectionDefinition` / `ConnectionHealthSnapshot` / `Connection
 4. **共享会话按连接 ID 合流初始化**。`ensure_shared_session` 对同一 `connection_id` 使用 per-key async 锁，首次并发建连只允许一个 factory 运行；成功后写入共享缓存，后续调用复用同一 `Arc<T>`。
 5. **运行中连接不静默替换**。`upsert_connection` / `upsert_connections` 遇到正在借出的旧 record 或已有共享会话时保留旧定义；`replace_connections` 遇到任一正在借出的 record 或共享会话时跳过整体替换。未来若需要热切换，应先实现 draining / shutdown 再切换配置。
 6. **定义与实例分离**：`ConnectionDefinition` 只描述"怎么连"，实际的 `tokio-modbus` / `rumqttc` / `reqwest::Client` 实例由 `nodes-io` 在 `acquire` 后惰性建立；本 crate 只管治理状态机。
-7. **治理策略从 metadata 读取**。`ConnectionGovernancePolicy` 从 `metadata.governance` JSON 中读取可调参数（超时、限流窗口、熔断阈值等），有合理默认值和下限。改熔断算法请同步更新本文件，若改语义走 ADR。
-8. **失败出口推进治理状态机**。`guard.mark_failure(reason)` 在 Drop 时会更新 failure counters、退避和熔断；若节点已在同一次 lease 内手动调用 `record_connect_failure`，Drop 不重复计数。
-9. **不做节点实现**。本 crate 只提供连接原语。
-10. **超时检测**：`acquire` 前调用 `reconcile_timed_state` 处理过期的限流 / 熔断 / 退避窗口；`finalize_release`（Guard Drop 时）检查占用时长是否超过 `operation_timeout_ms`。
+7. **未知连接类型默认拒绝**。`validate_connection_definition` 只接受显式支持的连接类型（serial / modbus / mqtt / http / bark / can / ethercat 及既有别名），错误消息必须列出支持类型；如果需要 opaque/tool 连接，必须新增 allowlist 分支并限制可用节点。
+8. **总线参数必须显式配置**。CAN/SLCAN 连接必须声明 `interface` / `channel` / `baud_rate` / `bitrate`；EtherCAT 连接必须声明 `backend` / `interface` / `cycle_time_ms` / `op_timeout_ms`。测试或 demo 的 mock 连接也要显式写出这些字段，不在连接层静默补默认值。
+9. **治理策略从 metadata 读取**。`ConnectionGovernancePolicy` 从 `metadata.governance` JSON 中读取可调参数（超时、限流窗口、熔断阈值等），有合理默认值和下限。改熔断算法请同步更新本文件，若改语义走 ADR。
+10. **失败出口推进治理状态机**。`guard.mark_failure(reason)` 在 Drop 时会更新 failure counters、退避和熔断；若节点已在同一次 lease 内手动调用 `record_connect_failure`，Drop 不重复计数。
+11. **不做节点实现**。本 crate 只提供连接原语。
+12. **超时检测**：`acquire` 前调用 `reconcile_timed_state` 处理过期的限流 / 熔断 / 退避窗口；`finalize_release`（Guard Drop 时）检查占用时长是否超过 `operation_timeout_ms`。
 
 ## 依赖约束
 

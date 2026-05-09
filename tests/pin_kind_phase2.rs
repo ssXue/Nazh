@@ -1,6 +1,6 @@
 //! ADR-0014 Phase 2 集成测试：`modbusRead` `latest` Data 引脚的端到端验证。
 //!
-//! 单节点 `modbusRead` 工作流（无 `connection_id` 走模拟模式）。断言 transform 执行后：
+//! 单节点 `modbusRead` 工作流（显式 `simulation: true` 走模拟模式）。断言 transform 执行后：
 //! 1. `OutputCache` 的 `latest` 槽被写入（Phase 1 双路径骨架在生产节点首次激活）
 //! 2. Exec `out` 路径同样把结果推到 result 通道（双路径同源 payload）
 //!
@@ -17,19 +17,19 @@ use serde_json::{Value, json};
 
 #[tokio::test]
 async fn modbus_read_的_latest_data_引脚被写入缓存槽_且_exec_out_仍推送() {
-    // 1. 标准注册表（包含 modbusRead），无连接走模拟模式
+    // 1. 标准注册表（包含 modbusRead），显式 simulation 走模拟模式
     let registry = standard_registry();
 
     // 2. 构造单节点 modbusRead 工作流（modbusRead 是根节点，无上游入边）
-    //    无 connection_id → 走 simulate_and_build 路径，输出 {"value": <number>}
+    //    simulation=true → 走 simulate_and_build 路径，输出 {"value": <number>}
     let modbus_def = serde_json::from_value::<nazh_engine::WorkflowNodeDefinition>(json!({
         "id": "reader",
         "type": "modbusRead",
         "config": {
             "register_type": "holding",
             "register": 0,
-            "quantity": 2
-            // 无 connection_id → 模拟模式
+            "quantity": 2,
+            "simulation": true
         }
     }))
     .expect("modbusRead WorkflowNodeDefinition 反序列化");

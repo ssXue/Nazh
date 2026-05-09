@@ -2,7 +2,7 @@ use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use ai::{AiConfigFile, OpenAiCompatibleService};
 use nazh_engine::{ConnectionDefinition, shared_connection_manager};
-use store::Store;
+use store::{Store, StoreHandle};
 use tauri::{AppHandle, Manager};
 use tokio::{
     fs,
@@ -25,7 +25,7 @@ pub(crate) struct DesktopState {
     pub(crate) ai_service: Arc<OpenAiCompatibleService>,
     pub(crate) approval_registry: Arc<nazh_engine::ApprovalRegistry>,
     /// 持久化存储。`setup` 阶段从内存 Store 替换为文件 Store。
-    pub(crate) store: std::sync::RwLock<Arc<Store>>,
+    pub(crate) store: std::sync::RwLock<Option<StoreHandle>>,
 }
 
 impl Default for DesktopState {
@@ -39,12 +39,26 @@ impl Default for DesktopState {
             ai_config,
             ai_service,
             approval_registry: Arc::new(nazh_engine::ApprovalRegistry::new()),
-            store: std::sync::RwLock::new(Arc::new(Store::open_unpersisted())),
+            store: std::sync::RwLock::new(match Store::open_unpersisted() {
+                Ok(store) => Some(StoreHandle::new(store)),
+                Err(error) => {
+                    tracing::error!(?error, "无法初始化内存 Store");
+                    None
+                }
+            }),
         }
     }
 }
 
 impl DesktopState {
+    pub(crate) fn store_handle(&self) -> Result<StoreHandle, String> {
+        self.store
+            .read()
+            .map_err(|error| format!("Store 读锁 poisoned: {error}"))?
+            .clone()
+            .ok_or_else(|| "Store 未初始化".to_owned())
+    }
+
     pub(crate) fn connections_file_path(
         app: &AppHandle,
         workspace_path: Option<&str>,

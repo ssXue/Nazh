@@ -125,6 +125,10 @@ pub(crate) async fn run_node(
     reactive_output_pin_ids: HashSet<String>,
 ) {
     let node_id = node.id().to_owned();
+    let has_non_data_output_pin = node
+        .output_pins()
+        .iter()
+        .any(|pin| pin.kind != PinKind::Data);
 
     // ADR-0016：初始化边传输累计窗口。
     let mut edge_windows: HashMap<EdgeKey, EdgeWindow> = downstream_senders
@@ -283,6 +287,7 @@ pub(crate) async fn run_node(
                         &matching_targets,
                         &data_output_pin_ids,
                         &reactive_output_pin_ids,
+                        has_non_data_output_pin,
                     ) {
                         continue;
                     }
@@ -417,6 +422,7 @@ fn output_is_data_only(
     matching_targets: &[&DownstreamTarget],
     data_output_pin_ids: &HashSet<String>,
     reactive_output_pin_ids: &HashSet<String>,
+    has_non_data_output_pin: bool,
 ) -> bool {
     if !matching_targets.is_empty() {
         return false;
@@ -424,7 +430,9 @@ fn output_is_data_only(
 
     match dispatch {
         NodeDispatch::Broadcast => {
-            !data_output_pin_ids.is_empty() && reactive_output_pin_ids.is_empty()
+            !data_output_pin_ids.is_empty()
+                && reactive_output_pin_ids.is_empty()
+                && !has_non_data_output_pin
         }
         NodeDispatch::Route(port_ids) => {
             !port_ids.is_empty()
@@ -452,6 +460,36 @@ mod tests {
 
         fn kind(&self) -> &'static str {
             "testEcho"
+        }
+
+        async fn transform(
+            &self,
+            _trace_id: Uuid,
+            payload: Value,
+        ) -> Result<NodeExecution, EngineError> {
+            Ok(NodeExecution::broadcast(payload))
+        }
+    }
+
+    struct DataOnlyNode;
+
+    #[async_trait::async_trait]
+    impl NodeTrait for DataOnlyNode {
+        fn id(&self) -> &'static str {
+            "data-only"
+        }
+
+        fn kind(&self) -> &'static str {
+            "testDataOnly"
+        }
+
+        fn output_pins(&self) -> Vec<nazh_core::PinDefinition> {
+            vec![nazh_core::PinDefinition::output_named_data(
+                "out",
+                "数据输出",
+                nazh_core::PinType::Json,
+                "仅写缓存，不进入 result",
+            )]
         }
 
         async fn transform(
@@ -528,7 +566,7 @@ mod tests {
         drop(input_tx);
 
         run_node(
-            Arc::new(EchoNode),
+            Arc::new(DataOnlyNode),
             None,
             input_rx,
             vec![],
@@ -557,6 +595,23 @@ mod tests {
         assert_eq!(
             output_cache.read("out", None).unwrap().value,
             json!({"value": 42})
+        );
+    }
+
+    #[test]
+    fn broadcast_同时含_exec_与_data_输出时不是_data_only() {
+        let data_output_pin_ids = HashSet::from(["latest".to_owned()]);
+        let reactive_output_pin_ids = HashSet::new();
+
+        assert!(
+            !output_is_data_only(
+                &NodeDispatch::Broadcast,
+                &[],
+                &data_output_pin_ids,
+                &reactive_output_pin_ids,
+                true,
+            ),
+            "带默认 Exec out 的节点即使有 Data latest，也必须继续产生 result"
         );
     }
 }

@@ -11,6 +11,8 @@ pub enum StoreError {
     SerdeJson(serde_json::Error),
     /// I/O 错误。
     Io(std::io::Error),
+    /// blocking 任务执行失败。
+    BlockingTask(String),
 }
 
 impl fmt::Display for StoreError {
@@ -19,6 +21,7 @@ impl fmt::Display for StoreError {
             Self::Rusqlite(err) => write!(f, "SQLite 错误: {err}"),
             Self::SerdeJson(err) => write!(f, "JSON 错误: {err}"),
             Self::Io(err) => write!(f, "I/O 错误: {err}"),
+            Self::BlockingTask(err) => write!(f, "Store blocking 任务失败: {err}"),
         }
     }
 }
@@ -29,6 +32,7 @@ impl std::error::Error for StoreError {
             Self::Rusqlite(err) => Some(err),
             Self::SerdeJson(err) => Some(err),
             Self::Io(err) => Some(err),
+            Self::BlockingTask(_) => None,
         }
     }
 }

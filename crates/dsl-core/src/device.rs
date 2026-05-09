@@ -242,7 +242,10 @@ alarms:
         assert_eq!(spec.device_type, "hydraulic_press");
         assert_eq!(spec.manufacturer, Some("某液压".to_owned()));
         assert_eq!(spec.model, Some("YP-320T".to_owned()));
-        assert_eq!(spec.connection.as_ref().unwrap().connection_type, "modbus-tcp");
+        assert_eq!(
+            spec.connection.as_ref().unwrap().connection_type,
+            "modbus-tcp"
+        );
         assert_eq!(spec.connection.as_ref().unwrap().id, "press_modbus");
         assert_eq!(spec.connection.as_ref().unwrap().unit, Some(1));
         assert_eq!(spec.signals.len(), 4);

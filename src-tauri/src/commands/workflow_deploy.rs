@@ -26,19 +26,19 @@ use crate::{
 const MAX_IPC_INPUT_BYTES: usize = 10 * 1024 * 1024;
 const SQL_WRITER_DEFAULT_DATABASE_PATH: &str = "./nazh-local.sqlite3";
 
-fn load_persisted_variable_overrides(
+async fn load_persisted_variable_overrides(
     state: &DesktopState,
     workflow_id: &str,
 ) -> HashMap<String, Value> {
-    let store = match state.store.read() {
-        Ok(store) => Arc::clone(&store),
+    let store = match state.store_handle() {
+        Ok(store) => store,
         Err(error) => {
-            tracing::warn!(?error, "Store 读锁 poisoned，跳过变量恢复");
+            tracing::warn!(?error, "Store 未就绪，跳过变量恢复");
             return HashMap::new();
         }
     };
 
-    match store.load_variables(workflow_id) {
+    match store.load_variables(workflow_id).await {
         Ok(persisted) => {
             if !persisted.is_empty() {
                 tracing::info!(
@@ -144,7 +144,7 @@ pub(crate) async fn deploy_workflow(
     let extra_resources = RuntimeResources::new()
         .with_resource(Arc::clone(&state.approval_registry))
         .with_resource(WorkflowId(Arc::new(workflow_id.clone())));
-    let variable_overrides = load_persisted_variable_overrides(&state, &workflow_id);
+    let variable_overrides = load_persisted_variable_overrides(&state, &workflow_id).await;
     let deployment = match deploy_workflow_graph(
         graph,
         state.connection_manager.clone(),
@@ -213,12 +213,7 @@ pub(crate) async fn deploy_workflow(
         app.clone(),
         workflow_id.clone(),
         var_event_rx,
-        {
-            #[allow(clippy::expect_used)]
-            {
-                state.store.read().expect("Store 读锁").clone()
-            }
-        },
+        state.store_handle()?,
     ));
 
     runtime_tasks.push(crate::events::spawn_result_forwarder(

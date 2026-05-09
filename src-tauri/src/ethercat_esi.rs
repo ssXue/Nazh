@@ -114,9 +114,7 @@ enum EniTextTarget {
 }
 
 /// 将 ESI XML 转换为 Device DSL YAML。
-pub(crate) fn import_esi_to_device_yaml(
-    esi_xml: &str,
-) -> Result<EsiImportResult, String> {
+pub(crate) fn import_esi_to_device_yaml(esi_xml: &str) -> Result<EsiImportResult, String> {
     if xml_root_name(esi_xml)? == Some("EtherCATConfig".to_owned()) {
         return import_eni_to_device_yaml(esi_xml);
     }
@@ -169,9 +167,7 @@ fn build_device_yaml(
     })
 }
 
-fn import_eni_to_device_yaml(
-    eni_xml: &str,
-) -> Result<EsiImportResult, String> {
+fn import_eni_to_device_yaml(eni_xml: &str) -> Result<EsiImportResult, String> {
     let slaves = parse_eni_slaves(eni_xml)?;
     if slaves.is_empty() {
         return Err("ENI 文件中没有找到 Config/Slave".to_owned());
@@ -359,11 +355,7 @@ fn parse_eni_slaves(eni_xml: &str) -> Result<Vec<EniSlave>, String> {
 }
 
 /// 将单个 ENI 从站转为 EsiDevice（包含该从站的激活 PDO）。
-fn eni_slave_to_device(
-    slave: &EniSlave,
-    group_id: &str,
-    warnings: &mut Vec<String>,
-) -> EsiDevice {
+fn eni_slave_to_device(slave: &EniSlave, group_id: &str, warnings: &mut Vec<String>) -> EsiDevice {
     let mut device = EsiDevice {
         device_type: Some("ethercat_slave".to_owned()),
         vendor_name: None,
@@ -447,10 +439,7 @@ fn eni_slave_device_id(slave: &EniSlave) -> String {
         }
         return format!("{:06}", product_code % 1_000_000);
     }
-    let label = slave
-        .name
-        .as_deref()
-        .unwrap_or("ethercat_slave");
+    let label = slave.name.as_deref().unwrap_or("ethercat_slave");
     let hash = deterministic_hash(label.as_bytes());
     format!("{:06}", hash % 1_000_000)
 }

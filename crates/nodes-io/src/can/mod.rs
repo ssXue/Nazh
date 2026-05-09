@@ -122,15 +122,12 @@ pub enum CanError {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CanBusConfig {
     /// 后端接口类型: `"slcan"`, `"mock"`。
-    #[serde(default = "default_interface")]
     pub interface: String,
     /// 通道标识: `"can0"`, `"/dev/ttyUSB0"`, `"COM3"`。
     pub channel: String,
     /// 串口波特率（bps），仅 SLCAN 使用。
-    #[serde(default = "default_baud_rate")]
     pub baud_rate: u32,
     /// CAN 总线波特率（bps）。
-    #[serde(default = "default_bitrate")]
     pub bitrate: u32,
     /// 接收过滤器列表。
     #[serde(default)]
@@ -143,23 +140,32 @@ pub struct CanBusConfig {
     pub receive_own_messages: bool,
 }
 
-fn default_baud_rate() -> u32 {
-    115_200
-}
-
-fn default_interface() -> String {
-    "slcan".to_owned()
-}
-
-fn default_bitrate() -> u32 {
-    500_000
-}
-
 impl CanBusConfig {
     /// 从 `serde_json::Value` 解析配置。
     pub fn from_metadata(metadata: &serde_json::Value) -> Result<Self, CanError> {
-        serde_json::from_value(metadata.clone())
-            .map_err(|e| CanError::OpenFailed(format!("CAN 配置解析失败: {e}")))
+        let config: Self = serde_json::from_value(metadata.clone())
+            .map_err(|e| CanError::OpenFailed(format!("CAN 配置解析失败: {e}")))?;
+        if config.interface.trim().is_empty() {
+            return Err(CanError::OpenFailed(
+                "CAN 配置缺少 interface（slcan/mock/virtual）".to_owned(),
+            ));
+        }
+        if config.channel.trim().is_empty() {
+            return Err(CanError::OpenFailed(
+                "CAN 配置缺少 channel（串口设备或 mock 通道）".to_owned(),
+            ));
+        }
+        if config.baud_rate == 0 {
+            return Err(CanError::OpenFailed(
+                "CAN 配置缺少有效的 baud_rate".to_owned(),
+            ));
+        }
+        if config.bitrate == 0 {
+            return Err(CanError::OpenFailed(
+                "CAN 配置缺少 CAN 总线 bitrate".to_owned(),
+            ));
+        }
+        Ok(config)
     }
 }
 
@@ -229,5 +235,27 @@ mod tests {
         assert!(validate_can_id(0x800, false).is_err());
         assert!(validate_can_id(0x1FFF_FFFF, true).is_ok());
         assert!(validate_can_id(0x2000_0000, true).is_err());
+    }
+
+    #[test]
+    fn can_bus_config_缺少显式_interface_或_bitrate_会失败() {
+        assert!(
+            serde_json::from_value::<CanBusConfig>(serde_json::json!({
+                "channel": "mock-can",
+                "baud_rate": 115_200,
+                "bitrate": 500_000,
+            }))
+            .is_err(),
+            "interface 是运行时总线后端选择，不能静默默认 slcan"
+        );
+        assert!(
+            serde_json::from_value::<CanBusConfig>(serde_json::json!({
+                "interface": "mock",
+                "channel": "mock-can",
+                "baud_rate": 115_200,
+            }))
+            .is_err(),
+            "bitrate 是现场总线参数，不能静默默认 500k"
+        );
     }
 }

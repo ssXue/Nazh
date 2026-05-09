@@ -34,7 +34,7 @@ crates/scripting/src/
 
 1. **step-limit 是硬约束**。所有脚本必须设 `Engine::max_operations` 上限，默认 50k 步。用户可通过 config 调整但不允许取消。这是避免"脚本死循环吃满 CPU"的最后防线（ADR-0002）。
 2. **脚本拿不到 `DataStore` 也拿不到 `ConnectionManager`**，但默认环境不是纯函数环境：`rand()` / `now_ms()` 非确定，`vars.set()` / `vars.cas()` 可写工作流变量，`ai_complete()` 可调用外部 AI。因此复用 `ScriptNodeBase` 的节点不能仅因“不直接访问硬件”就声明 `PURE`。
-3. **`ai_complete()` 单独注册**：它不是 `NazhScriptPackage` 的一部分，而是在 `ScriptNodeBase::new()` 中按节点注入。传入 `Some(ScriptAiRuntime)` 时可用；传入 `None` 时调用会返回带 node_id 的运行时错误。
+3. **`ai_complete()` 单独注册**：它不是 `NazhScriptPackage` 的一部分，而是在 `ScriptNodeBase::new()` 中按节点注入。传入 `Some(ScriptAiRuntime)` 时可用；传入 `None` 时调用会返回带 node_id 的运行时错误。AI helper 是显式 blocking 边界：在 Tokio 多线程运行时内使用 `block_in_place`，并独立执行 `ScriptAiRuntime::timeout_ms` 超时保护，避免长期占住 async worker。
 4. **Scope 是每次调用重建**。`ScriptNodeBase::evaluate` 每次构造全新 `Scope`，不跨调用保留状态。脚本间无隐式共享。
 5. **注入变量名固定为 `payload`**。脚本作者依赖这个名字；改名是 breaking change。
 6. **不负责节点身份**。`ScriptNodeBase` 持有 `id` 字段只是为了错误消息有上下文；`NodeTrait::kind()` 由嵌入节点用 `delegate_node_base!` 宏提供。

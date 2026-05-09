@@ -15,7 +15,7 @@
 | `timer` | — | 定时触发 |
 | `serialTrigger` | 串口 | 串口扫码枪/RFID 等外设触发（Tauri 壳层监听，节点做规范化） |
 | `native` | — | 数据透传 + 可选连接借用 |
-| `modbusRead` | Modbus TCP | 寄存器读取（有连接走真实协议，无连接走正弦函数模拟） |
+| `modbusRead` | Modbus TCP | 寄存器读取（有连接走真实协议；无连接必须显式 `simulation: true` 才走模拟） |
 | `httpClient` | HTTP(S) | 通用 HTTP 请求（三种 body 模式：json / template / dingtalk_markdown） |
 | `mqttClient` | MQTT | 两种模式：publish（变换节点）/ subscribe（触发器，壳层启动订阅） |
 | `canRead` | CAN/SLCAN | 通过 USB-CAN SLCAN 适配器接收 CAN 帧（无连接走 Mock 回退） |
@@ -24,7 +24,7 @@
 | `ethercatPdoWrite` | EtherCAT | 写入从站 PDO 输出数据（ethercrab 真实后端 / Mock 回退） |
 | `ethercatStatus` | EtherCAT | 查询所有从站状态与通道信息 |
 | `barkPush` | HTTP | 向 Bark 服务推送 iOS 通知 |
-| `sqlWriter` | sqlite | 本地持久化写入（内部 `spawn_blocking` 包装 `rusqlite`） |
+| `sqlWriter` | sqlite | 本地持久化写入（`database_path` 必填，内部 `spawn_blocking` 包装 `rusqlite`） |
 | `debugConsole` | — | 格式化 payload 打印到控制台 |
 | `capabilityCall` | DSL 适配 | Workflow DSL 编译出的设备能力调用快照，运行时通过连接资源执行 Modbus/MQTT/Serial/CAN 动作 |
 | `humanLoop` | 人机协同 | 人工审批 / 表单确认节点 |
@@ -99,6 +99,8 @@ Plugin 注册入口：`IoPlugin::register(&mut NodeRegistry)`，在 `lib.rs` 集
 - 部署期（有 `connection_id`）或首帧（无连接 Mock）建立后端，后续 transform 复用；
 - 无 `connection_id` 时使用内部 `mock-can` key 创建隐式 Mock 会话，不要求在 `ConnectionManager` 中预先注册 `mock-can`；显式连接仍应通过 `backend/interface: mock` 绑定可观测连接资源；
 - SLCAN 只在建连时执行 `C` / `S{bitrate}` / `O` 初始化序列，避免 1M CAN 场景下被串口独占锁、连接限流和初始化延迟拖垮；
+- SLCAN 的串口 open/write/flush 必须经 `spawn_blocking` 或专用线程隔离，不能直接阻塞 async worker；
+- `canRead` / `canWrite` 热路径使用可克隆的总线句柄；正常读等待和写入竞争不能通过 `try_lock` 变成配置错误；
 - 共享会话不使用 `ConnectionGuard` 的排他借用，改用 `record_connect_success` / `record_connect_failure` 直接报告健康状态；
 - 节点级 CAN ID 过滤在接收到帧后本地执行，共享总线不做过滤；
 - 撤销部署时 `lifecycle_guard` 清理共享会话；运行错误时 `runtime.shutdown()` 移除会话，所有共享节点下次 `ensure_session` 重建。
@@ -116,6 +118,7 @@ Plugin 注册入口：`IoPlugin::register(&mut NodeRegistry)`，在 `lib.rs` 集
 - `PduStorage` 是全局静态单例（`try_split()` 只能调用一次，内部 `is_split` 是 `AtomicBool`，不可复位），因此**同一进程内 EtherCAT 主站只能绑定到第一次成功初始化的网卡**——后续部署若 `interface` 改变，`ensure_maindevice` 会显式报错要求重启 nazh-desktop；
 - 共享会话不使用 `ConnectionGuard` 的排他借用，改用 `record_connect_success` / `record_connect_failure` 直接报告健康状态；
 - 撤销部署时 `lifecycle_guard` 清理共享会话；运行错误时 `runtime.shutdown()` 移除会话，所有共享节点下次 `ensure_session` 重建。**注意**：进程级 TX/RX 后台任务 + `MainDevice` 不会随 session cleanup 一起销毁——`shutdown()` 只丢 backend 壳，下一次部署若 `interface` 一致则复用。
+- PDO read/write 运行期失败必须记录 `record_connect_failure` 并清理共享会话，返回 `StageExecution` 一类运行期错误；不能把从站/PDO/链路错误伪装成 `NodeConfig`，也不能继续复用已失败会话。
 
 修改 EtherCAT 节点时必须保留这个共享会话模型。
 
@@ -216,6 +219,12 @@ EtherCAT 主站初始化失败: EtherCAT TX/RX 任务已终止（接口 `<iface>
 
 - `rusqlite` 是**同步** API。`sqlWriter` 在节点内部 `tokio::task::spawn_blocking` 包装，对外是 async-friendly。
 - 其他阻塞 API 如果要加，**必须**节点内部自包装或声明 `BLOCKING` 能力标签让 Runner 处理——**不能**在普通 `async fn transform` 里直接调用同步阻塞调用。
+
+### 显式运行时配置
+
+- `sqlWriter.database_path` 必须显式配置；测试 fixture 也要给出项目内或临时路径，禁止静默写入 `./nazh-local.sqlite3`。
+- `modbusRead` 无 `connection_id` 时默认拒绝运行；只有测试/demo 明确设置 `simulation: true` 时才允许正弦模拟读数。
+- CAN/SLCAN 配置必须显式声明 `interface` / `channel` / `baud_rate` / `bitrate`；EtherCAT 配置必须显式声明 `backend` / `interface` / `cycle_time_ms` / `op_timeout_ms`。mock 后端也按同一规则写全字段。
 
 ### 模板引擎
 

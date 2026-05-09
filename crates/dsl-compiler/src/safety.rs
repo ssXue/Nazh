@@ -587,24 +587,38 @@ fn check_state_machine_completeness(
     let cycles = find_trigger_cycles(spec);
     for cycle in cycles {
         let path = cycle.join(" → ");
-        diag_error(
-            report,
-            "state_machine_completeness",
-            format!("检测到循环触发路径: {path}"),
-        );
+        if is_unconditional_cycle(spec, &cycle) {
+            diag_error(
+                report,
+                "state_machine_completeness",
+                format!("检测到无条件循环触发路径: {path}"),
+            );
+        } else {
+            diag_warning(
+                report,
+                "state_machine_completeness",
+                format!("检测到有条件状态回路: {path}，请确认触发条件会等待外部输入或状态变化"),
+            );
+        }
     }
 }
 
-/// 找出所有可达状态（通过 transition 的 to 字段）。
+/// 从初始状态沿 transition 做真实可达遍历。
 fn find_reachable_states(spec: &WorkflowSpec, initial_state: &str) -> HashSet<String> {
     let mut reachable: HashSet<String> = HashSet::new();
     reachable.insert(initial_state.to_owned());
 
-    for trans in &spec.transitions {
-        // 任何 transition 的 to 都可达（通配符 from 使得任何状态都可以触发到 to）
-        reachable.insert(trans.to.clone());
-        // 非通配符 from 状态也是"被使用"的，但"可达"指有 incoming
-        // 这里只关注 to，因为 from 状态本身是否可达由初始状态决定
+    let mut changed = true;
+    while changed {
+        changed = false;
+        for trans in &spec.transitions {
+            if (trans.from == "*" || reachable.contains(&trans.from))
+                && !reachable.contains(&trans.to)
+            {
+                reachable.insert(trans.to.clone());
+                changed = true;
+            }
+        }
     }
 
     reachable
@@ -716,6 +730,28 @@ fn dfs_find_cycles(
 
     path.pop();
     in_stack.remove(node);
+}
+
+fn is_unconditional_cycle(spec: &WorkflowSpec, cycle: &[String]) -> bool {
+    if cycle.is_empty() {
+        return false;
+    }
+
+    for i in 0..cycle.len() {
+        let from = &cycle[i];
+        let to = &cycle[(i + 1) % cycle.len()];
+        let has_unconditional_edge = spec.transitions.iter().any(|trans| {
+            trans.from == *from && trans.to == *to && is_unconditional_when(&trans.when)
+        });
+        if !has_unconditional_edge {
+            return false;
+        }
+    }
+    true
+}
+
+fn is_unconditional_when(expr: &str) -> bool {
+    matches!(expr.trim(), "" | "true")
 }
 
 // ---- 规则 5: 危险动作审批校验 ----
@@ -1400,10 +1436,10 @@ states:
 transitions:
   - from: a
     to: b
-    when: "go_b"
+    when: "true"
   - from: b
     to: a
-    when: "go_a"
+    when: "true"
 "#;
         let spec = parse_spec(yaml);
         let ctx = CompilerContext::new(vec![], vec![]);
@@ -1413,6 +1449,70 @@ transitions:
             .filter(|d| d.rule == "state_machine_completeness" && d.message.contains("循环"))
             .collect();
         assert_eq!(sm_errors.len(), 1);
+    }
+
+    #[test]
+    fn 状态机_有条件返回_idle_不报循环错误() {
+        let yaml = r#"
+id: test
+version: "1.0.0"
+states:
+  idle:
+  running:
+transitions:
+  - from: idle
+    to: running
+    when: "payload.start == true"
+  - from: running
+    to: idle
+    when: "payload.done == true"
+"#;
+        let spec = parse_spec(yaml);
+        let ctx = CompilerContext::new(vec![], vec![]);
+        let report = run_safety_checks(&ctx, &spec, "idle");
+        let sm_errors: Vec<_> = report
+            .errors()
+            .filter(|d| d.rule == "state_machine_completeness" && d.message.contains("循环"))
+            .collect();
+        assert!(
+            sm_errors.is_empty(),
+            "有条件返回 idle 是正常业务模式，不应作为循环错误: {sm_errors:?}"
+        );
+    }
+
+    #[test]
+    fn 状态机_从_initial_真实遍历识别下游不可达状态() {
+        let yaml = r#"
+id: test
+version: "1.0.0"
+states:
+  idle:
+  active:
+  orphan:
+  orphan_child:
+transitions:
+  - from: idle
+    to: active
+    when: "payload.start == true"
+  - from: orphan
+    to: orphan_child
+    when: "payload.go == true"
+"#;
+        let spec = parse_spec(yaml);
+        let ctx = CompilerContext::new(vec![], vec![]);
+        let report = run_safety_checks(&ctx, &spec, "idle");
+        let unreachable: Vec<_> = report
+            .warnings()
+            .filter(|d| d.rule == "state_machine_completeness" && d.message.contains("不可达"))
+            .collect();
+
+        assert_eq!(unreachable.len(), 2);
+        assert!(unreachable.iter().any(|d| d.message.contains("orphan`")));
+        assert!(
+            unreachable
+                .iter()
+                .any(|d| d.message.contains("orphan_child`"))
+        );
     }
 
     #[test]

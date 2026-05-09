@@ -73,7 +73,7 @@ impl NodeTrait for EthercatPdoWriteNode {
 
     async fn transform(
         &self,
-        _trace_id: uuid::Uuid,
+        trace_id: uuid::Uuid,
         payload: serde_json::Value,
     ) -> Result<NodeExecution, EngineError> {
         let conn_id = self.config.connection_id.as_deref().ok_or_else(|| {
@@ -115,15 +115,25 @@ impl NodeTrait for EthercatPdoWriteNode {
         let runtime = EthercatRuntime::new(self.connection_manager.clone(), conn_id.to_owned());
         let session = runtime.ensure_session(&self.id).await?;
 
-        let guard = session.bus(&self.id).await?;
-        let bus = guard.as_ref().ok_or(EngineError::node_config(
-            self.id.clone(),
-            "EtherCAT 总线会话已释放".to_owned(),
-        ))?;
-
-        bus.write_outputs(self.config.slave_address, &bytes)
-            .await
-            .map_err(|e| EngineError::node_config(self.id.clone(), e.to_string()))?;
+        let (write_result, channel_info) = {
+            let guard = session.bus(&self.id).await?;
+            let bus = guard.as_ref().ok_or(EngineError::node_config(
+                self.id.clone(),
+                "EtherCAT 总线会话已释放".to_owned(),
+            ))?;
+            let channel_info = bus.channel_info();
+            let write_result = bus.write_outputs(self.config.slave_address, &bytes).await;
+            (write_result, channel_info)
+        };
+        if let Err(error) = write_result {
+            let reason = error.to_string();
+            runtime.record_failure_and_shutdown(&reason).await;
+            return Err(EngineError::stage_execution(
+                self.id.clone(),
+                trace_id,
+                reason,
+            ));
+        }
 
         let bytes_written = bytes.len();
         let output = json!({
@@ -138,7 +148,7 @@ impl NodeTrait for EthercatPdoWriteNode {
                 "operation": "pdo-write",
                 "slave": self.config.slave_address,
                 "bytes_written": bytes_written,
-                "channel_info": bus.channel_info(),
+                "channel_info": channel_info,
             }),
         );
         if let Some(lease) = session.lease() {

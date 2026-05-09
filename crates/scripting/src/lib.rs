@@ -5,6 +5,7 @@
 //! 来复用脚本执行能力。添加新的脚本节点时只需嵌入 `ScriptNodeBase` 字段。
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use nazh_core::WorkflowVariables;
 use nazh_core::ai::{AiCompletionRequest, AiGenerationParams, AiMessage, AiMessageRole, AiService};
@@ -225,30 +226,52 @@ impl ScriptAiRuntime {
         let request = self.build_request(prompt);
         let service = Arc::clone(&self.service);
         let node_id = self.node_id.clone();
-        let join_result = std::thread::spawn(move || {
-            tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .map_err(|error| format!("节点 `{node_id}` 无法创建 AI 调用运行时: {error}"))?
-                .block_on(async move {
-                    service
-                        .complete(request)
-                        .await
-                        .map(|response| response.content)
-                        .map_err(|error| error.to_string())
-                })
-        })
-        .join();
+        let timeout_ms = self.timeout_ms;
+        let run_ai = move || run_ai_completion_blocking(service, request, node_id, timeout_ms);
+        let result = match tokio::runtime::Handle::try_current() {
+            Ok(handle) if handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread => {
+                tokio::task::block_in_place(run_ai)
+            }
+            Ok(_) => match std::thread::spawn(run_ai).join() {
+                Ok(result) => result,
+                Err(_) => Err(format!("节点 `{}` 的 AI 调用线程发生 panic", self.node_id)),
+            },
+            Err(_) => run_ai(),
+        };
 
-        match join_result {
-            Ok(Ok(content)) => Ok(parse_ai_response(content)),
-            Ok(Err(message)) => Err(to_script_error(message)),
-            Err(_) => Err(to_script_error(format!(
-                "节点 `{}` 的 AI 调用线程发生 panic",
-                self.node_id
-            ))),
+        match result {
+            Ok(content) => Ok(parse_ai_response(content)),
+            Err(message) => Err(to_script_error(message)),
         }
     }
+}
+
+fn run_ai_completion_blocking(
+    service: Arc<dyn AiService>,
+    request: AiCompletionRequest,
+    node_id: String,
+    timeout_ms: Option<u64>,
+) -> Result<String, String> {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|error| format!("节点 `{node_id}` 无法创建 AI 调用运行时: {error}"))?
+        .block_on(async move {
+            let completion = service.complete(request);
+            let response = match timeout_ms {
+                Some(timeout_ms) => {
+                    tokio::time::timeout(Duration::from_millis(timeout_ms), completion)
+                        .await
+                        .map_err(|_| {
+                            format!("节点 `{node_id}` 的 AI 调用超时（{timeout_ms} ms）")
+                        })?
+                }
+                None => completion.await,
+            };
+            response
+                .map(|response| response.content)
+                .map_err(|error| error.to_string())
+        })
 }
 
 #[derive(Clone)]
@@ -405,9 +428,14 @@ impl ScriptNodeBase {
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod variables_tests {
     use std::collections::HashMap;
+    use std::future::Future;
+    use std::pin::Pin;
     use std::sync::Arc;
+    use std::time::{Duration, Instant};
 
+    use nazh_core::ai::{AiCompletionResponse, AiError, StreamChunk};
     use nazh_core::{PinType, VariableDeclaration, WorkflowVariables};
+    use tokio::sync::mpsc;
 
     use super::*;
 
@@ -527,6 +555,84 @@ mod variables_tests {
         assert!(
             msg.contains("未注入"),
             "未注入 variables 时调用 vars.* 应返回 `未注入` 错误，实际：{msg}"
+        );
+    }
+
+    struct SlowAiService;
+
+    impl AiService for SlowAiService {
+        fn complete<'life0, 'async_trait>(
+            &'life0 self,
+            _request: AiCompletionRequest,
+        ) -> Pin<
+            Box<dyn Future<Output = Result<AiCompletionResponse, AiError>> + Send + 'async_trait>,
+        >
+        where
+            'life0: 'async_trait,
+            Self: 'async_trait,
+        {
+            Box::pin(async move {
+                tokio::time::sleep(Duration::from_millis(200)).await;
+                Ok(AiCompletionResponse {
+                    content: "late".to_owned(),
+                    usage: None,
+                    model: "slow".to_owned(),
+                })
+            })
+        }
+
+        fn stream_complete<'life0, 'async_trait>(
+            &'life0 self,
+            _request: AiCompletionRequest,
+        ) -> Pin<
+            Box<
+                dyn Future<Output = Result<mpsc::Receiver<Result<StreamChunk, AiError>>, AiError>>
+                    + Send
+                    + 'async_trait,
+            >,
+        >
+        where
+            'life0: 'async_trait,
+            Self: 'async_trait,
+        {
+            Box::pin(async move {
+                let (_tx, rx) = mpsc::channel(1);
+                Ok(rx)
+            })
+        }
+    }
+
+    #[test]
+    fn ai_complete_使用_helper_timeout_而不是等待服务返回() {
+        let ai = ScriptAiRuntime::new(
+            "ai-timeout-script",
+            Arc::new(SlowAiService),
+            "provider",
+            None,
+            Some("slow".to_owned()),
+            AiGenerationParams::default(),
+            Some(20),
+        )
+        .unwrap();
+        let base = ScriptNodeBase::new(
+            "ai-timeout-script",
+            r#"ai_complete("hello")"#,
+            10_000,
+            Some(ai),
+            None,
+        )
+        .unwrap();
+
+        let started_at = Instant::now();
+        let err = base.evaluate(serde_json::Value::Null).unwrap_err();
+
+        assert!(
+            started_at.elapsed() < Duration::from_millis(150),
+            "ai_complete 应按 helper timeout 返回，而不是阻塞等待慢服务"
+        );
+        assert!(
+            err.to_string().contains("超时"),
+            "错误应说明 AI 调用超时，实际：{err}"
         );
     }
 }

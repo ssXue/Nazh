@@ -104,29 +104,13 @@ pub enum EthercatError {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EthercatConfig {
     /// 后端类型: `"ethercrab"`, `"mock"`。
-    #[serde(default = "default_backend")]
     pub backend: String,
     /// 网络接口名: `"eth0"`, `"enp0s31f6"`, `"\\Device\\NPF_{...}"`。
-    #[serde(default)]
     pub interface: String,
-    /// PDO 刷新周期（毫秒），默认 5ms。
-    #[serde(default = "default_cycle_time_ms")]
+    /// PDO 刷新周期（毫秒）。
     pub cycle_time_ms: u64,
-    /// 进入 OP 状态等待超时（毫秒），默认 15s。
-    #[serde(default = "default_op_timeout_ms")]
+    /// 进入 OP 状态等待超时（毫秒）。
     pub op_timeout_ms: u64,
-}
-
-fn default_backend() -> String {
-    "ethercrab".to_owned()
-}
-
-fn default_cycle_time_ms() -> u64 {
-    5
-}
-
-fn default_op_timeout_ms() -> u64 {
-    15_000
 }
 
 impl EthercatConfig {
@@ -136,23 +120,56 @@ impl EthercatConfig {
             .map_err(|e| EthercatError::InitFailed(format!("EtherCAT 配置解析失败: {e}")))?;
         config.backend = config.backend.trim().to_ascii_lowercase();
         if config.backend.is_empty() {
-            config.backend = default_backend();
+            return Err(EthercatError::InitFailed(
+                "EtherCAT 配置缺少 backend（ethercrab/mock）".to_owned(),
+            ));
+        }
+        if !matches!(config.backend.as_str(), "ethercrab" | "mock") {
+            return Err(EthercatError::UnsupportedBackend(config.backend));
         }
         config.interface = config.interface.trim().to_owned();
-        if config.backend == "mock" && config.interface.is_empty() {
-            "mock-eth0".clone_into(&mut config.interface);
-        }
-        if config.backend != "mock" && config.interface.is_empty() {
+        if config.interface.is_empty() {
             return Err(EthercatError::InitFailed(
                 "EtherCAT 配置缺少 interface（网络接口名）".to_owned(),
             ));
         }
         if config.cycle_time_ms == 0 {
-            config.cycle_time_ms = default_cycle_time_ms();
+            return Err(EthercatError::InitFailed(
+                "EtherCAT 配置 cycle_time_ms 必须大于 0".to_owned(),
+            ));
         }
         if config.op_timeout_ms == 0 {
-            config.op_timeout_ms = default_op_timeout_ms();
+            return Err(EthercatError::InitFailed(
+                "EtherCAT 配置 op_timeout_ms 必须大于 0".to_owned(),
+            ));
         }
         Ok(config)
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ethercat_config_缺少显式_backend_或周期参数会失败() {
+        assert!(
+            EthercatConfig::from_metadata(&serde_json::json!({
+                "interface": "mock-ecat",
+                "cycle_time_ms": 5,
+                "op_timeout_ms": 15_000,
+            }))
+            .is_err(),
+            "backend 是运行时后端选择，不能静默默认 ethercrab"
+        );
+        assert!(
+            EthercatConfig::from_metadata(&serde_json::json!({
+                "backend": "mock",
+                "interface": "mock-ecat",
+            }))
+            .is_err(),
+            "cycle_time_ms/op_timeout_ms 是运行时总线参数，不能静默补默认值"
+        );
     }
 }

@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use dsl_compiler::{CompileError, CompilerContext, compile};
-use nazh_core::WorkflowVariables;
+use nazh_core::{ExecutionEvent, WorkflowVariables};
 use nazh_dsl_core::capability::{CapabilityImpl, CapabilitySpec, SafetyConstraints, SafetyLevel};
 use nazh_dsl_core::device::{ConnectionRef, DeviceSpec};
 use nazh_dsl_core::workflow::WorkflowSpec;
@@ -170,19 +170,32 @@ transitions:
     let state_key = "_sm.sm_cap_test.current_state";
     assert_eq!(vars.get_value(state_key).unwrap(), "idle");
 
-    // 触发 idle → moving（会路由到 capabilityCall）
+    // 触发 idle → moving（会路由到 capabilityCall）。当前测试不注册真实 Modbus
+    // 连接，因此 capabilityCall 应 fail-fast，而不是返回旧的“意图成功”结果。
     deployment
         .submit(nazh_engine::WorkflowContext::new(json!({ "start": true })))
         .await
         .expect("提交 payload 应成功");
 
-    // 等待结果流
-    let result = timeout(Duration::from_secs(2), deployment.next_result()).await;
-    match result {
-        Ok(Some(_ctx)) => {}
-        Ok(None) => panic!("结果流意外关闭"),
-        Err(elapsed) => panic!("工作流未在时限内产生结果: {elapsed}"),
-    }
+    let failed = timeout(Duration::from_secs(2), async {
+        loop {
+            match deployment.next_event().await {
+                Some(ExecutionEvent::Failed { stage, error, .. })
+                    if stage == "cap_axis_move_to_entry_moving_0" =>
+                {
+                    return error;
+                }
+                Some(_) => {}
+                None => panic!("事件流意外关闭"),
+            }
+        }
+    })
+    .await
+    .expect("capabilityCall 缺连接时应在时限内产生 Failed 事件");
+    assert!(
+        failed.contains("modbus_conn"),
+        "失败原因应定位缺失的 Modbus 连接，实际: {failed}"
+    );
 
     // 状态应转移到 moving
     assert_eq!(vars.get_value(state_key).unwrap(), "moving");

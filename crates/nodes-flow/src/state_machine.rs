@@ -16,6 +16,7 @@ use nazh_core::{
     PinKind, PinType, WorkflowVariables,
 };
 use rhai::serde::to_dynamic;
+use rhai::{AST, Engine};
 use scripting::default_max_operations;
 
 /// 状态机节点配置——由 DSL 编译器生成。
@@ -67,6 +68,10 @@ pub struct StateMachineNode {
     action_ports: Vec<String>,
     /// 状态查找表：name → `StateConfig` index。
     state_map: Vec<(String, usize)>,
+    /// 受 `max_operations` 限制的 transition 条件引擎。
+    transition_engine: Engine,
+    /// 与 config.transitions 同顺序的预编译条件 AST。
+    transition_asts: Vec<AST>,
 }
 
 impl StateMachineNode {
@@ -82,6 +87,12 @@ impl StateMachineNode {
         variables: Option<Arc<WorkflowVariables>>,
     ) -> Result<Self, EngineError> {
         let id_str = id.into();
+        if config.max_operations == 0 {
+            return Err(EngineError::node_config(
+                id_str.clone(),
+                "stateMachine max_operations 必须大于 0",
+            ));
+        }
         // 收集所有唯一 action port
         let mut seen = HashSet::new();
         let mut action_ports = Vec::new();
@@ -112,10 +123,12 @@ impl StateMachineNode {
             .map(|(i, s)| (s.name.clone(), i))
             .collect();
 
-        // 预编译 transition 条件表达式（验证语法）
-        let engine = rhai::Engine::new();
+        // 预编译 transition 条件脚本，并在构造期设置与运行期一致的步数上限。
+        let mut transition_engine = Engine::new();
+        transition_engine.set_max_operations(config.max_operations);
+        let mut transition_asts = Vec::with_capacity(config.transitions.len());
         for trans in &config.transitions {
-            engine.compile_expression(&trans.when).map_err(|e| {
+            let ast = transition_engine.compile(&trans.when).map_err(|e| {
                 EngineError::script_compile(
                     &id_str,
                     format!(
@@ -124,6 +137,7 @@ impl StateMachineNode {
                     ),
                 )
             })?;
+            transition_asts.push(ast);
         }
 
         Ok(Self {
@@ -132,6 +146,8 @@ impl StateMachineNode {
             variables,
             action_ports,
             state_map,
+            transition_engine,
+            transition_asts,
         })
     }
 
@@ -191,7 +207,6 @@ impl StateMachineNode {
         current_state: &str,
         payload: &Value,
     ) -> Result<Option<&TransitionConfig>, EngineError> {
-        let engine = rhai::Engine::new();
         let mut scope = rhai::Scope::new();
         // 将 payload 转为 Rhai Dynamic 以支持属性访问（payload.start 等）
         let payload_dynamic = to_dynamic(payload.clone()).map_err(|e| {
@@ -203,17 +218,19 @@ impl StateMachineNode {
         scope.push_dynamic("payload", payload_dynamic);
 
         // 按优先级降序排序后评估
-        let mut sorted: Vec<&TransitionConfig> = self.config.transitions.iter().collect();
-        sorted.sort_by_key(|b| std::cmp::Reverse(b.priority));
+        let mut sorted: Vec<(usize, &TransitionConfig)> =
+            self.config.transitions.iter().enumerate().collect();
+        sorted.sort_by_key(|(_, trans)| std::cmp::Reverse(trans.priority));
 
-        for trans in sorted {
+        for (index, trans) in sorted {
             // 检查 from 是否匹配当前状态或通配符
             if trans.from != "*" && trans.from != current_state {
                 continue;
             }
 
-            let result = engine
-                .eval_with_scope::<bool>(&mut scope, &trans.when)
+            let result = self
+                .transition_engine
+                .eval_ast_with_scope::<bool>(&mut scope, &self.transition_asts[index])
                 .map_err(|e| {
                     EngineError::script_runtime(&self.id, format!("transition 条件求值失败: {e}"))
                 })?;
@@ -295,7 +312,7 @@ impl NodeTrait for StateMachineNode {
         }
 
         if ports.is_empty() {
-            // 状态转移但无 action → 广播
+            // 状态转移但无 action → 产出叶子结果，不广播到已有 action-port 下游。
             let mut metadata = serde_json::Map::new();
             metadata.insert(
                 "state_machine".to_owned(),
@@ -307,7 +324,7 @@ impl NodeTrait for StateMachineNode {
             return Ok(NodeExecution::from_outputs(vec![NodeOutput {
                 payload,
                 metadata: Some(metadata),
-                dispatch: nazh_core::NodeDispatch::Broadcast,
+                dispatch: nazh_core::NodeDispatch::Route(Vec::new()),
             }]));
         }
 
@@ -482,6 +499,77 @@ mod tests {
         ));
         // 状态不变
         assert_eq!(vars.get_value("_sm.sm_test.current_state").unwrap(), "idle");
+    }
+
+    #[tokio::test]
+    async fn transition_条件运行时受_max_operations_限制() {
+        let mut config = build_config();
+        config.max_operations = 10;
+        config.transitions = vec![TransitionConfig {
+            from: "idle".to_owned(),
+            to: "running".to_owned(),
+            when: "let n = 0; while n < 1000 { n += 1; } true".to_owned(),
+            priority: 0,
+            action_port: None,
+        }];
+        let vars = build_vars("idle");
+        let node = StateMachineNode::new("sm_test", config, Some(vars)).unwrap();
+
+        let err = node
+            .transform(Uuid::new_v4(), serde_json::json!({}))
+            .await
+            .unwrap_err();
+
+        assert!(
+            err.to_string().contains("操作数")
+                || err.to_string().contains("operation")
+                || err.to_string().contains("too many"),
+            "超步数错误应从 stateMachine transition 传播，实际：{err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn 无_action_transition_不广播到已有_action_port() {
+        let config = StateMachineConfig {
+            initial_state: "idle".to_owned(),
+            states: vec![
+                StateConfig {
+                    name: "idle".to_owned(),
+                    entry_actions: vec!["idle_entry".to_owned()],
+                    exit_actions: vec![],
+                },
+                StateConfig {
+                    name: "running".to_owned(),
+                    entry_actions: vec![],
+                    exit_actions: vec![],
+                },
+            ],
+            transitions: vec![TransitionConfig {
+                from: "idle".to_owned(),
+                to: "running".to_owned(),
+                when: "payload.start == true".to_owned(),
+                priority: 0,
+                action_port: None,
+            }],
+            timeout_rules: vec![],
+            on_timeout_target: None,
+            max_operations: 50_000,
+        };
+        let vars = build_vars("idle");
+        let node = StateMachineNode::new("sm_test", config, Some(vars)).unwrap();
+
+        let result = node
+            .transform(Uuid::new_v4(), serde_json::json!({ "start": true }))
+            .await
+            .unwrap();
+
+        assert!(
+            matches!(
+                result.outputs[0].dispatch,
+                nazh_core::NodeDispatch::Route(ref ports) if ports.is_empty()
+            ),
+            "无 action transition 不能 Broadcast，否则会触发既有 action-port 下游"
+        );
     }
 
     #[test]

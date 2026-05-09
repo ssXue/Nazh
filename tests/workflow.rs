@@ -1109,6 +1109,7 @@ async fn modbus_read_node_emits_simulated_values() {
         "modbus-main",
         ModbusReadNodeConfig {
             connection_id: None,
+            simulation: true,
             unit_id: 1,
             register: 40_001,
             quantity: 2,
@@ -1777,8 +1778,14 @@ async fn pin_phase3_modbus_到_sql_链路_部署通过() {
         &json!({
             "nodes": {
                 "tick":   { "type": "timer",      "config": { "interval_ms": 60000 } },
-                "modbus": { "type": "modbusRead", "config": {} },
-                "sql":    { "type": "sqlWriter",  "config": { "table": "phase3_pin_test" } },
+                "modbus": { "type": "modbusRead", "config": { "simulation": true } },
+                "sql":    {
+                    "type": "sqlWriter",
+                    "config": {
+                        "database_path": "target/phase3-pin-test.sqlite3",
+                        "table": "phase3_pin_test"
+                    }
+                },
             },
             "edges": [
                 { "from": "tick",   "to": "modbus" },
@@ -1823,7 +1830,13 @@ async fn pin_phase3_bool_源_到_sql_writer_部署被拒() {
         &json!({
             "nodes": {
                 "src": { "type": "boolSource", "config": {} },
-                "sql": { "type": "sqlWriter",  "config": { "table": "phase3_pin_test" } },
+                "sql": {
+                    "type": "sqlWriter",
+                    "config": {
+                        "database_path": "target/phase3-pin-test.sqlite3",
+                        "table": "phase3_pin_test"
+                    }
+                },
             },
             "edges": [{ "from": "src", "to": "sql" }],
         })

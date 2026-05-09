@@ -21,7 +21,7 @@ pub use device::{
 pub use error::DslError;
 pub use parser::{parse_capability_yaml, parse_device_yaml, parse_workflow_yaml};
 pub use pin_mapping::{
-    label_to_id, signal_to_direction, signal_to_pin_type, signal_id_to_label,
+    label_to_id, signal_id_to_label, signal_to_direction, signal_to_pin_type,
     signals_to_pin_definitions,
 };
 pub use workflow::{

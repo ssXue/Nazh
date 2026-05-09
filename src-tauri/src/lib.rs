@@ -16,8 +16,7 @@ mod workspace;
 
 use ai::AiConfigFile;
 use state::DesktopState;
-use std::sync::Arc;
-use store::Store;
+use store::{Store, StoreHandle};
 use tauri::{Manager, State};
 #[cfg(target_os = "windows")]
 use window_vibrancy::apply_blur;
@@ -70,7 +69,7 @@ fn init_persistent_store(app: &tauri::App) {
                 match Store::open(&store_path) {
                     Ok(file_store) => match state.store.write() {
                         Ok(mut store) => {
-                            *store = Arc::new(file_store);
+                            *store = Some(StoreHandle::new(file_store));
                             tracing::info!(path = ?store_path, "持久化 Store 已打开");
                         }
                         Err(error) => {

@@ -13,7 +13,10 @@ use nazh_core::ai::{
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
-use crate::config::{AiConfigFile, AiProviderDraft, AiProviderSecretRecord};
+use crate::config::{
+    AiAgentSettings, AiConfigFile, AiProviderDraft, AiProviderSecretRecord,
+    filter_non_sensitive_extra_headers,
+};
 use crate::types::AiTestResult;
 
 const DEFAULT_TIMEOUT_MS: u64 = 30_000;
@@ -35,49 +38,64 @@ impl OpenAiCompatibleService {
         Self { config, http }
     }
 
-    async fn resolve_provider(&self, provider_id: &str) -> Result<ResolvedProvider, AiError> {
+    async fn resolve_provider_snapshot(
+        &self,
+        provider_id: &str,
+    ) -> Result<ResolvedProviderSnapshot, AiError> {
         let config = self.config.read().await;
         let provider = AiProviderSecretRecord::find_active_by_id(&config.providers, provider_id)?;
-        Ok(ResolvedProvider {
-            base_url: provider.base_url.clone(),
-            api_key: provider.api_key.clone(),
-            default_model: provider.default_model.clone(),
-            extra_headers: provider.extra_headers.clone(),
+        Ok(ResolvedProviderSnapshot {
+            provider: ResolvedProvider {
+                base_url: provider.base_url.clone(),
+                api_key: provider.api_key.clone(),
+                default_model: provider.default_model.clone(),
+                extra_headers: provider.non_sensitive_extra_headers(),
+            },
+            agent_settings: config.agent_settings.clone(),
         })
     }
 
-    async fn resolve_draft(&self, draft: &AiProviderDraft) -> Result<ResolvedProvider, AiError> {
+    async fn resolve_draft_snapshot(
+        &self,
+        draft: &AiProviderDraft,
+    ) -> Result<ResolvedProviderSnapshot, AiError> {
+        let config = self.config.read().await;
         if let Some(ref api_key) = draft.api_key
             && !api_key.trim().is_empty()
         {
-            return Ok(ResolvedProvider {
-                base_url: draft.base_url.clone(),
-                api_key: api_key.clone(),
-                default_model: draft.default_model.clone(),
-                extra_headers: draft.extra_headers.clone(),
+            return Ok(ResolvedProviderSnapshot {
+                provider: ResolvedProvider {
+                    base_url: draft.base_url.clone(),
+                    api_key: api_key.clone(),
+                    default_model: draft.default_model.clone(),
+                    extra_headers: filter_non_sensitive_extra_headers(&draft.extra_headers),
+                },
+                agent_settings: config.agent_settings.clone(),
             });
         }
 
         if let Some(ref id) = draft.id {
-            let config = self.config.read().await;
             let provider = AiProviderSecretRecord::find_by_id(&config.providers, id)?;
-            return Ok(ResolvedProvider {
-                base_url: if draft.base_url.trim().is_empty() {
-                    provider.base_url.clone()
-                } else {
-                    draft.base_url.clone()
+            return Ok(ResolvedProviderSnapshot {
+                provider: ResolvedProvider {
+                    base_url: if draft.base_url.trim().is_empty() {
+                        provider.base_url.clone()
+                    } else {
+                        draft.base_url.clone()
+                    },
+                    api_key: provider.api_key.clone(),
+                    default_model: if draft.default_model.trim().is_empty() {
+                        provider.default_model.clone()
+                    } else {
+                        draft.default_model.clone()
+                    },
+                    extra_headers: if draft.extra_headers.is_empty() {
+                        provider.non_sensitive_extra_headers()
+                    } else {
+                        filter_non_sensitive_extra_headers(&draft.extra_headers)
+                    },
                 },
-                api_key: provider.api_key.clone(),
-                default_model: if draft.default_model.trim().is_empty() {
-                    provider.default_model.clone()
-                } else {
-                    draft.default_model.clone()
-                },
-                extra_headers: if draft.extra_headers.is_empty() {
-                    provider.extra_headers.clone()
-                } else {
-                    draft.extra_headers.clone()
-                },
+                agent_settings: config.agent_settings.clone(),
             });
         }
 
@@ -281,6 +299,38 @@ mod tests {
         assert_eq!(json["temperature"], 0.0);
         assert_eq!(json["max_tokens"], TEST_MAX_TOKENS);
     }
+
+    #[tokio::test]
+    async fn resolve_provider_snapshot_keeps_provider_and_agent_settings_atomic() {
+        let config = AiConfigFile {
+            version: 1,
+            providers: vec![AiProviderSecretRecord {
+                id: "p1".to_owned(),
+                name: "测试提供商".to_owned(),
+                base_url: "https://api.deepseek.com".to_owned(),
+                api_key: "sk-test".to_owned(),
+                default_model: "deepseek-chat".to_owned(),
+                extra_headers: HashMap::new(),
+                enabled: true,
+            }],
+            active_provider_id: Some("p1".to_owned()),
+            copilot_params: AiGenerationParams::default(),
+            agent_settings: crate::config::AiAgentSettings {
+                system_prompt: None,
+                timeout_ms: None,
+                thinking_enabled: true,
+            },
+        };
+        let service = OpenAiCompatibleService::new(Arc::new(RwLock::new(config)));
+
+        let snapshot = match service.resolve_provider_snapshot("p1").await {
+            Ok(snapshot) => snapshot,
+            Err(error) => panic!("应能解析提供商快照: {error}"),
+        };
+
+        assert_eq!(snapshot.provider.default_model, "deepseek-chat");
+        assert!(snapshot.agent_settings.thinking_enabled);
+    }
 }
 
 struct ResolvedProvider {
@@ -288,6 +338,11 @@ struct ResolvedProvider {
     api_key: String,
     default_model: String,
     extra_headers: HashMap<String, String>,
+}
+
+struct ResolvedProviderSnapshot {
+    provider: ResolvedProvider,
+    agent_settings: AiAgentSettings,
 }
 
 /// 流式请求上下文：spawned task 内部发起请求所需的所有数据。
@@ -601,7 +656,8 @@ impl AiService for OpenAiCompatibleService {
         &self,
         request: AiCompletionRequest,
     ) -> Result<AiCompletionResponse, AiError> {
-        let provider = self.resolve_provider(&request.provider_id).await?;
+        let snapshot = self.resolve_provider_snapshot(&request.provider_id).await?;
+        let provider = snapshot.provider;
         if provider.api_key.trim().is_empty() {
             return Err(AiError::InvalidConfig(format!(
                 "提供商 `{}` 未配置 API Key",
@@ -611,7 +667,7 @@ impl AiService for OpenAiCompatibleService {
 
         let model = request.model.as_deref().unwrap_or(&provider.default_model);
         let timeout_ms = request.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS);
-        let thinking_enabled = self.config.read().await.agent_settings.thinking_enabled;
+        let thinking_enabled = snapshot.agent_settings.thinking_enabled;
         let include_deepseek_options =
             thinking_enabled && provider_accepts_deepseek_options(&provider.base_url, model);
 
@@ -696,7 +752,8 @@ impl AiService for OpenAiCompatibleService {
         &self,
         request: AiCompletionRequest,
     ) -> Result<tokio::sync::mpsc::Receiver<Result<StreamChunk, AiError>>, AiError> {
-        let provider = self.resolve_provider(&request.provider_id).await?;
+        let snapshot = self.resolve_provider_snapshot(&request.provider_id).await?;
+        let provider = snapshot.provider;
         if provider.api_key.trim().is_empty() {
             return Err(AiError::InvalidConfig(format!(
                 "提供商 `{}` 未配置 API Key",
@@ -711,7 +768,7 @@ impl AiService for OpenAiCompatibleService {
         let timeout_ms = request.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS);
         let url = build_url(&provider.base_url, "/chat/completions")?;
         let messages = build_chat_messages(&request.messages);
-        let thinking_enabled = self.config.read().await.agent_settings.thinking_enabled;
+        let thinking_enabled = snapshot.agent_settings.thinking_enabled;
         let include_deepseek_options =
             thinking_enabled && provider_accepts_deepseek_options(&provider.base_url, &model);
 
@@ -789,7 +846,8 @@ impl OpenAiCompatibleService {
     /// 测试提供商连通性。inherent 而非 trait 方法——`AiProviderDraft`
     /// 是壳层配置类型，不属于 Ring 0 的运行时关注点。
     pub async fn test_connection(&self, draft: AiProviderDraft) -> Result<AiTestResult, AiError> {
-        let provider = self.resolve_draft(&draft).await?;
+        let snapshot = self.resolve_draft_snapshot(&draft).await?;
+        let provider = snapshot.provider;
         if provider.api_key.trim().is_empty() {
             return Err(AiError::InvalidConfig(
                 "测试连接需要提供 API Key 或引用已保存密钥的提供商".to_owned(),
@@ -797,7 +855,7 @@ impl OpenAiCompatibleService {
         }
 
         let url = build_url(&provider.base_url, "/chat/completions")?;
-        let thinking_enabled = self.config.read().await.agent_settings.thinking_enabled;
+        let thinking_enabled = snapshot.agent_settings.thinking_enabled;
 
         let model = provider.default_model.clone();
         let include_deepseek_options =

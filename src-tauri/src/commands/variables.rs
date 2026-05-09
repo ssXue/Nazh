@@ -134,11 +134,11 @@ pub(crate) async fn query_variable_history(
     state: State<'_, DesktopState>,
     request: QueryVariableHistoryRequest,
 ) -> Result<QueryVariableHistoryResponse, String> {
-    #[allow(clippy::expect_used)]
-    let store = state.store.read().expect("Store 读锁").clone();
+    let store = state.store_handle()?;
     let limit = request.limit.map_or(100, |n| n as usize);
     let entries = store
         .query_latest(&request.workflow_id, &request.name, limit)
+        .await
         .map_err(|err| err.to_string())?;
     Ok(QueryVariableHistoryResponse {
         entries: entries
@@ -158,8 +158,7 @@ pub(crate) async fn set_global_variable(
     state: State<'_, DesktopState>,
     request: SetGlobalVariableRequest,
 ) -> Result<SetGlobalVariableResponse, String> {
-    #[allow(clippy::expect_used)]
-    let store = state.store.read().expect("Store 读锁").clone();
+    let store = state.store_handle()?;
     let var_type = request.var_type.as_deref().unwrap_or("Any");
     let updated_at = Utc::now().to_rfc3339();
     store
@@ -171,6 +170,7 @@ pub(crate) async fn set_global_variable(
             &updated_at,
             Some("ipc"),
         )
+        .await
         .map_err(|err| err.to_string())?;
     let snapshot = GlobalVariableSnapshot {
         namespace: request.namespace,
@@ -189,10 +189,10 @@ pub(crate) async fn get_global_variable(
     state: State<'_, DesktopState>,
     request: GetGlobalVariableRequest,
 ) -> Result<GetGlobalVariableResponse, String> {
-    #[allow(clippy::expect_used)]
-    let store = state.store.read().expect("Store 读锁").clone();
+    let store = state.store_handle()?;
     let snapshot = store
         .load_global(&request.namespace, &request.key)
+        .await
         .map_err(|err| err.to_string())?
         .map(|g| GlobalVariableSnapshot {
             namespace: g.namespace,
@@ -211,10 +211,10 @@ pub(crate) async fn list_global_variables(
     state: State<'_, DesktopState>,
     request: ListGlobalVariablesRequest,
 ) -> Result<ListGlobalVariablesResponse, String> {
-    #[allow(clippy::expect_used)]
-    let store = state.store.read().expect("Store 读锁").clone();
+    let store = state.store_handle()?;
     let globals = store
         .list_globals(request.namespace.as_deref())
+        .await
         .map_err(|err| err.to_string())?;
     Ok(ListGlobalVariablesResponse {
         variables: globals
@@ -237,9 +237,9 @@ pub(crate) async fn delete_global_variable(
     state: State<'_, DesktopState>,
     request: DeleteGlobalVariableRequest,
 ) -> Result<(), String> {
-    #[allow(clippy::expect_used)]
-    let store = state.store.read().expect("Store 读锁").clone();
+    let store = state.store_handle()?;
     store
         .delete_global(&request.namespace, &request.key)
+        .await
         .map_err(|err| err.to_string())
 }

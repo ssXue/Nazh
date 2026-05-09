@@ -44,9 +44,11 @@ ts-rs 导出：`AiAgentSettings` / `AiConfigView` / `AiConfigUpdate` / `AiProvid
 2. **`test_connection` 不在 trait 上**。它接收 `AiProviderDraft`——壳层配置类型，不属于 Ring 0。
 3. **思考模式是 DeepSeek 协议扩展**。`provider_accepts_deepseek_options` 根据 base_url 或 model 名判断是否注入 `thinking` / `reasoning_effort` 字段；启用思考模式时省略 `temperature` / `top_p`（DeepSeek API 限制）。非 DeepSeek 厂商的思考配置被静默忽略。
 4. **密钥管理三层分离**：`AiProviderSecretRecord`（磁盘，含 api_key）→ `AiProviderView`（前端只读，仅 `has_api_key` bool）→ `AiSecretInput`（前端写入指令：Keep / Clear / Set）。前端永远不接触已保存的明文密钥。
-5. **重试策略不在本 crate**——流式重传在上层 orchestrator。本 crate 透明传 `AiError`。
-6. **不绑定具体模型**：`AiGenerationParams.model` 允许任何字符串。
-7. **`AiConfigFile::normalize()` 保证任意时刻最多一个 enabled provider**。
+5. **`extra_headers` 只能保存非敏感 header**：`Authorization`、`Proxy-Authorization`、`X-Api-Key`、`Api-Key`、token/cookie 类 header 不得通过 `extra_headers` 成为密钥旁路；写入、view 投影和请求解析都只保留非敏感 header。未来如需 provider-specific secret header，必须拆入 secret record + masked view。
+6. **单次请求使用一致配置快照**：`complete` / `stream_complete` / `test_connection` 在一次读锁内解析 provider、api_key、非敏感 extra_headers 与 `agent_settings`，形成不可变快照后再释放锁，避免一次请求混用不同版本配置。
+7. **重试策略不在本 crate**——流式重传在上层 orchestrator。本 crate 透明传 `AiError`。
+8. **不绑定具体模型**：`AiGenerationParams.model` 允许任何字符串。
+9. **`AiConfigFile::normalize()` 保证任意时刻最多一个 enabled provider**。
 
 ## 依赖约束
 

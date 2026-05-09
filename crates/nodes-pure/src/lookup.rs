@@ -65,13 +65,13 @@ impl LookupNode {
         }
     }
 
-    fn stringify_key(value: &Value) -> Result<String, EngineError> {
+    fn stringify_key(&self, value: &Value) -> Result<String, EngineError> {
         match value {
             Value::String(s) => Ok(s.clone()),
             Value::Bool(b) => Ok(b.to_string()),
             Value::Number(n) => Ok(n.to_string()),
             _ => Err(EngineError::payload_conversion(
-                "lookup",
+                self.id.clone(),
                 format!("lookup key 必须是标量（Bool/Integer/Float/String），收到 {value:?}"),
             )),
         }
@@ -104,7 +104,7 @@ impl NodeTrait for LookupNode {
                 "lookup 节点期望 payload.key 存在（由 pull collector 注入）",
             )
         })?;
-        let key = Self::stringify_key(key_value)?;
+        let key = self.stringify_key(key_value)?;
         let value = self
             .config
             .table
@@ -193,6 +193,26 @@ mod tests {
             .await
             .unwrap_err();
         assert!(matches!(err, EngineError::PayloadConversion { .. }));
+    }
+
+    #[tokio::test]
+    async fn 复杂_key_错误携带实际节点_id() {
+        let cfg: LookupNodeConfig = serde_json::from_value(serde_json::json!({
+            "table": {},
+            "default": null,
+        }))
+        .unwrap();
+        let node = LookupNode::new("lk-custom".to_owned(), cfg);
+
+        let err = node
+            .transform(Uuid::nil(), serde_json::json!({"key": {"bad": true}}))
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(err, EngineError::PayloadConversion { ref node_id, .. } if node_id == "lk-custom"),
+            "复杂 key 错误应携带实际节点 ID，实际：{err:?}"
+        );
     }
 
     #[test]

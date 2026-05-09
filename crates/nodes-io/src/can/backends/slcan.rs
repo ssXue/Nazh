@@ -48,19 +48,26 @@ pub struct SlCanBackend {
 
 impl SlCanBackend {
     pub async fn open(config: &CanBusConfig) -> Result<Self, CanError> {
-        let port = serialport::new(&config.channel, config.baud_rate)
-            .data_bits(DataBits::Eight)
-            .parity(Parity::None)
-            .stop_bits(StopBits::One)
-            .flow_control(FlowControl::None)
-            .timeout(Duration::from_millis(100))
-            .open()
-            .map_err(|e| CanError::Serial(format!("打开串口 {} 失败: {e}", config.channel)))?;
+        let channel = config.channel.clone();
+        let baud_rate = config.baud_rate;
+        let (port, port_clone) = tokio::task::spawn_blocking(move || {
+            let port = serialport::new(&channel, baud_rate)
+                .data_bits(DataBits::Eight)
+                .parity(Parity::None)
+                .stop_bits(StopBits::One)
+                .flow_control(FlowControl::None)
+                .timeout(Duration::from_millis(100))
+                .open()
+                .map_err(|e| CanError::Serial(format!("打开串口 {channel} 失败: {e}")))?;
 
-        // 克隆串口用于后台读取线程
-        let port_clone = port
-            .try_clone()
-            .map_err(|e| CanError::Serial(format!("克隆串口失败: {e}")))?;
+            // 克隆串口用于后台读取线程
+            let port_clone = port
+                .try_clone()
+                .map_err(|e| CanError::Serial(format!("克隆串口失败: {e}")))?;
+            Ok::<_, CanError>((port, port_clone))
+        })
+        .await
+        .map_err(|error| CanError::OpenFailed(format!("打开串口任务失败: {error}")))??;
 
         let (tx, rx) = mpsc::unbounded_channel();
         let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<()>(1);
@@ -133,7 +140,7 @@ impl SlCanBackend {
     /// SLCAN 适配器初始化序列。
     async fn init_adapter(&mut self) -> Result<(), CanError> {
         // 关闭（如果之前打开）
-        self.send_raw(b"C\r")?;
+        self.send_raw(b"C\r").await?;
         tokio::time::sleep(Duration::from_millis(50)).await;
 
         // 设置波特率
@@ -143,11 +150,11 @@ impl SlCanBackend {
                 self.config.bitrate
             ))
         })?;
-        self.send_raw(format!("S{code}\r").as_bytes())?;
+        self.send_raw(format!("S{code}\r").as_bytes()).await?;
         tokio::time::sleep(Duration::from_millis(50)).await;
 
         // 打开 CAN
-        self.send_raw(b"O\r")?;
+        self.send_raw(b"O\r").await?;
         tokio::time::sleep(Duration::from_millis(50)).await;
 
         tracing::info!(
@@ -160,22 +167,34 @@ impl SlCanBackend {
     }
 
     /// 发送原始字节到串口。
-    fn send_raw(&self, data: &[u8]) -> Result<(), CanError> {
-        let mut writer = self.writer.lock().map_err(|_| CanError::LockPoisoned)?;
-        writer
-            .write_all(data)
-            .map_err(|e| CanError::Serial(format!("串口写入失败: {e}")))?;
-        writer
-            .flush()
-            .map_err(|e| CanError::Serial(format!("串口刷新失败: {e}")))?;
-        Ok(())
+    async fn send_raw(&self, data: &[u8]) -> Result<(), CanError> {
+        let writer = Arc::clone(&self.writer);
+        let data = data.to_vec();
+        tokio::task::spawn_blocking(move || send_raw_sync(&writer, &data))
+            .await
+            .map_err(|error| CanError::SendFailed(format!("串口写入任务失败: {error}")))?
     }
+
+    fn send_raw_blocking(&self, data: &[u8]) -> Result<(), CanError> {
+        send_raw_sync(&self.writer, data)
+    }
+}
+
+fn send_raw_sync(writer: &Arc<Mutex<Box<dyn SerialPort>>>, data: &[u8]) -> Result<(), CanError> {
+    let mut writer = writer.lock().map_err(|_| CanError::LockPoisoned)?;
+    writer
+        .write_all(data)
+        .map_err(|e| CanError::Serial(format!("串口写入失败: {e}")))?;
+    writer
+        .flush()
+        .map_err(|e| CanError::Serial(format!("串口刷新失败: {e}")))?;
+    Ok(())
 }
 
 impl Drop for SlCanBackend {
     fn drop(&mut self) {
         let _ = self.shutdown_tx.try_send(());
-        let _ = self.send_raw(b"C\r");
+        let _ = self.send_raw_blocking(b"C\r");
         if let Some(reader_join) = self.reader_join.take()
             && reader_join.join().is_err()
         {
@@ -191,7 +210,7 @@ impl Drop for SlCanBackend {
 impl CanBus for SlCanBackend {
     async fn send(&self, frame: &CanFrame) -> Result<(), CanError> {
         let ascii = encode_slcan_frame(frame)?;
-        self.send_raw(ascii.as_bytes())?;
+        self.send_raw(ascii.as_bytes()).await?;
         tracing::debug!(
             id = format!("0x{:03X}", frame.id),
             dlc = frame.dlc,
@@ -243,10 +262,7 @@ impl CanBus for SlCanBackend {
 
     fn shutdown(&self) -> Result<(), CanError> {
         let _ = self.shutdown_tx.try_send(());
-        if let Ok(mut writer) = self.writer.lock() {
-            let _ = writer.write_all(b"C\r");
-            let _ = writer.flush();
-        }
+        let _ = self.send_raw_blocking(b"C\r");
         if let Ok(mut s) = self.state.lock() {
             *s = BusState::Error;
         }

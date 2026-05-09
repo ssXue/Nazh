@@ -628,7 +628,7 @@ fn sanitize_asset_file_stem(raw: &str) -> String {
 // ---- 快照元数据 ----
 
 /// 快照创建原因。
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
 pub(crate) enum SnapshotReason {
     #[serde(rename = "seed")]
     Seed,
@@ -637,15 +637,10 @@ pub(crate) enum SnapshotReason {
     #[serde(rename = "import")]
     Import,
     #[serde(rename = "edit")]
+    #[default]
     Edit,
     #[serde(rename = "rollback")]
     Rollback,
-}
-
-impl Default for SnapshotReason {
-    fn default() -> Self {
-        Self::Edit
-    }
 }
 
 /// 设备资产快照元数据条目。
@@ -683,10 +678,7 @@ pub(crate) async fn read_device_snapshots(
         Ok(text) => serde_yaml::from_str::<Vec<DeviceSnapshotMeta>>(&text)
             .map_err(|e| format!("解析快照元数据失败 `{}`: {e}", path.display())),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
-        Err(e) => Err(format!(
-            "读取快照元数据失败 `{}`: {e}",
-            path.display()
-        )),
+        Err(e) => Err(format!("读取快照元数据失败 `{}`: {e}", path.display())),
     }
 }
 
@@ -705,8 +697,7 @@ pub(crate) async fn append_device_snapshot(
     ));
 
     let mut snapshots = match fs::read_to_string(&path).await {
-        Ok(text) => serde_yaml::from_str::<Vec<DeviceSnapshotMeta>>(&text)
-            .unwrap_or_default(),
+        Ok(text) => serde_yaml::from_str::<Vec<DeviceSnapshotMeta>>(&text).unwrap_or_default(),
         Err(_) => Vec::new(),
     };
 
@@ -717,8 +708,8 @@ pub(crate) async fn append_device_snapshot(
     // 保留上限
     snapshots.truncate(MAX_SNAPSHOTS);
 
-    let text = serde_yaml::to_string(&snapshots)
-        .map_err(|e| format!("序列化快照元数据失败: {e}"))?;
+    let text =
+        serde_yaml::to_string(&snapshots).map_err(|e| format!("序列化快照元数据失败: {e}"))?;
     fs::write(&path, text)
         .await
         .map_err(|e| format!("写入快照元数据失败 `{}`: {e}", path.display()))?;
@@ -743,15 +734,14 @@ pub(crate) async fn delete_device_snapshot_meta(
         ));
 
     let mut snapshots = match fs::read_to_string(&path).await {
-        Ok(text) => serde_yaml::from_str::<Vec<DeviceSnapshotMeta>>(&text)
-            .unwrap_or_default(),
+        Ok(text) => serde_yaml::from_str::<Vec<DeviceSnapshotMeta>>(&text).unwrap_or_default(),
         Err(_) => return Ok(()),
     };
 
     snapshots.retain(|s| s.version != version);
 
-    let text = serde_yaml::to_string(&snapshots)
-        .map_err(|e| format!("序列化快照元数据失败: {e}"))?;
+    let text =
+        serde_yaml::to_string(&snapshots).map_err(|e| format!("序列化快照元数据失败: {e}"))?;
     fs::write(&path, text)
         .await
         .map_err(|e| format!("写入快照元数据失败 `{}`: {e}", path.display()))?;

@@ -120,18 +120,8 @@ impl NodeTrait for CanReadNode {
             })?;
 
         let timeout = std::time::Duration::from_millis(self.config.timeout_ms);
-        let bus_guard = session.bus(&self.id)?;
-        let frame_result = match bus_guard.as_ref() {
-            Some(bus) => bus.recv(timeout).await,
-            None => {
-                return Err(EngineError::stage_execution(
-                    self.id.clone(),
-                    trace_id,
-                    "CAN 总线会话已被清理".to_owned(),
-                ));
-            }
-        };
-        drop(bus_guard);
+        let bus = session.bus_handle(&self.id).await?;
+        let frame_result = bus.recv(timeout).await;
 
         let frame = match frame_result {
             Ok(frame) => frame,

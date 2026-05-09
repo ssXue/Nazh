@@ -151,18 +151,8 @@ impl NodeTrait for CanWriteNode {
                 EngineError::stage_execution(self.id.clone(), trace_id, error.to_string())
             })?;
 
-        let bus_guard = session.bus(&self.id)?;
-        let send_result = match bus_guard.as_ref() {
-            Some(bus) => bus.send(&frame).await,
-            None => {
-                return Err(EngineError::stage_execution(
-                    self.id.clone(),
-                    trace_id,
-                    "CAN 总线会话已被清理".to_owned(),
-                ));
-            }
-        };
-        drop(bus_guard);
+        let bus = session.bus_handle(&self.id).await?;
+        let send_result = bus.send(&frame).await;
 
         if let Err(error) = send_result {
             let reason = error.to_string();
@@ -278,7 +268,10 @@ fn parse_hex_string(s: &str) -> Result<Vec<u8>, String> {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
+    use std::sync::Arc;
+
     use super::*;
+    use crate::can::{CanReadNode, CanReadNodeConfig};
     use connections::{ConnectionDefinition, shared_connection_manager};
 
     #[test]
@@ -388,5 +381,59 @@ mod tests {
         let metadata = second.outputs[0].metadata.as_ref().unwrap();
         assert_eq!(metadata["can"]["simulated"], Value::Bool(false));
         assert_eq!(metadata["can"]["connection"]["id"], "can-fast");
+    }
+
+    #[tokio::test]
+    async fn 同一_can_连接读等待时写入不应被锁竞争拒绝() {
+        let manager = shared_connection_manager();
+        manager
+            .register_connection(ConnectionDefinition {
+                id: "can-shared".to_owned(),
+                kind: "can".to_owned(),
+                metadata: json!({
+                    "interface": "mock",
+                    "channel": "mock-can-shared",
+                    "baud_rate": 115_200,
+                    "bitrate": 500_000,
+                }),
+            })
+            .await
+            .unwrap();
+
+        let read_node = Arc::new(CanReadNode::new(
+            "can-read-shared",
+            CanReadNodeConfig {
+                connection_id: Some("can-shared".to_owned()),
+                can_id: None,
+                is_extended: false,
+                timeout_ms: 80,
+            },
+            manager.clone(),
+        ));
+        let write_node = CanWriteNode::new(
+            "can-write-shared",
+            CanWriteNodeConfig {
+                connection_id: Some("can-shared".to_owned()),
+                can_id: Some(0x123),
+                is_extended: false,
+            },
+            manager,
+        );
+
+        let read_task = tokio::spawn({
+            let read_node = Arc::clone(&read_node);
+            async move { read_node.transform(Uuid::new_v4(), Value::Null).await }
+        });
+
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        let write_result = write_node
+            .transform(Uuid::new_v4(), json!({ "data": [1, 2, 3] }))
+            .await;
+
+        assert!(
+            write_result.is_ok(),
+            "正常读写竞争应等待或并行处理，而不是返回锁竞争错误: {write_result:?}"
+        );
+        let _ = read_task.await.unwrap();
     }
 }

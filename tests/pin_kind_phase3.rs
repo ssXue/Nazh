@@ -376,7 +376,8 @@ async fn modbus_latest_data_pin_拉取完整缓存_payload() {
                 "config": {
                     "register_type": "holding",
                     "register": 0,
-                    "quantity": 2
+                    "quantity": 2,
+                    "simulation": true
                 }
             },
             "sink": { "id": "sink", "type": "jsonDataSink", "config": {} }

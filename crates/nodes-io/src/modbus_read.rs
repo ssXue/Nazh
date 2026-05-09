@@ -90,6 +90,9 @@ fn coil_values_to_json(coils: &[bool]) -> Vec<Value> {
 pub struct ModbusReadNodeConfig {
     #[serde(default)]
     pub connection_id: Option<String>,
+    /// 显式模拟模式。未配置连接时必须置为 true，避免现场漏配时静默生成假数据。
+    #[serde(default)]
+    pub simulation: bool,
     #[serde(default = "default_modbus_unit_id")]
     pub unit_id: u16,
     #[serde(default = "default_modbus_register")]
@@ -370,6 +373,12 @@ impl NodeTrait for ModbusReadNode {
         }
 
         // 无连接资源时走模拟回退
+        if !self.config.simulation {
+            return Err(EngineError::node_config(
+                self.id.clone(),
+                "Modbus 缺少 connection_id；仅测试/demo 可显式设置 simulation=true 使用模拟数据",
+            ));
+        }
         let result = self.simulate_and_build(payload);
         let metadata = Map::from_iter([(
             "modbus".to_owned(),
@@ -432,5 +441,32 @@ mod tests {
         let pins = node.input_pins();
         assert_eq!(pins.len(), 1);
         assert_eq!(pins[0].pin_type, PinType::Any);
+    }
+
+    #[tokio::test]
+    async fn 缺少连接且未显式模拟时拒绝运行() {
+        let config: ModbusReadNodeConfig = serde_json::from_value(json!({})).unwrap();
+        let node = ModbusReadNode::new("modbus-1", config, shared_connection_manager());
+
+        let err = node
+            .transform(Uuid::new_v4(), Value::Null)
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(err, EngineError::NodeConfig { .. }),
+            "未显式配置连接或 simulation=true 时不应静默模拟: {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn 显式_simulation_时保留模拟读数能力() {
+        let config: ModbusReadNodeConfig =
+            serde_json::from_value(json!({ "simulation": true })).unwrap();
+        let node = ModbusReadNode::new("modbus-1", config, shared_connection_manager());
+
+        let execution = node.transform(Uuid::new_v4(), Value::Null).await.unwrap();
+        let metadata = execution.outputs[0].metadata.as_ref().unwrap();
+        assert_eq!(metadata["modbus"]["simulated"], Value::Bool(true));
     }
 }

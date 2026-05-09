@@ -23,6 +23,10 @@ use nazh_core::EngineError;
 /// 全局连接池的线程安全句柄。
 pub type SharedConnectionManager = Arc<ConnectionManager>;
 
+const SUPPORTED_CONNECTION_TYPES: &[&str] = &[
+    "serial", "modbus", "mqtt", "http", "bark", "can", "ethercat",
+];
+
 /// 连接资源的声明式定义（用于全局连接资源库）。
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
@@ -396,6 +400,14 @@ impl ConnectionManager {
         let mut connections = self.connections.write().await;
         if connections.contains_key(&definition.id) {
             return Err(EngineError::ConnectionAlreadyExists(definition.id));
+        }
+
+        if let Err(reason) = validate_connection_definition(&definition.kind, &definition.metadata)
+        {
+            return Err(EngineError::ConnectionInvalidConfiguration {
+                connection_id: definition.id,
+                reason,
+            });
         }
 
         let id = definition.id.clone();
@@ -1374,7 +1386,11 @@ fn validate_connection_definition(kind: &str, metadata: &Value) -> Result<(), St
             let interface = metadata
                 .and_then(|value| value.get("interface"))
                 .and_then(Value::as_str)
-                .map_or("slcan", str::trim);
+                .map(str::trim)
+                .unwrap_or_default();
+            if interface.is_empty() {
+                return Err("CAN-SLCAN 连接需要配置 interface（slcan/mock/virtual）".to_owned());
+            }
             if !matches!(interface, "slcan" | "mock" | "virtual") {
                 return Err(format!("CAN 连接 interface 不支持: {interface}"));
             }
@@ -1399,7 +1415,10 @@ fn validate_connection_definition(kind: &str, metadata: &Value) -> Result<(), St
             let bitrate = metadata
                 .and_then(|value| value.get("bitrate"))
                 .and_then(Value::as_u64)
-                .unwrap_or(500_000);
+                .unwrap_or(0);
+            if bitrate == 0 {
+                return Err("CAN-SLCAN 连接需要配置 CAN 总线 bitrate".to_owned());
+            }
             if !matches!(
                 bitrate,
                 10_000
@@ -1421,8 +1440,11 @@ fn validate_connection_definition(kind: &str, metadata: &Value) -> Result<(), St
                 .and_then(Value::as_str)
                 .map(str::trim)
                 .filter(|value| !value.is_empty())
-                .unwrap_or("ethercrab")
-                .to_ascii_lowercase();
+                .map(str::to_ascii_lowercase)
+                .unwrap_or_default();
+            if backend.is_empty() {
+                return Err("EtherCAT 连接需要配置 backend（ethercrab/mock）".to_owned());
+            }
             if !matches!(backend.as_str(), "ethercrab" | "mock") {
                 return Err(format!("EtherCAT 连接不支持 backend: {backend}"));
             }
@@ -1432,14 +1454,14 @@ fn validate_connection_definition(kind: &str, metadata: &Value) -> Result<(), St
                 .and_then(Value::as_str)
                 .map(str::trim)
                 .unwrap_or_default();
-            if backend != "mock" && interface.is_empty() {
+            if interface.is_empty() {
                 return Err("EtherCAT 连接需要配置 interface（网络接口名）".to_owned());
             }
 
             let cycle_time_ms = metadata
                 .and_then(|value| value.get("cycle_time_ms"))
                 .and_then(Value::as_u64)
-                .unwrap_or(5);
+                .unwrap_or(0);
             if cycle_time_ms == 0 {
                 return Err("EtherCAT 连接 cycle_time_ms 必须大于 0".to_owned());
             }
@@ -1447,12 +1469,17 @@ fn validate_connection_definition(kind: &str, metadata: &Value) -> Result<(), St
             let op_timeout_ms = metadata
                 .and_then(|value| value.get("op_timeout_ms"))
                 .and_then(Value::as_u64)
-                .unwrap_or(15_000);
+                .unwrap_or(0);
             if op_timeout_ms == 0 {
                 return Err("EtherCAT 连接 op_timeout_ms 必须大于 0".to_owned());
             }
         }
-        _ => {}
+        _ => {
+            return Err(format!(
+                "不支持的连接类型 `{kind}`；支持类型: {}",
+                SUPPORTED_CONNECTION_TYPES.join(", ")
+            ));
+        }
     }
 
     Ok(())
@@ -1534,6 +1561,65 @@ mod tests {
                 },
             }),
         }
+    }
+
+    #[tokio::test]
+    async fn register_connection_拒绝未知连接类型并提示支持列表() {
+        let manager = ConnectionManager::default();
+        let err = manager
+            .register_connection(ConnectionDefinition {
+                id: "typo".to_owned(),
+                kind: "modbux".to_owned(),
+                metadata: json!({}),
+            })
+            .await
+            .unwrap_err();
+
+        let EngineError::ConnectionInvalidConfiguration {
+            connection_id,
+            reason,
+        } = err
+        else {
+            panic!("未知连接类型应作为连接配置错误返回");
+        };
+
+        assert_eq!(connection_id, "typo");
+        assert!(reason.contains("不支持的连接类型"));
+        assert!(reason.contains("modbus"));
+        assert!(reason.contains("ethercat"));
+    }
+
+    #[tokio::test]
+    async fn register_connection_拒绝缺少显式总线参数的_can_与_ethercat() {
+        let manager = ConnectionManager::default();
+
+        let can_err = manager
+            .register_connection(ConnectionDefinition {
+                id: "can-main".to_owned(),
+                kind: "can".to_owned(),
+                metadata: json!({
+                    "interface": "mock",
+                    "channel": "mock-can",
+                    "baud_rate": 115_200,
+                }),
+            })
+            .await
+            .unwrap_err();
+        assert!(can_err.to_string().contains("bitrate"));
+
+        let ethercat_err = manager
+            .register_connection(ConnectionDefinition {
+                id: "ecat-main".to_owned(),
+                kind: "ethercat".to_owned(),
+                metadata: json!({
+                    "interface": "en0",
+                    "cycle_time_ms": 5,
+                    "op_timeout_ms": 15_000,
+                }),
+            })
+            .await
+            .unwrap_err();
+        assert!(ethercat_err.to_string().contains("backend"));
     }
 
     #[tokio::test]

@@ -12,10 +12,6 @@ use uuid::Uuid;
 
 use nazh_core::{EngineError, NodeExecution, NodeTrait, PinDefinition, PinType, into_payload_map};
 
-fn default_sqlite_path() -> String {
-    "./nazh-local.sqlite3".to_owned()
-}
-
 fn default_sqlite_table() -> String {
     "workflow_logs".to_owned()
 }
@@ -39,7 +35,6 @@ fn sanitize_sqlite_identifier(identifier: &str) -> Option<String> {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SqlWriterNodeConfig {
-    #[serde(default = "default_sqlite_path")]
     pub database_path: String,
     #[serde(default = "default_sqlite_table")]
     pub table: String,
@@ -85,6 +80,12 @@ impl NodeTrait for SqlWriterNode {
         payload: Value,
     ) -> Result<NodeExecution, EngineError> {
         let database_path = self.config.database_path.trim().to_owned();
+        if database_path.is_empty() {
+            return Err(EngineError::node_config(
+                self.id.clone(),
+                "database_path 必须显式配置，不能使用默认 SQLite 路径",
+            ));
+        }
         if database_path.contains("..") {
             return Err(EngineError::node_config(
                 self.id.clone(),
@@ -186,7 +187,9 @@ mod tests {
     use super::*;
 
     fn make_node() -> SqlWriterNode {
-        let config: SqlWriterNodeConfig = serde_json::from_value(json!({})).unwrap();
+        let config: SqlWriterNodeConfig =
+            serde_json::from_value(json!({ "database_path": "target/test-sql-writer.sqlite3" }))
+                .unwrap();
         SqlWriterNode::new("sql-1", config)
     }
 
@@ -208,5 +211,14 @@ mod tests {
         let pins = node.output_pins();
         assert_eq!(pins.len(), 1);
         assert_eq!(pins[0].pin_type, PinType::Any);
+    }
+
+    #[test]
+    fn 缺少_database_path_不能静默写入默认_sqlite() {
+        let config = serde_json::from_value::<SqlWriterNodeConfig>(json!({}));
+        assert!(
+            config.is_err(),
+            "SQL database_path 是运行时路径，必须显式配置"
+        );
     }
 }

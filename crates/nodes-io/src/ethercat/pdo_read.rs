@@ -76,16 +76,28 @@ impl NodeTrait for EthercatPdoReadNode {
         let runtime = EthercatRuntime::new(self.connection_manager.clone(), conn_id.to_owned());
         let session = runtime.ensure_session(&self.id).await?;
 
-        let guard = session.bus(&self.id).await?;
-        let bus = guard.as_ref().ok_or(EngineError::node_config(
-            self.id.clone(),
-            "EtherCAT 总线会话已释放".to_owned(),
-        ))?;
-
-        let inputs = bus
-            .read_inputs(self.config.slave_address)
-            .await
-            .map_err(|e| EngineError::node_config(self.id.clone(), e.to_string()))?;
+        let (inputs_result, channel_info) = {
+            let guard = session.bus(&self.id).await?;
+            let bus = guard.as_ref().ok_or(EngineError::node_config(
+                self.id.clone(),
+                "EtherCAT 总线会话已释放".to_owned(),
+            ))?;
+            let channel_info = bus.channel_info();
+            let inputs_result = bus.read_inputs(self.config.slave_address).await;
+            (inputs_result, channel_info)
+        };
+        let inputs = match inputs_result {
+            Ok(inputs) => inputs,
+            Err(error) => {
+                let reason = error.to_string();
+                runtime.record_failure_and_shutdown(&reason).await;
+                return Err(EngineError::stage_execution(
+                    self.id.clone(),
+                    trace_id,
+                    reason,
+                ));
+            }
+        };
 
         let output = serde_json::json!({
             "slave": self.config.slave_address,
@@ -98,7 +110,7 @@ impl NodeTrait for EthercatPdoReadNode {
             json!({
                 "operation": "pdo-read",
                 "slave": self.config.slave_address,
-                "channel_info": bus.channel_info(),
+                "channel_info": channel_info,
             }),
         );
         if let Some(lease) = session.lease() {
@@ -132,6 +144,8 @@ impl NodeTrait for EthercatPdoReadNode {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use connections::{ConnectionDefinition, ConnectionHealthState, shared_connection_manager};
+    use nazh_core::NodeTrait;
 
     #[test]
     fn 配置兼容前端_snake_case() {
@@ -145,5 +159,70 @@ mod tests {
         let config: EthercatPdoReadConfig =
             serde_json::from_value(json!({ "slaveAddress": 4 })).unwrap();
         assert_eq!(config.slave_address, 4);
+    }
+
+    #[tokio::test]
+    async fn pdo_读取失败会记录连接失败并允许下次重建会话() {
+        let manager = shared_connection_manager();
+        manager
+            .register_connection(ConnectionDefinition {
+                id: "ecat-main".to_owned(),
+                kind: "ethercat".to_owned(),
+                metadata: json!({
+                    "backend": "mock",
+                    "interface": "mock-ecat",
+                    "cycle_time_ms": 5,
+                    "op_timeout_ms": 15_000,
+                }),
+            })
+            .await
+            .unwrap();
+
+        let ok_node = EthercatPdoReadNode::new(
+            "ecat-read-ok".to_owned(),
+            EthercatPdoReadConfig {
+                slave_address: 1,
+                connection_id: Some("ecat-main".to_owned()),
+            },
+            manager.clone(),
+        );
+        ok_node
+            .transform(uuid::Uuid::new_v4(), json!({}))
+            .await
+            .unwrap();
+
+        let failing_node = EthercatPdoReadNode::new(
+            "ecat-read-fail".to_owned(),
+            EthercatPdoReadConfig {
+                slave_address: 99,
+                connection_id: Some("ecat-main".to_owned()),
+            },
+            manager.clone(),
+        );
+        let err = failing_node
+            .transform(uuid::Uuid::new_v4(), json!({}))
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err, EngineError::StageExecution { .. }),
+            "PDO 运行期失败不应伪装成节点配置错误: {err:?}"
+        );
+
+        let failed_record = manager.get("ecat-main").await.unwrap();
+        assert_eq!(failed_record.health.total_failures, 1);
+        assert_eq!(
+            failed_record.health.phase,
+            ConnectionHealthState::Reconnecting
+        );
+
+        ok_node
+            .transform(uuid::Uuid::new_v4(), json!({}))
+            .await
+            .unwrap();
+        let recovered_record = manager.get("ecat-main").await.unwrap();
+        assert_eq!(
+            recovered_record.health.phase,
+            ConnectionHealthState::Healthy
+        );
     }
 }

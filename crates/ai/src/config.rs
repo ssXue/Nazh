@@ -5,7 +5,7 @@
 //! - 前端读取配置时只拿到 `AiProviderView`，永远不回传已保存的明文密钥
 //! - 前端写入配置时使用 `AiSecretInput::{Keep, Clear, Set}` 表达密钥变更
 
-use std::collections::HashMap;
+use std::{collections::HashMap, hash::BuildHasher};
 
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "ts-export")]
@@ -127,9 +127,38 @@ fn merge_provider_upsert(
         base_url: upsert.base_url,
         api_key,
         default_model: upsert.default_model,
-        extra_headers: upsert.extra_headers,
+        extra_headers: filter_non_sensitive_extra_headers(&upsert.extra_headers),
         enabled: upsert.enabled,
     }
+}
+
+fn is_sensitive_extra_header(name: &str) -> bool {
+    let normalized = name.trim().to_ascii_lowercase();
+    matches!(
+        normalized.as_str(),
+        "authorization"
+            | "proxy-authorization"
+            | "x-api-key"
+            | "api-key"
+            | "apikey"
+            | "x-auth-token"
+            | "x-access-token"
+            | "access-token"
+            | "token"
+            | "cookie"
+            | "set-cookie"
+    )
+}
+
+/// 过滤仅允许作为非敏感明文配置保存和回传的 extra headers。
+pub fn filter_non_sensitive_extra_headers<S: BuildHasher>(
+    headers: &HashMap<String, String, S>,
+) -> HashMap<String, String> {
+    headers
+        .iter()
+        .filter(|(key, _)| !is_sensitive_extra_header(key))
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect()
 }
 
 /// 前端读取配置时使用的只读视图（不含明文密钥）。
@@ -206,10 +235,15 @@ impl AiProviderSecretRecord {
             name: self.name.clone(),
             base_url: self.base_url.clone(),
             default_model: self.default_model.clone(),
-            extra_headers: self.extra_headers.clone(),
+            extra_headers: self.non_sensitive_extra_headers(),
             enabled: self.enabled,
             has_api_key: !self.api_key.trim().is_empty(),
         }
+    }
+
+    /// 返回可明文使用的非敏感 extra headers。
+    pub fn non_sensitive_extra_headers(&self) -> HashMap<String, String> {
+        filter_non_sensitive_extra_headers(&self.extra_headers)
     }
 
     /// 根据 ID 在列表中查找提供商。
@@ -515,5 +549,71 @@ mod tests {
             Some("你是全局代理")
         );
         assert_eq!(view.agent_settings.timeout_ms, Some(12_000));
+    }
+
+    #[test]
+    fn merge_update_filters_sensitive_extra_headers() {
+        let mut headers = HashMap::new();
+        headers.insert("Authorization".to_owned(), "Bearer leaked".to_owned());
+        headers.insert("X-Api-Key".to_owned(), "secret".to_owned());
+        headers.insert("X-Trace-Id".to_owned(), "trace-1".to_owned());
+
+        let mut file = AiConfigFile::default();
+        file.merge_update(AiConfigUpdate {
+            version: 1,
+            providers: vec![AiProviderUpsert {
+                id: "p1".to_owned(),
+                name: "主提供商".to_owned(),
+                base_url: "https://api.example.com/v1".to_owned(),
+                default_model: "model-a".to_owned(),
+                extra_headers: headers,
+                enabled: true,
+                api_key: AiSecretInput::Set("sk-a".to_owned()),
+            }],
+            active_provider_id: Some("p1".to_owned()),
+            copilot_params: AiGenerationParams::default(),
+            agent_settings: AiAgentSettings::default(),
+        });
+
+        assert!(
+            !file.providers[0]
+                .extra_headers
+                .contains_key("Authorization")
+        );
+        assert!(!file.providers[0].extra_headers.contains_key("X-Api-Key"));
+        assert_eq!(
+            file.providers[0].extra_headers.get("X-Trace-Id"),
+            Some(&"trace-1".to_owned())
+        );
+    }
+
+    #[test]
+    fn to_view_does_not_return_sensitive_extra_headers_from_legacy_config() {
+        let mut record = sample_provider_record("p1", "sk-secret-123");
+        record
+            .extra_headers
+            .insert("authorization".to_owned(), "Bearer leaked".to_owned());
+        record
+            .extra_headers
+            .insert("X-Request-Id".to_owned(), "req-1".to_owned());
+        let file = AiConfigFile {
+            version: 1,
+            providers: vec![record],
+            active_provider_id: Some("p1".to_owned()),
+            copilot_params: AiGenerationParams::default(),
+            agent_settings: AiAgentSettings::default(),
+        };
+
+        let view = file.to_view();
+
+        assert!(
+            !view.providers[0]
+                .extra_headers
+                .contains_key("authorization")
+        );
+        assert_eq!(
+            view.providers[0].extra_headers.get("X-Request-Id"),
+            Some(&"req-1".to_owned())
+        );
     }
 }

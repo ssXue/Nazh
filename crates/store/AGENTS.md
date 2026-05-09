@@ -8,17 +8,25 @@ SQLite 持久化层，实现 RFC-0003 Phase 1 子集与 ADR-0022 工作流变量
 - **变量历史**：每次写入追加一条变更记录（时间序列）
 - **全局变量**：按 `namespace + key` 跨工作流共享
 Ring 1 crate，仅依赖 `rusqlite` / `serde` / `chrono` / `tracing`，不依赖 `nazh-core` 或任何其他 workspace crate。
+`tokio` 仅用于 `StoreHandle` 的 `spawn_blocking` async 边界，不进入 SQL/schema 逻辑。
 
 ## 对外暴露
 
 ```rust
 pub struct Store { /* SQLite Connection，Mutex 保护 */ }
+pub struct StoreHandle { /* Arc<Store> + spawn_blocking async 边界 */ }
 
 impl Store {
     pub fn open(path: &Path) -> Result<Store, StoreError>;
-    pub fn open_unpersisted() -> Store;                        // 内存模式，不写盘
+    pub fn open_unpersisted() -> Result<Store, StoreError>;     // 内存模式，不写盘
     #[cfg(test)]
     pub fn open_in_memory() -> Result<Store, StoreError>;      // 同 open_unpersisted
+}
+
+impl StoreHandle {
+    pub fn new(store: Store) -> StoreHandle;
+    pub async fn run_blocking(...) -> Result<T, StoreError>;
+    // async CRUD mirrors: load_variables / upsert_variable / query_latest / upsert_global / ...
 }
 
 // variables.rs
@@ -42,8 +50,8 @@ pub fn delete_global(namespace, key) -> Result<(), StoreError>;
 
 ## 内部约定
 
-- **线程安全**：`Connection` 由 `std::sync::Mutex` 保护，`db()` 返回 `MutexGuard`。所有公开方法内部获取锁，调用方无需额外同步。
-- **Migration**：内联 SQL，`001` 建变量表、变量历史表与全局变量表。后续新增 migration 在 `migrations.rs` 追加即可。
+- **线程安全**：`Connection` 由 `std::sync::Mutex` 保护，`db()` 返回 `MutexGuard`。所有公开方法内部获取锁，调用方无需额外同步。async 调用方必须经 `StoreHandle`，不要在 async worker 上直接调用同步 CRUD。
+- **Migration**：内联 SQL，`001` 建变量表、变量历史表与全局变量表。migration 在事务中执行；只有 `schema_version` 表不存在时才 bootstrap，其它 `rusqlite` 错误必须原样返回。后续新增 migration 在 `migrations.rs` 追加即可。
 - **类型**：所有值以 `serde_json::Value` 存取，JSON TEXT 列。`var_type` / `updated_by` 纯字符串，不关联 Rust 枚举。
 - **资产边界**：不要把 Device / Capability DSL 表重新加回本 crate；设备/能力资产由 `src-tauri/src/asset_files.rs` 读写工作路径 YAML。
 - **`clippy::too_many_arguments`**：`upsert_variable` / `record_history` / `query_history_range` / `upsert_global` 已 `#[allow]`，参数为 persistence 必要字段，不宜封装为 struct（与 IPC 层类型解耦）。
@@ -53,3 +61,4 @@ pub fn delete_global(namespace, key) -> Result<(), StoreError>;
 - 新增 migration：在 `migrations.rs` 的 `MIGRATIONS` 数组追加 `(version, sql)` 元组。
 - 新增表/查询：新建 `src/xxx.rs` 模块，在 `lib.rs` re-export。同步更新 `AGENTS.md` 的「对外暴露」列表。
 - 测试：每个模块内 `#[cfg(test)] mod tests`，使用 `Store::open_in_memory()` 避免文件副作用。
+- Tauri / runtime async 路径新增 Store 调用时，同步 `Store` 方法和 `StoreHandle` async 包装要一起补齐，并增加 async 边界测试。
