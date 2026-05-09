@@ -38,7 +38,7 @@ impl OpenAiCompatibleService {
     /// 创建新的客户端实例。
     pub fn new(config: Arc<RwLock<AiConfigFile>>) -> Self {
         let http = reqwest::Client::builder()
-            .timeout(Duration::from_mins(1))
+            .timeout(Duration::from_secs(300))
             .build()
             .unwrap_or_default();
         Self { config, http }
@@ -174,10 +174,25 @@ impl AiService for OpenAiCompatibleService {
         }
 
         // 先读取原始 body 再解析，便于诊断截断/格式问题
+        let headers_summary: std::collections::HashMap<String, String> = response
+            .headers()
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("<non-ascii>").to_string()))
+            .collect();
         let body_text = response
             .text()
             .await
-            .map_err(|error| AiError::ResponseParseError(error.to_string()))?;
+            .map_err(|error| {
+                tracing::error!(
+                    status,
+                    headers = ?headers_summary,
+                    error = %error,
+                    "HTTP 响应体读取失败"
+                );
+                AiError::ResponseParseError(format!(
+                    "error decoding response body (status={status}): {error}"
+                ))
+            })?;
         let chat_response = parse_chat_response(&body_text)?;
 
         Ok(chat_response_to_completion(chat_response))

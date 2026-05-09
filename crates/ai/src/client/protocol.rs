@@ -43,8 +43,7 @@ pub(super) struct ChatCompletionApiResponse {
 pub(super) struct ChatChoice {
     pub(super) message: ChatMessageResponse,
     #[serde(default)]
-    #[allow(dead_code)]
-    finish_reason: Option<String>,
+    pub(super) finish_reason: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

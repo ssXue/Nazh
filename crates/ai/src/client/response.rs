@@ -45,12 +45,13 @@ pub(super) fn parse_api_error(status: u16, body: &str) -> AiError {
 pub(super) fn chat_response_to_completion(
     chat_response: ChatCompletionApiResponse,
 ) -> AiCompletionResponse {
-    let content = chat_response
-        .choices
-        .into_iter()
-        .next()
-        .map(|choice| choice.message.content)
-        .unwrap_or_default();
+    let mut content = String::new();
+    let mut finish_reason: Option<String> = None;
+
+    if let Some(choice) = chat_response.choices.into_iter().next() {
+        content = choice.message.content;
+        finish_reason = choice.finish_reason;
+    }
 
     let usage = chat_response.usage.map(|u| AiTokenUsage {
         prompt_tokens: u.prompt_tokens,
@@ -58,12 +59,21 @@ pub(super) fn chat_response_to_completion(
         total_tokens: u.total_tokens,
     });
 
-    tracing::info!(
-        content_len = content.len(),
-        prompt_tokens = usage.as_ref().map_or(0, |u| u.prompt_tokens),
-        completion_tokens = usage.as_ref().map_or(0, |u| u.completion_tokens),
-        "AI completion 响应成功"
-    );
+    if finish_reason.as_deref() == Some("length") {
+        tracing::warn!(
+            content_len = content.len(),
+            prompt_tokens = usage.as_ref().map_or(0, |u| u.prompt_tokens),
+            completion_tokens = usage.as_ref().map_or(0, |u| u.completion_tokens),
+            "AI 输出因 max_tokens 截断，返回内容可能不完整"
+        );
+    } else {
+        tracing::info!(
+            content_len = content.len(),
+            prompt_tokens = usage.as_ref().map_or(0, |u| u.prompt_tokens),
+            completion_tokens = usage.as_ref().map_or(0, |u| u.completion_tokens),
+            "AI completion 响应成功"
+        );
+    }
 
     AiCompletionResponse {
         content,

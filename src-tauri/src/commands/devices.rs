@@ -772,6 +772,9 @@ pub(crate) async fn extract_device_proposal(
     state: State<'_, DesktopState>,
     text: String,
     provider_id: Option<String>,
+    // 校正模式：提供失败的 YAML 和错误信息，让 AI 修正输出。
+    correction_yaml: Option<String>,
+    correction_error: Option<String>,
 ) -> Result<DeviceExtractionProposal, String> {
     let resolved = resolve_provider_id(&state, provider_id)
         .await
@@ -779,12 +782,19 @@ pub(crate) async fn extract_device_proposal(
             tracing::error!(error = %e, "解析 AI 提供商失败");
             e
         })?;
-    tracing::info!(
-        provider_id = %resolved,
-        text_len = text.len(),
-        "AI 结构化抽取开始（文本模式）"
-    );
-    let request = build_proposal_request(&text, resolved);
+    let request = if let (Some(yaml), Some(err)) = (&correction_yaml, &correction_error) {
+        build_correction_request(yaml, err, resolved)
+    } else {
+        if text.trim().is_empty() {
+            return Err("首次抽取模式需要提供非空的设备说明文本".to_owned());
+        }
+        tracing::info!(
+            provider_id = %resolved,
+            text_len = text.len(),
+            "AI 结构化抽取开始（文本模式）"
+        );
+        build_proposal_request(&text, resolved)
+    };
 
     let response = state.ai_service.complete(request).await.map_err(|e| {
         let msg = format!("AI 结构化抽取失败: {e}");
@@ -845,9 +855,13 @@ pub(crate) async fn extract_device_proposal_stream(
     stream_id: String,
 ) -> Result<(), String> {
     let resolved = resolve_provider_id(&state, provider_id).await?;
-    let request = match (&correction_yaml, &correction_error) {
-        (Some(yaml), Some(err)) => build_correction_request(yaml, err, resolved),
-        _ => build_proposal_request(&text, resolved),
+    let request = if let (Some(yaml), Some(err)) = (&correction_yaml, &correction_error) {
+        build_correction_request(yaml, err, resolved)
+    } else {
+        if text.trim().is_empty() {
+            return Err("首次抽取模式需要提供非空的设备说明文本".to_owned());
+        }
+        build_proposal_request(&text, resolved)
     };
     let service = Arc::clone(&state.ai_service);
     let mut rx = service
@@ -1141,7 +1155,7 @@ fn build_extraction_request(text: &str, provider_id: String) -> AiCompletionRequ
         ],
         params: AiGenerationParams {
             temperature: Some(0.1),
-            max_tokens: None,
+            max_tokens: Some(16384),
             ..Default::default()
         },
         timeout_ms: None,
@@ -1167,7 +1181,7 @@ fn build_extraction_prompt(text: &str) -> String {
                # register 类型（Modbus）：\n\
                type: register\n\
                register: <地址，整数>\n\
-               data_type: <bool / u16 / i16 / u32 / i32 / f32 / f64>\n\
+               data_type: <bool / u16 / i16 / u32 / i32 / float32 / float64 / string>\n\
                access: <read / write / read_write>  # 默认 read\n\
                bit: <位号>  # 可选\n\
                # topic 类型（MQTT）：\n\
@@ -1236,7 +1250,7 @@ fn build_proposal_request(text: &str, provider_id: String) -> AiCompletionReques
         ],
         params: AiGenerationParams {
             temperature: Some(0.1),
-            max_tokens: None,
+            max_tokens: Some(16384),
             ..Default::default()
         },
         timeout_ms: Some(120_000),
@@ -1260,16 +1274,17 @@ fn build_correction_request(
             AiMessage {
                 role: AiMessageRole::User,
                 content: format!(
-                    "之前生成的设备 DSL YAML 保存时验证失败，请根据错误信息修正 YAML。\n\n\
+                    "之前生成的设备 DSL YAML 保存时验证失败，请**仅修正**导致错误的字段，\
+                     不要改动其他已经正确的部分。\n\n\
                      失败的 deviceYaml：\n```yaml\n{failed_yaml}\n```\n\n\
-                     错误信息：{error}\n\n\
+                     验证错误：{error}\n\n\
                      请输出修正后的完整 JSON（与首次抽取相同的 JSON 结构）。"
                 ),
             },
         ],
         params: AiGenerationParams {
             temperature: Some(0.1),
-            max_tokens: None,
+            max_tokens: Some(16384),
             ..Default::default()
         },
         timeout_ms: Some(120_000),
@@ -1295,7 +1310,7 @@ fn build_proposal_prompt(text: &str) -> String {
                # register 类型（Modbus）：\n\
                type: register\n\
                register: <地址，整数>\n\
-               data_type: <bool / u16 / i16 / u32 / i32 / f32 / f64>\n\
+               data_type: <bool / u16 / i16 / u32 / i32 / float32 / float64 / string>\n\
                access: <read / write / read_write>\n\
                # topic 类型（MQTT）：\n\
                # type: topic\n\
