@@ -59,6 +59,143 @@ async fn load_persisted_variable_overrides(
     }
 }
 
+/// 从 JSON 字符串部署工作流（供 Tauri IPC 和 copilot 工具共用）。
+#[allow(dead_code, clippy::too_many_lines)]
+pub(crate) async fn deploy_workflow_from_json(
+    app: &AppHandle,
+    state: &DesktopState,
+    ast: &str,
+    workflow_id: Option<String>,
+) -> Result<DeployResponse, String> {
+    if ast.len() > MAX_IPC_INPUT_BYTES {
+        return Err("AST 超过最大允许大小（10 MB）".to_owned());
+    }
+    let mut graph = WorkflowGraph::from_json(ast).map_err(|e| stringify_error(&e))?;
+    let (workspace_dir, _) = resolve_project_workspace_dir(app, None)?;
+    normalize_sql_writer_paths(&mut graph, &workspace_dir).map_err(|e| stringify_error(&e))?;
+    let workflow_id = derive_workflow_id(workflow_id.as_deref(), graph.name.as_deref(), None);
+    let policy = WorkflowRuntimePolicy::default();
+    let deployed_at = chrono::Utc::now().to_rfc3339();
+    let metadata = RuntimeWorkflowMetadata {
+        workflow_id: workflow_id.clone(),
+        project_id: None,
+        project_name: None,
+        environment_id: None,
+        environment_name: None,
+        deployed_at,
+    };
+
+    let node_count = graph.nodes.len();
+    let edge_count = graph.edges.len();
+    let registry = shared_node_registry();
+    let ai_service: Arc<dyn AiService> = state.ai_service.clone();
+    let extra_resources = RuntimeResources::new()
+        .with_resource(Arc::clone(&state.approval_registry))
+        .with_resource(WorkflowId(Arc::new(workflow_id.clone())));
+    let variable_overrides = load_persisted_variable_overrides(state, &workflow_id).await;
+
+    let deployment = deploy_workflow_graph(
+        graph,
+        state.connection_manager.clone(),
+        Some(ai_service),
+        registry,
+        Some(workflow_id.clone()),
+        extra_resources,
+        variable_overrides,
+    )
+    .await
+    .map_err(|e| stringify_error(&e))?;
+
+    let nazh_engine::WorkflowDeploymentParts {
+        ingress,
+        streams,
+        lifecycle_guards,
+        shutdown_token,
+        shared_resources,
+        output_caches,
+    } = deployment.into_parts();
+    let root_nodes = ingress.root_nodes().to_vec();
+    let (event_rx, var_event_rx, result_rx, result_store_ref) = streams.into_receivers();
+    let dead_letters = DeadLetterSink::new(workspace_dir, metadata.clone()).await?;
+    let (dispatch_router, mut runtime_tasks) = create_dispatch_router(
+        ingress,
+        workflow_id.clone(),
+        policy.clone(),
+        None,
+        dead_letters,
+    );
+
+    let existing_workflow = {
+        let mut workflows = state.workflows.lock().await;
+        workflows.remove(&workflow_id)
+    };
+    let replaced_existing = existing_workflow.is_some();
+    if let Some(mut existing) = existing_workflow {
+        existing.shutdown_runtime().await;
+    }
+
+    runtime_tasks.push(crate::events::spawn_execution_event_forwarder(
+        app.clone(),
+        workflow_id.clone(),
+        event_rx,
+        None,
+    ));
+
+    runtime_tasks.push(crate::events::spawn_variable_event_forwarder(
+        app.clone(),
+        workflow_id.clone(),
+        var_event_rx,
+        state.store_handle()?,
+    ));
+
+    runtime_tasks.push(crate::events::spawn_result_forwarder(
+        app.clone(),
+        workflow_id.clone(),
+        result_rx,
+        result_store_ref,
+        None,
+    ));
+
+    {
+        let mut workflows = state.workflows.lock().await;
+        workflows.insert(
+            workflow_id.clone(),
+            DesktopWorkflow {
+                workflow_id: workflow_id.clone(),
+                metadata: metadata.clone(),
+                policy,
+                dispatch_router: dispatch_router.clone(),
+                observability: None,
+                node_count,
+                edge_count,
+                root_nodes: root_nodes.clone(),
+                lifecycle_guards,
+                shutdown_token,
+                shared_resources: shared_resources.clone(),
+                output_caches,
+                runtime_tasks,
+            },
+        );
+    }
+
+    {
+        let mut active_workflow_id = state.active_workflow_id.lock().await;
+        *active_workflow_id = Some(workflow_id.clone());
+    }
+
+    let deploy_payload = DeployResponse {
+        node_count,
+        edge_count,
+        root_nodes,
+        project_id: None,
+        workflow_id: Some(workflow_id.clone()),
+        replaced_existing: Some(replaced_existing),
+    };
+
+    let _ = app.emit("workflow://deployed", deploy_payload.clone());
+    Ok(deploy_payload)
+}
+
 #[tauri::command]
 #[allow(clippy::too_many_lines)]
 pub(crate) async fn deploy_workflow(

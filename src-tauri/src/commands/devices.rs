@@ -1144,14 +1144,8 @@ fn build_extraction_request(text: &str, provider_id: String) -> AiCompletionRequ
         provider_id,
         model: None,
         messages: vec![
-            AiMessage {
-                role: AiMessageRole::System,
-                content: EXTRACTION_SYSTEM_PROMPT.to_owned(),
-            },
-            AiMessage {
-                role: AiMessageRole::User,
-                content: build_extraction_prompt(text),
-            },
+            AiMessage::simple(AiMessageRole::System, EXTRACTION_SYSTEM_PROMPT.to_owned()),
+            AiMessage::simple(AiMessageRole::User, build_extraction_prompt(text)),
         ],
         params: AiGenerationParams {
             temperature: Some(0.1),
@@ -1159,6 +1153,7 @@ fn build_extraction_request(text: &str, provider_id: String) -> AiCompletionRequ
             ..Default::default()
         },
         timeout_ms: None,
+        tools: vec![],
     }
 }
 
@@ -1239,14 +1234,8 @@ fn build_proposal_request(text: &str, provider_id: String) -> AiCompletionReques
         provider_id,
         model: None,
         messages: vec![
-            AiMessage {
-                role: AiMessageRole::System,
-                content: PROPOSAL_SYSTEM_PROMPT.to_owned(),
-            },
-            AiMessage {
-                role: AiMessageRole::User,
-                content: build_proposal_prompt(text),
-            },
+            AiMessage::simple(AiMessageRole::System, PROPOSAL_SYSTEM_PROMPT.to_owned()),
+            AiMessage::simple(AiMessageRole::User, build_proposal_prompt(text)),
         ],
         params: AiGenerationParams {
             temperature: Some(0.1),
@@ -1254,6 +1243,7 @@ fn build_proposal_request(text: &str, provider_id: String) -> AiCompletionReques
             ..Default::default()
         },
         timeout_ms: Some(120_000),
+        tools: vec![],
     }
 }
 
@@ -1267,20 +1257,15 @@ fn build_correction_request(
         provider_id,
         model: None,
         messages: vec![
-            AiMessage {
-                role: AiMessageRole::System,
-                content: PROPOSAL_SYSTEM_PROMPT.to_owned(),
-            },
-            AiMessage {
-                role: AiMessageRole::User,
-                content: format!(
+            AiMessage::simple(AiMessageRole::System, PROPOSAL_SYSTEM_PROMPT.to_owned()),
+            AiMessage::simple(AiMessageRole::User, format!(
                     "之前生成的设备 DSL YAML 保存时验证失败，请**仅修正**导致错误的字段，\
                      不要改动其他已经正确的部分。\n\n\
                      失败的 deviceYaml：\n```yaml\n{failed_yaml}\n```\n\n\
                      验证错误：{error}\n\n\
                      请输出修正后的完整 JSON（与首次抽取相同的 JSON 结构）。"
                 ),
-            },
+            ),
         ],
         params: AiGenerationParams {
             temperature: Some(0.1),
@@ -1288,6 +1273,7 @@ fn build_correction_request(
             ..Default::default()
         },
         timeout_ms: Some(120_000),
+        tools: vec![],
     }
 }
 

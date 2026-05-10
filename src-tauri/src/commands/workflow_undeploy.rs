@@ -4,28 +4,18 @@ use tauri_bindings::UndeployResponse;
 
 use crate::state::DesktopState;
 
-#[tauri::command]
-pub(crate) async fn undeploy_workflow(
-    app: AppHandle,
-    state: State<'_, DesktopState>,
-    workflow_id: Option<String>,
+/// 按 ID 停止并移除已部署工作流（供 Tauri IPC 和 copilot 工具共用）。
+pub(crate) async fn undeploy_workflow_by_id(
+    app: &AppHandle,
+    state: &DesktopState,
+    target_workflow_id: &str,
 ) -> Result<UndeployResponse, String> {
-    let target_workflow_id = state.resolve_workflow_id(workflow_id.as_deref()).await?;
     tracing::info!(workflow_id = ?target_workflow_id, "收到停止运行请求");
-    let Some(target_workflow_id) = target_workflow_id else {
-        let response = UndeployResponse {
-            had_workflow: false,
-            aborted_timer_count: 0,
-            workflow_id: None,
-        };
-        let _ = app.emit("workflow://undeployed", response.clone());
-        return Ok(response);
-    };
 
     let active_before = state.active_workflow_id.lock().await.clone();
     let (existing_workflow, removed_observability) = {
         let mut workflows = state.workflows.lock().await;
-        let removed = workflows.remove(&target_workflow_id);
+        let removed = workflows.remove(target_workflow_id);
         let observability = removed
             .as_ref()
             .and_then(|workflow| workflow.observability.clone());
@@ -34,19 +24,17 @@ pub(crate) async fn undeploy_workflow(
 
     let response = if let Some(mut workflow) = existing_workflow {
         let aborted = workflow.shutdown_runtime().await;
-        state
-            .approval_registry
-            .cleanup_workflow(&target_workflow_id);
+        state.approval_registry.cleanup_workflow(target_workflow_id);
         UndeployResponse {
             had_workflow: true,
             aborted_timer_count: aborted,
-            workflow_id: Some(target_workflow_id.clone()),
+            workflow_id: Some(target_workflow_id.to_owned()),
         }
     } else {
         UndeployResponse {
             had_workflow: false,
             aborted_timer_count: 0,
-            workflow_id: Some(target_workflow_id.clone()),
+            workflow_id: Some(target_workflow_id.to_owned()),
         }
     };
 
@@ -59,7 +47,7 @@ pub(crate) async fn undeploy_workflow(
     }
 
     let mut fallback_summary = None;
-    if active_before.as_deref() == Some(target_workflow_id.as_str()) {
+    if active_before.as_deref() == Some(target_workflow_id) {
         let fallback_active = state.choose_fallback_active_workflow().await;
         let mut active_workflow_id = state.active_workflow_id.lock().await;
         (*active_workflow_id).clone_from(&fallback_active);
@@ -100,11 +88,30 @@ pub(crate) async fn undeploy_workflow(
             .await;
     }
 
-    if active_before.as_deref() == Some(target_workflow_id.as_str()) {
+    if active_before.as_deref() == Some(target_workflow_id) {
         let _ = app.emit("workflow://undeployed", response.clone());
         if let Some(summary) = fallback_summary {
             let _ = app.emit("workflow://runtime-focus", summary);
         }
     }
     Ok(response)
+}
+
+#[tauri::command]
+pub(crate) async fn undeploy_workflow(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+    workflow_id: Option<String>,
+) -> Result<UndeployResponse, String> {
+    let target_workflow_id = state.resolve_workflow_id(workflow_id.as_deref()).await?;
+    let Some(target_workflow_id) = target_workflow_id else {
+        let response = UndeployResponse {
+            had_workflow: false,
+            aborted_timer_count: 0,
+            workflow_id: None,
+        };
+        let _ = app.emit("workflow://undeployed", response.clone());
+        return Ok(response);
+    };
+    undeploy_workflow_by_id(&app, &state, &target_workflow_id).await
 }

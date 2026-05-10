@@ -11,6 +11,9 @@ use tokio::{
 
 use crate::{runtime::DesktopWorkflow, workspace::resolve_project_workspace_dir};
 
+/// 活跃 copilot 流的取消标志。`true` 表示前端已请求取消。
+pub(crate) type CopilotStreamCancel = Arc<std::sync::atomic::AtomicBool>;
+
 /// Tauri 托管的应用状态，持有连接池和当前活跃的工作流。
 ///
 /// `ai_service` 持有具体类型（`Arc<OpenAiCompatibleService>`）而非 `dyn AiService`，
@@ -28,6 +31,8 @@ pub(crate) struct DesktopState {
     pub(crate) store: std::sync::RwLock<Option<StoreHandle>>,
     /// 日志异步写入守护。持有到进程退出以保证刷盘。
     pub(crate) tracing_guard: std::sync::Mutex<Option<tracing_appender::non_blocking::WorkerGuard>>,
+    /// 活跃 copilot 流注册表。Key 为 stream_id，Value 为取消标志。
+    pub(crate) copilot_streams: dashmap::DashMap<String, CopilotStreamCancel>,
 }
 
 impl Default for DesktopState {
@@ -42,6 +47,7 @@ impl Default for DesktopState {
             ai_service,
             approval_registry: Arc::new(nazh_engine::ApprovalRegistry::new()),
             tracing_guard: std::sync::Mutex::new(None),
+            copilot_streams: dashmap::DashMap::new(),
             store: std::sync::RwLock::new(match Store::open_unpersisted() {
                 Ok(store) => Some(StoreHandle::new(store)),
                 Err(error) => {

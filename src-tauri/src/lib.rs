@@ -246,6 +246,8 @@ pub fn run() {
             commands::copilot::copilot_delete_conversation,
             commands::copilot::copilot_load_conversation,
             commands::copilot::copilot_chat,
+            commands::copilot::copilot_cancel_stream,
+            commands::copilot::copilot_index_assets,
             commands::human_loop::respond_human_loop,
             commands::human_loop::list_pending_approvals,
             commands::devices::list_device_assets,
