@@ -1,5 +1,5 @@
 use async_openai::error::OpenAIError;
-use nazh_core::ai::{AiCompletionResponse, AiError, AiTokenUsage};
+use nazh_core::ai::{AiCompletionResponse, AiError, AiToolCall, AiTokenUsage};
 
 /// 将 `async-openai` 错误映射为 Ring 0 `AiError`。
 pub(super) fn map_openai_error(error: OpenAIError) -> AiError {
@@ -66,6 +66,30 @@ pub(super) fn value_to_completion(value: &serde_json::Value) -> AiCompletionResp
         })
     });
 
+    // 从非流式响应中提取 tool_calls
+    let tool_calls = value
+        .get("choices")
+        .and_then(|c| c.as_array())
+        .and_then(|a| a.first())
+        .and_then(|choice| choice.get("message"))
+        .and_then(|msg| msg.get("tool_calls"))
+        .and_then(|tc| tc.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|tc| {
+                    let id = tc.get("id")?.as_str()?;
+                    let name = tc.get("function")?.get("name")?.as_str()?;
+                    let arguments = tc.get("function")?.get("arguments")?.as_str()?;
+                    Some(AiToolCall {
+                        id: id.to_owned(),
+                        name: name.to_owned(),
+                        arguments: arguments.to_owned(),
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .filter(|v: &Vec<AiToolCall>| !v.is_empty());
+
     let model = value
         .get("model")
         .and_then(|m| m.as_str())
@@ -92,7 +116,7 @@ pub(super) fn value_to_completion(value: &serde_json::Value) -> AiCompletionResp
         content,
         usage,
         model,
-        tool_calls: None,
+        tool_calls,
     }
 }
 

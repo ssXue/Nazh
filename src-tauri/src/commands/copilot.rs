@@ -203,6 +203,7 @@ pub(crate) async fn copilot_chat(
         active_workflow_id,
         stream_event_name: event_name.clone(),
         app: app.clone(),
+        ref_map: std::sync::Mutex::new(std::collections::HashMap::new()),
     });
 
     tokio::spawn(async move {
@@ -223,10 +224,13 @@ pub(crate) async fn copilot_chat(
             inject_rag_context(&service, &handle_clone, &mut messages, &rag_provider_id).await;
         }
 
-        // 不向模型传递 tools 参数——让模型通过 JSON Lines 协议输出画布操作。
-        // 旧 AI 编排模式证明：不传 tools 时模型才会严格遵循 JSON Lines 协议；
-        // 传 tools 后模型倾向于调用工具或输出文本，导致协议失效。
-        let tools: Vec<nazh_engine::AiToolDefinition> = vec![];
+        // 启用原生 Function Calling 工具。
+        // AI 通过工具调用完成画布操作和上下文查询，不再依赖 JSON Lines 协议。
+        let tools = if tool_calling_enabled {
+            copilot_tools::all_copilot_tools()
+        } else {
+            vec![]
+        };
 
         let mut accumulated = String::new();
 
@@ -453,31 +457,37 @@ fn inject_system_prompt(
     let mut parts = vec![BUILTIN_SYSTEM_PROMPT.to_owned()];
 
     if tool_calling_enabled {
-        let node_catalog = copilot_tools::build_node_catalog_text();
-        parts.push(format!(
-            "\n\n## 可用节点类型目录\n\n\
-             {node_catalog}\n\n\
-             ## 工作流操作协议\n\n\
-             当用户要求创建工作流、添加节点、创建连线时，你必须使用 JSON Lines 操作协议：\n\
-             - 只输出 JSON Lines，每行一个 JSON 对象，不要输出任何其他文字\n\
-             - 不要输出 Markdown、代码块、解释文字、序号或注释\n\
-             - 先输出 project，再输出 create_node，再输出 create_edge，最后输出 done\n\
-             - done 的 summary 字段用来说明你做了什么\n\n\
-             操作格式：\n\
-             {{\"type\":\"project\",\"name\":\"工程名\"}}\n\
-             {{\"type\":\"create_node\",\"ref\":\"timer\",\"nodeType\":\"timer\",\"label\":\"定时触发\",\"config\":{{\"interval_ms\":5000}}}}\n\
-             {{\"type\":\"create_node\",\"ref\":\"debug\",\"nodeType\":\"debugConsole\",\"label\":\"调试输出\"}}\n\
-             {{\"type\":\"create_edge\",\"fromRef\":\"timer\",\"toRef\":\"debug\"}}\n\
-             {{\"type\":\"done\",\"summary\":\"已创建 timer→debugConsole 工作流\"}}\n\n\
-             规则：\n\
-             - 节点类型（nodeType）只能从上面的目录中选择，不要编造不存在的类型\n\
-             - ref 是本次输出流内稳定的简短英文别名（如 timer、debug、modbus），不是系统 node id\n\
-             - connectionId 仅在用户明确给出可复用连接 ID 时才填写，否则省略\n\
-             - 对于工业场景，优先从最小可运行链路开始\n\n\
-             ## 回答模式\n\n\
-             如果用户只是在提问（不涉及创建/修改工作流），用 Markdown 正常回答。\n\
-             一旦涉及创建工作流或添加节点，立即切换到 JSON Lines 模式，只输出 JSON Lines。"
-        ));
+        parts.push(
+            "\n\n## 工具使用指南\n\n\
+             你可以通过工具调用完成以下任务：\n\n\
+             ### 上下文查询工具\n\
+             - `query_node_catalog`：列出所有可用节点类型\n\
+             - `describe_node`：查看指定节点的输入/输出 pin schema\n\
+             - `list_connections`：查看已配置的连接\n\
+             - `search_devices` / `search_capabilities`：搜索设备和能力资产\n\
+             - `get_active_workflow` / `query_workflow_status`：查看当前工作流状态\n\
+             - `read_asset_yaml`：读取设备或能力资产的完整 YAML\n\n\
+             ### 画布操作工具\n\
+             - `create_workflow`：创建新工作流（初始化画布）\n\
+             - `add_workflow_node`：添加节点，用 `ref` 标识（如 \"timer\"、\"debug\"）\n\
+             - `add_workflow_edge`：连接节点，用 `from_ref`/`to_ref` 引用节点\n\
+             - `deploy_workflow` / `undeploy_workflow`：部署/停止完整工作流 JSON\n\
+             - `validate_workflow`：校验工作流 JSON 结构\n\n\
+             ### 构建工作流的标准流程\n\
+             1. 先用 `query_node_catalog` 了解可用节点\n\
+             2. 对不确定的节点用 `describe_node` 查看 pin schema\n\
+             3. 调用 `create_workflow` 初始化画布\n\
+             4. 依次调用 `add_workflow_node` 添加每个节点\n\
+             5. 调用 `add_workflow_edge` 连接节点\n\
+             6. 用自然语言总结创建的工作流\n\n\
+             ### 注意事项\n\
+             - 节点类型只能从 `query_node_catalog` 返回的列表中选择\n\
+             - `ref` 是你自定义的简短英文别名（如 timer、modbus_read），不是系统 ID\n\
+             - 需要连接的节点（如 modbusRead、serialTrigger）需传入 `connection_id`\n\
+             - 对于工业场景，优先从最小可运行链路开始\n\
+             - 纯问答（不涉及创建/修改工作流）直接用 Markdown 回答，不需要调用工具"
+            .to_owned()
+        );
     }
 
     if let Some(extra) = user_prompt.filter(|s| !s.trim().is_empty()) {

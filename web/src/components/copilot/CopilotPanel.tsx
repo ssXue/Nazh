@@ -6,15 +6,7 @@ import type { FlowgramCanvasHandle, CanvasOps } from '../FlowgramCanvas';
 import type { CopilotConversationResponse } from '../../generated/CopilotConversationResponse';
 import type { CopilotMessageResponse } from '../../generated/CopilotMessageResponse';
 import { copilotChatStream } from '../../lib/copilot-stream';
-import type { ToolCallInfo, ToolResultInfo } from '../../lib/copilot-stream';
-import {
-  consumeOperationLines,
-  createInitialProtocolSession,
-  flushRemainingProtocolLines,
-  protocolSessionApplyOp,
-  type ProtocolOperation,
-  type CopilotProtocolSession,
-} from '../../lib/copilot-protocol';
+import type { ToolCallInfo, ToolResultInfo, CanvasOpEvent } from '../../lib/copilot-stream';
 import { hasTauriRuntime } from '../../lib/tauri';
 import { CopilotChatView } from './CopilotChatView';
 
@@ -38,8 +30,7 @@ export interface LocalMessage {
   streaming?: boolean;
   toolCalls?: ToolCallInfo[];
   toolResults?: ToolResultInfo[];
-  protocolOps?: ProtocolOperation[];
-  protocolDoneSummary?: string;
+  canvasOps?: CanvasOpEvent[];
 }
 
 function localConversationId(): string {
@@ -56,10 +47,9 @@ const FLUSH_INTERVAL = 150;
 
 interface PendingUpdate {
   content: string;
-  protocolOps?: ProtocolOperation[];
-  protocolDoneSummary?: string;
   toolCalls?: ToolCallInfo[];
   toolResults?: ToolResultInfo[];
+  canvasOps?: CanvasOpEvent[];
 }
 
 export function CopilotPanel({ canvasRef, onEnsureBoardOpen }: CopilotPanelProps) {
@@ -69,10 +59,6 @@ export function CopilotPanel({ canvasRef, onEnsureBoardOpen }: CopilotPanelProps
   const [messages, setMessages] = useState<LocalMessage[]>([]);
   const [status, setStatus] = useState<CopilotSessionStatus>('idle');
   const isTauri = hasTauriRuntime();
-
-  // 协议解析状态（per-send）
-  const protocolSessionRef = useRef<CopilotProtocolSession>(createInitialProtocolSession());
-  const protocolProcessedRef = useRef(0);
 
   // AbortController
   const abortRef = useRef<AbortController | null>(null);
@@ -97,8 +83,7 @@ export function CopilotPanel({ canvasRef, onEnsureBoardOpen }: CopilotPanelProps
     panelLog('flushPendingUpdate', {
       msgId,
       contentLen: update.content.length,
-      hasProtocolOps: !!update.protocolOps,
-      opsCount: update.protocolOps?.length ?? 0,
+      canvasOpsCount: update.canvasOps?.length ?? 0,
       toolCalls: update.toolCalls?.length ?? 0,
       toolResults: update.toolResults?.length ?? 0,
     });
@@ -106,8 +91,7 @@ export function CopilotPanel({ canvasRef, onEnsureBoardOpen }: CopilotPanelProps
       prev.map((m) => (m.id === msgId ? {
         ...m,
         content: update.content,
-        protocolOps: update.protocolOps,
-        protocolDoneSummary: update.protocolDoneSummary,
+        canvasOps: update.canvasOps ?? m.canvasOps,
         toolCalls: update.toolCalls ?? m.toolCalls,
         toolResults: update.toolResults ?? m.toolResults,
       } : m)),
@@ -190,7 +174,7 @@ export function CopilotPanel({ canvasRef, onEnsureBoardOpen }: CopilotPanelProps
   }, [isTauri, activeId]);
 
   const handleCancel = useCallback(() => {
-    panelLog('handleCancel', { hasAbort: !!abortRef.current, protocolOps: protocolSessionRef.current.operations.length });
+    panelLog('handleCancel', { hasAbort: !!abortRef.current });
     abortRef.current?.abort();
     abortRef.current = null;
     flushPendingUpdate();
@@ -213,15 +197,13 @@ export function CopilotPanel({ canvasRef, onEnsureBoardOpen }: CopilotPanelProps
 
     const userMsg: LocalMessage = { id: `local-${Date.now()}`, role: 'user', content: text.trim() };
     const assistantMsgId = `stream-${Date.now()}`;
-    const assistantMsg: LocalMessage = { id: assistantMsgId, role: 'assistant', content: '', streaming: true, toolCalls: [], toolResults: [] };
+    const assistantMsg: LocalMessage = { id: assistantMsgId, role: 'assistant', content: '', streaming: true, toolCalls: [], toolResults: [], canvasOps: [] };
 
     setMessages((prev) => [...prev, userMsg, assistantMsg]);
     setStatus('generating');
     activeMsgIdRef.current = assistantMsgId;
 
-    // 重置协议解析状态
-    protocolSessionRef.current = createInitialProtocolSession();
-    protocolProcessedRef.current = 0;
+    // 重置画布操作状态
     boardEnsuredRef.current = false;
 
     // 创建 AbortController
@@ -243,86 +225,15 @@ export function CopilotPanel({ canvasRef, onEnsureBoardOpen }: CopilotPanelProps
         activeId,
         text.trim(),
         (accumulated) => {
-          // 增量解析 JSON Lines 操作
-          const { nextProcessedLength, operations } = consumeOperationLines(
-            accumulated,
-            protocolProcessedRef.current,
-          );
-          protocolProcessedRef.current = nextProcessedLength;
-
-          if (operations.length === 0) return;
-
-          let session = protocolSessionRef.current;
-          let doneSummary: string | undefined;
-          const pendingNodes: CanvasOps['nodes'] = [];
-          const pendingEdges: CanvasOps['edges'] = [];
-
-          for (const op of operations) {
-            session = protocolSessionApplyOp(session, op);
-            protocolSessionRef.current = session;
-
-            if (op.type === 'create_node') {
-              const nodeId = session.nodeRefs[op.ref];
-              if (nodeId) {
-                pendingNodes.push({
-                  id: nodeId,
-                  type: op.nodeType,
-                  label: op.label,
-                  config: op.config as Record<string, unknown> | undefined,
-                  connection_id: op.connectionId ?? undefined,
-                });
-              } else {
-                panelWarn('create_node: nodeId 未分配，跳过', { ref: op.ref });
-              }
-            } else if (op.type === 'create_edge') {
-              const fromId = session.nodeRefs[op.fromRef];
-              const toId = session.nodeRefs[op.toRef];
-              if (fromId && toId) {
-                pendingEdges.push({ from: fromId, to: toId, source_port_id: op.sourcePortId, target_port_id: op.targetPortId });
-              } else {
-                panelWarn('create_edge: ref 未解析，跳过', {
-                  fromRef: op.fromRef,
-                  toRef: op.toRef,
-                  fromId,
-                  toId,
-                  nodeRefs: session.nodeRefs,
-                });
-              }
-            } else if (op.type === 'done') {
-              doneSummary = op.summary;
-            }
-          }
-
-          // 只在有画布操作时调用 onEnsureBoardOpen，且仅调用一次
-          if ((pendingNodes.length > 0 || pendingEdges.length > 0) && !boardEnsuredRef.current) {
-            panelLog('首次调用 onEnsureBoardOpen');
-            onEnsureBoardOpen();
-            boardEnsuredRef.current = true;
-          }
-
-          // 一次性提交所有画布操作
-          if (pendingNodes.length > 0 || pendingEdges.length > 0) {
-            panelLog('批量提交画布操作', { nodes: pendingNodes.length, edges: pendingEdges.length });
-            canvasRef.current?.addCanvasOps({ nodes: pendingNodes, edges: pendingEdges });
-          }
-
-          // 写入节流队列而非直接 setMessages
-          let displayContent = accumulated;
-          const allOps = [...(session.operations)];
-          if (allOps.length > 0) {
-            displayContent = doneSummary ?? '';
-          }
-
+          // 纯文本累积——AI 的自然语言回复
           pendingUpdateRef.current = {
-            content: displayContent,
-            protocolOps: allOps.length > 0 ? allOps : undefined,
-            protocolDoneSummary: doneSummary,
+            ...pendingUpdateRef.current,
+            content: accumulated,
           };
           scheduleFlush();
         },
         undefined,
         (toolCallInfo) => {
-          // toolCalls 追加到节流队列
           panelLog('toolCalls 回调', { round: toolCallInfo.round, count: toolCallInfo.calls.length, names: toolCallInfo.calls.map((c) => c.name) });
           const current = pendingUpdateRef.current;
           pendingUpdateRef.current = {
@@ -342,69 +253,56 @@ export function CopilotPanel({ canvasRef, onEnsureBoardOpen }: CopilotPanelProps
           };
           scheduleFlush();
         },
+        (op) => {
+          // 画布操作事件——由后端工具直接推送
+          panelLog('canvasOp 回调', { type: op.type, ref: op.ref, nodeType: op.nodeType });
+          if (op.type === 'create_workflow') {
+            if (!boardEnsuredRef.current) {
+              panelLog('首次调用 onEnsureBoardOpen');
+              onEnsureBoardOpen();
+              boardEnsuredRef.current = true;
+            }
+          } else if (op.type === 'add_node' && op.nodeId) {
+            if (!boardEnsuredRef.current) {
+              panelLog('首次调用 onEnsureBoardOpen（add_node）');
+              onEnsureBoardOpen();
+              boardEnsuredRef.current = true;
+            }
+            canvasRef.current?.addCanvasOps({
+              nodes: [{
+                id: op.nodeId,
+                type: op.nodeType ?? 'debugConsole',
+                label: op.label,
+                config: op.config as Record<string, unknown> | undefined,
+                connection_id: op.connectionId,
+              }],
+              edges: [],
+            });
+          } else if (op.type === 'add_edge' && op.fromId && op.toId) {
+            canvasRef.current?.addCanvasOps({
+              nodes: [],
+              edges: [{
+                from: op.fromId,
+                to: op.toId,
+                source_port_id: op.sourcePortId,
+                target_port_id: op.targetPortId,
+              }],
+            });
+          }
+
+          // 追加到展示数据
+          const current = pendingUpdateRef.current;
+          pendingUpdateRef.current = {
+            ...current,
+            content: current?.content ?? '',
+            canvasOps: [...(current?.canvasOps ?? []), op],
+          };
+          scheduleFlush();
+        },
         abortController.signal,
       );
 
-      // 流结束，强制 flush 剩余未解析的协议行（最后一行可能无尾部 \n）
-      {
-        const remaining = flushRemainingProtocolLines(result.text, protocolProcessedRef.current);
-        protocolProcessedRef.current = remaining.nextProcessedLength;
-
-        if (remaining.operations.length > 0) {
-          let session = protocolSessionRef.current;
-          let doneSummary: string | undefined;
-          const flushNodes: CanvasOps['nodes'] = [];
-          const flushEdges: CanvasOps['edges'] = [];
-
-          for (const op of remaining.operations) {
-            session = protocolSessionApplyOp(session, op);
-            protocolSessionRef.current = session;
-
-            if (op.type === 'create_node') {
-              const nodeId = session.nodeRefs[op.ref];
-              if (nodeId) {
-                flushNodes.push({
-                  id: nodeId,
-                  type: op.nodeType,
-                  label: op.label,
-                  config: op.config as Record<string, unknown> | undefined,
-                  connection_id: op.connectionId ?? undefined,
-                });
-              }
-            } else if (op.type === 'create_edge') {
-              const fromId = session.nodeRefs[op.fromRef];
-              const toId = session.nodeRefs[op.toRef];
-              if (fromId && toId) {
-                flushEdges.push({ from: fromId, to: toId, source_port_id: op.sourcePortId, target_port_id: op.targetPortId });
-              }
-            } else if (op.type === 'done') {
-              doneSummary = op.summary;
-            }
-          }
-
-          if ((flushNodes.length > 0 || flushEdges.length > 0) && !boardEnsuredRef.current) {
-            panelLog('flush 首次调用 onEnsureBoardOpen');
-            onEnsureBoardOpen();
-            boardEnsuredRef.current = true;
-          }
-
-          if (flushNodes.length > 0 || flushEdges.length > 0) {
-            panelLog('flush 批量提交画布操作', { nodes: flushNodes.length, edges: flushEdges.length });
-            canvasRef.current?.addCanvasOps({ nodes: flushNodes, edges: flushEdges });
-          }
-
-          const allOps = [...session.operations];
-          const currentPending = pendingUpdateRef.current;
-          const existingSummary = currentPending?.protocolDoneSummary;
-          pendingUpdateRef.current = {
-            content: currentPending?.content ?? '',
-            protocolOps: allOps.length > 0 ? allOps : undefined,
-            protocolDoneSummary: doneSummary ?? existingSummary,
-          };
-        }
-      }
-
-      // 立即 flush 最后的状态
+      // 流结束，立即 flush 最终状态
       flushPendingUpdate();
       setMessages((prev) =>
         prev.map((m) => (m.id === assistantMsgId ? { ...m, streaming: false } : m)),
@@ -414,14 +312,8 @@ export function CopilotPanel({ canvasRef, onEnsureBoardOpen }: CopilotPanelProps
         textLen: result.text.length,
         aborted: result.aborted,
         finishReason: result.finishReason,
-        protocolOpsCount: protocolSessionRef.current.operations.length,
-        nodeRefs: protocolSessionRef.current.nodeRefs,
         preview: result.text.slice(0, 200),
       });
-
-      if (result.aborted) {
-        // 用户取消，不标记为错误
-      }
     } catch (error) {
       flushPendingUpdate();
       panelWarn('流异常结束', { error: error instanceof Error ? error.message : String(error) });

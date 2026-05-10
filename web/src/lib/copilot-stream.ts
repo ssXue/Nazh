@@ -26,6 +26,23 @@ export interface ToolResultInfo {
   contentPreview: string;
 }
 
+export interface CanvasOpEvent {
+  type: 'add_node' | 'add_edge' | 'create_workflow';
+  nodeId?: string;
+  ref?: string;
+  nodeType?: string;
+  label?: string;
+  config?: Record<string, unknown>;
+  connectionId?: string;
+  fromRef?: string;
+  toRef?: string;
+  fromId?: string;
+  toId?: string;
+  sourcePortId?: string;
+  targetPortId?: string;
+  name?: string;
+}
+
 export interface CopilotStreamResult {
   text: string;
   finishReason?: string;
@@ -42,6 +59,7 @@ export async function copilotChatStream(
   onThinking?: (text: string) => void,
   onToolCalls?: (info: ToolCallInfo) => void,
   onToolResult?: (info: ToolResultInfo) => void,
+  onCanvasOp?: (op: CanvasOpEvent) => void,
   signal?: AbortSignal,
 ): Promise<CopilotStreamResult> {
   const streamId: string = await invoke('copilot_chat', {
@@ -161,6 +179,10 @@ export async function copilotChatStream(
         isError: tr.isError ?? false,
         contentPreview: tr.contentPreview ?? '',
       });
+    }
+    if (payload.canvasOp && onCanvasOp) {
+      streamLog('canvasOp', { type: payload.canvasOp.type });
+      onCanvasOp(payload.canvasOp as CanvasOpEvent);
     }
     if (payload.done) {
       streamLog('收到 done 事件', { accLen: accumulated.length, eventCount, finishReason });

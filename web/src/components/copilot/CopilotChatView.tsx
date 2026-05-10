@@ -60,8 +60,7 @@ export function CopilotChatView({
             streaming={msg.streaming}
             toolCalls={msg.toolCalls}
             toolResults={msg.toolResults}
-            protocolOps={msg.protocolOps}
-            protocolDoneSummary={msg.protocolDoneSummary}
+            canvasOps={msg.canvasOps}
           />
         ))}
       </div>

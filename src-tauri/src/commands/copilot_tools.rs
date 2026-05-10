@@ -10,8 +10,9 @@ use nazh_engine::{
     WorkflowNodeDefinition,
 };
 use serde_json::json;
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
 use tauri_bindings::list_node_types_response;
+use uuid::Uuid;
 
 use crate::registry::shared_node_registry;
 
@@ -25,6 +26,9 @@ pub(crate) struct CopilotToolCtx {
     pub(crate) app: AppHandle,
     /// 当前 copilot 流事件的 channel 名称（`copilot://stream/{streamId}`）。
     pub(crate) stream_event_name: String,
+    /// 画布操作引用映射：AI 用的 ref → 实际节点 ID。
+    pub(crate) ref_map:
+        std::sync::Mutex<std::collections::HashMap<String, String>>,
 }
 
 /// 构建系统提示用的节点目录文本。
@@ -309,6 +313,81 @@ pub fn all_copilot_tools() -> Vec<AiToolDefinition> {
                 "required": ["workflow_id"]
             }),
         },
+        // --- 画布操作工具（增量式构建工作流）---
+        AiToolDefinition {
+            name: "create_workflow".to_owned(),
+            description: "在画布上创建新工作流工程。当用户要求创建工作流时，先调用此工具初始化画布，然后依次调用 add_workflow_node 添加节点，再用 add_workflow_edge 连接节点。".to_owned(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "工程名称"
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "工程描述"
+                    }
+                },
+                "required": []
+            }),
+        },
+        AiToolDefinition {
+            name: "add_workflow_node".to_owned(),
+            description: "在画布上添加一个工作流节点。每个节点用 ref 标识（在后续 add_workflow_edge 中引用）。node_type 必须是 query_node_catalog 返回的合法类型。".to_owned(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "ref": {
+                        "type": "string",
+                        "description": "节点引用 ID（同一工作流内稳定的英文别名，如 timer、debug、modbus_read）"
+                    },
+                    "node_type": {
+                        "type": "string",
+                        "description": "节点类型标识符，必须是 query_node_catalog 返回的合法类型"
+                    },
+                    "label": {
+                        "type": "string",
+                        "description": "节点显示名称"
+                    },
+                    "config": {
+                        "type": "object",
+                        "description": "节点配置（如 {\"interval_ms\": 5000}）"
+                    },
+                    "connection_id": {
+                        "type": "string",
+                        "description": "关联的连接 ID（仅设备I/O节点需要）"
+                    }
+                },
+                "required": ["ref", "node_type"]
+            }),
+        },
+        AiToolDefinition {
+            name: "add_workflow_edge".to_owned(),
+            description: "在画布上连接两个节点。from_ref 和 to_ref 必须是之前 add_workflow_node 中定义的 ref 值。".to_owned(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "from_ref": {
+                        "type": "string",
+                        "description": "起始节点的 ref"
+                    },
+                    "to_ref": {
+                        "type": "string",
+                        "description": "目标节点的 ref"
+                    },
+                    "source_port_id": {
+                        "type": "string",
+                        "description": "起始节点的输出端口 ID（可选，默认使用第一个输出）"
+                    },
+                    "target_port_id": {
+                        "type": "string",
+                        "description": "目标节点的输入端口 ID（可选，默认使用第一个输入）"
+                    }
+                },
+                "required": ["from_ref", "to_ref"]
+            }),
+        },
     ]
 }
 
@@ -326,6 +405,9 @@ pub async fn dispatch_tool(call: &AiToolCall, ctx: &CopilotToolCtx) -> AiToolRes
         "validate_workflow" => tool_validate_workflow(call),
         "deploy_workflow" => tool_deploy_workflow(call, ctx).await,
         "undeploy_workflow" => tool_undeploy_workflow(call, ctx).await,
+        "create_workflow" => tool_create_workflow(call, ctx),
+        "add_workflow_node" => tool_add_workflow_node(call, ctx),
+        "add_workflow_edge" => tool_add_workflow_edge(call, ctx),
         _ => Err(format!("未知工具: {}", call.name)),
     };
     to_tool_result(call, result)
@@ -631,3 +713,120 @@ async fn tool_undeploy_workflow(
     serde_json::to_string_pretty(&response).map_err(|e| format!("序列化结果失败: {e}"))
 }
 
+fn tool_create_workflow(call: &AiToolCall, ctx: &CopilotToolCtx) -> Result<String, String> {
+    let args = parse_args(call)?;
+    let name = args["name"].as_str().unwrap_or("新工作流");
+
+    let _ = ctx.app.emit(
+        &ctx.stream_event_name,
+        json!({
+            "canvasOp": {
+                "type": "create_workflow",
+                "name": name,
+            }
+        }),
+    );
+
+    Ok(format!("工作流「{name}」已创建，可以开始添加节点"))
+}
+
+fn tool_add_workflow_node(call: &AiToolCall, ctx: &CopilotToolCtx) -> Result<String, String> {
+    let args = parse_args(call)?;
+    let ref_id = args["ref"]
+        .as_str()
+        .ok_or("缺少 ref 参数")?
+        .to_owned();
+    let node_type = args["node_type"]
+        .as_str()
+        .ok_or("缺少 node_type 参数")?
+        .to_owned();
+    let label = args["label"].as_str().map(str::to_owned);
+    let config = if args.get("config").is_some() {
+        Some(args["config"].clone())
+    } else {
+        None
+    };
+    let connection_id = args["connection_id"].as_str().map(str::to_owned);
+
+    // 分配确定性节点 ID
+    let node_id = format!("ai_{}", Uuid::new_v4().as_simple());
+    ctx.ref_map
+        .lock()
+        .map_err(|e| format!("ref_map 锁失败: {e}"))?
+        .insert(ref_id.clone(), node_id.clone());
+
+    tracing::info!(
+        ref = %ref_id,
+        node_id = %node_id,
+        node_type = %node_type,
+        "copilot add_workflow_node"
+    );
+
+    let _ = ctx.app.emit(
+        &ctx.stream_event_name,
+        json!({
+            "canvasOp": {
+                "type": "add_node",
+                "nodeId": node_id,
+                "ref": ref_id,
+                "nodeType": node_type,
+                "label": label,
+                "config": config,
+                "connectionId": connection_id,
+            }
+        }),
+    );
+
+    Ok(format!("节点 {ref_id}（{node_type}）已添加，ID: {node_id}"))
+}
+
+fn tool_add_workflow_edge(call: &AiToolCall, ctx: &CopilotToolCtx) -> Result<String, String> {
+    let args = parse_args(call)?;
+    let from_ref = args["from_ref"]
+        .as_str()
+        .ok_or("缺少 from_ref 参数")?;
+    let to_ref = args["to_ref"]
+        .as_str()
+        .ok_or("缺少 to_ref 参数")?;
+    let source_port_id = args["source_port_id"].as_str().map(str::to_owned);
+    let target_port_id = args["target_port_id"].as_str().map(str::to_owned);
+
+    let ref_map = ctx
+        .ref_map
+        .lock()
+        .map_err(|e| format!("ref_map 锁失败: {e}"))?;
+    let from_id = ref_map
+        .get(from_ref)
+        .ok_or_else(|| format!("未知 from_ref: {from_ref}，请先通过 add_workflow_node 创建该节点"))?
+        .clone();
+    let to_id = ref_map
+        .get(to_ref)
+        .ok_or_else(|| format!("未知 to_ref: {to_ref}，请先通过 add_workflow_node 创建该节点"))?
+        .clone();
+    drop(ref_map);
+
+    tracing::info!(
+        from_ref = %from_ref,
+        to_ref = %to_ref,
+        from_id = %from_id,
+        to_id = %to_id,
+        "copilot add_workflow_edge"
+    );
+
+    let _ = ctx.app.emit(
+        &ctx.stream_event_name,
+        json!({
+            "canvasOp": {
+                "type": "add_edge",
+                "fromRef": from_ref,
+                "toRef": to_ref,
+                "fromId": from_id,
+                "toId": to_id,
+                "sourcePortId": source_port_id,
+                "targetPortId": target_port_id,
+            }
+        }),
+    );
+
+    Ok(format!("连线 {from_ref} → {to_ref} 已添加"))
+}

@@ -17,7 +17,7 @@ use futures_util::StreamExt;
 use nazh_core::ai::{
     AiCompletionRequest, AiCompletionResponse, AiEmbeddingRequest, AiEmbeddingResponse, AiError,
     AiGenerationParams, AiMessage, AiMessageRole, AiReasoningEffort, AiService, AiThinkingMode,
-    AiToolDefinition, StreamChunk,
+    AiToolCall, AiToolDefinition, StreamChunk,
 };
 use serde_json::json;
 use tokio::sync::RwLock;
@@ -350,6 +350,9 @@ impl AiService for OpenAiCompatibleService {
 
         tokio::spawn(async move {
             let mut stream = std::pin::pin!(stream);
+            // 流式 tool_calls 增量累积：(id, name, accumulated_arguments)
+            let mut tool_calls_map: std::collections::HashMap<usize, (String, String, String)> =
+                std::collections::HashMap::new();
 
             while let Some(result) = stream.next().await {
                 match result {
@@ -381,16 +384,70 @@ impl AiService for OpenAiCompatibleService {
                         let has_thinking = thinking.is_some();
                         let is_done = finish_reason.is_some();
 
-                        if !has_content && !has_thinking && !is_done {
+                        // 解析流式 tool_calls 增量
+                        let tc_delta = delta.and_then(|d| d.get("tool_calls")).and_then(|t| t.as_array());
+                        if let Some(tc_arr) = tc_delta {
+                            for tc in tc_arr {
+                                let index = tc.get("index").and_then(|i| i.as_u64()).unwrap_or(0) as usize;
+                                let entry = tool_calls_map.entry(index).or_insert_with(|| {
+                                    (String::new(), String::new(), String::new())
+                                });
+                                // 首个 delta 通常带 id 和 function.name
+                                if let Some(id) = tc.get("id").and_then(|v| v.as_str()) {
+                                    entry.0 = id.to_owned();
+                                }
+                                if let Some(name) = tc.get("function").and_then(|f| f.get("name")).and_then(|n| n.as_str()) {
+                                    entry.1 = name.to_owned();
+                                }
+                                if let Some(args) = tc.get("function").and_then(|f| f.get("arguments")).and_then(|a| a.as_str()) {
+                                    entry.2.push_str(args);
+                                }
+                            }
+                        }
+                        let has_tool_calls = tc_delta.is_some();
+
+                        if !has_content && !has_thinking && !is_done && !has_tool_calls {
                             continue;
                         }
+
+                        // finish_reason == "tool_calls" 时构建完整的工具调用列表
+                        let final_tool_calls = if finish_reason.as_deref() == Some("tool_calls") {
+                            let mut calls: Vec<AiToolCall> = tool_calls_map
+                                .iter()
+                                .map(|(idx, (id, name, args))| {
+                                    let call_id = if id.is_empty() {
+                                        format!("tc_{idx}")
+                                    } else {
+                                        id.clone()
+                                    };
+                                    AiToolCall {
+                                        id: call_id,
+                                        name: name.clone(),
+                                        arguments: args.clone(),
+                                    }
+                                })
+                                .collect::<Vec<_>>();
+                            calls.sort_by_key(|c| {
+                                // 保持原始 index 顺序
+                                tool_calls_map
+                                    .iter()
+                                    .find_map(|(idx, (id, _, _))| {
+                                        if id == &c.id { Some(*idx) } else { None }
+                                    })
+                                    .unwrap_or(0)
+                            });
+                            tool_calls_map.clear();
+                            Some(calls)
+                        } else {
+                            None
+                        };
 
                         let chunk = StreamChunk {
                             delta: content.to_owned(),
                             thinking,
-                            finish_reason,
+                            finish_reason: finish_reason.clone(),
                             done: is_done,
-                            tool_calls: None,
+                            tool_calls: final_tool_calls,
                         };
 
                         if tx.send(Ok(chunk)).await.is_err() || is_done {

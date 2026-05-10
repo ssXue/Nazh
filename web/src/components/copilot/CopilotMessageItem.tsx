@@ -1,4 +1,4 @@
-import type { ProtocolOperation } from '../../lib/copilot-protocol';
+import type { CanvasOpEvent } from '../../lib/copilot-stream';
 import { MarkdownContent } from './MarkdownContent';
 
 interface Props {
@@ -7,25 +7,22 @@ interface Props {
   streaming?: boolean;
   toolCalls?: import('../../lib/copilot-stream').ToolCallInfo[];
   toolResults?: import('../../lib/copilot-stream').ToolResultInfo[];
-  protocolOps?: ProtocolOperation[];
-  protocolDoneSummary?: string;
+  canvasOps?: CanvasOpEvent[];
 }
 
-function ProtocolOpsCard({ ops, doneSummary }: { ops: ProtocolOperation[]; doneSummary?: string }) {
+function CanvasOpsCard({ ops }: { ops: CanvasOpEvent[] }) {
   const entries: { key: string; label: string; className: string }[] = [];
 
   for (const op of ops) {
     switch (op.type) {
-      case 'project':
+      case 'create_workflow':
         entries.push({ key: `p-${entries.length}`, label: `创建工程${op.name ? `「${op.name}」` : ''}`, className: 'copilot-node-chip' });
         break;
-      case 'create_node':
-        entries.push({ key: `n-${op.ref}`, label: `${op.label ?? op.nodeType}`, className: 'copilot-node-chip' });
+      case 'add_node':
+        entries.push({ key: `n-${op.ref ?? entries.length}`, label: `${op.label ?? op.nodeType ?? 'node'}`, className: 'copilot-node-chip' });
         break;
-      case 'create_edge':
+      case 'add_edge':
         entries.push({ key: `e-${op.fromRef}-${op.toRef}-${entries.length}`, label: `${op.fromRef} → ${op.toRef}`, className: 'copilot-edge-tag' });
-        break;
-      case 'done':
         break;
     }
   }
@@ -37,9 +34,6 @@ function ProtocolOpsCard({ ops, doneSummary }: { ops: ProtocolOperation[]; doneS
           <span key={entry.key} className={entry.className}>{entry.label}</span>
         ))}
       </div>
-      {doneSummary && (
-        <div className="copilot-canvas-ops__status">{doneSummary}</div>
-      )}
     </div>
   );
 }
@@ -50,11 +44,10 @@ export function CopilotMessageItem({
   streaming,
   toolCalls,
   toolResults,
-  protocolOps,
-  protocolDoneSummary,
+  canvasOps,
 }: Props) {
   const isUser = role === 'user';
-  const hasProtocolOps = protocolOps && protocolOps.length > 0;
+  const hasCanvasOps = canvasOps && canvasOps.length > 0;
 
   return (
     <div className={`copilot-msg${isUser ? ' copilot-msg--user' : ' copilot-msg--assistant'}`}>
@@ -78,22 +71,22 @@ export function CopilotMessageItem({
             )}
           </div>
         )}
-        {hasProtocolOps && (
-          <ProtocolOpsCard ops={protocolOps} doneSummary={protocolDoneSummary} />
+        {hasCanvasOps && (
+          <CanvasOpsCard ops={canvasOps!} />
         )}
         {isUser ? (
           <div className="copilot-msg__content">
             {content || (streaming ? '...' : '')}
           </div>
         ) : (
-          !hasProtocolOps && (
+          !hasCanvasOps && (
             <MarkdownContent content={content} streaming={streaming} />
           )
         )}
-        {hasProtocolOps && !protocolDoneSummary && streaming && (
+        {hasCanvasOps && streaming && (
           <span className="copilot-msg__cursor" />
         )}
-        {!hasProtocolOps && streaming && <span className="copilot-msg__cursor" />}
+        {!hasCanvasOps && streaming && <span className="copilot-msg__cursor" />}
       </div>
     </div>
   );
