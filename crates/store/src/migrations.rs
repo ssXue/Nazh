@@ -3,9 +3,10 @@
 use rusqlite::{Connection, Error};
 
 /// 内联 SQL migrations，按版本号顺序执行。
-const MIGRATIONS: &[(&str, &str)] = &[(
-    "001",
-    "
+const MIGRATIONS: &[(&str, &str)] = &[
+    (
+        "001",
+        "
         CREATE TABLE IF NOT EXISTS schema_version (
             version    INTEGER PRIMARY KEY,
             applied_at TEXT NOT NULL
@@ -43,7 +44,29 @@ const MIGRATIONS: &[(&str, &str)] = &[(
             PRIMARY KEY (namespace, key)
         );
         ",
-)];
+    ),
+    (
+        "004",
+        "
+        CREATE TABLE IF NOT EXISTS copilot_conversations (
+            id         TEXT PRIMARY KEY,
+            title      TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS copilot_messages (
+            id              TEXT PRIMARY KEY,
+            conversation_id TEXT NOT NULL REFERENCES copilot_conversations(id) ON DELETE CASCADE,
+            role            TEXT NOT NULL CHECK(role IN ('user','assistant','system')),
+            content         TEXT NOT NULL,
+            created_at      TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_copilot_messages_conv
+            ON copilot_messages(conversation_id, created_at);
+        ",
+    ),
+];
 
 /// 检查 `schema_version` 表，执行尚未应用的 migrations。
 pub(crate) fn run(db: &Connection) -> Result<(), rusqlite::Error> {

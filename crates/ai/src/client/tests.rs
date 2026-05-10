@@ -40,10 +40,11 @@ fn deepseek_payload_sends_thinking_options_and_omits_sampling_when_enabled() {
     };
 
     let body = super::build_request_json(
-        provider.default_model.clone(),
-        test_messages(),
+        &provider.default_model,
+        &test_messages(),
         &params,
         false,
+        true,
         true,
     );
 
@@ -69,11 +70,12 @@ fn non_deepseek_payload_omits_deepseek_specific_options() {
     };
 
     let body = super::build_request_json(
-        provider.default_model.clone(),
-        test_messages(),
+        &provider.default_model,
+        &test_messages(),
         &params,
         false,
         false,
+        true,
     );
 
     assert!(body.get("thinking").is_none());
@@ -88,15 +90,17 @@ fn deepseek_connection_test_disables_thinking_for_lightweight_probe() {
     let thinking_enabled = true;
     let params = build_connection_test_params(thinking_enabled);
     let body = super::build_request_json(
-        provider.default_model.clone(),
-        test_messages(),
+        &provider.default_model,
+        &test_messages(),
         &params,
         false,
+        true,
         thinking_enabled,
     );
 
     assert_eq!(body["thinking"]["type"], "disabled");
-    assert_eq!(body["temperature"], 0.0);
+    // DeepSeek + thinking_enabled 组合下省略采样参数
+    assert!(body.get("temperature").is_none());
     assert_eq!(body["max_tokens"], TEST_MAX_TOKENS);
 }
 

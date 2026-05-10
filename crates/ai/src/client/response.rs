@@ -1,7 +1,7 @@
 use async_openai::error::OpenAIError;
 use nazh_core::ai::{AiCompletionResponse, AiError, AiTokenUsage};
 
-/// 将 async-openai 错误映射为 Ring 0 AiError。
+/// 将 `async-openai` 错误映射为 Ring 0 `AiError`。
 pub(super) fn map_openai_error(error: OpenAIError) -> AiError {
     match error {
         OpenAIError::ApiError(api_error) => {
@@ -36,7 +36,7 @@ pub(super) fn map_openai_error(error: OpenAIError) -> AiError {
 }
 
 /// 从 BYOT `serde_json::Value` 响应提取 `AiCompletionResponse`。
-pub(super) fn value_to_completion(value: serde_json::Value) -> AiCompletionResponse {
+pub(super) fn value_to_completion(value: &serde_json::Value) -> AiCompletionResponse {
     let mut content = String::new();
     let mut finish_reason: Option<String> = None;
 
@@ -50,7 +50,7 @@ pub(super) fn value_to_completion(value: serde_json::Value) -> AiCompletionRespo
             .and_then(|m| m.get("content"))
             .and_then(|c| c.as_str())
             .unwrap_or_default()
-            .to_owned();
+            .to_string();
         finish_reason = choice
             .get("finish_reason")
             .and_then(|f| f.as_str())
@@ -60,9 +60,9 @@ pub(super) fn value_to_completion(value: serde_json::Value) -> AiCompletionRespo
 
     let usage = value.get("usage").and_then(|u| {
         Some(AiTokenUsage {
-            prompt_tokens: u.get("prompt_tokens")?.as_u64()? as u32,
-            completion_tokens: u.get("completion_tokens")?.as_u64()? as u32,
-            total_tokens: u.get("total_tokens")?.as_u64()? as u32,
+            prompt_tokens: u.get("prompt_tokens")?.as_u64()?.try_into().ok()?,
+            completion_tokens: u.get("completion_tokens")?.as_u64()?.try_into().ok()?,
+            total_tokens: u.get("total_tokens")?.as_u64()?.try_into().ok()?,
         })
     });
 

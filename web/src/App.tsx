@@ -19,6 +19,7 @@ import type { BoardItem } from './components/app/BoardsPanel';
 import { RestoreDeploymentDialog } from './components/app/RestoreDeploymentDialog';
 import { SidebarNav } from './components/app/SidebarNav';
 import { StudioContentRouter } from './components/app/StudioContentRouter';
+import { CopilotPanel } from './components/copilot/CopilotPanel';
 import { parseWorkflowGraph } from './lib/graph';
 import { formatWorkflowGraph } from './lib/flowgram';
 import {
@@ -510,36 +511,37 @@ function App() {
 
   return (
     <main className="app-shell app-shell--studio">
-      <section className="studio-frame">
-        <button
-          type="button"
-          className="studio-nav-toggle"
-          aria-label={sidebarCollapsed ? '打开导航' : '收起导航'}
-          title={sidebarCollapsed ? '打开导航栏' : '收起导航栏'}
-          onClick={toggleSidebarCollapsed}
-        >
-          <SidebarToggleIcon />
-        </button>
-        <aside className={`studio-nav-sidebar${sidebarCollapsed ? ' is-collapsed' : ''}`}>
-          <StrictMode>
-            <SidebarNav
-              activeSection={sidebarSection}
-              sections={sidebarSections}
-              onSectionChange={setSidebarSection}
-              userName={CURRENT_USER_NAME}
-              userRole={currentUserRole}
-              onUserSwitch={() => setSidebarSection('settings')}
-              workflowStatusLabel={workflowStatusLabel}
-              workflowStatusPillClass={workflowStatusPillClass}
-              themeMode={settings.themeMode}
-              onToggleTheme={settings.toggleTheme}
-              isCollapsed={sidebarCollapsed}
-              onToggleCollapsed={toggleSidebarCollapsed}
-            />
-          </StrictMode>
-        </aside>
+      <div className="studio-body">
+        <section className="studio-frame">
+          <button
+            type="button"
+            className="studio-nav-toggle"
+            aria-label={sidebarCollapsed ? '打开导航' : '收起导航'}
+            title={sidebarCollapsed ? '打开导航栏' : '收起导航栏'}
+            onClick={toggleSidebarCollapsed}
+          >
+            <SidebarToggleIcon />
+          </button>
+          <aside className={`studio-nav-sidebar${sidebarCollapsed ? ' is-collapsed' : ''}`}>
+            <StrictMode>
+              <SidebarNav
+                activeSection={sidebarSection}
+                sections={sidebarSections}
+                onSectionChange={setSidebarSection}
+                userName={CURRENT_USER_NAME}
+                userRole={currentUserRole}
+                onUserSwitch={() => setSidebarSection('settings')}
+                workflowStatusLabel={workflowStatusLabel}
+                workflowStatusPillClass={workflowStatusPillClass}
+                themeMode={settings.themeMode}
+                onToggleTheme={settings.toggleTheme}
+                isCollapsed={sidebarCollapsed}
+                onToggleCollapsed={toggleSidebarCollapsed}
+              />
+            </StrictMode>
+          </aside>
 
-        <StudioContentRouter
+          <StudioContentRouter
           activeBoard={activeBoard}
           activeProject={activeProject}
           aiActionDisabled={aiWorkflowComposer.actionDisabled}
@@ -597,7 +599,10 @@ function App() {
           onAiConfigSave={handleAiConfigSave}
           onAiProviderTest={handleAiProviderTest}
         />
-      </section>
+        </section>
+
+        <CopilotPanel />
+      </div>
       <AiWorkflowComposer {...aiWorkflowComposer.composerProps} />
       {renderRestoreDialog()}
     </main>

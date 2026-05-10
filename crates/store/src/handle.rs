@@ -1,6 +1,9 @@
 //! Store 的 async 调用边界。
 
-use crate::{HistoryEntry, Store, StoreError, StoredGlobalVariable, StoredVariable};
+use crate::{
+    CopilotConversation, CopilotMessage, HistoryEntry, Store, StoreError, StoredGlobalVariable,
+    StoredVariable,
+};
 use std::sync::Arc;
 
 /// 面向 async 调用方的 Store 句柄。
@@ -184,5 +187,78 @@ impl StoreHandle {
         let key = key.to_owned();
         self.run_blocking(move |store| store.delete_global(&namespace, &key))
             .await
+    }
+
+    // -- Copilot 对话持久化 --
+
+    /// 列出所有 copilot 对话。
+    pub async fn list_copilot_conversations(&self) -> Result<Vec<CopilotConversation>, StoreError> {
+        self.run_blocking(Store::list_copilot_conversations)
+            .await
+    }
+
+    /// 创建新的 copilot 对话。
+    pub async fn create_copilot_conversation(
+        &self,
+        id: &str,
+        title: &str,
+        now: &str,
+    ) -> Result<CopilotConversation, StoreError> {
+        let id = id.to_owned();
+        let title = title.to_owned();
+        let now = now.to_owned();
+        self.run_blocking(move |store| store.create_copilot_conversation(&id, &title, &now))
+            .await
+    }
+
+    /// 删除 copilot 对话。
+    pub async fn delete_copilot_conversation(&self, id: &str) -> Result<(), StoreError> {
+        let id = id.to_owned();
+        self.run_blocking(move |store| store.delete_copilot_conversation(&id))
+            .await
+    }
+
+    /// 重命名 copilot 对话。
+    pub async fn rename_copilot_conversation(
+        &self,
+        id: &str,
+        title: &str,
+        now: &str,
+    ) -> Result<(), StoreError> {
+        let id = id.to_owned();
+        let title = title.to_owned();
+        let now = now.to_owned();
+        self.run_blocking(move |store| store.rename_copilot_conversation(&id, &title, &now))
+            .await
+    }
+
+    /// 加载指定对话的所有消息。
+    pub async fn list_copilot_messages(
+        &self,
+        conversation_id: &str,
+    ) -> Result<Vec<CopilotMessage>, StoreError> {
+        let conversation_id = conversation_id.to_owned();
+        self.run_blocking(move |store| store.list_copilot_messages(&conversation_id))
+            .await
+    }
+
+    /// 追加一条消息到指定对话。
+    pub async fn append_copilot_message(
+        &self,
+        conversation_id: &str,
+        id: &str,
+        role: &str,
+        content: &str,
+        now: &str,
+    ) -> Result<CopilotMessage, StoreError> {
+        let conversation_id = conversation_id.to_owned();
+        let id = id.to_owned();
+        let role = role.to_owned();
+        let content = content.to_owned();
+        let now = now.to_owned();
+        self.run_blocking(move |store| {
+            store.append_copilot_message(&conversation_id, &id, &role, &content, &now)
+        })
+        .await
     }
 }

@@ -1,0 +1,310 @@
+/* --- Copilot 副驾驶面板 --- */
+
+.copilot-panel {
+  display: flex;
+  width: 380px;
+  height: 100%;
+  flex-shrink: 0;
+  min-width: 0;
+  border-left: 1px solid var(--line-soft);
+  background: var(--surface);
+}
+
+.copilot-panel--collapsed {
+  width: 36px;
+  min-width: 36px;
+  cursor: pointer;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 12px;
+  border-left: 1px solid var(--line-soft);
+  background: var(--surface);
+}
+
+.copilot-panel__collapsed-icon {
+  font-size: var(--font-caption2);
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 0.04em;
+}
+
+.copilot-panel__sidebar {
+  width: 140px;
+  min-width: 120px;
+  border-right: 1px solid var(--line-faint);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+.copilot-panel__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* --- 会话列表 --- */
+
+.copilot-conv-list {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.copilot-conv-list__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--line-faint);
+}
+
+.copilot-conv-list__title {
+  font-size: var(--font-subheadline);
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.copilot-conv-list__actions {
+  display: flex;
+  gap: 4px;
+}
+
+.copilot-conv-list__items {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.copilot-conv-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  margin: 1px 4px;
+  transition: background 120ms;
+}
+
+.copilot-conv-item:hover {
+  background: var(--fill-tertiary);
+}
+
+.copilot-conv-item.is-active {
+  background: var(--fill-secondary);
+}
+
+.copilot-conv-item__title {
+  font-size: var(--font-caption1);
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.copilot-conv-list__empty {
+  padding: 12px 8px;
+  font-size: var(--font-caption1);
+  color: var(--muted);
+  text-align: center;
+}
+
+/* --- 通用按钮 --- */
+
+.copilot-btn-icon {
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: var(--font-caption1);
+  border-radius: var(--radius-sm);
+  line-height: 1;
+}
+
+.copilot-btn-icon:hover {
+  background: var(--fill-tertiary);
+  color: var(--fg);
+}
+
+.copilot-btn-icon--tiny {
+  font-size: 10px;
+  padding: 0 3px;
+  opacity: 0;
+}
+
+.copilot-conv-item:hover .copilot-btn-icon--tiny {
+  opacity: 1;
+}
+
+.copilot-btn-primary {
+  padding: 8px 16px;
+  border-radius: var(--radius-md);
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  font-size: var(--font-callout);
+  cursor: pointer;
+  transition: opacity 120ms;
+}
+
+.copilot-btn-primary:hover {
+  opacity: 0.88;
+}
+
+/* --- 对话视图 --- */
+
+.copilot-chat {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.copilot-chat--empty {
+  align-items: center;
+  justify-content: center;
+}
+
+.copilot-chat__welcome {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  color: var(--muted);
+}
+
+.copilot-chat__welcome p {
+  font-size: var(--font-body);
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.copilot-chat__messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* --- 消息 --- */
+
+.copilot-msg {
+  display: flex;
+  max-width: 100%;
+}
+
+.copilot-msg--user {
+  justify-content: flex-end;
+}
+
+.copilot-msg--assistant {
+  justify-content: flex-start;
+}
+
+.copilot-msg__bubble {
+  max-width: 85%;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  font-size: var(--font-callout);
+  line-height: 1.5;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.copilot-msg--user .copilot-msg__bubble {
+  background: var(--accent);
+  color: #fff;
+  border-bottom-right-radius: 2px;
+}
+
+.copilot-msg--assistant .copilot-msg__bubble {
+  background: var(--fill-secondary);
+  color: var(--fg);
+  border-bottom-left-radius: 2px;
+}
+
+.copilot-msg__content {
+  min-height: 1em;
+}
+
+.copilot-msg__cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  background: var(--accent);
+  margin-left: 2px;
+  animation: copilot-blink 800ms step-end infinite;
+  vertical-align: text-bottom;
+}
+
+@keyframes copilot-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* --- 输入区域 --- */
+
+.copilot-input {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--line-faint);
+}
+
+.copilot-input__textarea {
+  flex: 1;
+  resize: none;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  padding: 6px 10px;
+  font-size: var(--font-callout);
+  line-height: 1.4;
+  background: var(--surface);
+  color: var(--fg);
+  font-family: inherit;
+  min-height: 32px;
+  max-height: 120px;
+  outline: none;
+  transition: border-color 120ms;
+}
+
+.copilot-input__textarea:focus {
+  border-color: var(--accent);
+}
+
+.copilot-input__textarea::placeholder {
+  color: var(--muted);
+}
+
+.copilot-input__send {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: opacity 120ms;
+}
+
+.copilot-input__send:hover:not(:disabled) {
+  opacity: 0.88;
+}
+
+.copilot-input__send:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

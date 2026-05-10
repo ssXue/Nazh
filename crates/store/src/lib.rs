@@ -4,6 +4,7 @@
 //! 未来的 edge-daemon。Ring 0 保持纯净——本 crate 只消费 [`serde_json::Value`]
 //! 和基础类型，不依赖 `nazh-core`。
 
+mod copilot;
 mod error;
 mod global_variables;
 mod handle;
@@ -11,6 +12,7 @@ mod history;
 pub(crate) mod migrations;
 mod variables;
 
+pub use copilot::{CopilotConversation, CopilotMessage};
 pub use error::StoreError;
 pub use global_variables::StoredGlobalVariable;
 pub use handle::StoreHandle;

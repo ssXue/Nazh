@@ -117,7 +117,7 @@ fn build_openai_client(provider: &ResolvedProvider) -> async_openai::Client<Open
     async_openai::Client::with_config(config)
 }
 
-/// 将 AiMessage 列表转换为 JSON 消息数组。
+/// 将 `AiMessage` 列表转换为 JSON 消息数组。
 fn convert_messages(messages: &[AiMessage]) -> Vec<serde_json::Value> {
     messages
         .iter()
@@ -134,8 +134,8 @@ fn convert_messages(messages: &[AiMessage]) -> Vec<serde_json::Value> {
 
 /// 构建请求 JSON（统一 BYOT 路径）。
 fn build_request_json(
-    model: String,
-    messages: Vec<serde_json::Value>,
+    model: &str,
+    messages: &[serde_json::Value],
     params: &AiGenerationParams,
     stream: bool,
     is_deepseek: bool,
@@ -176,20 +176,20 @@ fn build_request_json(
             AiThinkingMode::Enabled => "enabled",
             AiThinkingMode::Disabled => "disabled",
         }});
-        if thinking_enabled {
-            if let Some(ref effort) = params.reasoning_effort {
-                body["reasoning_effort"] = json!(match effort {
-                    AiReasoningEffort::High => "high",
-                    AiReasoningEffort::Max => "max",
-                });
-            }
+        if thinking_enabled
+            && let Some(ref effort) = params.reasoning_effort
+        {
+            body["reasoning_effort"] = json!(match effort {
+                AiReasoningEffort::High => "high",
+                AiReasoningEffort::Max => "max",
+            });
         }
     }
 
     body
 }
 
-/// 将 extra_headers 构建为 reqwest HeaderMap，供 RequestOptionsBuilder::headers() 使用。
+/// 将 `extra_headers` 构建为 reqwest HeaderMap，供 `RequestOptionsBuilder::headers()` 使用。
 fn build_extra_header_map(
     headers: &std::collections::HashMap<String, String>,
 ) -> reqwest::header::HeaderMap {
@@ -254,8 +254,8 @@ impl AiService for OpenAiCompatibleService {
         let client = build_openai_client(&provider);
         let messages = convert_messages(&request.messages);
         let body = build_request_json(
-            model.to_owned(),
-            messages,
+            model,
+            &messages,
             &request.params,
             false,
             is_deepseek,
@@ -269,7 +269,7 @@ impl AiService for OpenAiCompatibleService {
         )
         .await?;
 
-        Ok(value_to_completion(value))
+        Ok(value_to_completion(&value))
     }
 
     async fn stream_complete(
@@ -296,8 +296,8 @@ impl AiService for OpenAiCompatibleService {
         let client = build_openai_client(&provider);
         let messages = convert_messages(&request.messages);
         let body = build_request_json(
-            model,
-            messages,
+            &model,
+            &messages,
             &request.params,
             true,
             is_deepseek,
@@ -399,8 +399,8 @@ impl OpenAiCompatibleService {
 
         let client = build_openai_client(&provider);
         let body = build_request_json(
-            model.clone(),
-            vec![json!({ "role": "user", "content": "Hi" })],
+            &model,
+            &[json!({ "role": "user", "content": "Hi" })],
             &build_connection_test_params(thinking_enabled),
             false,
             is_deepseek,
