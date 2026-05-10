@@ -38,6 +38,8 @@ interface AgentSettingsFormState {
   topP: string;
   timeoutMs: string;
   thinkingEnabled: boolean;
+  toolCallingEnabled: boolean;
+  ragEnabled: boolean;
 }
 
 const EMPTY_AGENT_SETTINGS_FORM: AgentSettingsFormState = {
@@ -47,6 +49,8 @@ const EMPTY_AGENT_SETTINGS_FORM: AgentSettingsFormState = {
   topP: '',
   timeoutMs: '',
   thinkingEnabled: false,
+  toolCallingEnabled: false,
+  ragEnabled: false,
 };
 
 interface ProviderPreset {
@@ -158,6 +162,8 @@ function toAgentSettingsForm(
     topP: readNumberInput(aiConfig.copilotParams.topP),
     timeoutMs: readNumberInput(aiConfig.agentSettings.timeoutMs),
     thinkingEnabled: aiConfig.agentSettings.thinkingEnabled,
+    toolCallingEnabled: aiConfig.agentSettings.toolCallingEnabled,
+    ragEnabled: aiConfig.agentSettings.ragEnabled,
   };
 }
 
@@ -391,6 +397,8 @@ export function AiConfigPanel({
           systemPrompt: agentSettingsForm.systemPrompt.trim() || undefined,
           timeoutMs: parseOptionalPositiveInteger(agentSettingsForm.timeoutMs),
           thinkingEnabled: agentSettingsForm.thinkingEnabled,
+          toolCallingEnabled: agentSettingsForm.toolCallingEnabled,
+          ragEnabled: agentSettingsForm.ragEnabled,
         },
       }),
     );
@@ -881,6 +889,36 @@ export function AiConfigPanel({
                 setAgentSettingsForm((prev) => ({
                   ...prev,
                   thinkingEnabled: value,
+                }))
+              }
+            />
+          </article>
+
+          <article className="settings-row">
+            <label className="settings-row__label" htmlFor="ai-agent-tool-calling">
+              启用工具调用（Copilot）
+            </label>
+            <SwitchBar
+              checked={agentSettingsForm.toolCallingEnabled}
+              onChange={(value) =>
+                setAgentSettingsForm((prev) => ({
+                  ...prev,
+                  toolCallingEnabled: value,
+                }))
+              }
+            />
+          </article>
+
+          <article className="settings-row">
+            <label className="settings-row__label" htmlFor="ai-agent-rag">
+              启用 RAG 上下文注入
+            </label>
+            <SwitchBar
+              checked={agentSettingsForm.ragEnabled}
+              onChange={(value) =>
+                setAgentSettingsForm((prev) => ({
+                  ...prev,
+                  ragEnabled: value,
                 }))
               }
             />

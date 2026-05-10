@@ -42,10 +42,6 @@ interface BoardWorkspaceProps {
   ) => void;
   onDuplicateEnvironment: (environmentId: string) => void;
   onDeleteEnvironment: (environmentId: string) => void;
-  onOpenAiComposer: () => void;
-  aiActionTitle: string;
-  aiActionDisabled?: boolean;
-  aiActionLoading?: boolean;
 }
 
 export const BoardWorkspace = forwardRef<BoardWorkspaceHandle, BoardWorkspaceProps>(
@@ -72,10 +68,6 @@ export const BoardWorkspace = forwardRef<BoardWorkspaceHandle, BoardWorkspacePro
       onEnvironmentSave,
       onDuplicateEnvironment,
       onDeleteEnvironment,
-      onOpenAiComposer,
-      aiActionTitle,
-      aiActionDisabled = false,
-      aiActionLoading = false,
     },
     ref,
   ) {
@@ -94,12 +86,8 @@ export const BoardWorkspace = forwardRef<BoardWorkspaceHandle, BoardWorkspacePro
           onEnvironmentSave={onEnvironmentSave}
           onDuplicateEnvironment={onDuplicateEnvironment}
           onDeleteEnvironment={onDeleteEnvironment}
-          onOpenAiComposer={onOpenAiComposer}
           isRuntimeDockCollapsed={isRuntimeDockCollapsed}
           onToggleRuntimeDockCollapsed={onToggleRuntimeDockCollapsed}
-          aiActionTitle={aiActionTitle}
-          aiActionDisabled={aiActionDisabled}
-          aiActionLoading={aiActionLoading}
         />
 
         <div className="studio-board-workspace__canvas-area">

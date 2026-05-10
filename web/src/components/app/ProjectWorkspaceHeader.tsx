@@ -8,7 +8,6 @@ import {
   PlusIcon,
   BottomPanelIcon,
   SaveIcon,
-  SparklesIcon,
   SnapshotIcon,
 } from './AppIcons';
 import {
@@ -32,12 +31,8 @@ interface ProjectWorkspaceHeaderProps {
   ) => void;
   onDuplicateEnvironment: (environmentId: string) => void;
   onDeleteEnvironment: (environmentId: string) => void;
-  onOpenAiComposer: () => void;
   isRuntimeDockCollapsed: boolean;
   onToggleRuntimeDockCollapsed: () => void;
-  aiActionTitle: string;
-  aiActionDisabled?: boolean;
-  aiActionLoading?: boolean;
 }
 
 function getSnapshotReasonLabel(reason: ProjectRecord['snapshots'][number]['reason']): string {
@@ -70,12 +65,8 @@ export function ProjectWorkspaceHeader({
   onEnvironmentSave,
   onDuplicateEnvironment,
   onDeleteEnvironment,
-  onOpenAiComposer,
   isRuntimeDockCollapsed,
   onToggleRuntimeDockCollapsed,
-  aiActionTitle,
-  aiActionDisabled = false,
-  aiActionLoading = false,
 }: ProjectWorkspaceHeaderProps) {
   const historyMenuRef = useRef<HTMLDetailsElement | null>(null);
   const environmentMenuRef = useRef<HTMLDetailsElement | null>(null);
@@ -160,17 +151,6 @@ export function ProjectWorkspaceHeader({
       </div>
 
       <div className="studio-board-workspace__controls" data-no-window-drag>
-        <button
-          type="button"
-          className="studio-board-workspace__action studio-board-workspace__action--accent"
-          onClick={onOpenAiComposer}
-          disabled={aiActionDisabled}
-          title={aiActionTitle}
-        >
-          <SparklesIcon />
-          <span>{aiActionLoading ? 'AI 编辑中...' : 'AI 编辑'}</span>
-        </button>
-
         <div className="studio-board-workspace__control-group">
           <label className="studio-board-workspace__environment-select">
             <EnvironmentIcon />

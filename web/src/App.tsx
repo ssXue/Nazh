@@ -1,7 +1,6 @@
 import { StrictMode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useAiConfigState } from './hooks/use-ai-config-state';
-import { useAiWorkflowComposerState } from './hooks/use-ai-workflow-composer-state';
 import { useAppNavigation } from './hooks/use-app-navigation';
 import { useDeploymentRestore } from './hooks/use-deployment-restore';
 import { useProjectLibrary } from './hooks/use-project-library';
@@ -12,7 +11,6 @@ import { useTestRun } from './hooks/use-test-run';
 import { useWorkflowEngine } from './hooks/use-workflow-engine';
 import { useConnectionLibrary } from './hooks/use-connection-library';
 
-import { AiWorkflowComposer } from './components/app/AiWorkflowComposer';
 import { SidebarToggleIcon } from './components/app/AppIcons';
 import type { BoardWorkspaceHandle } from './components/app/BoardWorkspace';
 import type { BoardItem } from './components/app/BoardsPanel';
@@ -220,25 +218,10 @@ function App() {
     setSidebarCollapsed,
   });
 
-  const aiWorkflowComposer = useAiWorkflowComposerState({
-    activeBoardId,
-    activeProject,
-    activeWorkflowId: engine.deployInfo?.workflowId ?? null,
-    aiConfig,
-    appErrors: engine.appErrors,
-    appendAppError: engine.appendAppError,
-    appendRuntimeLog: engine.appendRuntimeLog,
-    createProject: projectLibrary.createProject,
-    eventFeed: engine.eventFeed,
-    flowgramCanvasRef,
-    openBoard,
-    projectCount: projectLibrary.projects.length,
-    resetWorkspaceRuntime: engine.resetWorkspaceRuntime,
-    runtimeState: engine.runtimeState,
-    setStatusMessage: engine.setStatusMessage,
-    workspacePath: settings.projectWorkspacePath,
-    updateProjectDraft: projectActions.updateProjectDraft,
-  });
+  const handleEnsureBoardOpen = useCallback(() => {
+    if (activeBoardId) return;
+    projectActions.handleCreateBoard();
+  }, [activeBoardId, projectActions]);
 
   function buildDeploySnapshot() {
     if (!activeProject) {
@@ -544,9 +527,6 @@ function App() {
           <StudioContentRouter
           activeBoard={activeBoard}
           activeProject={activeProject}
-          aiActionDisabled={aiWorkflowComposer.actionDisabled}
-          aiActionLoadingEdit={aiWorkflowComposer.generating && aiWorkflowComposer.mode === 'edit'}
-          aiActionTitle={aiWorkflowComposer.actionTitle}
           aiConfig={aiConfig}
           aiConfigError={aiConfigError}
           aiConfigLoading={aiConfigLoading}
@@ -586,7 +566,6 @@ function App() {
           onEnvironmentSave={projectActions.handleEnvironmentSave}
           onGraphChange={projectActions.handleGraphChange}
           onImportBoardFile={projectActions.handleImportBoardFile}
-          onOpenAiEdit={aiWorkflowComposer.openEdit}
           onOpenBoard={projectActions.handleOpenBoard}
           onPayloadTextChange={projectActions.handlePayloadTextChange}
           onPersistActiveProject={persistActiveDeploymentProject}
@@ -601,9 +580,8 @@ function App() {
         />
         </section>
 
-        <CopilotPanel />
+        <CopilotPanel canvasRef={flowgramCanvasRef} onEnsureBoardOpen={handleEnsureBoardOpen} />
       </div>
-      <AiWorkflowComposer {...aiWorkflowComposer.composerProps} />
       {renderRestoreDialog()}
     </main>
   );

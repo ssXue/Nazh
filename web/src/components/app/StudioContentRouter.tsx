@@ -35,9 +35,6 @@ import type { SidebarSection } from './types';
 interface StudioContentRouterProps {
   activeBoard: BoardItem | null;
   activeProject: ProjectRecord | null;
-  aiActionDisabled: boolean;
-  aiActionLoadingEdit: boolean;
-  aiActionTitle: string;
   aiConfig: AiConfigView | null;
   aiConfigError: string | null;
   aiConfigLoading: boolean;
@@ -80,7 +77,6 @@ interface StudioContentRouterProps {
   ) => void;
   onGraphChange: (nextAstText: string) => void;
   onImportBoardFile: (file: File) => void | Promise<void>;
-  onOpenAiEdit: () => void;
   onOpenBoard: (board: BoardItem) => void;
   onPayloadTextChange: (value: string) => void;
   onPersistActiveProject: (projectId: string | null) => Promise<void>;
@@ -123,9 +119,6 @@ function StrictStudioPanel({ children }: { children: ReactNode }) {
 export function StudioContentRouter({
   activeBoard,
   activeProject,
-  aiActionDisabled,
-  aiActionLoadingEdit,
-  aiActionTitle,
   aiConfig,
   aiConfigError,
   aiConfigLoading,
@@ -165,7 +158,6 @@ export function StudioContentRouter({
   onEnvironmentSave,
   onGraphChange,
   onImportBoardFile,
-  onOpenAiEdit,
   onOpenBoard,
   onPayloadTextChange,
   onPersistActiveProject,
@@ -288,10 +280,6 @@ export function StudioContentRouter({
             onEnvironmentSave={onEnvironmentSave}
             onDuplicateEnvironment={onDuplicateEnvironment}
             onDeleteEnvironment={onDeleteEnvironment}
-            onOpenAiComposer={onOpenAiEdit}
-            aiActionTitle={aiActionTitle}
-            aiActionDisabled={aiActionDisabled}
-            aiActionLoading={aiActionLoadingEdit}
           />
         </section>
       );

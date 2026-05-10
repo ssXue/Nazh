@@ -126,10 +126,31 @@ interface FlowgramCanvasProps {
   actions: FlowgramCanvasActions;
 }
 
+export interface CanvasNodeOp {
+  id: string;
+  type: string;
+  label?: string;
+  config?: Record<string, unknown>;
+  connection_id?: string;
+}
+
+export interface CanvasEdgeOp {
+  from: string;
+  to: string;
+  source_port_id?: string;
+  target_port_id?: string;
+}
+
+export interface CanvasOps {
+  nodes: CanvasNodeOp[];
+  edges: CanvasEdgeOp[];
+}
+
 export interface FlowgramCanvasHandle {
   isReady: () => boolean;
   getCurrentWorkflowGraph: () => WorkflowGraph | null;
   loadWorkflowGraph: (graph: WorkflowGraph) => void;
+  addCanvasOps: (ops: CanvasOps) => void;
 }
 
 interface InternalFlowExportImageService {
@@ -632,6 +653,107 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
     [applyExternalFlowgramGraph, editorCtx, reportFlowgramError],
   );
 
+  const addCanvasOps = useCallback(
+    (ops: CanvasOps) => {
+      if (!editorCtx || editorCtx.playground.config.readonly) return;
+
+      try {
+        applyingExternalGraphRef.current = true;
+        const createdIds = new Set<string>();
+
+        // 简易拓扑排序：按边关系确定层级
+        const depthMap = new Map<string, number>();
+        for (const node of ops.nodes) {
+          depthMap.set(node.id, 0);
+        }
+        for (const edge of ops.edges) {
+          const fromDepth = depthMap.get(edge.from) ?? 0;
+          const toDepth = depthMap.get(edge.to);
+          if (toDepth !== undefined) {
+            depthMap.set(edge.to, Math.max(toDepth, fromDepth + 1));
+          }
+        }
+
+        // 按 depth 分组，同一 depth 内纵向偏移
+        const byDepth = new Map<number, CanvasNodeOp[]>();
+        for (const node of ops.nodes) {
+          const d = depthMap.get(node.id) ?? 0;
+          let group = byDepth.get(d);
+          if (!group) {
+            group = [];
+            byDepth.set(d, group);
+          }
+          group.push(node);
+        }
+
+        // 确定起始位置：基于当前选中节点或画布中心
+        const anchorNode = selectedNodeRef.current;
+        const baseX = anchorNode?.getNodeMeta().position?.x ?? 200;
+        const baseY = anchorNode?.getNodeMeta().position?.y ?? 300;
+
+        const idToEntity = new Map<string, FlowNodeEntity>();
+
+        const sortedDepths = [...byDepth.keys()].sort((a, b) => a - b);
+        for (const depth of sortedDepths) {
+          const group = byDepth.get(depth) ?? [];
+          for (let i = 0; i < group.length; i++) {
+            const op = group[i];
+            const x = baseX + depth * 320;
+            const y = baseY + i * 168;
+
+            const seed: NodeSeed = {
+              idPrefix: op.type,
+              kind: normalizeNodeKind(op.type),
+              label: op.label ?? '',
+              connectionId: op.connection_id ?? null,
+              timeoutMs: null,
+              config: (op.config ?? {}) as NodeSeed['config'],
+            };
+
+            const node = editorCtx.document.createWorkflowNodeByType(
+              seed.kind,
+              { x, y },
+              {
+                id: op.id,
+                type: seed.kind,
+                data: resolveNodeData(seed, op.id, connectionDefaults),
+              },
+            );
+
+            idToEntity.set(op.id, node);
+            createdIds.add(op.id);
+          }
+        }
+
+        // 创建边
+        for (const edge of ops.edges) {
+          editorCtx.document.linesManager.createLine({
+            from: edge.from,
+            to: edge.to,
+            ...(edge.source_port_id ? { fromPort: edge.source_port_id } : {}),
+            ...(edge.target_port_id ? { toPort: edge.target_port_id } : {}),
+          });
+        }
+
+        syncSelectionState(editorCtx);
+
+        // 选中最后一个节点并滚动到视图
+        const lastNode = ops.nodes[ops.nodes.length - 1];
+        if (lastNode) {
+          const entity = idToEntity.get(lastNode.id);
+          if (entity) {
+            void editorCtx.document.selectServices.selectNodeAndScrollToView(entity, false);
+          }
+        }
+      } catch (error) {
+        reportFlowgramError('Copilot 画布节点添加失败', error);
+      } finally {
+        applyingExternalGraphRef.current = false;
+      }
+    },
+    [connectionDefaults, editorCtx, reportFlowgramError, syncSelectionState],
+  );
+
   useImperativeHandle(
     ref,
     () => ({
@@ -639,8 +761,9 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
       getCurrentWorkflowGraph: () =>
         editorCtx ? buildCurrentWorkflowGraph(editorCtx) : latestGraphRef.current,
       loadWorkflowGraph,
+      addCanvasOps,
     }),
-    [buildCurrentWorkflowGraph, editorCtx, loadWorkflowGraph],
+    [addCanvasOps, buildCurrentWorkflowGraph, editorCtx, loadWorkflowGraph],
   );
 
   const handleSaveCurrentGraph = useCallback(() => {
