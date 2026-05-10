@@ -2,28 +2,24 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { CopilotChatInput } from './CopilotChatInput';
 import { CopilotMessageItem } from './CopilotMessageItem';
-
-interface LocalMessage {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  streaming?: boolean;
-}
+import type { LocalMessage, CopilotSessionStatus } from './CopilotPanel';
 
 interface Props {
   messages: LocalMessage[];
-  sending: boolean;
+  status: CopilotSessionStatus;
   hasConversation: boolean;
   onSend: (text: string) => void;
   onNewConversation: () => void;
+  onCancel: () => void;
 }
 
 export function CopilotChatView({
   messages,
-  sending,
+  status,
   hasConversation,
   onSend,
   onNewConversation,
+  onCancel,
 }: Props) {
   const listRef = useRef<HTMLDivElement>(null);
   const [inputText, setInputText] = useState('');
@@ -35,10 +31,10 @@ export function CopilotChatView({
   }, [messages]);
 
   const handleSend = useCallback(() => {
-    if (!inputText.trim() || sending) return;
+    if (!inputText.trim() || status !== 'idle') return;
     onSend(inputText);
     setInputText('');
-  }, [inputText, sending, onSend]);
+  }, [inputText, status, onSend]);
 
   if (!hasConversation) {
     return (
@@ -57,14 +53,24 @@ export function CopilotChatView({
     <div className="copilot-chat">
       <div className="copilot-chat__messages" ref={listRef}>
         {messages.map((msg) => (
-          <CopilotMessageItem key={msg.id} role={msg.role} content={msg.content} streaming={msg.streaming} />
+          <CopilotMessageItem
+            key={msg.id}
+            role={msg.role}
+            content={msg.content}
+            streaming={msg.streaming}
+            toolCalls={msg.toolCalls}
+            toolResults={msg.toolResults}
+            protocolOps={msg.protocolOps}
+            protocolDoneSummary={msg.protocolDoneSummary}
+          />
         ))}
       </div>
       <CopilotChatInput
         value={inputText}
         onChange={setInputText}
         onSend={handleSend}
-        disabled={sending}
+        status={status}
+        onCancel={onCancel}
       />
     </div>
   );

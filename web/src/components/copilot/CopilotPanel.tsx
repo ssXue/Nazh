@@ -1,32 +1,126 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 
 import { invoke } from '@tauri-apps/api/core';
 
+import type { FlowgramCanvasHandle, CanvasOps } from '../FlowgramCanvas';
 import type { CopilotConversationResponse } from '../../generated/CopilotConversationResponse';
 import type { CopilotMessageResponse } from '../../generated/CopilotMessageResponse';
 import { copilotChatStream } from '../../lib/copilot-stream';
+import type { ToolCallInfo, ToolResultInfo } from '../../lib/copilot-stream';
+import {
+  consumeOperationLines,
+  createInitialProtocolSession,
+  flushRemainingProtocolLines,
+  protocolSessionApplyOp,
+  type ProtocolOperation,
+  type CopilotProtocolSession,
+} from '../../lib/copilot-protocol';
 import { hasTauriRuntime } from '../../lib/tauri';
 import { CopilotChatView } from './CopilotChatView';
 import { CopilotConversationList } from './CopilotConversationList';
 
-interface LocalMessage {
+/// 调试日志开关——开发期间保持 true，上线后可关闭。
+const DEBUG_PANEL = true;
+
+function panelLog(...args: unknown[]) {
+  if (DEBUG_PANEL) console.log('[copilot-panel]', ...args);
+}
+
+function panelWarn(...args: unknown[]) {
+  if (DEBUG_PANEL) console.warn('[copilot-panel]', ...args);
+}
+
+export type CopilotSessionStatus = 'idle' | 'generating';
+
+export interface LocalMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   streaming?: boolean;
+  toolCalls?: ToolCallInfo[];
+  toolResults?: ToolResultInfo[];
+  protocolOps?: ProtocolOperation[];
+  protocolDoneSummary?: string;
 }
 
 function localConversationId(): string {
   return `local-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-export function CopilotPanel() {
+interface CopilotPanelProps {
+  canvasRef: RefObject<FlowgramCanvasHandle | null>;
+  onEnsureBoardOpen: () => void;
+}
+
+/// 节流更新间隔（ms）。
+const FLUSH_INTERVAL = 150;
+
+interface PendingUpdate {
+  content: string;
+  protocolOps?: ProtocolOperation[];
+  protocolDoneSummary?: string;
+  toolCalls?: ToolCallInfo[];
+  toolResults?: ToolResultInfo[];
+}
+
+export function CopilotPanel({ canvasRef, onEnsureBoardOpen }: CopilotPanelProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [conversations, setConversations] = useState<CopilotConversationResponse[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [messages, setMessages] = useState<LocalMessage[]>([]);
-  const [sending, setSending] = useState(false);
+  const [status, setStatus] = useState<CopilotSessionStatus>('idle');
   const isTauri = hasTauriRuntime();
+
+  // 协议解析状态（per-send）
+  const protocolSessionRef = useRef<CopilotProtocolSession>(createInitialProtocolSession());
+  const protocolProcessedRef = useRef(0);
+
+  // AbortController
+  const abortRef = useRef<AbortController | null>(null);
+
+  // 节流更新
+  const pendingUpdateRef = useRef<PendingUpdate | null>(null);
+  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeMsgIdRef = useRef<string | null>(null);
+
+  const flushPendingUpdate = useCallback(() => {
+    if (flushTimerRef.current !== null) {
+      clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = null;
+    }
+    const update = pendingUpdateRef.current;
+    const msgId = activeMsgIdRef.current;
+    if (!update || !msgId) {
+      pendingUpdateRef.current = null;
+      return;
+    }
+    pendingUpdateRef.current = null;
+    panelLog('flushPendingUpdate', {
+      msgId,
+      contentLen: update.content.length,
+      hasProtocolOps: !!update.protocolOps,
+      opsCount: update.protocolOps?.length ?? 0,
+      toolCalls: update.toolCalls?.length ?? 0,
+      toolResults: update.toolResults?.length ?? 0,
+    });
+    setMessages((prev) =>
+      prev.map((m) => (m.id === msgId ? {
+        ...m,
+        content: update.content,
+        protocolOps: update.protocolOps,
+        protocolDoneSummary: update.protocolDoneSummary,
+        toolCalls: update.toolCalls ?? m.toolCalls,
+        toolResults: update.toolResults ?? m.toolResults,
+      } : m)),
+    );
+  }, []);
+
+  const scheduleFlush = useCallback(() => {
+    if (flushTimerRef.current !== null) return;
+    flushTimerRef.current = setTimeout(() => {
+      flushPendingUpdate();
+    }, FLUSH_INTERVAL);
+  }, [flushPendingUpdate]);
 
   const refreshConversations = useCallback(async () => {
     if (!isTauri) return;
@@ -39,6 +133,14 @@ export function CopilotPanel() {
   useEffect(() => {
     void refreshConversations();
   }, [refreshConversations]);
+
+  useEffect(() => {
+    return () => {
+      if (flushTimerRef.current !== null) {
+        clearTimeout(flushTimerRef.current);
+      }
+    };
+  }, []);
 
   const loadMessages = useCallback(async (convId: string) => {
     if (!isTauri) return;
@@ -88,50 +190,254 @@ export function CopilotPanel() {
     }
   }, [isTauri, activeId]);
 
+  const handleCancel = useCallback(() => {
+    panelLog('handleCancel', { hasAbort: !!abortRef.current, protocolOps: protocolSessionRef.current.operations.length });
+    abortRef.current?.abort();
+    abortRef.current = null;
+    flushPendingUpdate();
+    const msgId = activeMsgIdRef.current;
+    if (msgId) {
+      setMessages((prev) =>
+        prev.map((m) => (m.id === msgId ? { ...m, streaming: false } : m)),
+      );
+    }
+    setStatus('idle');
+  }, [flushPendingUpdate]);
+
+  /// 标记本次 send 是否已经调用过 onEnsureBoardOpen（防止多次创建工程）。
+  const boardEnsuredRef = useRef(false);
+
   const handleSend = useCallback(async (text: string) => {
-    if (!activeId || !text.trim() || sending) return;
+    if (!activeId || !text.trim() || status !== 'idle') return;
+
+    panelLog('handleSend 开始', { activeId, text: text.slice(0, 80), status });
 
     const userMsg: LocalMessage = { id: `local-${Date.now()}`, role: 'user', content: text.trim() };
-    const assistantMsg: LocalMessage = { id: `stream-${Date.now()}`, role: 'assistant', content: '', streaming: true };
+    const assistantMsgId = `stream-${Date.now()}`;
+    const assistantMsg: LocalMessage = { id: assistantMsgId, role: 'assistant', content: '', streaming: true, toolCalls: [], toolResults: [] };
 
     setMessages((prev) => [...prev, userMsg, assistantMsg]);
-    setSending(true);
+    setStatus('generating');
+    activeMsgIdRef.current = assistantMsgId;
+
+    // 重置协议解析状态
+    protocolSessionRef.current = createInitialProtocolSession();
+    protocolProcessedRef.current = 0;
+    boardEnsuredRef.current = false;
+
+    // 创建 AbortController
+    const abortController = new AbortController();
+    abortRef.current = abortController;
 
     if (!isTauri) {
       setMessages((prev) =>
         prev.map((m) =>
-          m.id === assistantMsg.id ? { ...m, content: '预览模式：AI 不可用，请在 Tauri 桌面端使用', streaming: false } : m,
+          m.id === assistantMsgId ? { ...m, content: '预览模式：AI 不可用，请在 Tauri 桌面端使用', streaming: false } : m,
         ),
       );
-      setSending(false);
+      setStatus('idle');
       return;
     }
 
     try {
-      await copilotChatStream(
+      const result = await copilotChatStream(
         activeId,
         text.trim(),
         (accumulated) => {
-          setMessages((prev) =>
-            prev.map((m) => (m.id === assistantMsg.id ? { ...m, content: accumulated } : m)),
+          // 增量解析 JSON Lines 操作
+          const { nextProcessedLength, operations } = consumeOperationLines(
+            accumulated,
+            protocolProcessedRef.current,
           );
+          protocolProcessedRef.current = nextProcessedLength;
+
+          if (operations.length === 0) return;
+
+          let session = protocolSessionRef.current;
+          let doneSummary: string | undefined;
+          const pendingNodes: CanvasOps['nodes'] = [];
+          const pendingEdges: CanvasOps['edges'] = [];
+
+          for (const op of operations) {
+            session = protocolSessionApplyOp(session, op);
+            protocolSessionRef.current = session;
+
+            if (op.type === 'create_node') {
+              const nodeId = session.nodeRefs[op.ref];
+              if (nodeId) {
+                pendingNodes.push({
+                  id: nodeId,
+                  type: op.nodeType,
+                  label: op.label,
+                  config: op.config as Record<string, unknown> | undefined,
+                  connection_id: op.connectionId ?? undefined,
+                });
+              } else {
+                panelWarn('create_node: nodeId 未分配，跳过', { ref: op.ref });
+              }
+            } else if (op.type === 'create_edge') {
+              const fromId = session.nodeRefs[op.fromRef];
+              const toId = session.nodeRefs[op.toRef];
+              if (fromId && toId) {
+                pendingEdges.push({ from: fromId, to: toId, source_port_id: op.sourcePortId, target_port_id: op.targetPortId });
+              } else {
+                panelWarn('create_edge: ref 未解析，跳过', {
+                  fromRef: op.fromRef,
+                  toRef: op.toRef,
+                  fromId,
+                  toId,
+                  nodeRefs: session.nodeRefs,
+                });
+              }
+            } else if (op.type === 'done') {
+              doneSummary = op.summary;
+            }
+          }
+
+          // 只在有画布操作时调用 onEnsureBoardOpen，且仅调用一次
+          if ((pendingNodes.length > 0 || pendingEdges.length > 0) && !boardEnsuredRef.current) {
+            panelLog('首次调用 onEnsureBoardOpen');
+            onEnsureBoardOpen();
+            boardEnsuredRef.current = true;
+          }
+
+          // 一次性提交所有画布操作
+          if (pendingNodes.length > 0 || pendingEdges.length > 0) {
+            panelLog('批量提交画布操作', { nodes: pendingNodes.length, edges: pendingEdges.length });
+            canvasRef.current?.addCanvasOps({ nodes: pendingNodes, edges: pendingEdges });
+          }
+
+          // 写入节流队列而非直接 setMessages
+          let displayContent = accumulated;
+          const allOps = [...(session.operations)];
+          if (allOps.length > 0) {
+            displayContent = doneSummary ?? '';
+          }
+
+          pendingUpdateRef.current = {
+            content: displayContent,
+            protocolOps: allOps.length > 0 ? allOps : undefined,
+            protocolDoneSummary: doneSummary,
+          };
+          scheduleFlush();
         },
+        undefined,
+        (toolCallInfo) => {
+          // toolCalls 追加到节流队列
+          panelLog('toolCalls 回调', { round: toolCallInfo.round, count: toolCallInfo.calls.length, names: toolCallInfo.calls.map((c) => c.name) });
+          const current = pendingUpdateRef.current;
+          pendingUpdateRef.current = {
+            ...current,
+            content: current?.content ?? '',
+            toolCalls: [...(current?.toolCalls ?? []), toolCallInfo],
+          };
+          scheduleFlush();
+        },
+        (toolResultInfo) => {
+          panelLog('toolResult 回调', { name: toolResultInfo.name, isError: toolResultInfo.isError });
+          const current = pendingUpdateRef.current;
+          pendingUpdateRef.current = {
+            ...current,
+            content: current?.content ?? '',
+            toolResults: [...(current?.toolResults ?? []), toolResultInfo],
+          };
+          scheduleFlush();
+        },
+        abortController.signal,
       );
+
+      // 流结束，强制 flush 剩余未解析的协议行（最后一行可能无尾部 \n）
+      {
+        const remaining = flushRemainingProtocolLines(result.text, protocolProcessedRef.current);
+        protocolProcessedRef.current = remaining.nextProcessedLength;
+
+        if (remaining.operations.length > 0) {
+          let session = protocolSessionRef.current;
+          let doneSummary: string | undefined;
+          const flushNodes: CanvasOps['nodes'] = [];
+          const flushEdges: CanvasOps['edges'] = [];
+
+          for (const op of remaining.operations) {
+            session = protocolSessionApplyOp(session, op);
+            protocolSessionRef.current = session;
+
+            if (op.type === 'create_node') {
+              const nodeId = session.nodeRefs[op.ref];
+              if (nodeId) {
+                flushNodes.push({
+                  id: nodeId,
+                  type: op.nodeType,
+                  label: op.label,
+                  config: op.config as Record<string, unknown> | undefined,
+                  connection_id: op.connectionId ?? undefined,
+                });
+              }
+            } else if (op.type === 'create_edge') {
+              const fromId = session.nodeRefs[op.fromRef];
+              const toId = session.nodeRefs[op.toRef];
+              if (fromId && toId) {
+                flushEdges.push({ from: fromId, to: toId, source_port_id: op.sourcePortId, target_port_id: op.targetPortId });
+              }
+            } else if (op.type === 'done') {
+              doneSummary = op.summary;
+            }
+          }
+
+          if ((flushNodes.length > 0 || flushEdges.length > 0) && !boardEnsuredRef.current) {
+            panelLog('flush 首次调用 onEnsureBoardOpen');
+            onEnsureBoardOpen();
+            boardEnsuredRef.current = true;
+          }
+
+          if (flushNodes.length > 0 || flushEdges.length > 0) {
+            panelLog('flush 批量提交画布操作', { nodes: flushNodes.length, edges: flushEdges.length });
+            canvasRef.current?.addCanvasOps({ nodes: flushNodes, edges: flushEdges });
+          }
+
+          const allOps = [...session.operations];
+          const currentPending = pendingUpdateRef.current;
+          const existingSummary = currentPending?.protocolDoneSummary;
+          pendingUpdateRef.current = {
+            content: currentPending?.content ?? '',
+            protocolOps: allOps.length > 0 ? allOps : undefined,
+            protocolDoneSummary: doneSummary ?? existingSummary,
+          };
+        }
+      }
+
+      // 立即 flush 最后的状态
+      flushPendingUpdate();
+      setMessages((prev) =>
+        prev.map((m) => (m.id === assistantMsgId ? { ...m, streaming: false } : m)),
+      );
+
+      panelLog('流正常结束', {
+        textLen: result.text.length,
+        aborted: result.aborted,
+        finishReason: result.finishReason,
+        protocolOpsCount: protocolSessionRef.current.operations.length,
+        nodeRefs: protocolSessionRef.current.nodeRefs,
+        preview: result.text.slice(0, 200),
+      });
+
+      if (result.aborted) {
+        // 用户取消，不标记为错误
+      }
     } catch (error) {
+      flushPendingUpdate();
+      panelWarn('流异常结束', { error: error instanceof Error ? error.message : String(error) });
       const errorMessage = error instanceof Error ? error.message : String(error);
       setMessages((prev) =>
         prev.map((m) =>
-          m.id === assistantMsg.id ? { ...m, content: `错误: ${errorMessage}`, streaming: false } : m,
+          m.id === assistantMsgId ? { ...m, content: `错误: ${errorMessage}`, streaming: false } : m,
         ),
       );
     } finally {
-      setMessages((prev) =>
-        prev.map((m) => (m.id === assistantMsg.id ? { ...m, streaming: false } : m)),
-      );
-      setSending(false);
+      setStatus('idle');
+      abortRef.current = null;
       void refreshConversations();
     }
-  }, [activeId, sending, isTauri, refreshConversations]);
+  }, [activeId, status, isTauri, refreshConversations, canvasRef, onEnsureBoardOpen, flushPendingUpdate, scheduleFlush]);
 
   if (collapsed) {
     return (
@@ -161,10 +467,11 @@ export function CopilotPanel() {
       <div className="copilot-panel__main">
         <CopilotChatView
           messages={messages}
-          sending={sending}
+          status={status}
           hasConversation={Boolean(activeId)}
           onSend={handleSend}
           onNewConversation={handleNewConversation}
+          onCancel={handleCancel}
         />
       </div>
     </section>

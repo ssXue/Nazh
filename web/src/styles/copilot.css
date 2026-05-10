@@ -234,6 +234,143 @@
   min-height: 1em;
 }
 
+/* --- Markdown 渲染 --- */
+
+.copilot-md {
+  line-height: 1.5;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.copilot-md p {
+  margin: 0 0 8px;
+}
+
+.copilot-md p:last-child {
+  margin-bottom: 0;
+}
+
+.copilot-md h3,
+.copilot-md h4 {
+  margin: 12px 0 6px;
+  font-size: var(--font-callout);
+  font-weight: 600;
+}
+
+.copilot-md ul,
+.copilot-md ol {
+  margin: 4px 0 8px;
+  padding-left: 20px;
+}
+
+.copilot-md li {
+  margin-bottom: 2px;
+}
+
+.copilot-md code {
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+  font-size: 0.9em;
+  background: var(--fill-tertiary);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.copilot-md pre {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--fill-tertiary);
+  overflow-x: auto;
+}
+
+.copilot-md pre code {
+  background: none;
+  padding: 0;
+  font-size: var(--font-caption1);
+  line-height: 1.6;
+}
+
+.copilot-md blockquote {
+  margin: 8px 0;
+  padding-left: 12px;
+  border-left: 3px solid var(--line-soft);
+  color: var(--muted);
+}
+
+.copilot-md table {
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: var(--font-caption1);
+}
+
+.copilot-md th,
+.copilot-md td {
+  border: 1px solid var(--line-soft);
+  padding: 4px 8px;
+  text-align: left;
+}
+
+.copilot-md th {
+  background: var(--fill-tertiary);
+  font-weight: 600;
+}
+
+.copilot-md strong {
+  font-weight: 600;
+}
+
+.copilot-md em {
+  font-style: italic;
+}
+
+.copilot-md a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.copilot-md a:hover {
+  text-decoration: underline;
+}
+
+.copilot-msg__tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.copilot-tool-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.copilot-tool-chip--running {
+  background: var(--fill-tertiary);
+  color: var(--fg);
+  animation: copilot-tool-pulse 1.2s ease-in-out infinite;
+}
+
+.copilot-tool-chip--done {
+  background: var(--fill-tertiary);
+  color: var(--muted);
+}
+
+.copilot-tool-chip--error {
+  background: rgba(220, 53, 69, 0.12);
+  color: #dc3545;
+}
+
+@keyframes copilot-tool-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
 .copilot-msg__cursor {
   display: inline-block;
   width: 2px;
@@ -307,4 +444,111 @@
 .copilot-input__send:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+.copilot-input__stop {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  border: none;
+  background: #dc3545;
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: opacity 120ms;
+}
+
+.copilot-input__stop:hover {
+  opacity: 0.88;
+}
+
+/* --- Canvas ops preview --- */
+
+.copilot-msg__canvas-ops {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.copilot-canvas-ops {
+  background: var(--fill-secondary);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.copilot-canvas-ops--applied {
+  opacity: 0.6;
+  border-color: transparent;
+}
+
+.copilot-canvas-ops__nodes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.copilot-node-chip {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--fill-tertiary);
+  font-size: var(--font-caption1);
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+}
+
+.copilot-canvas-ops__edges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.copilot-edge-tag {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font-size: 11px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+}
+
+.copilot-canvas-ops__action {
+  align-self: flex-start;
+  padding: 3px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--accent);
+  background: transparent;
+  color: var(--accent);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 120ms, color 120ms;
+}
+
+.copilot-canvas-ops__action:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+.copilot-canvas-ops__status {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* --- Protocol ops card --- */
+
+.copilot-protocol-ops {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 0;
 }
