@@ -138,10 +138,10 @@ fn build_request_json(
     messages: Vec<serde_json::Value>,
     params: &AiGenerationParams,
     stream: bool,
-    include_deepseek_options: bool,
+    is_deepseek: bool,
+    thinking_enabled: bool,
 ) -> serde_json::Value {
-    let omit_sampling_params =
-        include_deepseek_options && is_thinking_enabled(params);
+    let omit_sampling_params = is_deepseek && thinking_enabled;
 
     let mut body = json!({
         "model": model,
@@ -162,29 +162,31 @@ fn build_request_json(
         }
     }
 
-    if include_deepseek_options {
-        if let Some(ref thinking) = params.thinking {
-            body["thinking"] = json!({ "type": match thinking.kind {
-                AiThinkingMode::Enabled => "enabled",
-                AiThinkingMode::Disabled => "disabled",
-            }});
-        }
-        if let Some(ref effort) = params.reasoning_effort {
-            body["reasoning_effort"] = json!(match effort {
-                AiReasoningEffort::High => "high",
-                AiReasoningEffort::Max => "max",
+    if is_deepseek {
+        let thinking_mode = params
+            .thinking
+            .as_ref()
+            .map(|t| t.kind.clone())
+            .unwrap_or(if thinking_enabled {
+                AiThinkingMode::Enabled
+            } else {
+                AiThinkingMode::Disabled
             });
+        body["thinking"] = json!({ "type": match thinking_mode {
+            AiThinkingMode::Enabled => "enabled",
+            AiThinkingMode::Disabled => "disabled",
+        }});
+        if thinking_enabled {
+            if let Some(ref effort) = params.reasoning_effort {
+                body["reasoning_effort"] = json!(match effort {
+                    AiReasoningEffort::High => "high",
+                    AiReasoningEffort::Max => "max",
+                });
+            }
         }
     }
 
     body
-}
-
-fn is_thinking_enabled(params: &AiGenerationParams) -> bool {
-    params
-        .thinking
-        .as_ref()
-        .is_some_and(|thinking| thinking.kind == AiThinkingMode::Enabled)
 }
 
 /// 将 extra_headers 构建为 reqwest HeaderMap，供 RequestOptionsBuilder::headers() 使用。
@@ -237,8 +239,7 @@ impl AiService for OpenAiCompatibleService {
         let model = request.model.as_deref().unwrap_or(&provider.default_model);
         let timeout_ms = request.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS);
         let thinking_enabled = snapshot.agent_settings.thinking_enabled;
-        let include_deepseek_options =
-            thinking_enabled && provider_accepts_deepseek_options(&provider.base_url, model);
+        let is_deepseek = provider_accepts_deepseek_options(&provider.base_url, model);
 
         tracing::info!(
             provider = %request.provider_id,
@@ -246,7 +247,7 @@ impl AiService for OpenAiCompatibleService {
             messages = request.messages.len(),
             timeout_ms,
             thinking_enabled,
-            include_deepseek_options,
+            is_deepseek,
             "AI completion 请求发送"
         );
 
@@ -257,7 +258,8 @@ impl AiService for OpenAiCompatibleService {
             messages,
             &request.params,
             false,
-            include_deepseek_options,
+            is_deepseek,
+            thinking_enabled,
         );
 
         let extra = build_extra_header_map(&provider.extra_headers);
@@ -289,8 +291,7 @@ impl AiService for OpenAiCompatibleService {
             .unwrap_or_else(|| provider.default_model.clone());
         let timeout_ms = request.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS);
         let thinking_enabled = snapshot.agent_settings.thinking_enabled;
-        let include_deepseek_options =
-            thinking_enabled && provider_accepts_deepseek_options(&provider.base_url, &model);
+        let is_deepseek = provider_accepts_deepseek_options(&provider.base_url, &model);
 
         let client = build_openai_client(&provider);
         let messages = convert_messages(&request.messages);
@@ -299,7 +300,8 @@ impl AiService for OpenAiCompatibleService {
             messages,
             &request.params,
             true,
-            include_deepseek_options,
+            is_deepseek,
+            thinking_enabled,
         );
 
         let extra = build_extra_header_map(&provider.extra_headers);
@@ -393,8 +395,7 @@ impl OpenAiCompatibleService {
 
         let thinking_enabled = snapshot.agent_settings.thinking_enabled;
         let model = provider.default_model.clone();
-        let include_deepseek_options =
-            thinking_enabled && provider_accepts_deepseek_options(&provider.base_url, &model);
+        let is_deepseek = provider_accepts_deepseek_options(&provider.base_url, &model);
 
         let client = build_openai_client(&provider);
         let body = build_request_json(
@@ -402,7 +403,8 @@ impl OpenAiCompatibleService {
             vec![json!({ "role": "user", "content": "Hi" })],
             &build_connection_test_params(thinking_enabled),
             false,
-            include_deepseek_options,
+            is_deepseek,
+            thinking_enabled,
         );
 
         let extra = build_extra_header_map(&provider.extra_headers);

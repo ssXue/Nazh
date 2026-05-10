@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
+import { SwitchBar } from '../flowgram/nodes/settings-shared';
+
 import type { AiConfigPanelProps } from './types';
 import type {
   AiAgentSettings,
@@ -873,14 +875,12 @@ export function AiConfigPanel({
             <label className="settings-row__label" htmlFor="ai-agent-thinking">
               启用 Thinking（深度思考）
             </label>
-            <input
-              id="ai-agent-thinking"
-              type="checkbox"
+            <SwitchBar
               checked={agentSettingsForm.thinkingEnabled}
-              onChange={(e) =>
+              onChange={(value) =>
                 setAgentSettingsForm((prev) => ({
                   ...prev,
-                  thinkingEnabled: e.target.checked,
+                  thinkingEnabled: value,
                 }))
               }
             />
