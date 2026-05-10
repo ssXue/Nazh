@@ -16,9 +16,9 @@ nazh-core.workspace = true
 async-trait.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-reqwest = { workspace = true, features = ["stream"] }
+async-openai.workspace = true
+reqwest.workspace = true
 futures-util.workspace = true
-sseer.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 ts-rs = { workspace = true, optional = true }

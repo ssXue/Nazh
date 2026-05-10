@@ -10,7 +10,7 @@
 
 自 ADR-0019（已实施）起，`AiService` trait 与请求/响应类型全部上移到 Ring 0（`nazh_core::ai`）。本 crate 职责瘦身为：
 
-1. **`OpenAiCompatibleService`** — Ring 0 `AiService` 的 OpenAI 兼容实现，跑 `reqwest` + SSE 解析（`src/client/`）。含 DeepSeek 思考模式 / 推理强度的特殊处理。
+1. **`OpenAiCompatibleService`** — Ring 0 `AiService` 的 OpenAI 兼容实现，基于 `async-openai` crate（BYOT 统一路径）（`src/client/`）。含 DeepSeek 思考模式 / 推理强度的特殊处理。
 2. **壳层私有配置模型**（`src/config.rs`）：`AiConfigFile`（磁盘层）/ `AiConfigView`（前端读取）/ `AiConfigUpdate`（前端写入）/ `AiProviderSecretRecord`（含密钥）/ `AiProviderView` / `AiProviderUpsert` / `AiSecretInput` / `AiAgentSettings`——只服务于 Tauri 壳层 IPC，不参与运行时类型契约。
 3. **`AiTestResult`**（`src/types.rs`）+ **`OpenAiCompatibleService::test_connection`**（inherent 方法）——配置态测试连接。
 4. **向后兼容 re-export**：`lib.rs` 重新导出 `OpenAiCompatibleService` 与配置类型，老代码 `use ai::...` 仍可工作。
@@ -26,12 +26,10 @@
 crates/ai/src/
 ├── lib.rs        # re-exports（含 nazh_core::ai 类型 pass-through）+ ts-rs export_bindings 入口
 ├── client/       # OpenAiCompatibleService（impl AiService）+ inherent test_connection
-│   ├── mod.rs              # 服务结构、配置快照解析、complete/stream/test_connection 编排入口
-│   ├── types.rs            # 请求内不可变 provider 快照与 stream request context
-│   ├── protocol.rs         # OpenAI-compatible payload/response/SSE/API-error DTO 与 payload builder
+│   ├── mod.rs              # 服务结构、配置快照解析、async-openai BYOT 编排、complete/stream/test_connection
+│   ├── types.rs            # 请求内不可变 provider 快照（ResolvedProvider / ResolvedProviderSnapshot）
 │   ├── provider_policy.rs  # DeepSeek thinking / reasoning_effort / probe 参数策略
-│   ├── response.rs         # 普通响应与 HTTP error 解析
-│   ├── stream.rs           # SSE 事件解析、流式请求发送与 channel 转发
+│   ├── response.rs         # async-openai 错误映射（OpenAIError → AiError）+ BYOT 响应提取
 │   └── tests.rs            # client 模块回归测试
 ├── config.rs     # AiConfigFile / AiConfigView / AiConfigUpdate / AiProvider* / AiSecretInput / AiAgentSettings
 └── types.rs      # AiTestResult（壳层私有）
@@ -49,17 +47,18 @@ ts-rs 导出：`AiAgentSettings` / `AiConfigView` / `AiConfigUpdate` / `AiProvid
 
 1. **trait 在 Ring 0，实现在本 crate**。新 provider（Anthropic 原生 / 本地 Llama / Qwen）应新建 impl crate 实现 `nazh_core::ai::AiService`，不改建 crate。
 2. **`test_connection` 不在 trait 上**。它接收 `AiProviderDraft`——壳层配置类型，不属于 Ring 0。
-3. **思考模式是 DeepSeek 协议扩展**。`provider_accepts_deepseek_options` 根据 base_url 或 model 名判断是否注入 `thinking` / `reasoning_effort` 字段；启用思考模式时省略 `temperature` / `top_p`（DeepSeek API 限制）。非 DeepSeek 厂商的思考配置被静默忽略。
-4. **密钥管理三层分离**：`AiProviderSecretRecord`（磁盘，含 api_key）→ `AiProviderView`（前端只读，仅 `has_api_key` bool）→ `AiSecretInput`（前端写入指令：Keep / Clear / Set）。前端永远不接触已保存的明文密钥。
-5. **`extra_headers` 只能保存非敏感 header**：`Authorization`、`Proxy-Authorization`、`X-Api-Key`、`Api-Key`、token/cookie 类 header 不得通过 `extra_headers` 成为密钥旁路；写入、view 投影和请求解析都只保留非敏感 header。未来如需 provider-specific secret header，必须拆入 secret record + masked view。
-6. **单次请求使用一致配置快照**：`complete` / `stream_complete` / `test_connection` 在一次读锁内解析 provider、api_key、非敏感 extra_headers 与 `agent_settings`，形成不可变快照后再释放锁，避免一次请求混用不同版本配置。
-7. **重试策略不在本 crate**——流式重传在上层 orchestrator。本 crate 透明传 `AiError`。
-8. **不绑定具体模型**：`AiGenerationParams.model` 允许任何字符串。
-9. **`AiConfigFile::normalize()` 保证任意时刻最多一个 enabled provider**。
+3. **统一 BYOT 路径**。非流式和流式请求均通过 `async-openai` 的 `create_byot` / `create_stream_byot` 发送 `serde_json::Value`，而非标准 `CreateChatCompletionRequest` 类型。这样 DeepSeek 的 `thinking` / `reasoning_effort` / `reasoning_content` 字段自然兼容，无需维护两条代码路径。
+4. **思考模式是 DeepSeek 协议扩展**。`provider_accepts_deepseek_options` 根据 base_url 或 model 名判断是否注入 `thinking` / `reasoning_effort` 字段；启用思考模式时省略 `temperature` / `top_p`（DeepSeek API 限制）。非 DeepSeek 厂商的思考配置被静默忽略。
+5. **密钥管理三层分离**：`AiProviderSecretRecord`（磁盘，含 api_key）→ `AiProviderView`（前端只读，仅 `has_api_key` bool）→ `AiSecretInput`（前端写入指令：Keep / Clear / Set）。前端永远不接触已保存的明文密钥。
+6. **`extra_headers` 只能保存非敏感 header**：`Authorization`、`Proxy-Authorization`、`X-Api-Key`、`Api-Key`、token/cookie 类 header 不得通过 `extra_headers` 成为密钥旁路；写入、view 投影和请求解析都只保留非敏感 header。未来如需 provider-specific secret header，必须拆入 secret record + masked view。
+7. **单次请求使用一致配置快照**：`complete` / `stream_complete` / `test_connection` 在一次读锁内解析 provider、api_key、非敏感 extra_headers 与 `agent_settings`，形成不可变快照后再释放锁，避免一次请求混用不同版本配置。
+8. **重试策略不在本 crate**——流式重传在上层 orchestrator。本 crate 透明传 `AiError`。
+9. **不绑定具体模型**：`AiGenerationParams.model` 允许任何字符串。
+10. **`AiConfigFile::normalize()` 保证任意时刻最多一个 enabled provider**。
 
 ## 依赖约束
 
-- **允许**：`nazh-core`（trait + 类型源头）、`reqwest`（stream feature）、`serde`、`serde_json`、`futures-util`、`async-trait`、`tokio`、`tracing`、`ts-rs`（optional）
+- **允许**：`nazh-core`（trait + 类型源头）、`async-openai`（`chat-completion` + `byot` features）、`reqwest`（HeaderMap 类型）、`serde`、`serde_json`、`futures-util`、`async-trait`、`tokio`、`tracing`、`ts-rs`（optional）
 - **禁止**：`connections`、`nodes-*`、`scripting`、`nodes-flow`——本 crate 是叶子节点，不向上反向依赖
 
 依赖图预期：`nazh-core` ← `ai`，`nazh-core` ← `scripting`，`nazh-core` ← `nodes-flow`。三者互不依赖。
@@ -69,6 +68,7 @@ ts-rs 导出：`AiAgentSettings` / `AiConfigView` / `AiConfigUpdate` / `AiProvid
 | 改动 | 必须同步 |
 |------|----------|
 | 改 `AiService` trait（在 Ring 0） | `crates/core/src/ai.rs` + 所有实现 + 调用方（`scripting::ai_complete`、壳层 `copilotComplete`） |
+| 改 `build_request_json` / `convert_messages` / `map_openai_error` / `value_to_completion`（在 `client/mod.rs`） | 测试 `client/tests.rs` 同步更新 |
 | 改 `AiProvider*` / `AiConfig*` / `AiAgent*` 配置类型 | ts-rs 重新生成 + 前端 AI 配置面板（`web/src/lib/ai-config.ts` + 组件） |
 | 新增 provider（如 Anthropic 原生） | 新建 impl crate 实现 `nazh_core::ai::AiService` + `AiProviderDraft` 加 type tag + 前端选项 |
 | 改思考模式/推理强度模型（在 Ring 0） | `crates/core/src/ai.rs` + 前端 `AiThinkingConfig` 对应 UI + 文档 |
