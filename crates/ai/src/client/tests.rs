@@ -46,6 +46,7 @@ fn deepseek_payload_sends_thinking_options_and_omits_sampling_when_enabled() {
         false,
         true,
         true,
+        &[],
     );
 
     assert_eq!(body["model"], "deepseek-v4-pro");
@@ -76,6 +77,7 @@ fn non_deepseek_payload_omits_deepseek_specific_options() {
         false,
         false,
         true,
+        &[],
     );
 
     assert!(body.get("thinking").is_none());
@@ -96,6 +98,7 @@ fn deepseek_connection_test_disables_thinking_for_lightweight_probe() {
         false,
         true,
         thinking_enabled,
+        &[],
     );
 
     assert_eq!(body["thinking"]["type"], "disabled");
@@ -109,18 +112,9 @@ fn convert_messages_maps_all_roles() {
     use nazh_core::ai::AiMessage;
 
     let messages = vec![
-        AiMessage {
-            role: AiMessageRole::System,
-            content: "系统提示".to_owned(),
-        },
-        AiMessage {
-            role: AiMessageRole::User,
-            content: "用户输入".to_owned(),
-        },
-        AiMessage {
-            role: AiMessageRole::Assistant,
-            content: "助手回复".to_owned(),
-        },
+        AiMessage::simple(AiMessageRole::System, "系统提示".to_owned()),
+        AiMessage::simple(AiMessageRole::User, "用户输入".to_owned()),
+        AiMessage::simple(AiMessageRole::Assistant, "助手回复".to_owned()),
     ];
 
     let converted = super::convert_messages(&messages);
@@ -151,6 +145,7 @@ async fn resolve_provider_snapshot_keeps_provider_and_agent_settings_atomic() {
             system_prompt: None,
             timeout_ms: None,
             thinking_enabled: true,
+            ..Default::default()
         },
     };
     let service = OpenAiCompatibleService::new(Arc::new(RwLock::new(config)));

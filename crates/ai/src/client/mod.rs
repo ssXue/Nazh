@@ -15,8 +15,9 @@ use async_openai::traits::RequestOptionsBuilder;
 use async_trait::async_trait;
 use futures_util::StreamExt;
 use nazh_core::ai::{
-    AiCompletionRequest, AiCompletionResponse, AiError, AiGenerationParams, AiMessage, AiMessageRole,
-    AiReasoningEffort, AiService, AiThinkingMode, StreamChunk,
+    AiCompletionRequest, AiCompletionResponse, AiEmbeddingRequest, AiEmbeddingResponse, AiError,
+    AiGenerationParams, AiMessage, AiMessageRole, AiReasoningEffort, AiService, AiThinkingMode,
+    AiToolDefinition, StreamChunk,
 };
 use serde_json::json;
 use tokio::sync::RwLock;
@@ -126,8 +127,25 @@ fn convert_messages(messages: &[AiMessage]) -> Vec<serde_json::Value> {
                 AiMessageRole::System => "system",
                 AiMessageRole::User => "user",
                 AiMessageRole::Assistant => "assistant",
+                AiMessageRole::Tool => "tool",
             };
-            json!({ "role": role, "content": msg.content })
+            let mut value = json!({ "role": role, "content": msg.content });
+            if let Some(tool_calls) = &msg.tool_calls {
+                value["tool_calls"] = json!(tool_calls.iter().map(|tc| {
+                    json!({
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.name,
+                            "arguments": tc.arguments,
+                        }
+                    })
+                }).collect::<Vec<_>>());
+            }
+            if let Some(tool_call_id) = &msg.tool_call_id {
+                value["tool_call_id"] = json!(tool_call_id);
+            }
+            value
         })
         .collect()
 }
@@ -140,6 +158,7 @@ fn build_request_json(
     stream: bool,
     is_deepseek: bool,
     thinking_enabled: bool,
+    tools: &[AiToolDefinition],
 ) -> serde_json::Value {
     let omit_sampling_params = is_deepseek && thinking_enabled;
 
@@ -184,6 +203,19 @@ fn build_request_json(
                 AiReasoningEffort::Max => "max",
             });
         }
+    }
+
+    if !tools.is_empty() {
+        body["tools"] = json!(tools.iter().map(|t| {
+            json!({
+                "type": "function",
+                "function": {
+                    "name": t.name,
+                    "description": t.description,
+                    "parameters": t.parameters,
+                }
+            })
+        }).collect::<Vec<_>>());
     }
 
     body
@@ -260,6 +292,7 @@ impl AiService for OpenAiCompatibleService {
             false,
             is_deepseek,
             thinking_enabled,
+            &request.tools,
         );
 
         let extra = build_extra_header_map(&provider.extra_headers);
@@ -302,6 +335,7 @@ impl AiService for OpenAiCompatibleService {
             true,
             is_deepseek,
             thinking_enabled,
+            &request.tools,
         );
 
         let extra = build_extra_header_map(&provider.extra_headers);
@@ -356,6 +390,7 @@ impl AiService for OpenAiCompatibleService {
                             thinking,
                             finish_reason,
                             done: is_done,
+                            tool_calls: None,
                         };
 
                         if tx.send(Ok(chunk)).await.is_err() || is_done {
@@ -378,6 +413,74 @@ impl AiService for OpenAiCompatibleService {
         });
 
         Ok(rx)
+    }
+
+    async fn embed(
+        &self,
+        request: AiEmbeddingRequest,
+    ) -> Result<AiEmbeddingResponse, AiError> {
+        let snapshot = self.resolve_provider_snapshot(&request.provider_id).await?;
+        let provider = snapshot.provider;
+        if provider.api_key.trim().is_empty() {
+            return Err(AiError::InvalidConfig(format!(
+                "提供商 `{}` 未配置 API Key",
+                request.provider_id
+            )));
+        }
+
+        let model = request
+            .model
+            .as_deref()
+            .unwrap_or(&provider.default_model);
+        let timeout_ms = request.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS);
+
+        tracing::info!(
+            provider = %request.provider_id,
+            model = %model,
+            input_count = request.input.len(),
+            timeout_ms,
+            "AI embedding 请求发送"
+        );
+
+        let client = build_openai_client(&provider);
+        let body = json!({
+            "model": model,
+            "input": request.input,
+        });
+
+        let extra = build_extra_header_map(&provider.extra_headers);
+        let value: serde_json::Value = execute_with_timeout(
+            timeout_ms,
+            client.embeddings().headers(extra).create_byot(body),
+        )
+        .await?;
+
+        // 解析 embedding 响应
+        let embeddings = value
+            .get("data")
+            .and_then(|d| d.as_array())
+            .map(|arr| {
+                let mut indexed: Vec<(usize, Vec<f32>)> = arr
+                    .iter()
+                    .filter_map(|item| {
+                        #[allow(clippy::cast_possible_truncation)]
+                        let index = item.get("index")?.as_u64()? as usize;
+                        let emb = item.get("embedding")?.as_array()?;
+                        #[allow(clippy::cast_possible_truncation)]
+                        let vec: Vec<f32> = emb.iter().filter_map(|v| v.as_f64().map(|f| f as f32)).collect();
+                        Some((index, vec))
+                    })
+                    .collect();
+                indexed.sort_by_key(|(i, _)| *i);
+                indexed.into_iter().map(|(_, v)| v).collect()
+            })
+            .unwrap_or_default();
+
+        Ok(AiEmbeddingResponse {
+            embeddings,
+            model: model.to_owned(),
+            usage: None,
+        })
     }
 }
 
@@ -405,6 +508,7 @@ impl OpenAiCompatibleService {
             false,
             is_deepseek,
             thinking_enabled,
+            &[],
         );
 
         let extra = build_extra_header_map(&provider.extra_headers);

@@ -202,6 +202,7 @@ fn to_view_includes_agent_settings() {
             system_prompt: Some("你是全局代理".to_owned()),
             timeout_ms: Some(12_000),
             thinking_enabled: false,
+            ..Default::default()
         },
     };
 

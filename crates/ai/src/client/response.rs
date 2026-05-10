@@ -92,6 +92,7 @@ pub(super) fn value_to_completion(value: &serde_json::Value) -> AiCompletionResp
         content,
         usage,
         model,
+        tool_calls: None,
     }
 }
 
