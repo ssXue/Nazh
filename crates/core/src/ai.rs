@@ -16,9 +16,9 @@ use ts_rs::TS;
 
 /// AI 服务统一接口。脚本节点 / Code 节点通过 `Arc<dyn AiService>` 注入使用。
 ///
-/// 设计上仅暴露**运行时**会用到的两个能力：非流式 `complete` 与流式
-/// `stream_complete`。配置态测试连接（`test_connection`）属于壳层概念，
-/// 由具体实现以 inherent 方法提供，不进入此 trait。
+/// 设计上仅暴露**运行时**会用到的能力：非流式 `complete`、流式
+/// `stream_complete`、文本 `embed`。配置态测试连接（`test_connection`）
+/// 属于壳层概念，由具体实现以 inherent 方法提供，不进入此 trait。
 #[async_trait]
 pub trait AiService: Send + Sync {
     /// 一次性聊天补全。
@@ -30,6 +30,12 @@ pub trait AiService: Send + Sync {
         &self,
         request: AiCompletionRequest,
     ) -> Result<mpsc::Receiver<Result<StreamChunk, AiError>>, AiError>;
+
+    /// 生成文本 embedding 向量。
+    async fn embed(
+        &self,
+        request: AiEmbeddingRequest,
+    ) -> Result<AiEmbeddingResponse, AiError>;
 }
 
 /// AI 模块独立错误类型。
@@ -62,6 +68,15 @@ pub enum AiError {
 
     #[error("AI 网络错误: {0}")]
     NetworkError(String),
+
+    #[error("AI 工具调用失败（工具 {tool_name}）: {message}")]
+    ToolCallError { tool_name: String, message: String },
+
+    #[error("AI 工具调用超过最大循环次数（{0}）")]
+    ToolCallLoopLimit(u32),
+
+    #[error("AI embedding 不受支持: {0}")]
+    EmbeddingNotSupported(String),
 }
 
 /// Chat completion 请求。
@@ -84,6 +99,9 @@ pub struct AiCompletionRequest {
     #[serde(default)]
     #[cfg_attr(feature = "ts-export", ts(optional))]
     pub timeout_ms: Option<u64>,
+    /// 可供模型调用的工具列表（空数组时不发送 `tools` 字段）。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tools: Vec<AiToolDefinition>,
 }
 
 /// 聊天消息。
@@ -93,16 +111,38 @@ pub struct AiCompletionRequest {
 pub struct AiMessage {
     pub role: AiMessageRole,
     pub content: String,
+    /// 助手消息携带的工具调用（模型决定调用工具时非空）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub tool_calls: Option<Vec<AiToolCall>>,
+    /// 工具角色消息对应的工具调用 ID。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub tool_call_id: Option<String>,
+}
+
+impl AiMessage {
+    /// 构造简单消息（无工具调用字段）。
+    pub fn simple(role: AiMessageRole, content: String) -> Self {
+        Self {
+            role,
+            content,
+            tool_calls: None,
+            tool_call_id: None,
+        }
+    }
 }
 
 /// 消息角色。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub enum AiMessageRole {
     System,
     User,
     Assistant,
+    /// 工具执行结果消息（不入 copilot DB，仅在 AI 请求上下文中流转）。
+    Tool,
 }
 
 /// Chat completion 响应。
@@ -118,6 +158,10 @@ pub struct AiCompletionResponse {
     pub usage: Option<AiTokenUsage>,
     /// 使用的模型名。
     pub model: String,
+    /// 模型发起的工具调用（`finish_reason == "tool_calls"` 时非空）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub tool_calls: Option<Vec<AiToolCall>>,
 }
 
 /// Token 用量统计。
@@ -139,11 +183,85 @@ pub struct StreamChunk {
     /// 本次 chunk 的思考过程片段（DeepSeek 等模型的 `reasoning_content`）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thinking: Option<String>,
-    /// 提供商返回的结束原因，例如 stop / length。
+    /// 提供商返回的结束原因，例如 stop / length / `tool_calls`。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub finish_reason: Option<String>,
-    /// 是否为最后一个 chunk。
+    /// 是否为最后一个 chunk（`finish_reason == "tool_calls"` 时为 false，工具循环未结束）。
     pub done: bool,
+    /// 模型发起的工具调用（流式增量累积，`finish_reason == "tool_calls"` 时完整）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<Vec<AiToolCall>>,
+}
+
+/// 发送给模型的工具定义（Chat Completions `tools` 数组元素）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct AiToolDefinition {
+    pub name: String,
+    pub description: String,
+    /// JSON Schema 描述工具参数结构。
+    pub parameters: serde_json::Value,
+}
+
+/// 模型返回的单次工具调用。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct AiToolCall {
+    /// 本次调用在响应内的唯一 ID。
+    pub id: String,
+    /// 工具名称。
+    pub name: String,
+    /// JSON 格式的调用参数。
+    pub arguments: String,
+}
+
+/// 工具执行结果，回送到对话上下文。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct AiToolResult {
+    /// 对应 `AiToolCall::id`。
+    pub tool_call_id: String,
+    /// 工具输出内容（JSON 字符串或纯文本）。
+    pub content: String,
+    /// 工具调用本身是否失败。
+    pub is_error: bool,
+}
+
+/// Embedding 向量生成请求。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct AiEmbeddingRequest {
+    /// 使用哪个提供商。
+    pub provider_id: String,
+    /// 覆盖默认 embedding 模型。
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub model: Option<String>,
+    /// 待生成向量的文本列表。
+    pub input: Vec<String>,
+    /// 超时毫秒。
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub timeout_ms: Option<u64>,
+}
+
+/// Embedding 向量生成响应。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct AiEmbeddingResponse {
+    /// 每条输入对应的向量。
+    pub embeddings: Vec<Vec<f32>>,
+    /// 使用的模型名。
+    pub model: String,
+    /// Token 用量。
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub usage: Option<AiTokenUsage>,
 }
 
 /// `DeepSeek/OpenAI` 兼容的思考模式开关。

@@ -1,8 +1,8 @@
 //! Store 的 async 调用边界。
 
 use crate::{
-    CopilotConversation, CopilotMessage, HistoryEntry, Store, StoreError, StoredGlobalVariable,
-    StoredVariable,
+    AssetEmbedding, AssetEmbeddingSearchResult, CopilotConversation, CopilotMessage, HistoryEntry,
+    Store, StoreError, StoredGlobalVariable, StoredVariable,
 };
 use std::sync::Arc;
 
@@ -260,5 +260,52 @@ impl StoreHandle {
             store.append_copilot_message(&conversation_id, &id, &role, &content, &now)
         })
         .await
+    }
+
+    // -- Embedding 向量存储 --
+
+    /// 写入或更新一条 embedding 记录。
+    pub async fn upsert_asset_embedding(
+        &self,
+        record: AssetEmbedding,
+    ) -> Result<(), StoreError> {
+        self.run_blocking(move |store| store.upsert_asset_embedding(&record))
+            .await
+    }
+
+    /// 删除指定资产的所有 embedding。
+    pub async fn delete_asset_embeddings(
+        &self,
+        asset_type: &str,
+        asset_id: &str,
+    ) -> Result<(), StoreError> {
+        let asset_type = asset_type.to_owned();
+        let asset_id = asset_id.to_owned();
+        self.run_blocking(move |store| store.delete_asset_embeddings(&asset_type, &asset_id))
+            .await
+    }
+
+    /// 删除所有 embedding 记录（用于全量重建索引）。
+    pub async fn delete_all_asset_embeddings(&self) -> Result<(), StoreError> {
+        self.run_blocking(super::Store::delete_all_asset_embeddings)
+            .await
+    }
+
+    /// 基于查询向量检索最相似的 embedding 记录。
+    pub async fn search_similar(
+        &self,
+        query: Vec<f32>,
+        asset_type: Option<String>,
+        limit: usize,
+    ) -> Result<Vec<AssetEmbeddingSearchResult>, StoreError> {
+        self.run_blocking(move |store| {
+            store.search_similar(&query, asset_type.as_deref(), limit)
+        })
+        .await
+    }
+
+    /// 统计 embedding 记录数。
+    pub async fn count_asset_embeddings(&self) -> Result<u64, StoreError> {
+        self.run_blocking(Store::count_asset_embeddings).await
     }
 }

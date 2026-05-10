@@ -197,17 +197,14 @@ impl ScriptAiRuntime {
             .map(str::trim)
             .filter(|value| !value.is_empty())
         {
-            messages.push(AiMessage {
-                role: AiMessageRole::System,
-                content: format!(
+            messages.push(AiMessage::simple(
+                AiMessageRole::System,
+                format!(
                     "[格式要求]\n如果用户要求结构化数据输出，请直接输出合法 JSON（无 Markdown 代码块包裹），不要附加解释性文字。\n如果用户未明确要求格式，则自由回复。\n\n{system_prompt}"
                 ),
-            });
+            ));
         }
-        messages.push(AiMessage {
-            role: AiMessageRole::User,
-            content: prompt,
-        });
+        messages.push(AiMessage::simple(AiMessageRole::User, prompt));
 
         AiCompletionRequest {
             provider_id: self.provider_id.clone(),
@@ -215,6 +212,7 @@ impl ScriptAiRuntime {
             messages,
             params: self.params.clone(),
             timeout_ms: self.timeout_ms,
+            tools: vec![],
         }
     }
 

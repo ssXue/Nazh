@@ -3,4 +3,4 @@
 /**
  * 消息角色。
  */
-export type AiMessageRole = "system" | "user" | "assistant";
+export type AiMessageRole = "system" | "user" | "assistant" | "tool";

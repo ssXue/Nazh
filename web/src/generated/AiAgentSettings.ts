@@ -3,4 +3,16 @@
 /**
  * 全局脚本 AI 代理设置。
  */
-export type AiAgentSettings = { systemPrompt?: string, timeoutMs?: bigint, thinkingEnabled: boolean, };
+export type AiAgentSettings = { systemPrompt?: string, timeoutMs?: bigint, thinkingEnabled: boolean,
+/**
+ * 是否启用 copilot 工具调用。
+ */
+toolCallingEnabled: boolean,
+/**
+ * 是否启用 RAG 上下文注入。
+ */
+ragEnabled: boolean,
+/**
+ * 覆盖 embedding 模型（默认使用提供商默认模型）。
+ */
+embeddingModel?: string, };

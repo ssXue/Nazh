@@ -4,7 +4,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use nazh_core::ai::{AiCompletionResponse, AiError, StreamChunk};
+use nazh_core::ai::{AiCompletionResponse, AiEmbeddingRequest, AiEmbeddingResponse, AiError, StreamChunk};
 use nazh_core::{PinType, VariableDeclaration, WorkflowVariables};
 use tokio::sync::mpsc;
 
@@ -146,6 +146,7 @@ impl AiService for SlowAiService {
                 content: "late".to_owned(),
                 usage: None,
                 model: "slow".to_owned(),
+                tool_calls: None,
             })
         })
     }
@@ -167,6 +168,21 @@ impl AiService for SlowAiService {
         Box::pin(async move {
             let (_tx, rx) = mpsc::channel(1);
             Ok(rx)
+        })
+    }
+
+    fn embed<'life0, 'async_trait>(
+        &'life0 self,
+        _request: AiEmbeddingRequest,
+    ) -> Pin<Box<dyn Future<Output = Result<AiEmbeddingResponse, AiError>> + Send + 'async_trait>>
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait,
+    {
+        Box::pin(async move {
+            Err(AiError::EmbeddingNotSupported(
+                "测试 mock 不支持 embedding".to_owned(),
+            ))
         })
     }
 }

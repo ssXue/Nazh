@@ -5,6 +5,7 @@
 //! 和基础类型，不依赖 `nazh-core`。
 
 mod copilot;
+mod embedding;
 mod error;
 mod global_variables;
 mod handle;
@@ -13,6 +14,7 @@ pub(crate) mod migrations;
 mod variables;
 
 pub use copilot::{CopilotConversation, CopilotMessage};
+pub use embedding::{AssetEmbedding, AssetEmbeddingSearchResult};
 pub use error::StoreError;
 pub use global_variables::StoredGlobalVariable;
 pub use handle::StoreHandle;

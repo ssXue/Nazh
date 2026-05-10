@@ -26,15 +26,16 @@ pub use nazh_graph::pull::merge_payload as __test_only_merge_payload;
 mod registry;
 
 pub use nazh_core::{
-    AiCompletionRequest, AiCompletionResponse, AiError, AiGenerationParams, AiMessage,
-    AiMessageRole, AiReasoningEffort, AiService, AiThinkingConfig, AiThinkingMode, AiTokenUsage,
-    ArenaDataStore, CachedOutput, CancellationToken, CompletedExecutionEvent, ContextRef, DataId,
-    DataStore, EmptyPolicy, EngineError, ExecutionEvent, LifecycleGuard, NodeCapabilities,
-    NodeDispatch, NodeExecution, NodeHandle, NodeLifecycleContext, NodeOutput, NodeRegistry,
-    NodeTrait, OutputCache, PinDefinition, PinDirection, PinKind, PinType, Plugin, PluginHost,
-    PluginManifest, RuntimeResources, SharedResources, StreamChunk, TypedVariableSnapshot,
-    VariableDeclaration, WorkflowContext, WorkflowNodeDefinition, WorkflowVariableEvent,
-    WorkflowVariables, emit_variable_event, into_payload_map,
+    AiCompletionRequest, AiCompletionResponse, AiEmbeddingRequest, AiEmbeddingResponse, AiError,
+    AiGenerationParams, AiMessage, AiMessageRole, AiReasoningEffort, AiService, AiThinkingConfig,
+    AiThinkingMode, AiTokenUsage, AiToolCall, AiToolDefinition, AiToolResult, ArenaDataStore,
+    CachedOutput, CancellationToken, CompletedExecutionEvent, ContextRef, DataId, DataStore,
+    EmptyPolicy, EngineError, ExecutionEvent, LifecycleGuard, NodeCapabilities, NodeDispatch,
+    NodeExecution, NodeHandle, NodeLifecycleContext, NodeOutput, NodeRegistry, NodeTrait,
+    OutputCache, PinDefinition, PinDirection, PinKind, PinType, Plugin, PluginHost, PluginManifest,
+    RuntimeResources, SharedResources, StreamChunk, TypedVariableSnapshot, VariableDeclaration,
+    WorkflowContext, WorkflowNodeDefinition, WorkflowVariableEvent, WorkflowVariables,
+    emit_variable_event, into_payload_map,
 };
 
 pub use connections::{

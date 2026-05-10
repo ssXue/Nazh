@@ -9,15 +9,15 @@ use std::{
 
 use async_trait::async_trait;
 use nazh_engine::{
-    AiCompletionRequest, AiCompletionResponse, AiError, AiMessageRole, AiService, CodeNode,
-    CodeNodeConfig, ConnectionDefinition, ConnectionManager, DebugConsoleNode,
-    DebugConsoleNodeConfig, EmptyPolicy, EngineError, HttpClientNode, HttpClientNodeConfig,
-    ModbusReadNode, ModbusReadNodeConfig, MqttClientNode, MqttClientNodeConfig, MqttMode,
-    NodeCapabilities, NodeDispatch, NodeExecution, NodeRegistry, NodeTrait, PinDefinition,
-    PinDirection, PinKind, PinType, RuntimeResources, SerialTriggerNode, SerialTriggerNodeConfig,
-    SqlWriterNode, SqlWriterNodeConfig, StreamChunk, TimerNode, TimerNodeConfig, WorkflowContext,
-    WorkflowGraph, deploy_workflow, deploy_workflow_with_ai, shared_connection_manager,
-    standard_registry,
+    AiCompletionRequest, AiCompletionResponse, AiEmbeddingRequest, AiEmbeddingResponse, AiError,
+    AiMessageRole, AiService, CodeNode, CodeNodeConfig, ConnectionDefinition, ConnectionManager,
+    DebugConsoleNode, DebugConsoleNodeConfig, EmptyPolicy, EngineError, HttpClientNode,
+    HttpClientNodeConfig, ModbusReadNode, ModbusReadNodeConfig, MqttClientNode,
+    MqttClientNodeConfig, MqttMode, NodeCapabilities, NodeDispatch, NodeExecution, NodeRegistry,
+    NodeTrait, PinDefinition, PinDirection, PinKind, PinType, RuntimeResources, SerialTriggerNode,
+    SerialTriggerNodeConfig, SqlWriterNode, SqlWriterNodeConfig, StreamChunk, TimerNode,
+    TimerNodeConfig, WorkflowContext, WorkflowGraph, deploy_workflow, deploy_workflow_with_ai,
+    shared_connection_manager, standard_registry,
 };
 use serde_json::json;
 use tokio::time::timeout;
@@ -54,6 +54,7 @@ impl AiService for StubAiService {
             ),
             usage: None,
             model: "stub-model".to_owned(),
+            tool_calls: None,
         })
     }
 
@@ -62,6 +63,13 @@ impl AiService for StubAiService {
         _request: AiCompletionRequest,
     ) -> Result<tokio::sync::mpsc::Receiver<Result<StreamChunk, AiError>>, AiError> {
         panic!("workflow tests should not call stream_complete");
+    }
+
+    async fn embed(
+        &self,
+        _request: AiEmbeddingRequest,
+    ) -> Result<AiEmbeddingResponse, AiError> {
+        panic!("workflow tests should not call embed");
     }
 }
 
@@ -87,6 +95,7 @@ impl AiService for JsonStubAiService {
             content: self.response_content.clone(),
             usage: None,
             model: "stub-model".to_owned(),
+            tool_calls: None,
         })
     }
 
@@ -95,6 +104,13 @@ impl AiService for JsonStubAiService {
         _request: AiCompletionRequest,
     ) -> Result<tokio::sync::mpsc::Receiver<Result<StreamChunk, AiError>>, AiError> {
         panic!("workflow tests should not call stream_complete");
+    }
+
+    async fn embed(
+        &self,
+        _request: AiEmbeddingRequest,
+    ) -> Result<AiEmbeddingResponse, AiError> {
+        panic!("workflow tests should not call embed");
     }
 }
 

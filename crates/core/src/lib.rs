@@ -22,9 +22,9 @@ pub mod plugin;
 pub mod variables;
 
 pub use ai::{
-    AiCompletionRequest, AiCompletionResponse, AiError, AiGenerationParams, AiMessage,
-    AiMessageRole, AiReasoningEffort, AiService, AiThinkingConfig, AiThinkingMode, AiTokenUsage,
-    StreamChunk,
+    AiCompletionRequest, AiCompletionResponse, AiEmbeddingRequest, AiEmbeddingResponse, AiError,
+    AiGenerationParams, AiMessage, AiMessageRole, AiReasoningEffort, AiService, AiThinkingConfig,
+    AiThinkingMode, AiTokenUsage, AiToolCall, AiToolDefinition, AiToolResult, StreamChunk,
 };
 pub use cache::{CachedOutput, OutputCache};
 pub use context::{ContextRef, WorkflowContext};
@@ -60,11 +60,12 @@ pub use variables::{
 #[cfg(feature = "ts-export")]
 pub mod export_bindings {
     use super::{
-        AiCompletionRequest, AiCompletionResponse, AiGenerationParams, AiMessage, AiMessageRole,
-        AiReasoningEffort, AiThinkingConfig, AiThinkingMode, AiTokenUsage, BackpressureDetected,
-        BackpressurePolicy, CompletedExecutionEvent, EdgeTransmitSummary, ExecutionEvent,
-        PinDefinition, PinDirection, PinKind, PinType, TypedVariableSnapshot, VariableDeclaration,
-        WorkflowContext, WorkflowNodeDefinition,
+        AiCompletionRequest, AiCompletionResponse, AiEmbeddingRequest, AiEmbeddingResponse,
+        AiGenerationParams, AiMessage, AiMessageRole, AiReasoningEffort, AiThinkingConfig,
+        AiThinkingMode, AiTokenUsage, AiToolCall, AiToolDefinition, AiToolResult,
+        BackpressureDetected, BackpressurePolicy, CompletedExecutionEvent, EdgeTransmitSummary,
+        ExecutionEvent, PinDefinition, PinDirection, PinKind, PinType, TypedVariableSnapshot,
+        VariableDeclaration, WorkflowContext, WorkflowNodeDefinition,
     };
     use ts_rs::{Config, ExportError, TS};
 
@@ -92,6 +93,11 @@ pub mod export_bindings {
         AiThinkingConfig::export(&cfg)?;
         AiThinkingMode::export(&cfg)?;
         AiReasoningEffort::export(&cfg)?;
+        AiToolDefinition::export(&cfg)?;
+        AiToolCall::export(&cfg)?;
+        AiToolResult::export(&cfg)?;
+        AiEmbeddingRequest::export(&cfg)?;
+        AiEmbeddingResponse::export(&cfg)?;
         TypedVariableSnapshot::export(&cfg)?;
         VariableDeclaration::export(&cfg)?;
         Ok(())
