@@ -2,7 +2,8 @@
 
 .copilot-panel {
   display: flex;
-  width: 380px;
+  flex-direction: column;
+  width: 440px;
   height: 100%;
   flex-shrink: 0;
   min-width: 0;
@@ -29,89 +30,90 @@
   letter-spacing: 0.04em;
 }
 
-.copilot-panel__sidebar {
-  width: 140px;
-  min-width: 120px;
-  border-right: 1px solid var(--line-faint);
+/* --- 顶部 Tab 导航栏 --- */
+
+.copilot-tabs {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  border-bottom: 1px solid var(--line-faint);
+  padding: 0 4px;
+  min-height: 36px;
   flex-shrink: 0;
 }
+
+.copilot-tabs__items {
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+  flex: 1;
+  min-width: 0;
+  scrollbar-width: none;
+}
+
+.copilot-tabs__items::-webkit-scrollbar {
+  display: none;
+}
+
+.copilot-tabs__tab {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-caption1);
+  color: var(--muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background 120ms, color 120ms;
+}
+
+.copilot-tabs__tab:hover {
+  background: var(--fill-tertiary);
+}
+
+.copilot-tabs__tab.is-active {
+  background: var(--fill-secondary);
+  color: var(--fg);
+}
+
+.copilot-tabs__tab-title {
+  max-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.copilot-tabs__tab-close {
+  font-size: 10px;
+  opacity: 0;
+  padding: 0 2px;
+  border-radius: 2px;
+}
+
+.copilot-tabs__tab:hover .copilot-tabs__tab-close {
+  opacity: 1;
+}
+
+.copilot-tabs__tab-close:hover {
+  background: var(--fill-tertiary);
+}
+
+.copilot-tabs__actions {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+  margin-left: 4px;
+}
+
+/* --- 聊天主区域 --- */
 
 .copilot-panel__main {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
-}
-
-/* --- 会话列表 --- */
-
-.copilot-conv-list {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-}
-
-.copilot-conv-list__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 8px;
-  border-bottom: 1px solid var(--line-faint);
-}
-
-.copilot-conv-list__title {
-  font-size: var(--font-subheadline);
-  font-weight: 600;
-  color: var(--fg);
-}
-
-.copilot-conv-list__actions {
-  display: flex;
-  gap: 4px;
-}
-
-.copilot-conv-list__items {
-  flex: 1;
-  overflow-y: auto;
-  padding: 4px 0;
-}
-
-.copilot-conv-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 6px 8px;
-  cursor: pointer;
-  border-radius: var(--radius-sm);
-  margin: 1px 4px;
-  transition: background 120ms;
-}
-
-.copilot-conv-item:hover {
-  background: var(--fill-tertiary);
-}
-
-.copilot-conv-item.is-active {
-  background: var(--fill-secondary);
-}
-
-.copilot-conv-item__title {
-  font-size: var(--font-caption1);
-  color: var(--fg);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex: 1;
-  min-width: 0;
-}
-
-.copilot-conv-list__empty {
-  padding: 12px 8px;
-  font-size: var(--font-caption1);
-  color: var(--muted);
-  text-align: center;
 }
 
 /* --- 通用按钮 --- */
@@ -130,16 +132,6 @@
 .copilot-btn-icon:hover {
   background: var(--fill-tertiary);
   color: var(--fg);
-}
-
-.copilot-btn-icon--tiny {
-  font-size: 10px;
-  padding: 0 3px;
-  opacity: 0;
-}
-
-.copilot-conv-item:hover .copilot-btn-icon--tiny {
-  opacity: 1;
 }
 
 .copilot-btn-primary {

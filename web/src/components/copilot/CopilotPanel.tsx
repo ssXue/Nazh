@@ -17,7 +17,6 @@ import {
 } from '../../lib/copilot-protocol';
 import { hasTauriRuntime } from '../../lib/tauri';
 import { CopilotChatView } from './CopilotChatView';
-import { CopilotConversationList } from './CopilotConversationList';
 
 /// 调试日志开关——开发期间保持 true，上线后可关闭。
 const DEBUG_PANEL = true;
@@ -454,15 +453,32 @@ export function CopilotPanel({ canvasRef, onEnsureBoardOpen }: CopilotPanelProps
 
   return (
     <section className="copilot-panel">
-      <div className="copilot-panel__sidebar">
-        <CopilotConversationList
-          conversations={conversations}
-          activeId={activeId}
-          onSelect={handleSelectConversation}
-          onNew={handleNewConversation}
-          onDelete={handleDeleteConversation}
-          onCollapse={() => setCollapsed(true)}
-        />
+      <div className="copilot-tabs">
+        <div className="copilot-tabs__items">
+          {conversations.map((conv) => (
+            <button
+              key={conv.id}
+              type="button"
+              className={`copilot-tabs__tab${conv.id === activeId ? ' is-active' : ''}`}
+              onClick={() => handleSelectConversation(conv.id)}
+            >
+              <span className="copilot-tabs__tab-title">{conv.title}</span>
+              <span
+                className="copilot-tabs__tab-close"
+                role="button"
+                tabIndex={0}
+                onClick={(e) => { e.stopPropagation(); handleDeleteConversation(conv.id); }}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); handleDeleteConversation(conv.id); } }}
+              >
+                &times;
+              </span>
+            </button>
+          ))}
+        </div>
+        <div className="copilot-tabs__actions">
+          <button type="button" className="copilot-btn-icon" title="新建对话" onClick={handleNewConversation}>+</button>
+          <button type="button" className="copilot-btn-icon" title="收起面板" onClick={() => setCollapsed(true)}>&laquo;</button>
+        </div>
       </div>
       <div className="copilot-panel__main">
         <CopilotChatView
