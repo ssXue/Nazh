@@ -448,24 +448,28 @@ export function CopilotPanel({ canvasRef, onEnsureBoardOpen, workspacePath }: Co
         <button type="button" className="copilot-btn-icon" title="历史会话" onClick={() => setHistoryOpen((prev) => !prev)}>&#9776;</button>
         <button type="button" className="copilot-btn-icon" title="新建对话" onClick={handleNewConversation}>+</button>
         <button type="button" className="copilot-btn-icon" title="收起面板" onClick={() => setCollapsed(true)}>&laquo;</button>
+        {historyOpen && (
+          <div className="copilot-history-dropdown">
+            {conversations.length === 0 ? (
+              <div className="copilot-history-empty">暂无历史会话</div>
+            ) : (
+              conversations.map((conv) => (
+                <button
+                  key={conv.id}
+                  type="button"
+                  className={`copilot-history-item${conv.id === activeId ? ' is-active' : ''}`}
+                  onClick={() => handleSelectConversation(conv.id)}
+                >
+                  <span className="copilot-history-item__title">{conv.title}</span>
+                  <span className="copilot-history-item__time">
+                    {new Date(conv.updatedAt).toLocaleDateString()}
+                  </span>
+                </button>
+              ))
+            )}
+          </div>
+        )}
       </div>
-      {historyOpen && conversations.length > 0 && (
-        <div className="copilot-history-dropdown">
-          {conversations.map((conv) => (
-            <button
-              key={conv.id}
-              type="button"
-              className={`copilot-history-item${conv.id === activeId ? ' is-active' : ''}`}
-              onClick={() => handleSelectConversation(conv.id)}
-            >
-              <span className="copilot-history-item__title">{conv.title}</span>
-              <span className="copilot-history-item__time">
-                {new Date(conv.updatedAt).toLocaleDateString()}
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
       <div className="copilot-panel__main">
         <CopilotChatView
           messages={messages}

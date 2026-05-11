@@ -119,6 +119,13 @@
   color: var(--muted);
 }
 
+.copilot-history-empty {
+  padding: 16px 12px;
+  font-size: var(--font-callout);
+  color: var(--muted);
+  text-align: center;
+}
+
 /* --- 聊天主区域 --- */
 
 .copilot-panel__main {
