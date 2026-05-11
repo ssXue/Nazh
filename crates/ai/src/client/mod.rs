@@ -457,6 +457,18 @@ impl AiService for OpenAiCompatibleService {
                         }
                     }
                     Err(error) => {
+                        // [DONE] 是 OpenAI SSE 标准流终止标记，async-openai BYOT
+                        // 模式尝试将其解析为 JSON 会产生 JSONDeserialize 错误，
+                        // 这属于正常流结束，不应作为错误传播。
+                        let is_done_marker = matches!(
+                            &error,
+                            OpenAIError::JSONDeserialize(_, content)
+                            if content.trim().eq_ignore_ascii_case("[DONE]")
+                        );
+                        if is_done_marker {
+                            tracing::debug!("SSE 流收到 [DONE] 标记，正常结束");
+                            return;
+                        }
                         let _ = tx.send(Err(map_openai_error(error))).await;
                         return;
                     }
