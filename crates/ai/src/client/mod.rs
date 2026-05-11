@@ -216,6 +216,7 @@ fn build_request_json(
                 }
             })
         }).collect::<Vec<_>>());
+        body["tool_choice"] = json!("auto");
     }
 
     body
@@ -467,6 +468,43 @@ impl AiService for OpenAiCompatibleService {
                         );
                         if is_done_marker {
                             tracing::debug!("SSE 流收到 [DONE] 标记，正常结束");
+                            // 如果此时 finish_reason 仍为 None（某些 Provider 不单独发送
+                            // finish_reason chunk），发送一个合成的结束标记，
+                            // 确保消费者不会永远等不到流结束。
+                            if !tool_calls_map.is_empty() {
+                                // 有未输出的 tool_calls → 构建 finish_reason=tool_calls
+                                let mut calls: Vec<AiToolCall> = tool_calls_map
+                                    .iter()
+                                    .map(|(idx, (id, name, args))| {
+                                        AiToolCall {
+                                            id: if id.is_empty() { format!("tc_{idx}") } else { id.clone() },
+                                            name: name.clone(),
+                                            arguments: args.clone(),
+                                        }
+                                    })
+                                    .collect::<Vec<_>>();
+                                calls.sort_by_key(|c| {
+                                    tool_calls_map.iter()
+                                        .find_map(|(i, (id, _, _))| if id == &c.id { Some(*i) } else { None })
+                                        .unwrap_or(0)
+                                });
+                                tool_calls_map.clear();
+                                let _ = tx.send(Ok(StreamChunk {
+                                    delta: String::new(),
+                                    thinking: None,
+                                    finish_reason: Some("tool_calls".to_owned()),
+                                    done: false,
+                                    tool_calls: Some(calls),
+                                })).await;
+                            }
+                            // 无论有没有 tool_calls，都发送一个 done 标记
+                            let _ = tx.send(Ok(StreamChunk {
+                                delta: String::new(),
+                                thinking: None,
+                                finish_reason: Some("stop".to_owned()),
+                                done: true,
+                                tool_calls: None,
+                            })).await;
                             return;
                         }
                         let _ = tx.send(Err(map_openai_error(error))).await;

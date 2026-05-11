@@ -248,7 +248,10 @@ pub(crate) async fn copilot_chat(
                 provider_id: provider_id.clone(),
                 model: None,
                 messages: messages.clone(),
-                params: AiGenerationParams::default(),
+                params: AiGenerationParams {
+                    max_tokens: Some(8192),
+                    ..AiGenerationParams::default()
+                },
                 timeout_ms: None,
                 tools: tools.clone(),
             };
@@ -458,8 +461,9 @@ fn inject_system_prompt(
 
     if tool_calling_enabled {
         parts.push(
-            "\n\n## 工具使用指南\n\n\
-             你可以通过工具调用完成以下任务：\n\n\
+            "\n\n## 工具调用规则\n\n\
+             你必须通过调用工具来完成用户的请求，不要只描述你打算做什么。\n\
+             当用户要求创建或修改工作流时，直接调用工具，不要先说\"我来查看\"或\"让我先了解一下\"。\n\n\
              ### 上下文查询工具\n\
              - `query_node_catalog`：列出所有可用节点类型\n\
              - `describe_node`：查看指定节点的输入/输出 pin schema\n\
@@ -474,13 +478,12 @@ fn inject_system_prompt(
              - `deploy_workflow` / `undeploy_workflow`：部署/停止完整工作流 JSON\n\
              - `validate_workflow`：校验工作流 JSON 结构\n\n\
              ### 构建工作流的标准流程\n\
-             1. 先用 `query_node_catalog` 了解可用节点\n\
-             2. 对不确定的节点用 `describe_node` 查看 pin schema\n\
-             3. 调用 `create_workflow` 初始化画布\n\
-             4. 依次调用 `add_workflow_node` 添加每个节点\n\
-             5. 调用 `add_workflow_edge` 连接节点\n\
-             6. 用自然语言总结创建的工作流\n\n\
-             ### 注意事项\n\
+             1. 如果不清楚有哪些节点，调用 `query_node_catalog`\n\
+             2. 调用 `create_workflow` 初始化画布\n\
+             3. 依次调用 `add_workflow_node` 添加每个节点\n\
+             4. 调用 `add_workflow_edge` 连接节点\n\n\
+             ### 关键约束\n\
+             - 不要输出关于工具调用的说明文字，直接调用工具\n\
              - 节点类型只能从 `query_node_catalog` 返回的列表中选择\n\
              - `ref` 是你自定义的简短英文别名（如 timer、modbus_read），不是系统 ID\n\
              - 需要连接的节点（如 modbusRead、serialTrigger）需传入 `connection_id`\n\
