@@ -41,8 +41,13 @@ import {
   UndoActionIcon,
 } from '../app/AppIcons';
 import {
+  type CanvasZoomSpeed,
+  CANVAS_ZOOM_SPEED_CHANGE_EVENT,
+  CANVAS_ZOOM_SPEED_MAP,
   type FlowgramInteractiveType,
+  getCanvasZoomSpeed,
   getPreferredInteractiveType,
+  setCanvasZoomSpeed,
   setPreferredInteractiveType,
 } from './flowgram-canvas-utils';
 
@@ -228,6 +233,7 @@ export function FlowgramToolbar({
   const [interactiveType, setInteractiveType] = useState<FlowgramInteractiveType>(
     () => getPreferredInteractiveType(),
   );
+  const [zoomSpeed, setZoomSpeed] = useState<CanvasZoomSpeed>(getCanvasZoomSpeed);
   const zoomMenuRef = useRef<HTMLDetailsElement | null>(null);
   const interactiveMenuRef = useRef<HTMLDetailsElement | null>(null);
   const downloadMenuRef = useRef<HTMLDetailsElement | null>(null);
@@ -271,6 +277,24 @@ export function FlowgramToolbar({
     tools.setInteractiveType(interactiveType as EditorInteractiveType);
     setPreferredInteractiveType(interactiveType);
   }, [interactiveType, tools]);
+
+  useEffect(() => {
+    tools.setMouseScrollDelta(CANVAS_ZOOM_SPEED_MAP[zoomSpeed]);
+  }, [tools, zoomSpeed]);
+
+  useEffect(() => {
+    function handleZoomSpeedChange(event: Event) {
+      const detail = (event as CustomEvent<CanvasZoomSpeed>).detail;
+      if (detail === 'slow' || detail === 'normal' || detail === 'fast') {
+        setZoomSpeed(detail);
+      }
+    }
+
+    window.addEventListener(CANVAS_ZOOM_SPEED_CHANGE_EVENT, handleZoomSpeedChange);
+    return () => {
+      window.removeEventListener(CANVAS_ZOOM_SPEED_CHANGE_EVENT, handleZoomSpeedChange);
+    };
+  }, []);
 
   useEffect(() => {
     function handlePointerDown(event: PointerEvent) {
@@ -365,6 +389,52 @@ export function FlowgramToolbar({
               }}
             >
               {renderMenuLabel(<MouseModeIcon width={14} height={14} />, '鼠标优先')}
+            </button>
+            <div className="flowgram-tools__menu-divider" />
+            <button
+              type="button"
+              className={
+                zoomSpeed === 'slow'
+                  ? 'flowgram-tools__menu-item is-active'
+                  : 'flowgram-tools__menu-item'
+              }
+              onClick={() => {
+                setZoomSpeed('slow');
+                setCanvasZoomSpeed('slow');
+                closeMenu(interactiveMenuRef);
+              }}
+            >
+              慢速滚轮
+            </button>
+            <button
+              type="button"
+              className={
+                zoomSpeed === 'normal'
+                  ? 'flowgram-tools__menu-item is-active'
+                  : 'flowgram-tools__menu-item'
+              }
+              onClick={() => {
+                setZoomSpeed('normal');
+                setCanvasZoomSpeed('normal');
+                closeMenu(interactiveMenuRef);
+              }}
+            >
+              标准滚轮
+            </button>
+            <button
+              type="button"
+              className={
+                zoomSpeed === 'fast'
+                  ? 'flowgram-tools__menu-item is-active'
+                  : 'flowgram-tools__menu-item'
+              }
+              onClick={() => {
+                setZoomSpeed('fast');
+                setCanvasZoomSpeed('fast');
+                closeMenu(interactiveMenuRef);
+              }}
+            >
+              快速滚轮
             </button>
           </div>
         </details>

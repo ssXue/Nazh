@@ -292,6 +292,58 @@ export function getCanvasWorkflowStatusLabel(status: WorkflowWindowStatus): stri
 }
 
 // ---------------------------------------------------------------------------
+// 滚轮缩放速度
+// ---------------------------------------------------------------------------
+
+/** 画布滚轮缩放速度档位。 */
+export type CanvasZoomSpeed = 'slow' | 'normal' | 'fast';
+
+const CANVAS_ZOOM_SPEED_CACHE_KEY = 'nazh.canvas-zoom-speed';
+
+/** 自定义事件名：设置面板修改缩放速度后通知画布。 */
+export const CANVAS_ZOOM_SPEED_CHANGE_EVENT = 'nazh:canvas-zoom-speed-change';
+
+/** 档位 → mouseScrollDelta 函数映射。 */
+export const CANVAS_ZOOM_SPEED_MAP: Record<CanvasZoomSpeed, (zoom: number) => number> = {
+  slow: (zoom) => zoom / 80,
+  normal: (zoom) => zoom / 40,
+  fast: (zoom) => zoom / 30,
+};
+
+/** 读取持久化的滚轮缩放速度，缺省时返回 `'normal'`。 */
+export function getCanvasZoomSpeed(): CanvasZoomSpeed {
+  if (typeof window === 'undefined') {
+    return 'normal';
+  }
+
+  try {
+    const stored = window.localStorage.getItem(CANVAS_ZOOM_SPEED_CACHE_KEY);
+    if (stored === 'slow' || stored === 'normal' || stored === 'fast') {
+      return stored;
+    }
+  } catch {
+    // 忽略存储异常。
+  }
+
+  return 'normal';
+}
+
+/** 持久化滚轮缩放速度，并派发自定义事件通知同页面的画布组件。 */
+export function setCanvasZoomSpeed(nextSpeed: CanvasZoomSpeed) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(CANVAS_ZOOM_SPEED_CACHE_KEY, nextSpeed);
+  } catch {
+    // 忽略存储异常。
+  }
+
+  window.dispatchEvent(new CustomEvent(CANVAS_ZOOM_SPEED_CHANGE_EVENT, { detail: nextSpeed }));
+}
+
+// ---------------------------------------------------------------------------
 // 节点端口颜色
 // ---------------------------------------------------------------------------
 

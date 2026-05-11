@@ -20,6 +20,7 @@ import {
   getDefaultFlowgramNodeRegistry,
   normalizeFlowgramNodeJson,
 } from './flowgram-node-library';
+import { CANVAS_ZOOM_SPEED_MAP, getCanvasZoomSpeed } from './flowgram-canvas-utils';
 import { flowgramShortcutsPlugin } from './flowgram-shortcuts';
 import { FlowgramGroupNodeRender } from './FlowgramGroupNodeRender';
 import { flowgramNodeSettingsPanelFactory } from './FlowgramNodeSettingsPanel';
@@ -144,6 +145,7 @@ export function useFlowgramEditorProps({
         autoFocus: false,
         autoResize: true,
         preventGlobalGesture: true,
+        mouseScrollDelta: CANVAS_ZOOM_SPEED_MAP[getCanvasZoomSpeed()],
       },
       scroll: {
         enableScrollLimit: false,

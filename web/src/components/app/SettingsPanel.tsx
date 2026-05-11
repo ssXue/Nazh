@@ -1,6 +1,11 @@
 import type { CSSProperties } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 
+import {
+  type CanvasZoomSpeed,
+  getCanvasZoomSpeed,
+  setCanvasZoomSpeed,
+} from '../flowgram/flowgram-canvas-utils';
 import type { SettingsPanelProps } from './types';
 
 export function SettingsPanel({
@@ -30,6 +35,7 @@ export function SettingsPanel({
   onGridVisibleChange,
 }: SettingsPanelProps) {
   const [workspaceDraft, setWorkspaceDraft] = useState(projectWorkspacePath);
+  const [zoomSpeed, setZoomSpeed] = useState<CanvasZoomSpeed>(getCanvasZoomSpeed);
 
   useEffect(() => {
     setWorkspaceDraft(projectWorkspacePath);
@@ -194,6 +200,36 @@ export function SettingsPanel({
                 onClick={() => onGridVisibleChange(false)}
               >
                 隐藏
+              </button>
+            </div>
+          </article>
+
+          <article className="settings-row">
+            <strong className="settings-row__label">滚轮缩放</strong>
+            <div className="settings-segment" role="group" aria-label="滚轮缩放">
+              <button
+                type="button"
+                className={zoomSpeed === 'slow' ? 'settings-segment__button is-active' : 'settings-segment__button'}
+                aria-pressed={zoomSpeed === 'slow'}
+                onClick={() => { setZoomSpeed('slow'); setCanvasZoomSpeed('slow'); }}
+              >
+                慢
+              </button>
+              <button
+                type="button"
+                className={zoomSpeed === 'normal' ? 'settings-segment__button is-active' : 'settings-segment__button'}
+                aria-pressed={zoomSpeed === 'normal'}
+                onClick={() => { setZoomSpeed('normal'); setCanvasZoomSpeed('normal'); }}
+              >
+                标准
+              </button>
+              <button
+                type="button"
+                className={zoomSpeed === 'fast' ? 'settings-segment__button is-active' : 'settings-segment__button'}
+                aria-pressed={zoomSpeed === 'fast'}
+                onClick={() => { setZoomSpeed('fast'); setCanvasZoomSpeed('fast'); }}
+              >
+                快
               </button>
             </div>
           </article>
