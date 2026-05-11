@@ -111,27 +111,23 @@
 
 .copilot-history-item__delete {
   flex-shrink: 0;
-  width: 24px;
-  height: 24px;
-  margin-right: 4px;
+  padding: 2px 6px;
+  margin-right: 6px;
   border: none;
   background: none;
-  color: var(--muted);
-  font-size: 16px;
+  color: transparent;
+  font-size: 13px;
   line-height: 1;
   cursor: pointer;
-  border-radius: var(--radius-sm);
-  opacity: 0;
-  transition: opacity 120ms, color 120ms;
+  transition: color 120ms;
 }
 
 .copilot-history-item:hover .copilot-history-item__delete {
-  opacity: 1;
+  color: var(--line-soft);
 }
 
 .copilot-history-item__delete:hover {
-  color: #dc3545;
-  background: rgba(220, 53, 69, 0.1);
+  color: #dc3545 !important;
 }
 
 .copilot-history-item__title {
