@@ -53,14 +53,21 @@ interface PendingUpdate {
   canvasOps?: CanvasOpEvent[];
 }
 
+const COPILOT_MIN_WIDTH = 320;
+const COPILOT_MAX_WIDTH = 720;
+const COPILOT_DEFAULT_WIDTH = 440;
+
 export function CopilotPanel({ canvasRef, onEnsureBoardOpen, workspacePath }: CopilotPanelProps) {
   const [collapsed, setCollapsed] = useState(false);
+  const [panelWidth, setPanelWidth] = useState(COPILOT_DEFAULT_WIDTH);
   const [conversations, setConversations] = useState<CopilotConversationResponse[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [messages, setMessages] = useState<LocalMessage[]>([]);
   const [status, setStatus] = useState<CopilotSessionStatus>('idle');
   const [historyOpen, setHistoryOpen] = useState(false);
   const isTauri = hasTauriRuntime();
+  const panelRef = useRef<HTMLElement | null>(null);
+  const draggingRef = useRef(false);
 
   // AbortController
   const abortRef = useRef<AbortController | null>(null);
@@ -126,6 +133,33 @@ export function CopilotPanel({ canvasRef, onEnsureBoardOpen, workspacePath }: Co
       }
     };
   }, []);
+
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    draggingRef.current = true;
+    const startX = e.clientX;
+    const startWidth = panelWidth;
+
+    const onMouseMove = (ev: MouseEvent) => {
+      if (!draggingRef.current) return;
+      const delta = startX - ev.clientX;
+      const next = Math.min(COPILOT_MAX_WIDTH, Math.max(COPILOT_MIN_WIDTH, startWidth + delta));
+      setPanelWidth(next);
+    };
+
+    const onMouseUp = () => {
+      draggingRef.current = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  }, [panelWidth]);
 
   const loadMessages = useCallback(async (convId: string) => {
     if (!isTauri) return;
@@ -401,7 +435,15 @@ export function CopilotPanel({ canvasRef, onEnsureBoardOpen, workspacePath }: Co
   }
 
   return (
-    <section className="copilot-panel">
+    <section
+      ref={panelRef}
+      className="copilot-panel"
+      style={{ width: panelWidth }}
+    >
+      <div
+        className="copilot-panel__resize-handle"
+        onMouseDown={handleResizeStart}
+      />
       <div className="copilot-panel__header">
         <button type="button" className="copilot-btn-icon" title="历史会话" onClick={() => setHistoryOpen((prev) => !prev)}>&#9776;</button>
         <button type="button" className="copilot-btn-icon" title="新建对话" onClick={handleNewConversation}>+</button>

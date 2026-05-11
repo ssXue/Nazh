@@ -9,6 +9,7 @@
   min-width: 0;
   border-left: 1px solid var(--line-soft);
   background: var(--surface);
+  position: relative;
 }
 
 .copilot-panel--collapsed {
@@ -28,6 +29,25 @@
   font-weight: 700;
   color: var(--accent);
   letter-spacing: 0.04em;
+}
+
+/* --- 拖拽分界线 --- */
+
+.copilot-panel__resize-handle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 5px;
+  cursor: col-resize;
+  z-index: 5;
+  transform: translateX(-50%);
+}
+
+.copilot-panel__resize-handle:hover,
+.copilot-panel__resize-handle:active {
+  background: var(--accent);
+  opacity: 0.4;
 }
 
 /* --- 头部按钮栏 --- */
