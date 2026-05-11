@@ -84,13 +84,7 @@
 .copilot-history-item {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   width: 100%;
-  padding: 8px 12px;
-  border: none;
-  background: none;
-  cursor: pointer;
-  text-align: left;
   transition: background 120ms;
 }
 
@@ -100,6 +94,44 @@
 
 .copilot-history-item.is-active {
   background: var(--fill-secondary);
+}
+
+.copilot-history-item__select {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 4px 8px 12px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.copilot-history-item__delete {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  margin-right: 4px;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  opacity: 0;
+  transition: opacity 120ms, color 120ms;
+}
+
+.copilot-history-item:hover .copilot-history-item__delete {
+  opacity: 1;
+}
+
+.copilot-history-item__delete:hover {
+  color: #dc3545;
+  background: rgba(220, 53, 69, 0.1);
 }
 
 .copilot-history-item__title {
