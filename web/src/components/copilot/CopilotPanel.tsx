@@ -454,29 +454,27 @@ export function CopilotPanel({ canvasRef, onEnsureBoardOpen, workspacePath }: Co
               <div className="copilot-history-empty">暂无历史会话</div>
             ) : (
               conversations.map((conv) => (
-                <div
+                <button
                   key={conv.id}
+                  type="button"
                   className={`copilot-history-item${conv.id === activeId ? ' is-active' : ''}`}
+                  onClick={() => handleSelectConversation(conv.id)}
                 >
-                  <button
-                    type="button"
-                    className="copilot-history-item__select"
-                    onClick={() => handleSelectConversation(conv.id)}
-                  >
-                    <span className="copilot-history-item__title">{conv.title}</span>
-                    <span className="copilot-history-item__time">
-                      {new Date(conv.updatedAt).toLocaleDateString()}
-                    </span>
-                  </button>
-                  <button
-                    type="button"
+                  <span
+                    role="button"
+                    tabIndex={0}
                     className="copilot-history-item__delete"
                     title="删除会话"
                     onClick={(e) => { e.stopPropagation(); void handleDeleteConversation(conv.id); }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); void handleDeleteConversation(conv.id); } }}
                   >
                     &times;
-                  </button>
-                </div>
+                  </span>
+                  <span className="copilot-history-item__title">{conv.title}</span>
+                  <span className="copilot-history-item__time">
+                    {new Date(conv.updatedAt).toLocaleDateString()}
+                  </span>
+                </button>
               ))
             )}
           </div>
