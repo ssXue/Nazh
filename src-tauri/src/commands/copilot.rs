@@ -476,7 +476,6 @@ fn inject_system_prompt(
              - `create_workflow`：创建新工作流（初始化画布）\n\
              - `add_workflow_node`：添加节点，用 `ref` 标识（如 \"timer\"、\"debug\"）\n\
              - `add_workflow_edge`：连接节点，用 `from_ref`/`to_ref` 引用节点\n\
-             - `deploy_workflow` / `undeploy_workflow`：部署/停止完整工作流 JSON\n\
              - `validate_workflow`：校验工作流 JSON 结构\n\n\
              ### 构建工作流的标准流程\n\
              1. 如果不清楚有哪些节点，调用 `query_node_catalog`\n\

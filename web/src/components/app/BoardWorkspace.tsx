@@ -32,6 +32,7 @@ interface BoardWorkspaceProps {
   runtimeDock: Pick<RuntimeDockProps, 'eventFeed' | 'appErrors' | 'results' | 'activeWorkflowId' | 'payloadText' | 'deployInfo' | 'onPayloadTextChange'>;
   onToggleRuntimeDockCollapsed: () => void;
   onBack: () => void;
+  onRename: (name: string) => void;
   onCreateSnapshot: () => void;
   onDeleteSnapshot: (snapshotId: string) => void;
   onRollbackSnapshot: (snapshotId: string) => void;
@@ -61,6 +62,7 @@ export const BoardWorkspace = forwardRef<BoardWorkspaceHandle, BoardWorkspacePro
       runtimeDock,
       onToggleRuntimeDockCollapsed,
       onBack,
+      onRename,
       onCreateSnapshot,
       onDeleteSnapshot,
       onRollbackSnapshot,
@@ -79,6 +81,7 @@ export const BoardWorkspace = forwardRef<BoardWorkspaceHandle, BoardWorkspacePro
           project={project}
           nodeCount={nodeCount}
           onBack={onBack}
+          onRename={onRename}
           onCreateSnapshot={onCreateSnapshot}
           onDeleteSnapshot={onDeleteSnapshot}
           onRollbackSnapshot={onRollbackSnapshot}

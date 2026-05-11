@@ -661,6 +661,40 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
   line-height: 1.2;
 }
 
+.studio-board-workspace__editable-title {
+  outline: none;
+  border-radius: 4px;
+  padding: 1px 4px;
+  margin: -1px -4px;
+}
+
+.studio-board-workspace__title-edit-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  pointer-events: auto;
+  cursor: pointer;
+  max-width: 100%;
+}
+
+.studio-board-workspace__title-edit-wrapper .studio-board-workspace__editable-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.studio-board-workspace__title-edit-wrapper:hover .studio-board-workspace__editable-title {
+  overflow: visible;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-radius: 4px;
+}
+
+.studio-board-workspace__editable-title:focus {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  box-shadow: 0 0 0 1px var(--accent);
+  cursor: text;
+}
+
 .studio-board-workspace__back {
   display: inline-flex;
   align-items: center;

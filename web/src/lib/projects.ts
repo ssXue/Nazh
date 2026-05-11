@@ -1236,9 +1236,9 @@ function normalizeProjectAstText(astText: string): string {
     : astText;
 }
 
-export function createNewProjectRecord(name: string, description?: string): ProjectRecord {
+export function createNewProjectRecord(name: string, description?: string, empty?: boolean): ProjectRecord {
   const projectName = name.trim() || '未命名工程';
-  const graph = buildStarterWorkflow(projectName);
+  const graph = empty ? { name: projectName, connections: [], nodes: {}, edges: [] } : buildStarterWorkflow(projectName);
   const astText = formatWorkflowGraph(stripGraphConnectionDefinitions(graph));
   const createdAt = nowIso();
   const environments = [createEnvironment('生产环境', '默认环境。')];

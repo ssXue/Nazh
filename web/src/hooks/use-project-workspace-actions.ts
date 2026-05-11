@@ -135,8 +135,8 @@ export function useProjectWorkspaceActions({
     engine.resetWorkspaceRuntime('已返回所有看板。');
   }
 
-  function handleCreateBoard() {
-    const nextProject = projectLibrary.createProject();
+  function handleCreateBoard(empty?: boolean, name?: string) {
+    const nextProject = projectLibrary.createProject(name, undefined, empty);
     openBoard(nextProject.id);
     setSidebarCollapsed(true);
     engine.resetWorkspaceRuntime(`已创建工程 ${nextProject.name}。`);

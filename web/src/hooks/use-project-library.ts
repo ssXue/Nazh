@@ -43,7 +43,7 @@ export interface ProjectLibraryStorageState {
 }
 
 export interface ProjectLibraryActions {
-  createProject: (name?: string, description?: string) => ProjectRecord;
+  createProject: (name?: string, description?: string, empty?: boolean) => ProjectRecord;
   importProjects: (sourceText: string) => { importedProjects: ProjectRecord[]; migrationNotes: string[] };
   deleteProject: (projectId: string) => ProjectRecord | null;
   updateProjectDraft: (
@@ -248,10 +248,11 @@ export function useProjectLibrary(workspacePath = ''): UseProjectLibraryResult {
     [library.projects],
   );
 
-  function createProject(name?: string, description?: string): ProjectRecord {
+  function createProject(name?: string, description?: string, empty?: boolean): ProjectRecord {
     const baseProject = createNewProjectRecord(
       name?.trim() || `未命名工程 ${library.projects.length + 1}`,
       description,
+      empty,
     );
     const uniqueId = new Set(library.projects.map((project) => project.id)).has(baseProject.id)
       ? `${baseProject.id}-${library.projects.length + 1}`

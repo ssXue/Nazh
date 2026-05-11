@@ -39,7 +39,7 @@ function localConversationId(): string {
 
 interface CopilotPanelProps {
   canvasRef: RefObject<FlowgramCanvasHandle | null>;
-  onEnsureBoardOpen: () => void;
+  onEnsureBoardOpen: (name?: string) => void;
 }
 
 /// 节流更新间隔（ms）。
@@ -259,7 +259,7 @@ export function CopilotPanel({ canvasRef, onEnsureBoardOpen }: CopilotPanelProps
           if (op.type === 'create_workflow') {
             if (!boardEnsuredRef.current) {
               panelLog('首次调用 onEnsureBoardOpen');
-              onEnsureBoardOpen();
+              onEnsureBoardOpen(op.name);
               boardEnsuredRef.current = true;
             }
           } else if (op.type === 'add_node' && op.nodeId) {

@@ -218,9 +218,9 @@ function App() {
     setSidebarCollapsed,
   });
 
-  const handleEnsureBoardOpen = useCallback(() => {
+  const handleEnsureBoardOpen = useCallback((name?: string) => {
     if (activeBoardId) return;
-    projectActions.handleCreateBoard();
+    projectActions.handleCreateBoard(true, name);
   }, [activeBoardId, projectActions]);
 
   function buildDeploySnapshot() {

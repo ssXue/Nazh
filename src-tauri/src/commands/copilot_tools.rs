@@ -281,38 +281,6 @@ pub fn all_copilot_tools() -> Vec<AiToolDefinition> {
                 "required": ["workflow_json"]
             }),
         },
-        AiToolDefinition {
-            name: "deploy_workflow".to_owned(),
-            description: "部署完整工作流到引擎运行时。工作流 JSON 需包含 nodes 和 edges。部署成功后立即开始运行。建议先调用 validate_workflow 校验。".to_owned(),
-            parameters: json!({
-                "type": "object",
-                "properties": {
-                    "workflow_json": {
-                        "type": "string",
-                        "description": "工作流 JSON 字符串"
-                    },
-                    "workflow_id": {
-                        "type": "string",
-                        "description": "可选的工作流 ID，不提供则自动生成"
-                    }
-                },
-                "required": ["workflow_json"]
-            }),
-        },
-        AiToolDefinition {
-            name: "undeploy_workflow".to_owned(),
-            description: "停止并移除已部署的工作流。".to_owned(),
-            parameters: json!({
-                "type": "object",
-                "properties": {
-                    "workflow_id": {
-                        "type": "string",
-                        "description": "要停止的工作流 ID"
-                    }
-                },
-                "required": ["workflow_id"]
-            }),
-        },
         // --- 画布操作工具（增量式构建工作流）---
         AiToolDefinition {
             name: "create_workflow".to_owned(),
@@ -403,8 +371,6 @@ pub async fn dispatch_tool(call: &AiToolCall, ctx: &CopilotToolCtx) -> AiToolRes
         "query_workflow_status" => tool_query_workflow_status(call, ctx),
         "read_asset_yaml" => tool_read_asset_yaml(call, ctx).await,
         "validate_workflow" => tool_validate_workflow(call),
-        "deploy_workflow" => tool_deploy_workflow(call, ctx).await,
-        "undeploy_workflow" => tool_undeploy_workflow(call, ctx).await,
         "create_workflow" => tool_create_workflow(call, ctx),
         "add_workflow_node" => tool_add_workflow_node(call, ctx),
         "add_workflow_edge" => tool_add_workflow_edge(call, ctx),
@@ -676,41 +642,6 @@ fn tool_validate_workflow(call: &AiToolCall) -> Result<String, String> {
         "edge_count": graph.edges.len(),
     });
     serde_json::to_string_pretty(&result).map_err(|e| format!("序列化失败: {e}"))
-}
-
-async fn tool_deploy_workflow(call: &AiToolCall, ctx: &CopilotToolCtx) -> Result<String, String> {
-    use crate::commands::workflow_deploy::deploy_workflow_from_json;
-    use tauri::Manager;
-
-    let args = parse_args(call)?;
-    let workflow_json = args["workflow_json"]
-        .as_str()
-        .ok_or("缺少 workflow_json 参数")?;
-    let workflow_id = args["workflow_id"].as_str().map(str::to_owned);
-
-    let state = ctx.app.state::<crate::state::DesktopState>();
-    let response = deploy_workflow_from_json(&ctx.app, state.inner(), workflow_json, workflow_id)
-        .await?;
-
-    serde_json::to_string_pretty(&response).map_err(|e| format!("序列化部署结果失败: {e}"))
-}
-
-async fn tool_undeploy_workflow(
-    call: &AiToolCall,
-    ctx: &CopilotToolCtx,
-) -> Result<String, String> {
-    use crate::commands::workflow_undeploy::undeploy_workflow_by_id;
-    use tauri::Manager;
-
-    let args = parse_args(call)?;
-    let workflow_id = args["workflow_id"]
-        .as_str()
-        .ok_or("缺少 workflow_id 参数")?;
-
-    let state = ctx.app.state::<crate::state::DesktopState>();
-    let response = undeploy_workflow_by_id(&ctx.app, state.inner(), workflow_id).await?;
-
-    serde_json::to_string_pretty(&response).map_err(|e| format!("序列化结果失败: {e}"))
 }
 
 fn tool_create_workflow(call: &AiToolCall, ctx: &CopilotToolCtx) -> Result<String, String> {

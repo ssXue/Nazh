@@ -273,6 +273,7 @@ export function StudioContentRouter({
               engine.setIsRuntimeDockCollapsed((current) => !current)
             }
             onBack={onBackToBoards}
+            onRename={(name) => projectLibrary.updateProjectDraft(activeProject.id, { name })}
             onCreateSnapshot={onCreateSnapshot}
             onDeleteSnapshot={onDeleteSnapshot}
             onRollbackSnapshot={onRollbackSnapshot}

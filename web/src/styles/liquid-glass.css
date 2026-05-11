@@ -425,8 +425,6 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
   font-size: 1.16rem;
   line-height: 1.08;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .studio-board-workspace__meta-pill,

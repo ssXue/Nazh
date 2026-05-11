@@ -21,6 +21,7 @@ interface ProjectWorkspaceHeaderProps {
   project: ProjectRecord;
   nodeCount: number;
   onBack: () => void;
+  onRename: (name: string) => void;
   onCreateSnapshot: () => void;
   onDeleteSnapshot: (snapshotId: string) => void;
   onRollbackSnapshot: (snapshotId: string) => void;
@@ -58,6 +59,7 @@ export function ProjectWorkspaceHeader({
   project,
   nodeCount,
   onBack,
+  onRename,
   onCreateSnapshot,
   onDeleteSnapshot,
   onRollbackSnapshot,
@@ -137,7 +139,27 @@ export function ProjectWorkspaceHeader({
             <BackIcon />
           </button>
           <div className="studio-board-workspace__header-heading">
-            <h2>{project.name}</h2>
+            <div className="studio-board-workspace__title-edit-wrapper" data-no-window-drag>
+              <h2
+                className="studio-board-workspace__editable-title"
+                contentEditable
+                suppressContentEditableWarning
+                onBlur={(e) => {
+                  const next = e.currentTarget.textContent?.trim();
+                  if (next && next !== project.name) {
+                    onRename(next);
+                  } else {
+                    e.currentTarget.textContent = project.name;
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    e.currentTarget.blur();
+                  }
+                }}
+              >{project.name}</h2>
+            </div>
             <div className="studio-board-workspace__header-meta">
               <span className="studio-board-workspace__meta-pill">
                 {`${formatRelativeTimestamp(project.updatedAt)} · ${nodeCount} 节点 · ${project.snapshots.length} 个版本`}
