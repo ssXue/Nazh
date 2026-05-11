@@ -335,8 +335,9 @@ pub(crate) async fn copilot_chat(
                 "copilot 第 {round} 轮流结束"
             );
 
-            // 非工具调用结束 → 正常完成
-            if finish_reason.as_deref() != Some("tool_calls") || tool_calls_buf.is_empty() {
+            // 有工具调用 → 进入工具执行循环，无论 finish_reason 是什么
+            // （某些 Provider 如 DeepSeek 在 tool_calls 场景下仍返回 finish_reason: "stop"）
+            if tool_calls_buf.is_empty() {
                 accumulated = text_buf;
                 tracing::info!(
                     accumulated_len = accumulated.len(),

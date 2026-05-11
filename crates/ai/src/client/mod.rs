@@ -496,8 +496,12 @@ impl AiService for OpenAiCompatibleService {
                                     done: false,
                                     tool_calls: Some(calls),
                                 })).await;
+                                // 有 tool_calls 时不发 stop chunk——消费者通过
+                                // tool_calls_buf 非空来判断进入工具执行路径。
+                                // 只有在无 tool_calls 时才发 done 标记。
+                                return;
                             }
-                            // 无论有没有 tool_calls，都发送一个 done 标记
+                            // 无 tool_calls → 正常结束，发送 done 标记
                             let _ = tx.send(Ok(StreamChunk {
                                 delta: String::new(),
                                 thinking: None,
