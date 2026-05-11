@@ -79,14 +79,9 @@ export function CopilotMessageItem({
             {content || (streaming ? '...' : '')}
           </div>
         ) : (
-          !hasCanvasOps && (
-            <MarkdownContent content={content} streaming={streaming} />
-          )
+          <MarkdownContent content={content} streaming={streaming} />
         )}
-        {hasCanvasOps && streaming && (
-          <span className="copilot-msg__cursor" />
-        )}
-        {!hasCanvasOps && streaming && <span className="copilot-msg__cursor" />}
+        {streaming && <span className="copilot-msg__cursor" />}
       </div>
     </div>
   );

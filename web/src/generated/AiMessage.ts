@@ -7,6 +7,11 @@ import type { AiToolCall } from "./AiToolCall";
  */
 export type AiMessage = { role: AiMessageRole, content: string,
 /**
+ * 助手消息携带的推理过程（DeepSeek 等模型的 `reasoning_content`）。
+ * 多轮工具调用时必须回传给 API，否则会触发 API 错误。
+ */
+thinking?: string,
+/**
  * 助手消息携带的工具调用（模型决定调用工具时非空）。
  */
 toolCalls?: Array<AiToolCall>,

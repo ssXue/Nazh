@@ -32,26 +32,18 @@ export function CopilotChatView({
 
   const handleSend = useCallback(() => {
     if (!inputText.trim() || status !== 'idle') return;
-    onSend(inputText);
+    onSend(inputText.trim());
     setInputText('');
   }, [inputText, status, onSend]);
-
-  if (!hasConversation) {
-    return (
-      <div className="copilot-chat copilot-chat--empty">
-        <div className="copilot-chat__welcome">
-          <p>Nazh 副驾驶</p>
-          <button type="button" className="copilot-btn-primary" onClick={onNewConversation}>
-            开始新对话
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="copilot-chat">
       <div className="copilot-chat__messages" ref={listRef}>
+        {!hasConversation && (
+          <div className="copilot-chat__welcome">
+            <p>Nazh 副驾驶</p>
+          </div>
+        )}
         {messages.map((msg) => (
           <CopilotMessageItem
             key={msg.id}

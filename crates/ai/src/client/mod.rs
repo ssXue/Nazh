@@ -130,6 +130,9 @@ fn convert_messages(messages: &[AiMessage]) -> Vec<serde_json::Value> {
                 AiMessageRole::Tool => "tool",
             };
             let mut value = json!({ "role": role, "content": msg.content });
+            if let Some(thinking) = &msg.thinking {
+                value["reasoning_content"] = json!(thinking);
+            }
             if let Some(tool_calls) = &msg.tool_calls {
                 value["tool_calls"] = json!(tool_calls.iter().map(|tc| {
                     json!({
@@ -383,9 +386,13 @@ impl AiService for OpenAiCompatibleService {
 
                         let has_content = !content.is_empty();
                         let has_thinking = thinking.is_some();
-                        // tool_calls 不算流结束——后端需要继续执行工具并发起下一轮
+                        // tool_calls 不算流结束——后端需要继续执行工具并发起下一轮。
+                        // 某些 Provider（如 DeepSeek）在 tool_calls 场景下仍返回 finish_reason: "stop"，
+                        // 所以必须同时检查是否有累积的 tool_call 增量。
+                        let has_pending_tool_calls = !tool_calls_map.is_empty();
                         let is_done = finish_reason.is_some()
-                            && finish_reason.as_deref() != Some("tool_calls");
+                            && finish_reason.as_deref() != Some("tool_calls")
+                            && !has_pending_tool_calls;
 
                         // 解析流式 tool_calls 增量
                         let tc_delta = delta.and_then(|d| d.get("tool_calls")).and_then(|t| t.as_array());
@@ -413,8 +420,8 @@ impl AiService for OpenAiCompatibleService {
                             continue;
                         }
 
-                        // finish_reason == "tool_calls" 时构建完整的工具调用列表
-                        let final_tool_calls = if finish_reason.as_deref() == Some("tool_calls") {
+                        // 流结束时构建完整的工具调用列表（含 finish_reason: "stop" 但有 tool_calls 的场景）
+                        let final_tool_calls = if finish_reason.is_some() && has_pending_tool_calls {
                             let mut calls: Vec<AiToolCall> = tool_calls_map
                                 .iter()
                                 .map(|(idx, (id, name, args))| {

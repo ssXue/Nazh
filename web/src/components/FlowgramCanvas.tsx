@@ -253,6 +253,9 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
   const selectedNodeRef = useRef<FlowNodeEntity | null>(null);
   const latestGraphRef = useRef<WorkflowGraph | null>(graph);
   const applyingExternalGraphRef = useRef(false);
+  /// Copilot 增量添加节点时，追踪已创建节点的最大 Y 坐标，
+  /// 避免逐个 add_node 事件导致节点重叠。
+  const lastCopilotYRef = useRef(0);
   const initialFlowgramDataRef = useRef<FlowgramWorkflowJSON | null>(null);
   const pendingFitViewRef = useRef(true);
   const flowgramData = useMemo(() => {
@@ -630,6 +633,8 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
   const loadWorkflowGraph = useCallback(
     (nextGraph: WorkflowGraph) => {
       try {
+        // 加载新图时重置 copilot 增量添加偏移
+        lastCopilotYRef.current = 0;
         latestGraphRef.current = nextGraph;
         const nextFlowgramGraph = toFlowgramWorkflowJson(nextGraph);
         latestFlowgramDataRef.current = nextFlowgramGraph;
@@ -689,7 +694,10 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
         // 确定起始位置：基于当前选中节点或画布中心
         const anchorNode = selectedNodeRef.current;
         const baseX = anchorNode?.getNodeMeta().position?.x ?? 200;
-        const baseY = anchorNode?.getNodeMeta().position?.y ?? 300;
+        // Copilot 增量添加时优先沿用上次 Y 偏移，避免重叠
+        const baseY = lastCopilotYRef.current > 0
+          ? lastCopilotYRef.current
+          : (anchorNode?.getNodeMeta().position?.y ?? 300);
 
         const idToEntity = new Map<string, FlowNodeEntity>();
 
@@ -733,6 +741,15 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
             ...(edge.source_port_id ? { fromPort: edge.source_port_id } : {}),
             ...(edge.target_port_id ? { toPort: edge.target_port_id } : {}),
           });
+        }
+
+        // Copilot 增量添加节点时追踪最大 Y，供下次偏移使用
+        if (ops.nodes.length > 0 && ops.edges.length === 0) {
+          lastCopilotYRef.current = baseY + ops.nodes.length * 168;
+        } else if (ops.nodes.length > 0) {
+          const maxDepth = Math.max(...sortedDepths);
+          const maxGroup = byDepth.get(maxDepth) ?? [];
+          lastCopilotYRef.current = baseY + maxGroup.length * 168;
         }
 
         syncSelectionState(editorCtx);

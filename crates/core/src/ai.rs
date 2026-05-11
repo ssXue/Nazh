@@ -111,6 +111,11 @@ pub struct AiCompletionRequest {
 pub struct AiMessage {
     pub role: AiMessageRole,
     pub content: String,
+    /// 助手消息携带的推理过程（DeepSeek 等模型的 `reasoning_content`）。
+    /// 多轮工具调用时必须回传给 API，否则会触发 API 错误。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub thinking: Option<String>,
     /// 助手消息携带的工具调用（模型决定调用工具时非空）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts-export", ts(optional))]
@@ -127,6 +132,7 @@ impl AiMessage {
         Self {
             role,
             content,
+            thinking: None,
             tool_calls: None,
             tool_call_id: None,
         }

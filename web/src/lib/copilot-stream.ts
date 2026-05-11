@@ -55,7 +55,8 @@ export interface CopilotStreamResult {
 export async function copilotChatStream(
   conversationId: string,
   userMessage: string,
-  onDelta: (text: string) => void,
+  workspacePath?: string,
+  onDelta?: (text: string) => void,
   onThinking?: (text: string) => void,
   onToolCalls?: (info: ToolCallInfo) => void,
   onToolResult?: (info: ToolResultInfo) => void,
@@ -65,6 +66,7 @@ export async function copilotChatStream(
   const streamId: string = await invoke('copilot_chat', {
     conversationId,
     userMessage,
+    workspacePath,
   });
 
   streamLog('流开始', { streamId, conversationId, userMessage: userMessage.slice(0, 100) });
@@ -157,7 +159,7 @@ export async function copilotChatStream(
           preview: accumulated.slice(-60),
         });
       }
-      onDelta(accumulated);
+      onDelta?.(accumulated);
     }
     if (payload.toolCalls && onToolCalls) {
       streamLog('toolCalls', {

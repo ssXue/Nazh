@@ -580,7 +580,7 @@ function App() {
         />
         </section>
 
-        <CopilotPanel canvasRef={flowgramCanvasRef} onEnsureBoardOpen={handleEnsureBoardOpen} />
+        <CopilotPanel canvasRef={flowgramCanvasRef} onEnsureBoardOpen={handleEnsureBoardOpen} workspacePath={settings.projectWorkspacePath} />
       </div>
       {renderRestoreDialog()}
     </main>

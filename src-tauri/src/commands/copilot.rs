@@ -18,7 +18,7 @@ use ai::OpenAiCompatibleService;
 use crate::commands::copilot_tools::{self, CopilotToolCtx};
 use crate::state::DesktopState;
 
-const MAX_TOOL_ROUNDS: u32 = 10;
+const MAX_TOOL_ROUNDS: u32 = 200;
 const COPILOT_HISTORY_LIMIT: usize = 20;
 
 fn map_conversation(
@@ -102,6 +102,7 @@ pub(crate) async fn copilot_load_conversation(
 pub(crate) async fn copilot_chat(
     conversation_id: String,
     user_message: String,
+    workspace_path: Option<String>,
     app: tauri::AppHandle,
     state: State<'_, DesktopState>,
 ) -> Result<String, String> {
@@ -201,6 +202,7 @@ pub(crate) async fn copilot_chat(
         connection_manager: state.connection_manager.clone(),
         workflow_summaries,
         active_workflow_id,
+        workspace_path: workspace_path.clone(),
         stream_event_name: event_name.clone(),
         app: app.clone(),
         ref_map: std::sync::Mutex::new(std::collections::HashMap::new()),
@@ -267,6 +269,7 @@ pub(crate) async fn copilot_chat(
             };
 
             let mut text_buf = String::new();
+            let mut thinking_buf = String::new();
             let mut tool_calls_buf: Vec<nazh_engine::AiToolCall> = Vec::new();
             let mut finish_reason: Option<String> = None;
             let mut chunk_count: u32 = 0;
@@ -286,6 +289,9 @@ pub(crate) async fn copilot_chat(
                         if !chunk.delta.is_empty() {
                             text_buf.push_str(&chunk.delta);
                         }
+                        if let Some(thinking_delta) = &chunk.thinking {
+                            thinking_buf.push_str(thinking_delta);
+                        }
                         if let Some(tc) = &chunk.tool_calls {
                             tool_calls_buf.extend(tc.clone());
                         }
@@ -294,8 +300,14 @@ pub(crate) async fn copilot_chat(
                         }
 
                         // 推送给前端（文本 delta + thinking）
-                        let payload: serde_json::Value =
+                        // 强制 done=false：AI 客户端在每轮流结束时标记 done=true，
+                        // 但 copilot 可能还有后续工具轮次或总结。前端只在最终的
+                        // 显式 done 事件（见函数末尾）才认为流结束。
+                        let mut payload: serde_json::Value =
                             serde_json::to_value(&chunk).unwrap_or_default();
+                        if let Some(obj) = payload.as_object_mut() {
+                            obj.insert("done".to_owned(), serde_json::Value::Bool(false));
+                        }
                         let _ = app.emit(&event_name, payload);
 
                         // 每 50 个 chunk 打一次进度日志
@@ -360,10 +372,11 @@ pub(crate) async fn copilot_chat(
                 json!({ "toolCalls": tool_calls_buf, "toolCallRound": round }),
             );
 
-            // 追加助手消息（含 tool_calls）
+            // 追加助手消息（含 tool_calls + thinking）
             messages.push(AiMessage {
                 role: AiMessageRole::Assistant,
                 content: text_buf.clone(),
+                thinking: if thinking_buf.is_empty() { None } else { Some(thinking_buf.clone()) },
                 tool_calls: Some(tool_calls_buf.clone()),
                 tool_call_id: None,
             });
@@ -399,14 +412,58 @@ pub(crate) async fn copilot_chat(
                 messages.push(AiMessage {
                     role: AiMessageRole::Tool,
                     content: result.content,
+                    thinking: None,
                     tool_calls: None,
                     tool_call_id: Some(result.tool_call_id),
                 });
             }
 
             if round == MAX_TOOL_ROUNDS {
-                emit_error(&app, &event_name, "工具调用超过最大循环次数");
-                return;
+                tracing::warn!(
+                    round,
+                    stream_id = %stream_id_for_spawn,
+                    "copilot 达到最大工具轮次，中断工具循环并生成总结"
+                );
+                break;
+            }
+        }
+
+        // 工具执行后如果 AI 未返回文本，追加提示让 AI 总结
+        if accumulated.is_empty() && messages.iter().any(|m| m.role == AiMessageRole::Tool) {
+            messages.push(AiMessage::simple(
+                AiMessageRole::User,
+                "请简要总结你刚才完成了哪些操作。".to_owned(),
+            ));
+            let summary_request = AiCompletionRequest {
+                provider_id: provider_id.clone(),
+                model: None,
+                messages: messages.clone(),
+                params: AiGenerationParams {
+                    max_tokens: Some(2048),
+                    ..AiGenerationParams::default()
+                },
+                timeout_ms: None,
+                tools: vec![],
+            };
+            let rx_result = service.stream_complete(summary_request).await;
+            if let Ok(mut rx) = rx_result {
+                while let Some(chunk_result) = rx.recv().await {
+                    match chunk_result {
+                        Ok(chunk) => {
+                            if !chunk.delta.is_empty() {
+                                accumulated.push_str(&chunk.delta);
+                            }
+                            // 逐条 emit chunk（done 由末尾显式事件控制）
+                            let mut payload: serde_json::Value =
+                                serde_json::to_value(&chunk).unwrap_or_default();
+                            if let Some(obj) = payload.as_object_mut() {
+                                obj.insert("done".to_owned(), serde_json::Value::Bool(false));
+                            }
+                            let _ = app.emit(&event_name, payload);
+                        }
+                        Err(_) => break,
+                    }
+                }
             }
         }
 
@@ -427,6 +484,9 @@ pub(crate) async fn copilot_chat(
                 tracing::error!(?error, "持久化 copilot AI 回复失败");
             }
         }
+
+        // 兜底：确保前端始终收到 done 信号
+        let _ = app.emit(&event_name, json!({ "done": true }));
 
         // 流结束，从注册表移除
         streams_registry.remove(&stream_id_for_spawn);
@@ -481,14 +541,19 @@ fn inject_system_prompt(
              1. 如果不清楚有哪些节点，调用 `query_node_catalog`\n\
              2. 调用 `create_workflow` 初始化画布\n\
              3. 依次调用 `add_workflow_node` 添加每个节点\n\
-             4. 调用 `add_workflow_edge` 连接节点\n\n\
+             4. **必须**调用 `add_workflow_edge` 将所有节点按逻辑顺序连接起来，\n\
+                每个有后续处理的节点都必须有连线指向下游，不允许出现孤立节点或遗漏连线\n\n\
              ### 关键约束\n\
              - 不要输出关于工具调用的说明文字，直接调用工具\n\
              - 节点类型只能从 `query_node_catalog` 返回的列表中选择\n\
              - `ref` 是你自定义的简短英文别名（如 timer、modbus_read），不是系统 ID\n\
              - 需要连接的节点（如 modbusRead、serialTrigger）需传入 `connection_id`\n\
              - 对于工业场景，优先从最小可运行链路开始\n\
-             - 纯问答（不涉及创建/修改工作流）直接用 Markdown 回答，不需要调用工具"
+             - 纯问答（不涉及创建/修改工作流）直接用 Markdown 回答，不需要调用工具\n\n\
+             ### 完成后的回复要求\n\
+             所有工具调用执行完毕后，你必须用简洁的中文回复用户，概括你完成了什么操作。\n\
+             例如：\"已完成工作流创建，共添加了 3 个节点（定时器 → Modbus 读取 → 调试输出）并完成连线。\"\
+             不要只返回空文本。"
             .to_owned()
         );
     }

@@ -23,6 +23,8 @@ pub(crate) struct CopilotToolCtx {
     pub(crate) workflow_summaries: Vec<serde_json::Value>,
     /// 当前活跃工作流 ID。
     pub(crate) active_workflow_id: Option<String>,
+    /// 活跃项目的工程工作区路径（设备/能力资产读取依赖此路径）。
+    pub(crate) workspace_path: Option<String>,
     pub(crate) app: AppHandle,
     /// 当前 copilot 流事件的 channel 名称（`copilot://stream/{streamId}`）。
     pub(crate) stream_event_name: String,
@@ -469,7 +471,7 @@ async fn tool_search_devices(
     let args = parse_args(call)?;
     let keyword = args["keyword"].as_str().unwrap_or("").to_lowercase();
 
-    let devices = list_device_assets(ctx.app.clone(), None).await?;
+    let devices = list_device_assets(ctx.app.clone(), ctx.workspace_path.clone()).await?;
 
     let filtered: Vec<_> = devices
         .into_iter()
@@ -508,7 +510,7 @@ async fn tool_search_capabilities(
     let capabilities = list_capabilities(
         ctx.app.clone(),
         device_filter.map(str::to_owned),
-        None,
+        ctx.workspace_path.clone(),
     )
     .await?;
 
@@ -585,13 +587,13 @@ async fn tool_read_asset_yaml(
 
     match asset_type {
         "device" => {
-            let asset = load_device_asset(ctx.app.clone(), asset_id.to_owned(), None)
+            let asset = load_device_asset(ctx.app.clone(), asset_id.to_owned(), ctx.workspace_path.clone())
                 .await?
                 .ok_or_else(|| format!("设备 `{asset_id}` 不存在"))?;
             Ok(asset.spec_yaml)
         }
         "capability" => {
-            let asset = load_capability(ctx.app.clone(), asset_id.to_owned(), None)
+            let asset = load_capability(ctx.app.clone(), asset_id.to_owned(), ctx.workspace_path.clone())
                 .await?
                 .ok_or_else(|| format!("能力 `{asset_id}` 不存在"))?;
             Ok(asset.spec_yaml)

@@ -40,6 +40,7 @@ function localConversationId(): string {
 interface CopilotPanelProps {
   canvasRef: RefObject<FlowgramCanvasHandle | null>;
   onEnsureBoardOpen: (name?: string) => void;
+  workspacePath?: string;
 }
 
 /// 节流更新间隔（ms）。
@@ -52,12 +53,13 @@ interface PendingUpdate {
   canvasOps?: CanvasOpEvent[];
 }
 
-export function CopilotPanel({ canvasRef, onEnsureBoardOpen }: CopilotPanelProps) {
+export function CopilotPanel({ canvasRef, onEnsureBoardOpen, workspacePath }: CopilotPanelProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [conversations, setConversations] = useState<CopilotConversationResponse[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [messages, setMessages] = useState<LocalMessage[]>([]);
   const [status, setStatus] = useState<CopilotSessionStatus>('idle');
+  const [historyOpen, setHistoryOpen] = useState(false);
   const isTauri = hasTauriRuntime();
 
   // AbortController
@@ -136,6 +138,7 @@ export function CopilotPanel({ canvasRef, onEnsureBoardOpen }: CopilotPanelProps
   const handleSelectConversation = useCallback((convId: string) => {
     setActiveId(convId);
     void loadMessages(convId);
+    setHistoryOpen(false);
   }, [loadMessages]);
 
   const handleNewConversation = useCallback(async () => {
@@ -191,9 +194,35 @@ export function CopilotPanel({ canvasRef, onEnsureBoardOpen }: CopilotPanelProps
   const boardEnsuredRef = useRef(false);
 
   const handleSend = useCallback(async (text: string) => {
-    if (!activeId || !text.trim() || status !== 'idle') return;
+    if (!text.trim() || status !== 'idle') return;
 
-    panelLog('handleSend 开始', { activeId, text: text.slice(0, 80), status });
+    // 没有活跃对话时自动创建
+    let convId = activeId;
+    if (!convId) {
+      if (isTauri) {
+        try {
+          const conv = await invoke<CopilotConversationResponse>('copilot_create_conversation');
+          setConversations((prev) => [conv, ...prev]);
+          setActiveId(conv.id);
+          convId = conv.id;
+        } catch { /* fall through */ }
+      }
+      if (!convId) {
+        const now = new Date().toISOString();
+        const local: CopilotConversationResponse = {
+          id: localConversationId(),
+          title: '新对话',
+          createdAt: now,
+          updatedAt: now,
+        };
+        setConversations((prev) => [local, ...prev]);
+        setActiveId(local.id);
+        convId = local.id;
+      }
+      setMessages([]);
+    }
+
+    panelLog('handleSend 开始', { convId, text: text.slice(0, 80), status });
 
     const userMsg: LocalMessage = { id: `local-${Date.now()}`, role: 'user', content: text.trim() };
     const assistantMsgId = `stream-${Date.now()}`;
@@ -222,8 +251,9 @@ export function CopilotPanel({ canvasRef, onEnsureBoardOpen }: CopilotPanelProps
 
     try {
       const result = await copilotChatStream(
-        activeId,
+        convId,
         text.trim(),
+        workspacePath,
         (accumulated) => {
           // 纯文本累积——AI 的自然语言回复
           pendingUpdateRef.current = {
@@ -308,6 +338,28 @@ export function CopilotPanel({ canvasRef, onEnsureBoardOpen }: CopilotPanelProps
         prev.map((m) => (m.id === assistantMsgId ? { ...m, streaming: false } : m)),
       );
 
+      // 从数据库加载最终消息——流式事件可能丢失，
+      // 但后端保证在流结束前已持久化 AI 回复
+      if (isTauri && convId) {
+        try {
+          const loaded = await invoke<CopilotMessageResponse[]>('copilot_load_conversation', { id: convId });
+          const assistantMsgs = loaded.filter((m) => m.role === 'assistant');
+          const lastAssistant = assistantMsgs[assistantMsgs.length - 1];
+          if (lastAssistant?.content) {
+            setMessages((prev) => {
+              const ids = new Set(loaded.map((m) => m.id));
+              const merged = prev.map((m) => {
+                if (m.id === assistantMsgId) {
+                  return { ...m, content: lastAssistant.content, streaming: false };
+                }
+                return m;
+              });
+              return merged;
+            });
+          }
+        } catch { /* 数据库加载失败也无所谓，流式内容可能已经到位 */ }
+      }
+
       panelLog('流正常结束', {
         textLen: result.text.length,
         aborted: result.aborted,
@@ -328,7 +380,7 @@ export function CopilotPanel({ canvasRef, onEnsureBoardOpen }: CopilotPanelProps
       abortRef.current = null;
       void refreshConversations();
     }
-  }, [activeId, status, isTauri, refreshConversations, canvasRef, onEnsureBoardOpen, flushPendingUpdate, scheduleFlush]);
+  }, [activeId, status, isTauri, refreshConversations, canvasRef, onEnsureBoardOpen, flushPendingUpdate, scheduleFlush, workspacePath]);
 
   if (collapsed) {
     return (
@@ -345,33 +397,28 @@ export function CopilotPanel({ canvasRef, onEnsureBoardOpen }: CopilotPanelProps
 
   return (
     <section className="copilot-panel">
-      <div className="copilot-tabs">
-        <div className="copilot-tabs__items">
+      <div className="copilot-panel__header">
+        <button type="button" className="copilot-btn-icon" title="历史会话" onClick={() => setHistoryOpen((prev) => !prev)}>&#9776;</button>
+        <button type="button" className="copilot-btn-icon" title="新建对话" onClick={handleNewConversation}>+</button>
+        <button type="button" className="copilot-btn-icon" title="收起面板" onClick={() => setCollapsed(true)}>&laquo;</button>
+      </div>
+      {historyOpen && conversations.length > 0 && (
+        <div className="copilot-history-dropdown">
           {conversations.map((conv) => (
             <button
               key={conv.id}
               type="button"
-              className={`copilot-tabs__tab${conv.id === activeId ? ' is-active' : ''}`}
+              className={`copilot-history-item${conv.id === activeId ? ' is-active' : ''}`}
               onClick={() => handleSelectConversation(conv.id)}
             >
-              <span className="copilot-tabs__tab-title">{conv.title}</span>
-              <span
-                className="copilot-tabs__tab-close"
-                role="button"
-                tabIndex={0}
-                onClick={(e) => { e.stopPropagation(); handleDeleteConversation(conv.id); }}
-                onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); handleDeleteConversation(conv.id); } }}
-              >
-                &times;
+              <span className="copilot-history-item__title">{conv.title}</span>
+              <span className="copilot-history-item__time">
+                {new Date(conv.updatedAt).toLocaleDateString()}
               </span>
             </button>
           ))}
         </div>
-        <div className="copilot-tabs__actions">
-          <button type="button" className="copilot-btn-icon" title="新建对话" onClick={handleNewConversation}>+</button>
-          <button type="button" className="copilot-btn-icon" title="收起面板" onClick={() => setCollapsed(true)}>&laquo;</button>
-        </div>
-      </div>
+      )}
       <div className="copilot-panel__main">
         <CopilotChatView
           messages={messages}

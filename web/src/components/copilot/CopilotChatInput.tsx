@@ -23,6 +23,13 @@ export function CopilotChatInput({ value, onChange, onSend, status, onCancel }: 
     [onSend],
   );
 
+  const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const el = e.target;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+    onChange(el.value);
+  }, [onChange]);
+
   return (
     <div className="copilot-input">
       <textarea
@@ -30,29 +37,33 @@ export function CopilotChatInput({ value, onChange, onSend, status, onCancel }: 
         placeholder="输入消息… (Enter 发送，Shift+Enter 换行)"
         rows={1}
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={handleChange}
         onKeyDown={handleKeyDown}
         disabled={generating}
       />
       {generating ? (
-        <button
-          type="button"
-          className="copilot-input__stop"
-          onClick={onCancel}
-          title="停止生成"
-        >
-          &#9632;
-        </button>
+        <span className="copilot-input__btn-wrap">
+          <button
+            type="button"
+            className="copilot-input__stop"
+            onClick={onCancel}
+            title="停止生成"
+          >
+            &#9632;
+          </button>
+        </span>
       ) : (
-        <button
-          type="button"
-          className="copilot-input__send"
-          disabled={!value.trim()}
-          onClick={onSend}
-          title="发送"
-        >
-          &uarr;
-        </button>
+        <span className="copilot-input__btn-wrap">
+          <button
+            type="button"
+            className="copilot-input__send"
+            disabled={!value.trim()}
+            onClick={onSend}
+            title="发送"
+          >
+            &uarr;
+          </button>
+        </span>
       )}
     </div>
   );

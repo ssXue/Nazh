@@ -32,7 +32,8 @@ pub(crate) struct DesktopState {
     /// 日志异步写入守护。持有到进程退出以保证刷盘。
     pub(crate) tracing_guard: std::sync::Mutex<Option<tracing_appender::non_blocking::WorkerGuard>>,
     /// 活跃 copilot 流注册表。Key 为 stream_id，Value 为取消标志。
-    pub(crate) copilot_streams: dashmap::DashMap<String, CopilotStreamCancel>,
+    /// 用 `Arc<DashMap>` 使 spawn 任务 clone 后仍指向同一份数据。
+    pub(crate) copilot_streams: Arc<dashmap::DashMap<String, CopilotStreamCancel>>,
 }
 
 impl Default for DesktopState {
@@ -47,7 +48,7 @@ impl Default for DesktopState {
             ai_service,
             approval_registry: Arc::new(nazh_engine::ApprovalRegistry::new()),
             tracing_guard: std::sync::Mutex::new(None),
-            copilot_streams: dashmap::DashMap::new(),
+            copilot_streams: Arc::new(dashmap::DashMap::new()),
             store: std::sync::RwLock::new(match Store::open_unpersisted() {
                 Ok(store) => Some(StoreHandle::new(store)),
                 Err(error) => {
