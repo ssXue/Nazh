@@ -382,7 +382,9 @@ impl AiService for OpenAiCompatibleService {
 
                         let has_content = !content.is_empty();
                         let has_thinking = thinking.is_some();
-                        let is_done = finish_reason.is_some();
+                        // tool_calls 不算流结束——后端需要继续执行工具并发起下一轮
+                        let is_done = finish_reason.is_some()
+                            && finish_reason.as_deref() != Some("tool_calls");
 
                         // 解析流式 tool_calls 增量
                         let tc_delta = delta.and_then(|d| d.get("tool_calls")).and_then(|t| t.as_array());
