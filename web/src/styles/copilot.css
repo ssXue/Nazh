@@ -96,7 +96,9 @@
 }
 
 .copilot-history-item:hover {
-  background: var(--fill-tertiary);
+  background: var(--fill-secondary);
+  border-left: 2px solid var(--accent);
+  padding-left: 20px;
 }
 
 .copilot-history-item.is-active {
@@ -124,7 +126,7 @@
 }
 
 .copilot-history-item:hover .copilot-history-item__delete {
-  color: var(--line-soft);
+  color: var(--muted);
 }
 
 .copilot-history-item__delete:hover {
