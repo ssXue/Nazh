@@ -151,6 +151,7 @@ export interface FlowgramCanvasHandle {
   getCurrentWorkflowGraph: () => WorkflowGraph | null;
   loadWorkflowGraph: (graph: WorkflowGraph) => void;
   addCanvasOps: (ops: CanvasOps) => void;
+  autoLayout: () => void;
 }
 
 interface InternalFlowExportImageService {
@@ -771,6 +772,12 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
     [connectionDefaults, editorCtx, reportFlowgramError, syncSelectionState],
   );
 
+  const handleAutoLayout = useCallback(() => {
+    if (editorCtx) {
+      void editorCtx.tools.autoLayout();
+    }
+  }, [editorCtx]);
+
   useImperativeHandle(
     ref,
     () => ({
@@ -779,8 +786,9 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
         editorCtx ? buildCurrentWorkflowGraph(editorCtx) : latestGraphRef.current,
       loadWorkflowGraph,
       addCanvasOps,
+      autoLayout: handleAutoLayout,
     }),
-    [addCanvasOps, buildCurrentWorkflowGraph, editorCtx, loadWorkflowGraph],
+    [addCanvasOps, buildCurrentWorkflowGraph, editorCtx, handleAutoLayout, loadWorkflowGraph],
   );
 
   const handleSaveCurrentGraph = useCallback(() => {

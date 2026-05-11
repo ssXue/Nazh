@@ -360,6 +360,11 @@ export function CopilotPanel({ canvasRef, onEnsureBoardOpen, workspacePath }: Co
         } catch { /* 数据库加载失败也无所谓，流式内容可能已经到位 */ }
       }
 
+      // 流结束后自动整理画布布局
+      if (boardEnsuredRef.current) {
+        canvasRef.current?.autoLayout();
+      }
+
       panelLog('流正常结束', {
         textLen: result.text.length,
         aborted: result.aborted,
