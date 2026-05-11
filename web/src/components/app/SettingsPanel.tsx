@@ -104,6 +104,14 @@ export function SettingsPanel({
               >
                 暗色
               </button>
+              <button
+                type="button"
+                className={themeMode === 'system' ? 'settings-segment__button is-active' : 'settings-segment__button'}
+                aria-pressed={themeMode === 'system'}
+                onClick={() => onThemeModeChange('system')}
+              >
+                跟随系统
+              </button>
             </div>
           </article>
 

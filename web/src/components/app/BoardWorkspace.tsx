@@ -10,7 +10,7 @@ import type {
 } from '../FlowgramCanvas';
 import type { ProjectEnvironmentDiff, ProjectRecord } from '../../lib/projects';
 import type { ConnectionRecord, WorkflowGraph } from '../../types';
-import type { RuntimeDockProps, ThemeMode } from './types';
+import type { RuntimeDockProps, ResolvedThemeMode } from './types';
 import { ProjectWorkspaceHeader } from './ProjectWorkspaceHeader';
 import { ApprovalOverlay } from './ApprovalOverlay';
 import { RuntimeDock } from './RuntimeDock';
@@ -22,7 +22,7 @@ interface BoardWorkspaceProps {
   graph: WorkflowGraph | null;
   nodeCount: number;
   connectionPreview: ConnectionRecord[];
-  themeMode: ThemeMode;
+  themeMode: ResolvedThemeMode;
   isRuntimeDockCollapsed: boolean;
   flowgramResources: FlowgramCanvasResources;
   flowgramRuntime: FlowgramCanvasRuntime;

@@ -230,7 +230,7 @@ export function StudioContentRouter({
             graph={graph}
             nodeCount={graphNodeCount}
             connectionPreview={connectionPreview}
-            themeMode={settings.themeMode}
+            themeMode={settings.resolvedThemeMode}
             isRuntimeDockCollapsed={engine.isRuntimeDockCollapsed}
             flowgramResources={{
               connections: connectionLibrary.connections,
@@ -245,7 +245,7 @@ export function StudioContentRouter({
             }}
             flowgramAppearance={{
               accentHex: settings.accentHex,
-              themeMode: settings.themeMode,
+              themeMode: settings.resolvedThemeMode,
               nodeCodeColor: settings.accentThemeVariables['--node-code'],
             }}
             flowgramExportTarget={{
@@ -291,7 +291,7 @@ export function StudioContentRouter({
             <ScrollSurface className="panel studio-content__panel studio-content__panel--scroll">
               <RuntimeManagerPanel
                 workspacePath={settings.projectWorkspacePath}
-                themeMode={settings.themeMode}
+                themeMode={settings.resolvedThemeMode}
                 activeBoardId={activeBoard?.id ?? null}
                 onOpenBoard={(boardId) => {
                   const targetBoard =
@@ -370,7 +370,7 @@ export function StudioContentRouter({
                 eventFeed={engine.eventFeed}
                 appErrors={engine.appErrors}
                 resultCount={engine.results.length}
-                themeMode={settings.themeMode}
+                themeMode={settings.resolvedThemeMode}
                 activeBoardName={activeBoard?.name ?? null}
                 workspacePath={settings.projectWorkspacePath}
                 activeTraceId={engine.runtimeState.traceId}

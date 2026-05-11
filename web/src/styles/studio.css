@@ -314,49 +314,6 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
   border-top: 1px solid var(--line-faint);
 }
 
-.studio-nav-status {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-}
-
-.studio-nav-status .runtime-pill {
-  flex: 1 1 auto;
-  justify-content: center;
-}
-
-.studio-nav-theme-toggle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  min-height: 30px;
-  padding: 0;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--line-soft);
-  background: var(--panel);
-  color: var(--text);
-  box-shadow: none;
-  transition:
-    border-color 200ms cubic-bezier(0.25, 0.1, 0.25, 1),
-    background-color 200ms cubic-bezier(0.25, 0.1, 0.25, 1),
-    box-shadow 200ms cubic-bezier(0.25, 0.1, 0.25, 1),
-    transform 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
-}
-
-.studio-nav-theme-toggle:hover {
-  border-color: var(--accent-border);
-  background: var(--nav-hover-surface);
-  box-shadow: var(--shadow-low);
-  transform: rotate(15deg);
-}
-
-.studio-nav-theme-toggle svg {
-  width: 14px;
-  height: 14px;
-}
-
 .studio-nav-project {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);

@@ -1,6 +1,6 @@
 //! 桌面偏好设置的 localStorage 持久化读取。
 
-import type { MotionMode, StartupPage, ThemeMode } from '../components/app/types';
+import type { MotionMode, ResolvedThemeMode, StartupPage, ThemeMode } from '../components/app/types';
 import { ACCENT_PRESET_OPTIONS, normalizeCustomAccentHex, type AccentPreset } from './theme';
 
 /** localStorage 键名：主题模式。 */
@@ -18,22 +18,40 @@ export const PROJECT_WORKSPACE_PATH_STORAGE_KEY = 'nazh.project-workspace-path';
 /** localStorage 键名：画布网格显示。 */
 export const GRID_VISIBLE_STORAGE_KEY = 'nazh.grid-visible';
 
-/** 从 localStorage 读取主题模式，缺省时跟随系统偏好。 */
-export function getInitialThemeMode(): ThemeMode {
+/** 返回操作系统当前的色彩方案偏好。 */
+export function getSystemThemePreference(): ResolvedThemeMode {
   if (typeof window === 'undefined') {
     return 'light';
   }
 
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
+/** 将用户偏好（含 system）解析为实际的 light / dark 值。 */
+export function resolveThemeMode(mode: ThemeMode): ResolvedThemeMode {
+  if (mode === 'system') {
+    return getSystemThemePreference();
+  }
+
+  return mode;
+}
+
+/** 从 localStorage 读取主题模式，缺省时使用 system。 */
+export function getInitialThemeMode(): ThemeMode {
+  if (typeof window === 'undefined') {
+    return 'system';
+  }
+
   try {
     const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
-    if (storedTheme === 'light' || storedTheme === 'dark') {
+    if (storedTheme === 'light' || storedTheme === 'dark' || storedTheme === 'system') {
       return storedTheme;
     }
   } catch {
     // Ignore storage access failures and fall back to system preference.
   }
 
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  return 'system';
 }
 
 /** 从 localStorage 读取强调色预设，缺省时使用第一个预设。 */

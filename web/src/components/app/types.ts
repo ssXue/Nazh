@@ -10,7 +10,9 @@ import type {
 } from '../../types';
 import type { AccentPreset, AccentPresetOption } from '../../lib/theme';
 
-export type ThemeMode = 'light' | 'dark';
+export type ThemeMode = 'light' | 'dark' | 'system';
+/** 解析后的实际主题（不含 system）。 */
+export type ResolvedThemeMode = 'light' | 'dark';
 export type MotionMode = 'full' | 'reduced';
 export type StartupPage = 'dashboard' | 'boards';
 export type SidebarSection =
@@ -40,10 +42,6 @@ export interface SidebarNavProps {
   userName: string;
   userRole: string;
   onUserSwitch: () => void;
-  workflowStatusLabel: string;
-  workflowStatusPillClass: string;
-  themeMode: ThemeMode;
-  onToggleTheme: () => void;
   isCollapsed: boolean;
   onToggleCollapsed: () => void;
 }
@@ -52,7 +50,7 @@ export interface LogsPanelProps {
   eventFeed: RuntimeLogEntry[];
   appErrors: AppErrorRecord[];
   resultCount: number;
-  themeMode: ThemeMode;
+  themeMode: ResolvedThemeMode;
   activeBoardName: string | null;
   workspacePath: string;
   activeTraceId: string | null;
@@ -65,7 +63,7 @@ export interface RuntimeDockProps {
   appErrors: AppErrorRecord[];
   results: WorkflowResult[];
   connectionPreview: ConnectionRecord[];
-  themeMode: ThemeMode;
+  themeMode: ResolvedThemeMode;
   isCollapsed: boolean;
   onToggleCollapsed: () => void;
   /** 当前活跃部署的 workflow_id，用于变量面板。null 时面板显示占位。 */
@@ -118,7 +116,7 @@ export interface AiConfigPanelProps {
 
 export interface RuntimeManagerPanelProps {
   workspacePath: string;
-  themeMode: ThemeMode;
+  themeMode: ResolvedThemeMode;
   activeBoardId: string | null;
   onOpenBoard: (boardId: string) => void;
   onPersistActiveProject?: (projectId: string | null) => Promise<void> | void;

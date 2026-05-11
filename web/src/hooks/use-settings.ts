@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 
-import type { MotionMode, StartupPage, ThemeMode } from '../components/app/types';
+import type { MotionMode, ResolvedThemeMode, StartupPage, ThemeMode } from '../components/app/types';
 import {
   ACCENT_PRESET_STORAGE_KEY,
   CUSTOM_ACCENT_STORAGE_KEY,
@@ -18,6 +18,8 @@ import {
   getInitialMotionMode,
   getInitialStartupPage,
   getInitialThemeMode,
+  getSystemThemePreference,
+  resolveThemeMode,
 } from '../lib/settings';
 import {
   buildAccentThemeVariables,
@@ -28,8 +30,10 @@ import {
 
 /** 所有偏好设置的当前状态快照。 */
 export interface SettingsState {
-  /** 当前主题模式（亮色 / 暗色）。 */
+  /** 用户设置的主题偏好（含"跟随系统"）。 */
   themeMode: ThemeMode;
+  /** 解析后的实际主题（不含 system），用于 CSS 变量和下游组件。 */
+  resolvedThemeMode: ResolvedThemeMode;
   /** 当前强调色预设键。 */
   accentPreset: AccentPreset;
   /** 自定义强调色十六进制值。 */
@@ -86,6 +90,25 @@ export function useSettings(): UseSettingsResult {
   );
   const [gridVisible, setGridVisible] = useState<boolean>(getInitialGridVisible);
 
+  // 当 themeMode 为 system 时，追踪操作系统偏好变化。
+  const [systemPreference, setSystemPreference] = useState<ResolvedThemeMode>(getSystemThemePreference);
+
+  useEffect(() => {
+    if (themeMode !== 'system') {
+      return;
+    }
+
+    const mql = window.matchMedia('(prefers-color-scheme: dark)');
+    const handler = (event: MediaQueryListEvent) => {
+      setSystemPreference(event.matches ? 'dark' : 'light');
+    };
+    mql.addEventListener('change', handler);
+    return () => mql.removeEventListener('change', handler);
+  }, [themeMode]);
+
+  // 解析后的实际主题值。
+  const resolvedThemeMode = themeMode === 'system' ? systemPreference : themeMode;
+
   // 计算最终强调色十六进制值。
   const accentHex = useMemo(
     () => getAccentHex(accentPreset, customAccentHex),
@@ -94,20 +117,20 @@ export function useSettings(): UseSettingsResult {
 
   // 计算完整的强调色 CSS 变量映射。
   const accentThemeVariables = useMemo(
-    () => buildAccentThemeVariables(accentHex, themeMode),
-    [accentHex, themeMode],
+    () => buildAccentThemeVariables(accentHex, resolvedThemeMode),
+    [accentHex, resolvedThemeMode],
   );
 
   // 主题模式变更时更新 document dataset 并持久化。
   useEffect(() => {
-    document.documentElement.dataset.theme = themeMode;
+    document.documentElement.dataset.theme = resolvedThemeMode;
 
     try {
       window.localStorage.setItem(THEME_STORAGE_KEY, themeMode);
     } catch {
       // 受限运行时下忽略存储失败。
     }
-  }, [themeMode]);
+  }, [themeMode, resolvedThemeMode]);
 
   // 强调色变更时将 CSS 变量写入根元素并持久化。
   useEffect(() => {
@@ -183,13 +206,18 @@ export function useSettings(): UseSettingsResult {
     setCustomAccentHexRaw(normalizeCustomAccentHex(hex));
   }
 
-  /** 在亮色与暗色主题之间快速切换。 */
+  /** 在亮色、暗色、跟随系统之间循环切换。 */
   function toggleTheme() {
-    setThemeMode((current) => (current === 'dark' ? 'light' : 'dark'));
+    setThemeMode((current) => {
+      if (current === 'light') return 'dark';
+      if (current === 'dark') return 'system';
+      return 'light';
+    });
   }
 
   return {
     themeMode,
+    resolvedThemeMode,
     accentPreset,
     customAccentHex,
     accentHex,

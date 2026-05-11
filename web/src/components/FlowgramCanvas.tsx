@@ -22,7 +22,7 @@ import {
 } from 'react';
 
 import { FlowgramNodeAddPanel } from './flowgram/FlowgramNodeAddPanel';
-import type { ThemeMode } from './app/types';
+import type { ResolvedThemeMode, ThemeMode } from './app/types';
 import { FLOWGRAM_NODE_SETTINGS_PANEL_KEY } from './flowgram/FlowgramNodeSettingsPanel';
 import {
   getLogicNodeBranchDefinitions,
@@ -99,7 +99,7 @@ export interface FlowgramCanvasRuntime {
 
 export interface FlowgramCanvasAppearance {
   accentHex: string;
-  themeMode: ThemeMode;
+  themeMode: ResolvedThemeMode;
   nodeCodeColor: string;
 }
 

@@ -39,7 +39,6 @@ import { describeUnknownError } from './lib/workflow-events';
 import {
   deriveWorkflowStatus,
   getWorkflowStatusLabel,
-  getWorkflowStatusPillClass,
 } from './lib/workflow-status';
 
 interface DeploymentSnapshot {
@@ -457,7 +456,6 @@ function App() {
     engine.runtimeState,
   );
   const workflowStatusLabel = getWorkflowStatusLabel(workflowStatus);
-  const workflowStatusPillClass = getWorkflowStatusPillClass(workflowStatus);
   const canTestRun = testRun.canTestRun;
   const isTestRunning = testRun.isTestRunning;
   const referencedConnectionIds = getReferencedConnectionIds(graphState.graph?.nodes ?? null);
@@ -514,10 +512,6 @@ function App() {
                 userName={CURRENT_USER_NAME}
                 userRole={currentUserRole}
                 onUserSwitch={() => setSidebarSection('settings')}
-                workflowStatusLabel={workflowStatusLabel}
-                workflowStatusPillClass={workflowStatusPillClass}
-                themeMode={settings.themeMode}
-                onToggleTheme={settings.toggleTheme}
                 isCollapsed={sidebarCollapsed}
                 onToggleCollapsed={toggleSidebarCollapsed}
               />

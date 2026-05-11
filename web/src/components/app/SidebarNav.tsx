@@ -7,10 +7,8 @@ import {
   DeviceIcon,
   HistoryIcon,
   LogsIcon,
-  MoonIcon,
   PluginsIcon,
   SettingsIcon,
-  SunIcon,
   SwitchUserIcon,
 } from './AppIcons';
 import { useScrollEdgeEffect } from '../../hooks/use-scroll-edge-effect';
@@ -45,14 +43,9 @@ export function SidebarNav({
   userName,
   userRole,
   onUserSwitch,
-  workflowStatusLabel,
-  workflowStatusPillClass,
-  themeMode,
-  onToggleTheme,
   isCollapsed: _isCollapsed,
   onToggleCollapsed: _onToggleCollapsed,
 }: SidebarNavProps) {
-  const isDarkMode = themeMode === 'dark';
   const groupsRef = useScrollEdgeEffect<HTMLDivElement>();
   const groupedSections = [
     {
@@ -119,21 +112,6 @@ export function SidebarNav({
       </div>
 
       <div className="studio-nav__footer">
-        <div className="studio-nav-status">
-          <button
-            type="button"
-            className="studio-nav-theme-toggle"
-            aria-label={isDarkMode ? '切换到亮色主题' : '切换到暗色主题'}
-            title="切换主题"
-            onClick={onToggleTheme}
-          >
-            {isDarkMode ? <SunIcon /> : <MoonIcon />}
-          </button>
-          <span className={`runtime-pill ${workflowStatusPillClass}`} data-testid="workflow-status">
-            {workflowStatusLabel}
-          </span>
-        </div>
-
         <section className="studio-nav-user" aria-label="当前用户">
           <div className="studio-nav-user__avatar" aria-hidden="true">
             {getUserInitials(userName)}

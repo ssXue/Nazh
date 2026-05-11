@@ -39,13 +39,18 @@ describe('getInitialThemeMode', () => {
     expect(getInitialThemeMode()).toBe('dark');
   });
 
-  it('无存储值 → 默认返回 light', () => {
-    expect(getInitialThemeMode()).toBe('light');
+  it('已存储 system → 返回 system', () => {
+    localStorage.setItem(THEME_STORAGE_KEY, 'system');
+    expect(getInitialThemeMode()).toBe('system');
   });
 
-  it('无效存储值 → 默认返回 light', () => {
+  it('无存储值 → 默认返回 system', () => {
+    expect(getInitialThemeMode()).toBe('system');
+  });
+
+  it('无效存储值 → 默认返回 system', () => {
     localStorage.setItem(THEME_STORAGE_KEY, 'blue');
-    expect(getInitialThemeMode()).toBe('light');
+    expect(getInitialThemeMode()).toBe('system');
   });
 });
 
