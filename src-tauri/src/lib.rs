@@ -151,6 +151,7 @@ fn init_persistent_store(app: &tauri::App) {
 #[allow(clippy::too_many_lines)]
 pub fn run() {
     let builder = tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(DesktopState::default())
         .setup(|app| {
             // 在 setup 内初始化 tracing，以便使用 AppHandle 解析日志目录

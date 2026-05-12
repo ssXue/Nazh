@@ -46,3 +46,5 @@ window-vibrancy = "0.7.1"
 pdf-extract = "0.10.0"
 base64 = "0.22"
 quick-xml = "0.39.3"
+# 系统原生对话框（文件夹选择等）
+tauri-plugin-dialog = "2"
