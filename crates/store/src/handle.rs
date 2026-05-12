@@ -249,15 +249,24 @@ impl StoreHandle {
         id: &str,
         role: &str,
         content: &str,
+        thinking: Option<&str>,
         now: &str,
     ) -> Result<CopilotMessage, StoreError> {
         let conversation_id = conversation_id.to_owned();
         let id = id.to_owned();
         let role = role.to_owned();
         let content = content.to_owned();
+        let thinking = thinking.map(|s| s.to_owned());
         let now = now.to_owned();
         self.run_blocking(move |store| {
-            store.append_copilot_message(&conversation_id, &id, &role, &content, &now)
+            store.append_copilot_message(
+                &conversation_id,
+                &id,
+                &role,
+                &content,
+                thinking.as_deref(),
+                &now,
+            )
         })
         .await
     }

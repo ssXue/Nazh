@@ -61,7 +61,7 @@ export async function copilotChatStream(
   });
 
   // 2. 加载会话历史
-  const history = await invoke<Array<{ id: string; role: string; content: string }>>(
+  const history = await invoke<Array<{ id: string; role: string; content: string; thinking?: string }>>(
     'copilot_load_conversation',
     { id: conversationId },
   );
@@ -101,6 +101,7 @@ export async function copilotChatStream(
       conversationId,
       role: 'assistant',
       content: result.text,
+      thinking: result.thinking,
     }).catch((error) => {
       console.warn('[copilot-stream] 保存 AI 回复失败', error);
     });

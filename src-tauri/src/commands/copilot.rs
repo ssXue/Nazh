@@ -28,6 +28,7 @@ fn map_message(m: &store::CopilotMessage) -> CopilotMessageResponse {
         conversation_id: m.conversation_id.clone(),
         role: m.role.clone(),
         content: m.content.clone(),
+        thinking: m.thinking.clone(),
         created_at: m.created_at.clone(),
     }
 }
@@ -189,18 +190,27 @@ pub(crate) async fn copilot_dispatch_tool(
 /// 保存一条消息到 copilot 会话。
 ///
 /// 前端直调 AI 时用于持久化用户消息和 AI 回复。
+/// `thinking` 为助手消息携带的推理过程，多轮对话时必须回传给 API。
 #[tauri::command]
 pub(crate) async fn copilot_save_message(
     conversation_id: String,
     role: String,
     content: String,
+    thinking: Option<String>,
     state: State<'_, DesktopState>,
 ) -> Result<(), String> {
     let handle = state.store_handle()?;
     let msg_id = Uuid::new_v4().to_string();
     let now = Utc::now().to_rfc3339();
     handle
-        .append_copilot_message(&conversation_id, &msg_id, &role, &content, &now)
+        .append_copilot_message(
+            &conversation_id,
+            &msg_id,
+            &role,
+            &content,
+            thinking.as_deref(),
+            &now,
+        )
         .await
         .map_err(|e| e.to_string())?;
     Ok(())

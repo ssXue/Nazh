@@ -25,5 +25,8 @@ pub struct CopilotMessageResponse {
     pub conversation_id: String,
     pub role: String,
     pub content: String,
+    /// 助手消息携带的推理过程（DeepSeek 等模型的 `reasoning_content`）。
+    /// 多轮工具调用时必须回传给 API，否则会触发 API 错误。
+    pub thinking: Option<String>,
     pub created_at: String,
 }

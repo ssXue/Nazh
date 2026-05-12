@@ -3,6 +3,9 @@
 /// 负责系统提示构建、对话历史管理、多轮工具调用循环。
 /// AI HTTP 调用通过 ai-sdk 的 streamText 直接发到 provider。
 /// 工具执行通过 IPC 调度到 Rust 引擎。
+///
+/// reasoning_content 的提取和回传由 @ai-sdk/openai-compatible 原生处理，
+/// 不需要手动注入。
 
 import { streamText, stepCountIs } from 'ai';
 
@@ -88,6 +91,7 @@ export interface CopilotCallbacks {
 
 export interface CopilotResult {
   text: string;
+  thinking?: string;
   finishReason?: string;
   aborted?: boolean;
 }
@@ -197,6 +201,7 @@ export async function copilotStream(options: CopilotStreamOptions): Promise<Copi
 
   return {
     text: accumulated,
+    thinking: thinkingAccumulated || undefined,
     finishReason,
     aborted: signal?.aborted ?? false,
   };

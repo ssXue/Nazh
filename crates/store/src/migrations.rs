@@ -67,6 +67,12 @@ const MIGRATIONS: &[(&str, &str)] = &[
         ",
     ),
     (
+        "006",
+        "
+        ALTER TABLE copilot_messages ADD COLUMN thinking TEXT;
+        ",
+    ),
+    (
         "005",
         "
         CREATE TABLE IF NOT EXISTS asset_embeddings (

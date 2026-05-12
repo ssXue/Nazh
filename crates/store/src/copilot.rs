@@ -20,6 +20,9 @@ pub struct CopilotMessage {
     pub conversation_id: String,
     pub role: String,
     pub content: String,
+    /// 助手消息携带的推理过程（DeepSeek 等模型的 `reasoning_content`）。
+    /// 多轮对话时必须回传给 API，否则会触发 API 错误。
+    pub thinking: Option<String>,
     pub created_at: String,
 }
 
@@ -93,7 +96,7 @@ impl Store {
     ) -> Result<Vec<CopilotMessage>, StoreError> {
         let db = self.db();
         let mut stmt = db.prepare(
-            "SELECT id, conversation_id, role, content, created_at
+            "SELECT id, conversation_id, role, content, thinking, created_at
              FROM copilot_messages
              WHERE conversation_id = ?1
              ORDER BY created_at ASC",
@@ -104,7 +107,8 @@ impl Store {
                 conversation_id: row.get(1)?,
                 role: row.get(2)?,
                 content: row.get(3)?,
-                created_at: row.get(4)?,
+                thinking: row.get(4)?,
+                created_at: row.get(5)?,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -117,12 +121,13 @@ impl Store {
         id: &str,
         role: &str,
         content: &str,
+        thinking: Option<&str>,
         now: &str,
     ) -> Result<CopilotMessage, StoreError> {
         self.db().execute(
-            "INSERT INTO copilot_messages (id, conversation_id, role, content, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![id, conversation_id, role, content, now],
+            "INSERT INTO copilot_messages (id, conversation_id, role, content, thinking, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![id, conversation_id, role, content, thinking, now],
         )?;
         self.db().execute(
             "UPDATE copilot_conversations SET updated_at = ?1 WHERE id = ?2",
@@ -133,6 +138,7 @@ impl Store {
             conversation_id: conversation_id.to_owned(),
             role: role.to_owned(),
             content: content.to_owned(),
+            thinking: thinking.map(|s| s.to_owned()),
             created_at: now.to_owned(),
         })
     }
@@ -168,7 +174,7 @@ mod tests {
             .create_copilot_conversation("c1", "对话", "2026-01-01T00:00:00")
             .unwrap();
         store
-            .append_copilot_message("c1", "m1", "user", "你好", "2026-01-01T00:00:01")
+            .append_copilot_message("c1", "m1", "user", "你好", None, "2026-01-01T00:00:01")
             .unwrap();
 
         store.delete_copilot_conversation("c1").unwrap();
@@ -182,16 +188,38 @@ mod tests {
             .create_copilot_conversation("c1", "对话", "2026-01-01T00:00:00")
             .unwrap();
         store
-            .append_copilot_message("c1", "m1", "user", "你好", "2026-01-01T00:00:01")
+            .append_copilot_message("c1", "m1", "user", "你好", None, "2026-01-01T00:00:01")
             .unwrap();
         store
-            .append_copilot_message("c1", "m2", "assistant", "你好！", "2026-01-01T00:00:02")
+            .append_copilot_message("c1", "m2", "assistant", "你好！", None, "2026-01-01T00:00:02")
             .unwrap();
 
         let msgs = store.list_copilot_messages("c1").unwrap();
         assert_eq!(msgs.len(), 2);
         assert_eq!(msgs[0].role, "user");
+        assert_eq!(msgs[0].thinking, None);
         assert_eq!(msgs[1].role, "assistant");
+        assert_eq!(msgs[1].thinking, None);
+    }
+
+    #[test]
+    fn thinking_round_trip() {
+        let store = test_store();
+        store
+            .create_copilot_conversation("c1", "对话", "2026-01-01T00:00:00")
+            .unwrap();
+        store
+            .append_copilot_message("c1", "m1", "user", "你好", None, "2026-01-01T00:00:01")
+            .unwrap();
+        store
+            .append_copilot_message(
+                "c1", "m2", "assistant", "你好！",
+                Some("让我想想..."), "2026-01-01T00:00:02",
+            )
+            .unwrap();
+
+        let msgs = store.list_copilot_messages("c1").unwrap();
+        assert_eq!(msgs[1].thinking.as_deref(), Some("让我想想..."));
     }
 
     #[test]
