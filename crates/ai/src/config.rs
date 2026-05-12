@@ -213,13 +213,6 @@ pub struct AiAgentSettings {
     /// 是否启用 copilot 工具调用。
     #[serde(default)]
     pub tool_calling_enabled: bool,
-    /// 是否启用 RAG 上下文注入。
-    #[serde(default)]
-    pub rag_enabled: bool,
-    /// 覆盖 embedding 模型（默认使用提供商默认模型）。
-    #[serde(default)]
-    #[cfg_attr(feature = "ts-export", ts(optional))]
-    pub embedding_model: Option<String>,
 }
 
 /// 磁盘中的单个 AI 提供商记录（含密钥）。

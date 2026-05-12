@@ -7,12 +7,4 @@ export type AiAgentSettings = { systemPrompt?: string, timeoutMs?: bigint, think
 /**
  * 是否启用 copilot 工具调用。
  */
-toolCallingEnabled: boolean,
-/**
- * 是否启用 RAG 上下文注入。
- */
-ragEnabled: boolean,
-/**
- * 覆盖 embedding 模型（默认使用提供商默认模型）。
- */
-embeddingModel?: string, };
+toolCallingEnabled: boolean, };

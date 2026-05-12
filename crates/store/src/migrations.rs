@@ -72,24 +72,6 @@ const MIGRATIONS: &[(&str, &str)] = &[
         ALTER TABLE copilot_messages ADD COLUMN thinking TEXT;
         ",
     ),
-    (
-        "005",
-        "
-        CREATE TABLE IF NOT EXISTS asset_embeddings (
-            id          TEXT PRIMARY KEY,
-            asset_type  TEXT NOT NULL CHECK(asset_type IN ('device','capability','node_help')),
-            asset_id    TEXT NOT NULL,
-            chunk_index INTEGER NOT NULL DEFAULT 0,
-            chunk_text  TEXT NOT NULL,
-            embedding   BLOB NOT NULL,
-            model       TEXT NOT NULL,
-            updated_at  TEXT NOT NULL,
-            UNIQUE(asset_type, asset_id, chunk_index)
-        );
-        CREATE INDEX IF NOT EXISTS idx_asset_embeddings_lookup
-            ON asset_embeddings(asset_type, asset_id);
-        ",
-    ),
 ];
 
 /// 检查 `schema_version` 表，执行尚未应用的 migrations。

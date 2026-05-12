@@ -1,9 +1,7 @@
 //! Copilot 对话式副驾驶 IPC 命令。
 
 use chrono::Utc;
-use serde::Deserialize;
 use serde_json::json;
-use store::AssetEmbedding;
 use tauri::State;
 use tauri_bindings::{CopilotConversationResponse, CopilotMessageResponse};
 use uuid::Uuid;
@@ -80,61 +78,6 @@ pub(crate) async fn copilot_load_conversation(
         .await
         .map(|msgs| msgs.iter().map(map_message).collect())
         .map_err(|e| e.to_string())
-}
-
-/// 单条前端预计算的 embedding 输入。
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct EmbeddingInput {
-    asset_type: String,
-    asset_id: String,
-    chunk_index: i32,
-    chunk_text: String,
-    embedding: Vec<f32>,
-    model: String,
-}
-
-/// 清除全部 asset embedding 索引。
-#[tauri::command]
-pub(crate) async fn copilot_clear_embeddings(state: State<'_, DesktopState>) -> Result<(), String> {
-    let handle = state.store_handle()?;
-    handle
-        .delete_all_asset_embeddings()
-        .await
-        .map_err(|e| e.to_string())
-}
-
-/// 批量写入前端预计算的 embedding 向量。
-///
-/// 前端使用 AI SDK `embed()` / `embedMany()` 生成向量后调用此接口持久化。
-#[tauri::command]
-#[allow(clippy::cast_possible_wrap)]
-pub(crate) async fn copilot_store_embeddings(
-    embeddings: Vec<EmbeddingInput>,
-    state: State<'_, DesktopState>,
-) -> Result<serde_json::Value, String> {
-    let handle = state.store_handle()?;
-    let now = Utc::now().to_rfc3339();
-    let count = embeddings.len();
-
-    for emb in embeddings {
-        let record = AssetEmbedding {
-            id: Uuid::new_v4().to_string(),
-            asset_type: emb.asset_type,
-            asset_id: emb.asset_id,
-            chunk_index: emb.chunk_index,
-            chunk_text: emb.chunk_text,
-            embedding: emb.embedding,
-            model: emb.model,
-            updated_at: now.clone(),
-        };
-        handle
-            .upsert_asset_embedding(record)
-            .await
-            .map_err(|e| format!("写入 embedding 失败: {e}"))?;
-    }
-
-    Ok(json!({ "stored": count }))
 }
 
 /// 调度单个 Copilot 查询工具。

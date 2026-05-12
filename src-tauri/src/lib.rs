@@ -251,8 +251,6 @@ pub fn run() {
             commands::copilot::copilot_dispatch_tool,
             commands::copilot::copilot_save_message,
             commands::copilot::copilot_get_tool_definitions,
-            commands::copilot::copilot_clear_embeddings,
-            commands::copilot::copilot_store_embeddings,
             commands::human_loop::respond_human_loop,
             commands::human_loop::list_pending_approvals,
             commands::devices::list_device_assets,
