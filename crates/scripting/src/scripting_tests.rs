@@ -103,13 +103,8 @@ fn rhai_脚本_cas_期望值不匹配时返回_false() {
 
 #[test]
 fn rhai_脚本无_variables_注入时_vars_未定义() {
-    let base = ScriptNodeBase::new(
-        "test-script-4",
-        r#"vars.get("anything")"#,
-        10_000,
-        None,
-    )
-    .unwrap();
+    let base =
+        ScriptNodeBase::new("test-script-4", r#"vars.get("anything")"#, 10_000, None).unwrap();
     let err = base.evaluate(serde_json::Value::Null).unwrap_err();
     let msg = format!("{err}");
     assert!(

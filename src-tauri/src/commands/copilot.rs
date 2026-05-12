@@ -11,9 +11,7 @@ use uuid::Uuid;
 use crate::commands::copilot_tools;
 use crate::state::DesktopState;
 
-fn map_conversation(
-    c: &store::CopilotConversation,
-) -> CopilotConversationResponse {
+fn map_conversation(c: &store::CopilotConversation) -> CopilotConversationResponse {
     CopilotConversationResponse {
         id: c.id.clone(),
         title: c.title.clone(),
@@ -98,9 +96,7 @@ pub(crate) struct EmbeddingInput {
 
 /// 清除全部 asset embedding 索引。
 #[tauri::command]
-pub(crate) async fn copilot_clear_embeddings(
-    state: State<'_, DesktopState>,
-) -> Result<(), String> {
+pub(crate) async fn copilot_clear_embeddings(state: State<'_, DesktopState>) -> Result<(), String> {
     let handle = state.store_handle()?;
     handle
         .delete_all_asset_embeddings()

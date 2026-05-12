@@ -9,14 +9,13 @@ use std::{
 
 use async_trait::async_trait;
 use nazh_engine::{
-    CodeNode, CodeNodeConfig, ConnectionDefinition, ConnectionManager,
-    DebugConsoleNode, DebugConsoleNodeConfig, EmptyPolicy, EngineError, HttpClientNode,
-    HttpClientNodeConfig, ModbusReadNode, ModbusReadNodeConfig, MqttClientNode,
-    MqttClientNodeConfig, MqttMode, NodeCapabilities, NodeDispatch, NodeExecution, NodeRegistry,
-    NodeTrait, PinDefinition, PinDirection, PinKind, PinType, SerialTriggerNode,
-    SerialTriggerNodeConfig, SqlWriterNode, SqlWriterNodeConfig, TimerNode,
-    TimerNodeConfig, WorkflowContext, WorkflowGraph, deploy_workflow,
-    shared_connection_manager, standard_registry,
+    CodeNode, CodeNodeConfig, ConnectionDefinition, ConnectionManager, DebugConsoleNode,
+    DebugConsoleNodeConfig, EmptyPolicy, EngineError, HttpClientNode, HttpClientNodeConfig,
+    ModbusReadNode, ModbusReadNodeConfig, MqttClientNode, MqttClientNodeConfig, MqttMode,
+    NodeCapabilities, NodeDispatch, NodeExecution, NodeRegistry, NodeTrait, PinDefinition,
+    PinDirection, PinKind, PinType, SerialTriggerNode, SerialTriggerNodeConfig, SqlWriterNode,
+    SqlWriterNodeConfig, TimerNode, TimerNodeConfig, WorkflowContext, WorkflowGraph,
+    deploy_workflow, shared_connection_manager, standard_registry,
 };
 use serde_json::json;
 use tokio::time::timeout;
@@ -151,7 +150,6 @@ async fn code_node_can_use_builtin_helper_package() {
         Err(error) => panic!("code node should execute successfully: {error}"),
     }
 }
-
 
 #[tokio::test]
 async fn workflow_graph_executes_end_to_end() {

@@ -32,10 +32,16 @@ async fn 部署时变量按声明初始化() {
 
     let registry: NodeRegistry = standard_registry();
     let cm = shared_connection_manager();
-    let deployment =
-        deploy_workflow_and_restore_variables(graph, cm, &registry, None, RuntimeResources::new(), HashMap::new())
-            .await
-            .expect("空 DAG + 单变量应能部署");
+    let deployment = deploy_workflow_and_restore_variables(
+        graph,
+        cm,
+        &registry,
+        None,
+        RuntimeResources::new(),
+        HashMap::new(),
+    )
+    .await
+    .expect("空 DAG + 单变量应能部署");
 
     // 变量可达性验证留 Task 7（nodes-flow E2E）；此处只确认部署管线成功 + 干净撤销。
     deployment.shutdown().await;
@@ -61,8 +67,15 @@ async fn 初值类型不匹配_部署失败() {
     let registry: NodeRegistry = standard_registry();
     let cm = shared_connection_manager();
     // WorkflowDeployment 未实现 Debug，不能用 unwrap_err / expect_err；用 let…else 提取错误值
-    let Err(err) =
-        deploy_workflow_and_restore_variables(graph, cm, &registry, None, RuntimeResources::new(), HashMap::new()).await
+    let Err(err) = deploy_workflow_and_restore_variables(
+        graph,
+        cm,
+        &registry,
+        None,
+        RuntimeResources::new(),
+        HashMap::new(),
+    )
+    .await
     else {
         panic!("初值类型不匹配应阻止部署");
     };
@@ -106,10 +119,16 @@ async fn rhai_code_节点同部署多次触发累积变量() {
 
     let registry: NodeRegistry = standard_registry();
     let cm = shared_connection_manager();
-    let mut deployment =
-        deploy_workflow_and_restore_variables(graph, cm, &registry, None, RuntimeResources::new(), HashMap::new())
-            .await
-            .expect("含 code 节点的图应能部署");
+    let mut deployment = deploy_workflow_and_restore_variables(
+        graph,
+        cm,
+        &registry,
+        None,
+        RuntimeResources::new(),
+        HashMap::new(),
+    )
+    .await
+    .expect("含 code 节点的图应能部署");
 
     // 触发三次，每次 counter += 1
     for _ in 0..3 {
@@ -158,10 +177,16 @@ async fn 部署后写变量触发_variablechanged_事件() {
 
     let registry: NodeRegistry = standard_registry();
     let cm = shared_connection_manager();
-    let mut deployment =
-        deploy_workflow_and_restore_variables(graph, cm, &registry, None, RuntimeResources::new(), HashMap::new())
-            .await
-            .expect("空 DAG + 单变量应能部署");
+    let mut deployment = deploy_workflow_and_restore_variables(
+        graph,
+        cm,
+        &registry,
+        None,
+        RuntimeResources::new(),
+        HashMap::new(),
+    )
+    .await
+    .expect("空 DAG + 单变量应能部署");
 
     // 从 deployment 的 SharedResources 取 vars，写一次新值
     let vars = deployment

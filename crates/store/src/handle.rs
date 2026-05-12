@@ -193,8 +193,7 @@ impl StoreHandle {
 
     /// 列出所有 copilot 对话。
     pub async fn list_copilot_conversations(&self) -> Result<Vec<CopilotConversation>, StoreError> {
-        self.run_blocking(Store::list_copilot_conversations)
-            .await
+        self.run_blocking(Store::list_copilot_conversations).await
     }
 
     /// 创建新的 copilot 对话。
@@ -256,7 +255,7 @@ impl StoreHandle {
         let id = id.to_owned();
         let role = role.to_owned();
         let content = content.to_owned();
-        let thinking = thinking.map(|s| s.to_owned());
+        let thinking = thinking.map(std::borrow::ToOwned::to_owned);
         let now = now.to_owned();
         self.run_blocking(move |store| {
             store.append_copilot_message(
@@ -274,10 +273,7 @@ impl StoreHandle {
     // -- Embedding 向量存储 --
 
     /// 写入或更新一条 embedding 记录。
-    pub async fn upsert_asset_embedding(
-        &self,
-        record: AssetEmbedding,
-    ) -> Result<(), StoreError> {
+    pub async fn upsert_asset_embedding(&self, record: AssetEmbedding) -> Result<(), StoreError> {
         self.run_blocking(move |store| store.upsert_asset_embedding(&record))
             .await
     }
@@ -307,10 +303,8 @@ impl StoreHandle {
         asset_type: Option<String>,
         limit: usize,
     ) -> Result<Vec<AssetEmbeddingSearchResult>, StoreError> {
-        self.run_blocking(move |store| {
-            store.search_similar(&query, asset_type.as_deref(), limit)
-        })
-        .await
+        self.run_blocking(move |store| store.search_similar(&query, asset_type.as_deref(), limit))
+            .await
     }
 
     /// 统计 embedding 记录数。

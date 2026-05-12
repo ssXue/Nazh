@@ -2,9 +2,7 @@
 //!
 //! 提供设备资产的 CRUD、AI 抽取、结构化提案和 Pin schema 生成命令。
 
-use nazh_dsl_core::{
-    DeviceSpec, parse_device_yaml, signals_to_pin_definitions,
-};
+use nazh_dsl_core::{DeviceSpec, parse_device_yaml, signals_to_pin_definitions};
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 

@@ -138,7 +138,7 @@ impl Store {
             conversation_id: conversation_id.to_owned(),
             role: role.to_owned(),
             content: content.to_owned(),
-            thinking: thinking.map(|s| s.to_owned()),
+            thinking: thinking.map(std::borrow::ToOwned::to_owned),
             created_at: now.to_owned(),
         })
     }
@@ -191,7 +191,14 @@ mod tests {
             .append_copilot_message("c1", "m1", "user", "你好", None, "2026-01-01T00:00:01")
             .unwrap();
         store
-            .append_copilot_message("c1", "m2", "assistant", "你好！", None, "2026-01-01T00:00:02")
+            .append_copilot_message(
+                "c1",
+                "m2",
+                "assistant",
+                "你好！",
+                None,
+                "2026-01-01T00:00:02",
+            )
             .unwrap();
 
         let msgs = store.list_copilot_messages("c1").unwrap();
@@ -213,8 +220,12 @@ mod tests {
             .unwrap();
         store
             .append_copilot_message(
-                "c1", "m2", "assistant", "你好！",
-                Some("让我想想..."), "2026-01-01T00:00:02",
+                "c1",
+                "m2",
+                "assistant",
+                "你好！",
+                Some("让我想想..."),
+                "2026-01-01T00:00:02",
             )
             .unwrap();
 

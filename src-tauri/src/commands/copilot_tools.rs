@@ -29,8 +29,7 @@ pub(crate) struct CopilotToolCtx {
     /// 当前 copilot 流事件的 channel 名称（`copilot://stream/{streamId}`）。
     pub(crate) stream_event_name: String,
     /// 画布操作引用映射：AI 用的 ref → 实际节点 ID。
-    pub(crate) ref_map:
-        std::sync::Mutex<std::collections::HashMap<String, String>>,
+    pub(crate) ref_map: std::sync::Mutex<std::collections::HashMap<String, String>>,
 }
 
 /// 构建系统提示用的节点目录文本。
@@ -401,23 +400,19 @@ fn parse_args(call: &AiToolCall) -> Result<serde_json::Value, String> {
     if call.arguments.trim().is_empty() {
         Ok(json!({}))
     } else {
-        serde_json::from_str(&call.arguments)
-            .map_err(|e| format!("参数解析失败: {e}"))
+        serde_json::from_str(&call.arguments).map_err(|e| format!("参数解析失败: {e}"))
     }
 }
 
 fn tool_query_node_catalog(_call: &AiToolCall) -> Result<String, String> {
     let registry = shared_node_registry();
     let response = list_node_types_response(registry);
-    serde_json::to_string_pretty(&response)
-        .map_err(|e| format!("序列化节点目录失败: {e}"))
+    serde_json::to_string_pretty(&response).map_err(|e| format!("序列化节点目录失败: {e}"))
 }
 
 fn tool_describe_node(call: &AiToolCall) -> Result<String, String> {
     let args = parse_args(call)?;
-    let node_type = args["node_type"]
-        .as_str()
-        .ok_or("缺少 node_type 参数")?;
+    let node_type = args["node_type"].as_str().ok_or("缺少 node_type 参数")?;
 
     let registry = shared_node_registry();
     let definition = WorkflowNodeDefinition::probe(
@@ -439,14 +434,10 @@ fn tool_describe_node(call: &AiToolCall) -> Result<String, String> {
         "input_pins": node.input_pins(),
         "output_pins": node.output_pins(),
     });
-    serde_json::to_string_pretty(&result)
-        .map_err(|e| format!("序列化节点描述失败: {e}"))
+    serde_json::to_string_pretty(&result).map_err(|e| format!("序列化节点描述失败: {e}"))
 }
 
-async fn tool_list_connections(
-    _call: &AiToolCall,
-    ctx: &CopilotToolCtx,
-) -> Result<String, String> {
+async fn tool_list_connections(_call: &AiToolCall, ctx: &CopilotToolCtx) -> Result<String, String> {
     let connections = ctx.connection_manager.list().await;
     let summaries: Vec<serde_json::Value> = connections
         .iter()
@@ -458,14 +449,10 @@ async fn tool_list_connections(
             })
         })
         .collect();
-    serde_json::to_string_pretty(&summaries)
-        .map_err(|e| format!("序列化连接列表失败: {e}"))
+    serde_json::to_string_pretty(&summaries).map_err(|e| format!("序列化连接列表失败: {e}"))
 }
 
-async fn tool_search_devices(
-    call: &AiToolCall,
-    ctx: &CopilotToolCtx,
-) -> Result<String, String> {
+async fn tool_search_devices(call: &AiToolCall, ctx: &CopilotToolCtx) -> Result<String, String> {
     use crate::commands::devices::list_device_assets;
 
     let args = parse_args(call)?;
@@ -493,8 +480,7 @@ async fn tool_search_devices(
         })
         .collect();
 
-    serde_json::to_string_pretty(&filtered)
-        .map_err(|e| format!("序列化设备列表失败: {e}"))
+    serde_json::to_string_pretty(&filtered).map_err(|e| format!("序列化设备列表失败: {e}"))
 }
 
 async fn tool_search_capabilities(
@@ -520,8 +506,7 @@ async fn tool_search_capabilities(
             if keyword.is_empty() {
                 return true;
             }
-            c.id.to_lowercase().contains(&keyword)
-                || c.name.to_lowercase().contains(&keyword)
+            c.id.to_lowercase().contains(&keyword) || c.name.to_lowercase().contains(&keyword)
         })
         .map(|c| {
             json!({
@@ -534,14 +519,10 @@ async fn tool_search_capabilities(
         })
         .collect();
 
-    serde_json::to_string_pretty(&filtered)
-        .map_err(|e| format!("序列化能力列表失败: {e}"))
+    serde_json::to_string_pretty(&filtered).map_err(|e| format!("序列化能力列表失败: {e}"))
 }
 
-fn tool_get_active_workflow(
-    _call: &AiToolCall,
-    ctx: &CopilotToolCtx,
-) -> Result<String, String> {
+fn tool_get_active_workflow(_call: &AiToolCall, ctx: &CopilotToolCtx) -> Result<String, String> {
     let Some(active_id) = &ctx.active_workflow_id else {
         return Ok("当前没有活跃的工作流".to_owned());
     };
@@ -555,14 +536,10 @@ fn tool_get_active_workflow(
         return Ok(format!("活跃工作流 `{active_id}` 未找到"));
     };
 
-    serde_json::to_string_pretty(&summary)
-        .map_err(|e| format!("序列化工作流信息失败: {e}"))
+    serde_json::to_string_pretty(&summary).map_err(|e| format!("序列化工作流信息失败: {e}"))
 }
 
-fn tool_query_workflow_status(
-    _call: &AiToolCall,
-    ctx: &CopilotToolCtx,
-) -> Result<String, String> {
+fn tool_query_workflow_status(_call: &AiToolCall, ctx: &CopilotToolCtx) -> Result<String, String> {
     if ctx.workflow_summaries.is_empty() {
         return Ok("当前没有已部署的工作流".to_owned());
     }
@@ -570,32 +547,33 @@ fn tool_query_workflow_status(
         .map_err(|e| format!("序列化工作流状态失败: {e}"))
 }
 
-async fn tool_read_asset_yaml(
-    call: &AiToolCall,
-    ctx: &CopilotToolCtx,
-) -> Result<String, String> {
+async fn tool_read_asset_yaml(call: &AiToolCall, ctx: &CopilotToolCtx) -> Result<String, String> {
     use crate::commands::capabilities::load_capability;
     use crate::commands::devices::load_device_asset;
 
     let args = parse_args(call)?;
-    let asset_type = args["asset_type"]
-        .as_str()
-        .ok_or("缺少 asset_type 参数")?;
-    let asset_id = args["asset_id"]
-        .as_str()
-        .ok_or("缺少 asset_id 参数")?;
+    let asset_type = args["asset_type"].as_str().ok_or("缺少 asset_type 参数")?;
+    let asset_id = args["asset_id"].as_str().ok_or("缺少 asset_id 参数")?;
 
     match asset_type {
         "device" => {
-            let asset = load_device_asset(ctx.app.clone(), asset_id.to_owned(), ctx.workspace_path.clone())
-                .await?
-                .ok_or_else(|| format!("设备 `{asset_id}` 不存在"))?;
+            let asset = load_device_asset(
+                ctx.app.clone(),
+                asset_id.to_owned(),
+                ctx.workspace_path.clone(),
+            )
+            .await?
+            .ok_or_else(|| format!("设备 `{asset_id}` 不存在"))?;
             Ok(asset.spec_yaml)
         }
         "capability" => {
-            let asset = load_capability(ctx.app.clone(), asset_id.to_owned(), ctx.workspace_path.clone())
-                .await?
-                .ok_or_else(|| format!("能力 `{asset_id}` 不存在"))?;
+            let asset = load_capability(
+                ctx.app.clone(),
+                asset_id.to_owned(),
+                ctx.workspace_path.clone(),
+            )
+            .await?
+            .ok_or_else(|| format!("能力 `{asset_id}` 不存在"))?;
             Ok(asset.spec_yaml)
         }
         _ => Err(format!("不支持的资产类型: {asset_type}")),
@@ -634,8 +612,7 @@ fn tool_validate_workflow(call: &AiToolCall) -> Result<String, String> {
                 .map(|t| format!("未知节点类型: {t}"))
                 .collect::<Vec<_>>()
         });
-        return serde_json::to_string_pretty(&result)
-            .map_err(|e| format!("序列化失败: {e}"));
+        return serde_json::to_string_pretty(&result).map_err(|e| format!("序列化失败: {e}"));
     }
 
     let result = json!({
@@ -665,10 +642,7 @@ fn tool_create_workflow(call: &AiToolCall, ctx: &CopilotToolCtx) -> Result<Strin
 
 fn tool_add_workflow_node(call: &AiToolCall, ctx: &CopilotToolCtx) -> Result<String, String> {
     let args = parse_args(call)?;
-    let ref_id = args["ref"]
-        .as_str()
-        .ok_or("缺少 ref 参数")?
-        .to_owned();
+    let ref_id = args["ref"].as_str().ok_or("缺少 ref 参数")?.to_owned();
     let node_type = args["node_type"]
         .as_str()
         .ok_or("缺少 node_type 参数")?
@@ -715,12 +689,8 @@ fn tool_add_workflow_node(call: &AiToolCall, ctx: &CopilotToolCtx) -> Result<Str
 
 fn tool_add_workflow_edge(call: &AiToolCall, ctx: &CopilotToolCtx) -> Result<String, String> {
     let args = parse_args(call)?;
-    let from_ref = args["from_ref"]
-        .as_str()
-        .ok_or("缺少 from_ref 参数")?;
-    let to_ref = args["to_ref"]
-        .as_str()
-        .ok_or("缺少 to_ref 参数")?;
+    let from_ref = args["from_ref"].as_str().ok_or("缺少 from_ref 参数")?;
+    let to_ref = args["to_ref"].as_str().ok_or("缺少 to_ref 参数")?;
     let source_port_id = args["source_port_id"].as_str().map(str::to_owned);
     let target_port_id = args["target_port_id"].as_str().map(str::to_owned);
 

@@ -31,7 +31,7 @@ use window_vibrancy::{NSVisualEffectMaterial, apply_vibrancy};
 fn init_tracing(
     log_dir: Option<&std::path::Path>,
 ) -> Option<tracing_appender::non_blocking::WorkerGuard> {
-    use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+    use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
     let filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new("nazh_engine=info,nazh_desktop_lib=info,ai=info"));
@@ -164,7 +164,10 @@ pub fn run() {
                 match state.tracing_guard.lock() {
                     Ok(mut slot) => *slot = Some(guard),
                     Err(error) => {
-                        tracing::warn!(?error, "tracing_guard 锁 poisoned，日志文件可能无法正常刷盘");
+                        tracing::warn!(
+                            ?error,
+                            "tracing_guard 锁 poisoned，日志文件可能无法正常刷盘"
+                        );
                     }
                 }
             }

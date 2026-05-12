@@ -58,10 +58,7 @@ fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
 
 impl Store {
     /// 写入或更新一条 embedding 记录。
-    pub fn upsert_asset_embedding(
-        &self,
-        record: &AssetEmbedding,
-    ) -> Result<(), StoreError> {
+    pub fn upsert_asset_embedding(&self, record: &AssetEmbedding) -> Result<(), StoreError> {
         let blob = encode_embedding(&record.embedding);
         self.db().execute(
             "INSERT OR REPLACE INTO asset_embeddings
@@ -96,8 +93,7 @@ impl Store {
 
     /// 删除所有 embedding 记录（用于全量重建索引）。
     pub fn delete_all_asset_embeddings(&self) -> Result<(), StoreError> {
-        self.db()
-            .execute("DELETE FROM asset_embeddings", [])?;
+        self.db().execute("DELETE FROM asset_embeddings", [])?;
         Ok(())
     }
 
@@ -113,8 +109,12 @@ impl Store {
     ) -> Result<Vec<AssetEmbeddingSearchResult>, StoreError> {
         let db = self.db();
         let sql = match asset_type {
-            Some(_) => "SELECT id, asset_type, asset_id, chunk_index, chunk_text, embedding FROM asset_embeddings WHERE asset_type = ?1",
-            None => "SELECT id, asset_type, asset_id, chunk_index, chunk_text, embedding FROM asset_embeddings",
+            Some(_) => {
+                "SELECT id, asset_type, asset_id, chunk_index, chunk_text, embedding FROM asset_embeddings WHERE asset_type = ?1"
+            }
+            None => {
+                "SELECT id, asset_type, asset_id, chunk_index, chunk_text, embedding FROM asset_embeddings"
+            }
         };
         let mut stmt = db.prepare(sql)?;
 
@@ -145,16 +145,22 @@ impl Store {
             });
         }
 
-        candidates.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        candidates.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         candidates.truncate(limit);
         Ok(candidates)
     }
 
     /// 统计 embedding 记录数（用于判断是否需要重建索引）。
     pub fn count_asset_embeddings(&self) -> Result<u64, StoreError> {
-        let count: i64 = self
-            .db()
-            .query_row("SELECT COUNT(*) FROM asset_embeddings", [], |row| row.get(0))?;
+        let count: i64 =
+            self.db()
+                .query_row("SELECT COUNT(*) FROM asset_embeddings", [], |row| {
+                    row.get(0)
+                })?;
         #[allow(clippy::cast_sign_loss)]
         Ok(count as u64)
     }
