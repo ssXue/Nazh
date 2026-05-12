@@ -242,6 +242,7 @@ pub fn run() {
             commands::copilot::copilot_list_conversations,
             commands::copilot::copilot_create_conversation,
             commands::copilot::copilot_delete_conversation,
+            commands::copilot::copilot_rename_conversation,
             commands::copilot::copilot_load_conversation,
             commands::copilot::copilot_dispatch_tool,
             commands::copilot::copilot_save_message,

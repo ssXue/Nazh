@@ -187,6 +187,21 @@ pub(crate) async fn copilot_dispatch_tool(
     .await
 }
 
+/// 重命名 copilot 对话标题。
+#[tauri::command]
+pub(crate) async fn copilot_rename_conversation(
+    id: String,
+    title: String,
+    state: State<'_, DesktopState>,
+) -> Result<(), String> {
+    let handle = state.store_handle()?;
+    let now = Utc::now().to_rfc3339();
+    handle
+        .rename_copilot_conversation(&id, &title, &now)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// 保存一条消息到 copilot 会话。
 ///
 /// 前端直调 AI 时用于持久化用户消息和 AI 回复。
