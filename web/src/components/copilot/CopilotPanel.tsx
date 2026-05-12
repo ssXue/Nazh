@@ -177,6 +177,9 @@ export function CopilotPanel({ canvasRef, onEnsureBoardOpen, workspacePath }: Co
   }, [loadMessages]);
 
   const handleNewConversation = useCallback(async () => {
+    // 当前会话没有消息时不创建新会话，避免空会话堆积
+    if (activeId && messages.length === 0) return;
+
     if (isTauri) {
       try {
         const conv = await invoke<CopilotConversationResponse>('copilot_create_conversation');
@@ -196,7 +199,7 @@ export function CopilotPanel({ canvasRef, onEnsureBoardOpen, workspacePath }: Co
     setConversations((prev) => [local, ...prev]);
     setActiveId(local.id);
     setMessages([]);
-  }, [isTauri]);
+  }, [isTauri, activeId, messages]);
 
   const handleDeleteConversation = useCallback(async (convId: string) => {
     if (isTauri) {
@@ -415,6 +418,14 @@ export function CopilotPanel({ canvasRef, onEnsureBoardOpen, workspacePath }: Co
         } catch { /* 数据库加载失败也无所谓，流式内容可能已经到位 */ }
       }
 
+      // 首次回复完成后自动更新会话标题
+      if (text.trim()) {
+        const newTitle = text.trim().length > 30 ? text.trim().slice(0, 30) + '…' : text.trim();
+        try {
+          await invoke('copilot_rename_conversation', { id: convId, title: newTitle });
+        } catch { /* 标题更新失败不影响主流程 */ }
+      }
+
       // 流结束后自动整理画布布局
       if (boardEnsuredRef.current) {
         canvasRef.current?.autoLayout();
@@ -469,6 +480,9 @@ export function CopilotPanel({ canvasRef, onEnsureBoardOpen, workspacePath }: Co
         <button type="button" className="copilot-btn-icon" title="历史会话" onClick={() => setHistoryOpen((prev) => !prev)}>&#9776;</button>
         <button type="button" className="copilot-btn-icon" title="新建对话" onClick={handleNewConversation}>+</button>
         <button type="button" className="copilot-btn-icon" title="收起面板" onClick={() => setCollapsed(true)}>&laquo;</button>
+        {historyOpen && (
+          <div className="copilot-history-backdrop" onClick={() => setHistoryOpen(false)} />
+        )}
         {historyOpen && (
           <div className="copilot-history-dropdown">
             {conversations.length === 0 ? (

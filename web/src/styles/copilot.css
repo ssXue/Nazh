@@ -66,6 +66,12 @@
 
 /* --- 历史会话下拉面板 --- */
 
+.copilot-history-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9;
+}
+
 .copilot-history-dropdown {
   position: absolute;
   top: 100%;
