@@ -2,9 +2,14 @@
 ///
 /// 基于 Vercel AI SDK 的 provider 工厂，统一管理 OpenAI 兼容 provider。
 /// 所有 provider（DeepSeek / Moonshot / OpenAI / Ollama 等）都通过
-/// `@ai-sdk/openai` 的 OpenAI 兼容模式接入。
+/// `@ai-sdk/openai-compatible` 接入。
+///
+/// 使用 openai-compatible 而非 openai 的原因：
+/// DeepSeek 等模型的 `reasoning_content` 字段在多轮工具调用时必须回传，
+/// `@ai-sdk/openai` 不处理此字段，而 `@ai-sdk/openai-compatible` 原生支持
+/// reasoning_content 的提取和回传。
 
-import { createOpenAI } from '@ai-sdk/openai';
+import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import type { LanguageModel } from 'ai';
 
 import type { AiProviderView } from '../types';
@@ -34,16 +39,17 @@ export async function createLanguageModel(
     throw new Error(`AI 提供商「${provider.name}」未配置默认模型，请在设置中配置`);
   }
 
-  const openai = createOpenAI({
+  const compatible = createOpenAICompatible({
+    name: provider.id,
     baseURL: normalizeBaseUrl(provider.baseUrl),
     apiKey,
     headers: buildHeaders(provider),
   });
 
-  return openai(modelId);
+  return compatible(modelId);
 }
 
-/// 将用户输入的 base URL 规范化为 OpenAI SDK 期望的格式。
+/// 将用户输入的 base URL 规范化为 SDK 期望的格式。
 ///
 /// - 去除尾部 `/`
 /// - 保留用户自定义的 path 前缀（如 `/v1`），不自动追加

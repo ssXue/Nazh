@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.63",
+    "@ai-sdk/openai-compatible": "^2.0.47",
     "@flowgram.ai/core": "^1.0.11",
     "@flowgram.ai/document": "^1.0.11",
     "@flowgram.ai/export-plugin": "^1.0.11",

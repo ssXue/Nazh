@@ -2,7 +2,7 @@
 ///
 /// 使用 Vercel AI SDK 直接向提供商发送简单请求验证连通性。
 
-import { createOpenAI } from '@ai-sdk/openai';
+import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { generateText } from 'ai';
 
 import type { AiProviderDraft } from '../types';
@@ -44,7 +44,7 @@ export async function testProviderConnection(
     };
   }
 
-  const openai = createOpenAI({ baseURL: baseUrl, apiKey });
+  const openai = createOpenAICompatible({ name: 'test', baseURL: baseUrl, apiKey });
   const startedAt = performance.now();
 
   try {
