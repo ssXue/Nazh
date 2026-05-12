@@ -841,3 +841,11 @@ export function DeviceIcon(props: IconProps) {
 }
 
 // GridIcon removed — no longer used after moving grid toggle from toolbar to settings panel.
+
+export function FolderOpenIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="M4 20h16a2 2 0 0 0 1.8-1.2L22 9.6a1 1 0 0 0-.9-1.4H14l-1.4-2.8A2 2 0 0 0 11 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2Z" />
+    </BaseIcon>
+  );
+}

@@ -81,13 +81,13 @@
     justify-content: start;
   }
 
-  .settings-path-actions {
-    width: 100%;
+  .settings-path-card__row {
+    flex-wrap: wrap;
   }
 
-  .settings-inline-button {
-    flex: 1;
-    justify-content: center;
+  .settings-path-card__actions {
+    width: 100%;
+    justify-content: flex-end;
   }
 }
 
@@ -132,11 +132,6 @@
 
   .studio-frame,
   .boards-panel__grid {
-    grid-template-columns: 1fr;
-  }
-
-  .settings-path-input-row,
-  .settings-path-status {
     grid-template-columns: 1fr;
   }
 

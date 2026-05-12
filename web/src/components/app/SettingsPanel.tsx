@@ -1,11 +1,14 @@
 import type { CSSProperties } from 'react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useState } from 'react';
+
+import { open as openDialog } from '@tauri-apps/plugin-dialog';
 
 import {
   type CanvasZoomSpeed,
   getCanvasZoomSpeed,
   setCanvasZoomSpeed,
 } from '../flowgram/flowgram-canvas-utils';
+import { FolderOpenIcon, ResetIcon } from './AppIcons';
 import type { SettingsPanelProps } from './types';
 
 export function SettingsPanel({
@@ -34,36 +37,22 @@ export function SettingsPanel({
   gridVisible,
   onGridVisibleChange,
 }: SettingsPanelProps) {
-  const [workspaceDraft, setWorkspaceDraft] = useState(projectWorkspacePath);
   const [zoomSpeed, setZoomSpeed] = useState<CanvasZoomSpeed>(getCanvasZoomSpeed);
 
-  useEffect(() => {
-    setWorkspaceDraft(projectWorkspacePath);
-  }, [projectWorkspacePath]);
-
-  const isWorkspaceDirty = workspaceDraft.trim() !== projectWorkspacePath.trim();
-  const workspaceStatus = useMemo(() => {
-    if (!isTauriRuntime) {
-      return '当前为浏览器预览，仅保留本地镜像存储。';
+  const handlePickFolder = useCallback(async () => {
+    try {
+      const selected = await openDialog({
+        directory: true,
+        multiple: false,
+        title: '选择工程路径',
+      });
+      if (typeof selected === 'string' && selected.length > 0) {
+        onProjectWorkspacePathChange(selected);
+      }
+    } catch {
+      // 用户取消或对话框不可用，静默忽略
     }
-
-    if (projectWorkspaceError) {
-      return projectWorkspaceError;
-    }
-
-    if (projectWorkspaceIsSyncing) {
-      return '正在同步看板文件到当前工作路径。';
-    }
-
-    return projectWorkspaceUsingDefault
-      ? '当前使用应用默认目录。'
-      : '当前使用自定义工作目录。';
-  }, [
-    isTauriRuntime,
-    projectWorkspaceError,
-    projectWorkspaceIsSyncing,
-    projectWorkspaceUsingDefault,
-  ]);
+  }, [onProjectWorkspacePathChange]);
 
   return (
     <>
@@ -249,63 +238,63 @@ export function SettingsPanel({
           </div>
 
           <div className="settings-path-editor">
-            <div className="settings-path-input-row">
-              <input
-                className="settings-path-input"
-                type="text"
-                value={workspaceDraft}
-                placeholder={isTauriRuntime ? '例如：~/Documents/Nazh Workspace' : '仅桌面端可设置'}
-                disabled={!isTauriRuntime || projectWorkspaceIsSyncing}
-                data-testid="settings-workspace-input"
-                onChange={(event) => setWorkspaceDraft(event.target.value)}
-              />
-
-              <div className="settings-path-actions">
-                <button
-                  type="button"
-                  className="settings-inline-button"
-                  disabled={!isTauriRuntime || !isWorkspaceDirty || projectWorkspaceIsSyncing}
-                  data-testid="settings-workspace-apply"
-                  onClick={() => onProjectWorkspacePathChange(workspaceDraft.trim())}
-                >
-                  应用
-                </button>
-                <button
-                  type="button"
-                  className="settings-inline-button settings-inline-button--ghost"
-                  disabled={
-                    !isTauriRuntime ||
-                    (projectWorkspacePath.trim().length === 0 && !projectWorkspaceIsSyncing)
-                  }
-                  onClick={() => {
-                    setWorkspaceDraft('');
-                    onProjectWorkspacePathChange('');
-                  }}
-                >
-                  默认
-                </button>
+            <div className="settings-path-card">
+              <div className="settings-path-card__row">
+                <code className="settings-path-card__path">
+                  {projectWorkspaceResolvedPath ?? '等待桌面端解析'}
+                </code>
+                <div className="settings-path-card__actions">
+                  <button
+                    type="button"
+                    className="settings-icon-button"
+                    title="选择文件夹"
+                    disabled={!isTauriRuntime || projectWorkspaceIsSyncing}
+                    onClick={handlePickFolder}
+                  >
+                    <FolderOpenIcon width={16} height={16} />
+                  </button>
+                  <button
+                    type="button"
+                    className="settings-icon-button settings-icon-button--ghost"
+                    title="恢复默认"
+                    disabled={
+                      !isTauriRuntime ||
+                      (projectWorkspacePath.trim().length === 0 && !projectWorkspaceIsSyncing)
+                    }
+                    onClick={() => {
+                      onProjectWorkspacePathChange('');
+                    }}
+                  >
+                    <ResetIcon width={16} height={16} />
+                  </button>
+                </div>
               </div>
-            </div>
-
-            <div
-              className={
-                projectWorkspaceError
-                  ? 'settings-path-status settings-path-status--error'
-                  : 'settings-path-status'
-              }
-            >
-              <article>
-                <span>状态</span>
-                <strong>{workspaceStatus}</strong>
-              </article>
-              <article>
-                <span>目录</span>
-                <code>{projectWorkspaceResolvedPath ?? '等待桌面端解析'}</code>
-              </article>
-              <article>
-                <span>看板目录</span>
-                <code>{projectWorkspaceBoardsDirectoryPath ?? '等待桌面端解析'}</code>
-              </article>
+              <div className="settings-path-card__meta">
+                {projectWorkspaceError ? (
+                  <span className="settings-path-badge settings-path-badge--error">
+                    {projectWorkspaceError}
+                  </span>
+                ) : projectWorkspaceIsSyncing ? (
+                  <span className="settings-path-badge settings-path-badge--syncing">
+                    同步中…
+                  </span>
+                ) : (
+                  <span
+                    className={
+                      projectWorkspaceUsingDefault
+                        ? 'settings-path-badge'
+                        : 'settings-path-badge settings-path-badge--custom'
+                    }
+                  >
+                    {projectWorkspaceUsingDefault ? '默认' : '自定义'}
+                  </span>
+                )}
+                {projectWorkspaceBoardsDirectoryPath && (
+                  <span className="settings-path-card__boards">
+                    看板 {projectWorkspaceBoardsDirectoryPath}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
         </section>
