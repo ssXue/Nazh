@@ -1,14 +1,14 @@
 import type { FlowNodeEntity } from '@flowgram.ai/free-layout-editor';
+import { generateText } from 'ai';
 
+import { aiStreamText, createLanguageModel } from '../ai';
 import { resolveNodeDisplayLabel } from '../components/flowgram/flowgram-node-library';
 import type {
-  AiCompletionRequest,
   AiGenerationParams,
-  AiMessage,
+  AiProviderView,
   PinDefinition,
 } from '../types';
 import { formatPinType, getCachedPinSchema } from './pin-schema-cache';
-import { copilotComplete, copilotCompleteStream } from './tauri';
 
 export interface NodePinSummary {
   /** 端口 id（如 "in" / "out" / "true" / "body"）。 */
@@ -132,7 +132,7 @@ function formatNodeInfoLine(info: NodeContextInfo): string {
 export function buildScriptGenerationPrompt(
   requirement: string,
   context: NodeContext,
-): AiMessage[] {
+): Array<{ role: 'system' | 'user'; content: string }> {
   const upstreamText =
     context.upstream.length > 0
       ? context.upstream.map(formatNodeInfoLine).join('\n')
@@ -171,7 +171,7 @@ ${requirement}`;
 }
 
 export interface GenerateScriptOptions {
-  providerId: string;
+  provider: AiProviderView;
   model?: string | null;
   params?: AiGenerationParams;
   timeoutMs?: number | null;
@@ -237,15 +237,19 @@ export async function generateScript(
   options: GenerateScriptOptions,
 ): Promise<string> {
   const messages = buildScriptGenerationPrompt(requirement, context);
-  const request: AiCompletionRequest = {
-    providerId: options.providerId,
-    model: options.model ?? undefined,
+  const model = await createLanguageModel({
+    provider: options.provider,
+    modelOverride: options.model ?? undefined,
+  });
+  const params = resolveGenerationParams(options.params);
+  const result = await generateText({
+    model,
     messages,
-    params: resolveGenerationParams(options.params),
-    timeoutMs: options.timeoutMs ?? DEFAULT_SCRIPT_GENERATION_TIMEOUT_MS,
-  };
-  const response = await copilotComplete(request);
-  return sanitizeGeneratedScript(response.content);
+    maxOutputTokens: params.maxTokens,
+    temperature: params.temperature,
+    topP: params.topP,
+  });
+  return sanitizeGeneratedScript(result.text);
 }
 
 export async function generateScriptStream(
@@ -256,13 +260,19 @@ export async function generateScriptStream(
   onThinking?: (text: string) => void,
 ): Promise<string> {
   const messages = buildScriptGenerationPrompt(requirement, context);
-  const request: AiCompletionRequest = {
-    providerId: options.providerId,
-    model: options.model ?? undefined,
+  const model = await createLanguageModel({
+    provider: options.provider,
+    modelOverride: options.model ?? undefined,
+  });
+  const params = resolveGenerationParams(options.params);
+  const result = await aiStreamText({
+    model,
     messages,
-    params: resolveGenerationParams(options.params),
-    timeoutMs: options.timeoutMs ?? DEFAULT_SCRIPT_GENERATION_TIMEOUT_MS,
-  };
-  const result = await copilotCompleteStream(request, onDelta, onThinking);
+    params,
+    callbacks: {
+      onDelta,
+      onThinking,
+    },
+  });
   return sanitizeGeneratedScript(result.text);
 }

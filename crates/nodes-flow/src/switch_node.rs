@@ -63,7 +63,7 @@ impl SwitchNode {
             config.default_branch
         };
         Ok(Self {
-            base: ScriptNodeBase::new(id, &config.script, config.max_operations, None, variables)?,
+            base: ScriptNodeBase::new(id, &config.script, config.max_operations, variables)?,
             branches: config.branches,
             default_branch,
         })

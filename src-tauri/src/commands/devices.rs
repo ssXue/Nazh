@@ -2,14 +2,11 @@
 //!
 //! 提供设备资产的 CRUD、AI 抽取、结构化提案和 Pin schema 生成命令。
 
-use std::sync::Arc;
-
 use nazh_dsl_core::{
-    DeviceSpec, parse_capability_yaml, parse_device_yaml, signals_to_pin_definitions,
+    DeviceSpec, parse_device_yaml, signals_to_pin_definitions,
 };
-use nazh_engine::{AiCompletionRequest, AiGenerationParams, AiMessage, AiMessageRole, AiService};
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, State};
+use tauri::AppHandle;
 
 use crate::asset_files::{
     AssetFieldSource, DeviceSnapshotMeta, SnapshotReason, append_device_snapshot,
@@ -19,7 +16,6 @@ use crate::asset_files::{
     read_device_snapshots, write_device_asset_sources, write_device_asset_yaml,
 };
 use crate::ethercat_esi::import_esi_to_device_yaml;
-use crate::state::DesktopState;
 use base64::Engine;
 
 // ---- IPC 响应类型 ----
@@ -639,264 +635,6 @@ async fn save_device_spec(
     append_device_snapshot(app, workspace_path, asset_id, meta).await
 }
 
-// ---- AI 抽取 ----
-
-const EXTRACTION_SYSTEM_PROMPT: &str = "你是一个工业设备建模专家。从用户提供的说明书文本中抽取设备信息，\
-     输出 YAML 格式的 DeviceSpec。只输出 YAML，不要解释。";
-
-/// 从文本中 AI 抽取 `DeviceSpec` YAML。
-#[tauri::command]
-pub(crate) async fn extract_device_from_text(
-    state: State<'_, DesktopState>,
-    text: String,
-    provider_id: Option<String>,
-) -> Result<String, String> {
-    let resolved = resolve_provider_id(&state, provider_id).await?;
-    let request = build_extraction_request(&text, resolved);
-
-    let response = state
-        .ai_service
-        .complete(request)
-        .await
-        .map_err(|e| format!("AI 抽取失败: {e}"))?;
-
-    // 校验输出是否为合法 DeviceSpec YAML
-    let yaml_text = extract_yaml_from_response(&response.content);
-    parse_device_yaml(&yaml_text).map_err(|e| format!("AI 输出不是合法的 DeviceSpec YAML: {e}"))?;
-
-    Ok(yaml_text)
-}
-
-/// 流式 AI 抽取 `DeviceSpec` YAML。
-#[tauri::command]
-pub(crate) async fn extract_device_from_text_stream(
-    app: AppHandle,
-    state: State<'_, DesktopState>,
-    text: String,
-    provider_id: Option<String>,
-    stream_id: String,
-) -> Result<(), String> {
-    let resolved = resolve_provider_id(&state, provider_id).await?;
-    let request = build_extraction_request(&text, resolved);
-    let service = Arc::clone(&state.ai_service);
-    let mut rx = service
-        .stream_complete(request)
-        .await
-        .map_err(|e| format!("启动 AI 流式抽取失败: {e}"))?;
-
-    let event_name = format!("copilot://stream/{stream_id}");
-    tokio::spawn(async move {
-        while let Some(chunk_result) = rx.recv().await {
-            match chunk_result {
-                Ok(chunk) => {
-                    let is_done = chunk.done;
-                    let payload: serde_json::Value =
-                        serde_json::to_value(&chunk).unwrap_or_default();
-                    let _ = app.emit(&event_name, payload);
-                    if is_done {
-                        break;
-                    }
-                }
-                Err(error) => {
-                    let payload: serde_json::Value = serde_json::json!({
-                        "error": error.to_string(),
-                        "done": true
-                    });
-                    let _ = app.emit(&event_name, payload);
-                    break;
-                }
-            }
-        }
-    });
-
-    Ok(())
-}
-
-// ---- AI 结构化提案（RFC-0004 Phase 4A）----
-
-/// AI 抽取的不确定项。
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct UncertaintyItem {
-    /// 不确定字段路径（如 "signals[0].range"）。
-    pub field_path: String,
-    /// AI 的猜测值。
-    pub guessed_value: String,
-    /// 不确定原因。
-    pub reason: String,
-}
-
-/// 设备 + 能力的结构化抽取提案（RFC-0004 Phase 4A）。
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DeviceExtractionProposal {
-    /// 抽取出的 `DeviceSpec` YAML 列表（ESI 单设备为 1 个，ENI 多从站为 N 个）。
-    pub device_yamls: Vec<String>,
-    /// AI 同时推断的能力 YAML 列表（从写信号 + 说明书推断）。
-    pub capability_yamls: Vec<String>,
-    /// AI 标记的不确定项。
-    pub uncertainties: Vec<UncertaintyItem>,
-    /// AI 生成的警告。
-    pub warnings: Vec<String>,
-}
-
-/// AI proposal 的 JSON 输出结构（内部解析用）。
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct RawExtractionProposal {
-    device_yaml: String,
-    #[serde(default)]
-    capability_yamls: Vec<String>,
-    #[serde(default)]
-    uncertainties: Vec<UncertaintyItem>,
-    #[serde(default)]
-    warnings: Vec<String>,
-}
-
-const PROPOSAL_SYSTEM_PROMPT: &str = "你是一个工业设备建模专家。从用户提供的说明书文本中抽取设备信息并推断设备能力。\
-    输出严格 JSON 格式，结构如下：\n\
-    {\"deviceYaml\": \"<DeviceSpec YAML 文本>\", \
-     \"capabilityYamls\": [\"<CapabilitySpec YAML 文本>\", ...], \
-     \"uncertainties\": [{\"fieldPath\": \"...\", \"guessedValue\": \"...\", \"reason\": \"...\"}], \
-     \"warnings\": [\"...\"]}\n\n\
-    规则：\n\
-    - deviceYaml 必须是合法的 DeviceSpec YAML\n\
-    - capabilityYamls 从写信号（analog_output / digital_output）推断底层操作能力，每个能力封装一个写信号\n\
-    - uncertainties 用于标记信息不完整或需要人工确认的字段\n\
-    - warnings 用于标记潜在安全问题或不一致\n\
-    - 只输出 JSON，不要解释";
-
-/// 从文本中 AI 抽取设备 + 能力的结构化提案。
-#[tauri::command]
-pub(crate) async fn extract_device_proposal(
-    state: State<'_, DesktopState>,
-    text: String,
-    provider_id: Option<String>,
-    // 校正模式：提供失败的 YAML 和错误信息，让 AI 修正输出。
-    correction_yaml: Option<String>,
-    correction_error: Option<String>,
-) -> Result<DeviceExtractionProposal, String> {
-    let resolved = resolve_provider_id(&state, provider_id)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "解析 AI 提供商失败");
-            e
-        })?;
-    let request = if let (Some(yaml), Some(err)) = (&correction_yaml, &correction_error) {
-        build_correction_request(yaml, err, resolved)
-    } else {
-        if text.trim().is_empty() {
-            return Err("首次抽取模式需要提供非空的设备说明文本".to_owned());
-        }
-        tracing::info!(
-            provider_id = %resolved,
-            text_len = text.len(),
-            "AI 结构化抽取开始（文本模式）"
-        );
-        build_proposal_request(&text, resolved)
-    };
-
-    let response = state.ai_service.complete(request).await.map_err(|e| {
-        let msg = format!("AI 结构化抽取失败: {e}");
-        tracing::error!(error = %e, "AI completion 请求失败");
-        msg
-    })?;
-
-    tracing::info!(
-        response_len = response.content.len(),
-        "AI 响应已收到，开始解析"
-    );
-
-    let json_text = extract_json_from_response(&response.content);
-
-    let raw: RawExtractionProposal = serde_json::from_str(&json_text).map_err(|e| {
-        let msg = format!("AI 输出 JSON 结构无效: {e}");
-        tracing::error!(
-            error = %e,
-            json_preview = %json_text.chars().take(500).collect::<String>(),
-            "AI 响应 JSON 反序列化失败"
-        );
-        msg
-    })?;
-
-    parse_device_yaml(&raw.device_yaml)
-        .map_err(|e| {
-            let msg = format!("AI 生成的 deviceYaml 不是合法 DeviceSpec: {e}");
-            tracing::error!(error = %e, yaml_preview = %raw.device_yaml.chars().take(300).collect::<String>(), "{}", msg);
-            msg
-        })?;
-
-    for (idx, cap_yaml) in raw.capability_yamls.iter().enumerate() {
-        parse_capability_yaml(cap_yaml).map_err(|e| {
-            let msg = format!("AI 生成的 capabilityYamls[{idx}] 不是合法 CapabilitySpec: {e}");
-            tracing::error!(error = %e, idx, "{}", msg);
-            msg
-        })?;
-    }
-
-    Ok(DeviceExtractionProposal {
-        device_yamls: vec![raw.device_yaml],
-        capability_yamls: raw.capability_yamls,
-        uncertainties: raw.uncertainties,
-        warnings: raw.warnings,
-    })
-}
-
-/// 流式 AI 结构化抽取设备 + 能力提案。
-#[tauri::command]
-pub(crate) async fn extract_device_proposal_stream(
-    app: AppHandle,
-    state: State<'_, DesktopState>,
-    text: String,
-    provider_id: Option<String>,
-    // 校正模式：提供失败的 YAML 和错误信息，让 AI 修正输出。
-    correction_yaml: Option<String>,
-    correction_error: Option<String>,
-    stream_id: String,
-) -> Result<(), String> {
-    let resolved = resolve_provider_id(&state, provider_id).await?;
-    let request = if let (Some(yaml), Some(err)) = (&correction_yaml, &correction_error) {
-        build_correction_request(yaml, err, resolved)
-    } else {
-        if text.trim().is_empty() {
-            return Err("首次抽取模式需要提供非空的设备说明文本".to_owned());
-        }
-        build_proposal_request(&text, resolved)
-    };
-    let service = Arc::clone(&state.ai_service);
-    let mut rx = service
-        .stream_complete(request)
-        .await
-        .map_err(|e| format!("启动 AI 流式结构化抽取失败: {e}"))?;
-
-    let event_name = format!("copilot://stream/{stream_id}");
-    tokio::spawn(async move {
-        while let Some(chunk_result) = rx.recv().await {
-            match chunk_result {
-                Ok(chunk) => {
-                    let is_done = chunk.done;
-                    let payload: serde_json::Value =
-                        serde_json::to_value(&chunk).unwrap_or_default();
-                    let _ = app.emit(&event_name, payload);
-                    if is_done {
-                        break;
-                    }
-                }
-                Err(error) => {
-                    let payload: serde_json::Value = serde_json::json!({
-                        "error": error.to_string(),
-                        "done": true
-                    });
-                    let _ = app.emit(&event_name, payload);
-                    break;
-                }
-            }
-        }
-    });
-
-    Ok(())
-}
-
 // ---- Pin Schema 生成 ----
 
 /// 从设备资产生成 Pin 声明列表。
@@ -953,6 +691,27 @@ pub(crate) async fn load_device_asset_sources(
     Ok(sources.into_iter().map(FieldSource::from).collect())
 }
 
+// ---- 结构化提案类型（ESI 导入、PDF 抽取共用） ----
+
+/// AI 抽取的不确定项。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UncertaintyItem {
+    pub field_path: String,
+    pub guessed_value: String,
+    pub reason: String,
+}
+
+/// 设备 + 能力的结构化抽取提案（RFC-0004 Phase 4A）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceExtractionProposal {
+    pub device_yamls: Vec<String>,
+    pub capability_yamls: Vec<String>,
+    pub uncertainties: Vec<UncertaintyItem>,
+    pub warnings: Vec<String>,
+}
+
 // ---- PDF 文本提取 ----
 
 /// 从 PDF 文件（base64 编码）中提取纯文本。
@@ -975,80 +734,6 @@ pub(crate) async fn extract_text_from_pdf(pdf_base64: String) -> Result<String, 
     tracing::info!("PDF 文本提取完成，提取字符数 {}", trimmed.len());
 
     Ok(trimmed.to_owned())
-}
-
-/// 从 PDF 文件中提取文本并执行 AI 结构化抽取（一步到位）。
-#[tauri::command]
-pub(crate) async fn extract_device_from_pdf(
-    state: State<'_, DesktopState>,
-    pdf_base64: String,
-    provider_id: Option<String>,
-) -> Result<DeviceExtractionProposal, String> {
-    tracing::info!("PDF 设备抽取开始：先提取文本");
-
-    let text = extract_text_from_pdf(pdf_base64).await.map_err(|e| {
-        tracing::error!(error = %e, "PDF 文本提取失败");
-        e
-    })?;
-
-    let resolved = resolve_provider_id(&state, provider_id)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "解析 AI 提供商失败");
-            e
-        })?;
-    tracing::info!(
-        provider_id = %resolved,
-        text_len = text.len(),
-        "PDF 文本提取完成，开始 AI 结构化抽取"
-    );
-    let request = build_proposal_request(&text, resolved);
-
-    let response = state.ai_service.complete(request).await.map_err(|e| {
-        let msg = format!("AI 结构化抽取失败: {e}");
-        tracing::error!(error = %e, "AI completion 请求失败");
-        msg
-    })?;
-
-    tracing::info!(
-        response_len = response.content.len(),
-        "AI 响应已收到，开始解析"
-    );
-
-    let json_text = extract_json_from_response(&response.content);
-    tracing::debug!(json_len = json_text.len(), "JSON 文本已提取，开始反序列化");
-
-    let raw: RawExtractionProposal = serde_json::from_str(&json_text).map_err(|e| {
-        let msg = format!("AI 输出 JSON 结构无效: {e}");
-        tracing::error!(
-            error = %e,
-            json_preview = %json_text.chars().take(500).collect::<String>(),
-            "AI 响应 JSON 反序列化失败"
-        );
-        msg
-    })?;
-
-    parse_device_yaml(&raw.device_yaml)
-        .map_err(|e| {
-            let msg = format!("AI 生成的 deviceYaml 不是合法 DeviceSpec: {e}");
-            tracing::error!(error = %e, yaml_preview = %raw.device_yaml.chars().take(300).collect::<String>(), "{}", msg);
-            msg
-        })?;
-
-    for (idx, cap_yaml) in raw.capability_yamls.iter().enumerate() {
-        parse_capability_yaml(cap_yaml).map_err(|e| {
-            let msg = format!("AI 生成的 capabilityYamls[{idx}] 不是合法 CapabilitySpec: {e}");
-            tracing::error!(error = %e, idx, "{}", msg);
-            msg
-        })?;
-    }
-
-    Ok(DeviceExtractionProposal {
-        device_yamls: vec![raw.device_yaml],
-        capability_yamls: raw.capability_yamls,
-        uncertainties: raw.uncertainties,
-        warnings: raw.warnings,
-    })
 }
 
 // ---- EtherCAT ESI 导入 ----
@@ -1121,222 +806,4 @@ impl From<AssetFieldSource> for FieldSource {
             confidence: value.confidence,
         }
     }
-}
-
-/// 解析有效的 `provider_id`：若传入为空则回退到配置中的活跃提供商。
-async fn resolve_provider_id(
-    state: &State<'_, DesktopState>,
-    provider_id: Option<String>,
-) -> Result<String, String> {
-    if let Some(id) = provider_id.filter(|s| !s.is_empty()) {
-        return Ok(id);
-    }
-    let config = state.ai_config.read().await;
-    config
-        .active_provider_id
-        .clone()
-        .ok_or_else(|| "未配置 AI 提供商，请先在设置中添加并启用一个提供商".to_owned())
-}
-
-/// 构建 AI 抽取请求。
-fn build_extraction_request(text: &str, provider_id: String) -> AiCompletionRequest {
-    AiCompletionRequest {
-        provider_id,
-        model: None,
-        messages: vec![
-            AiMessage::simple(AiMessageRole::System, EXTRACTION_SYSTEM_PROMPT.to_owned()),
-            AiMessage::simple(AiMessageRole::User, build_extraction_prompt(text)),
-        ],
-        params: AiGenerationParams {
-            temperature: Some(0.1),
-            max_tokens: Some(16384),
-            ..Default::default()
-        },
-        timeout_ms: None,
-        tools: vec![],
-    }
-}
-
-/// 构建 AI 抽取 prompt。
-fn build_extraction_prompt(text: &str) -> String {
-    format!(
-        "请从以下设备说明书中抽取设备信息，输出 YAML 格式的 DeviceSpec。\n\n\
-         DeviceSpec 结构参考：\n\
-         ```yaml\n\
-         id: <设备唯一标识>\n\
-         type: <设备类型>\n\
-         manufacturer: <厂商>  # 可选\n\
-         model: <型号>  # 可选\n\
-         signals:\n\
-           - id: <信号 ID>\n\
-             signal_type: <analog_input / analog_output / digital_input / digital_output>\n\
-             unit: <单位>  # 可选\n\
-             range: [min, max]  # 可选\n\
-             source:  # 三种类型，必须提供对应字段\n\
-               # register 类型（Modbus）：\n\
-               type: register\n\
-               register: <地址，整数>\n\
-               data_type: <bool / u16 / i16 / u32 / i32 / float32 / float64 / string>\n\
-               access: <read / write / read_write>  # 默认 read\n\
-               bit: <位号>  # 可选\n\
-               # topic 类型（MQTT）：\n\
-               # type: topic\n\
-               # topic: <MQTT 主题路径>\n\
-               # serial_command 类型（串口）：\n\
-               # type: serial_command\n\
-               # command: <串口命令字符串>\n\
-         alarms:\n\
-           - id: <告警 ID>\n\
-             condition: <Rhai 条件表达式>\n\
-             severity: <info / warning / critical>\n\
-             action: <动作>  # 可选\n\
-         ```\n\n\
-         重要规则：\n\
-         - source.type 为 register 时必须提供 register 和 data_type 字段\n\
-         - source.type 为 topic 时必须提供 topic 字段\n\
-         - source.type 为 serial_command 时必须提供 command 字段\n\
-         - 如果说明书中未明确指定协议，优先使用 register 类型\n\n\
-         说明书文本：\n---\n{text}\n---"
-    )
-}
-
-/// 从 AI 响应中提取 YAML 内容（去除 markdown 代码块包裹）。
-fn extract_yaml_from_response(content: &str) -> String {
-    let trimmed = content.trim();
-    // 去除 ```yaml ... ``` 包裹
-    if let Some(stripped) = trimmed
-        .strip_prefix("```yaml")
-        .or_else(|| trimmed.strip_prefix("```yml"))
-        .or_else(|| trimmed.strip_prefix("```"))
-        && let Some(inner) = stripped.strip_suffix("```")
-    {
-        return inner.trim().to_owned();
-    }
-    trimmed.to_owned()
-}
-
-/// 从 AI 响应中提取 JSON 内容（去除 markdown 代码块包裹）。
-fn extract_json_from_response(content: &str) -> String {
-    let trimmed = content.trim();
-    if let Some(stripped) = trimmed
-        .strip_prefix("```json")
-        .or_else(|| trimmed.strip_prefix("```"))
-        && let Some(inner) = stripped.strip_suffix("```")
-    {
-        return inner.trim().to_owned();
-    }
-    trimmed.to_owned()
-}
-
-/// 构建 AI 结构化提案请求。
-fn build_proposal_request(text: &str, provider_id: String) -> AiCompletionRequest {
-    AiCompletionRequest {
-        provider_id,
-        model: None,
-        messages: vec![
-            AiMessage::simple(AiMessageRole::System, PROPOSAL_SYSTEM_PROMPT.to_owned()),
-            AiMessage::simple(AiMessageRole::User, build_proposal_prompt(text)),
-        ],
-        params: AiGenerationParams {
-            temperature: Some(0.1),
-            max_tokens: Some(16384),
-            ..Default::default()
-        },
-        timeout_ms: Some(120_000),
-        tools: vec![],
-    }
-}
-
-/// 构建 AI 校正请求：将失败的 YAML + 错误信息回传给 AI 进行修正。
-fn build_correction_request(
-    failed_yaml: &str,
-    error: &str,
-    provider_id: String,
-) -> AiCompletionRequest {
-    AiCompletionRequest {
-        provider_id,
-        model: None,
-        messages: vec![
-            AiMessage::simple(AiMessageRole::System, PROPOSAL_SYSTEM_PROMPT.to_owned()),
-            AiMessage::simple(AiMessageRole::User, format!(
-                    "之前生成的设备 DSL YAML 保存时验证失败，请**仅修正**导致错误的字段，\
-                     不要改动其他已经正确的部分。\n\n\
-                     失败的 deviceYaml：\n```yaml\n{failed_yaml}\n```\n\n\
-                     验证错误：{error}\n\n\
-                     请输出修正后的完整 JSON（与首次抽取相同的 JSON 结构）。"
-                ),
-            ),
-        ],
-        params: AiGenerationParams {
-            temperature: Some(0.1),
-            max_tokens: Some(16384),
-            ..Default::default()
-        },
-        timeout_ms: Some(120_000),
-        tools: vec![],
-    }
-}
-
-/// 构建 AI 结构化提案 prompt。
-fn build_proposal_prompt(text: &str) -> String {
-    format!(
-        "请从以下设备说明书中抽取设备信息和推断设备能力。\n\n\
-         DeviceSpec 结构参考：\n\
-         ```yaml\n\
-         id: <设备唯一标识>\n\
-         type: <设备类型>\n\
-         manufacturer: <厂商>\n\
-         model: <型号>\n\
-         signals:\n\
-           - id: <信号 ID>\n\
-             signal_type: <analog_input / analog_output / digital_input / digital_output>\n\
-             unit: <单位>\n\
-             range: [min, max]\n\
-             source:  # 三种类型，必须提供对应字段\n\
-               # register 类型（Modbus）：\n\
-               type: register\n\
-               register: <地址，整数>\n\
-               data_type: <bool / u16 / i16 / u32 / i32 / float32 / float64 / string>\n\
-               access: <read / write / read_write>\n\
-               # topic 类型（MQTT）：\n\
-               # type: topic\n\
-               # topic: <MQTT 主题路径>\n\
-               # serial_command 类型（串口）：\n\
-               # type: serial_command\n\
-               # command: <串口命令字符串>\n\
-         alarms:\n\
-           - id: <告警 ID>\n\
-             condition: <Rhai 表达式>\n\
-             severity: <info / warning / critical>\n\
-         ```\n\n\
-         重要规则：\n\
-         - source.type 为 register 时必须提供 register 和 data_type 字段\n\
-         - source.type 为 topic 时必须提供 topic 字段\n\
-         - source.type 为 serial_command 时必须提供 command 字段\n\
-         - 如果说明书中未明确指定协议，优先使用 register 类型\n\n\
-         CapabilitySpec 结构参考：\n\
-         ```yaml\n\
-         id: <能力 ID，格式 device.action>\n\
-         device_id: <关联设备 ID>\n\
-         description: <能力描述>\n\
-         inputs:\n\
-           - id: <参数 ID>\n\
-             unit: <单位>\n\
-             range: [min, max]\n\
-             required: true\n\
-         outputs:\n\
-           - id: <输出 ID>\n\
-             type: <bool / f64 / string>\n\
-         preconditions:\n\
-           - <Rhai 前置条件表达式>\n\
-         implementation:\n\
-           type: <modbus-write / mqtt-publish / serial-command>\n\
-           register: <目标寄存器>\n\
-           value: <值表达式，如 $param_id>\n\
-         safety:\n\
-           level: <high / medium / low>\n\
-           requires_approval: false\n\
-         ```\n\n\
-         说明书文本：\n---\n{text}\n---"
-    )
 }

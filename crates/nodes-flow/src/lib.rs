@@ -2,7 +2,6 @@
 
 use std::sync::Arc;
 
-use nazh_core::ai::AiService;
 use nazh_core::{NodeCapabilities, NodeRegistry, Plugin, PluginManifest, WorkflowVariables};
 
 mod code_node;
@@ -13,7 +12,7 @@ mod state_machine;
 mod switch_node;
 mod try_catch;
 
-pub use code_node::{CodeNode, CodeNodeAiConfig, CodeNodeConfig};
+pub use code_node::{CodeNode, CodeNodeConfig};
 pub use if_node::{IfNode, IfNodeConfig};
 pub use loop_node::{LoopNode, LoopNodeConfig};
 pub use passthrough::PassthroughNode;
@@ -36,12 +35,10 @@ impl Plugin for FlowPlugin {
     fn register(&self, registry: &mut NodeRegistry) {
         registry.register_with_capabilities("code", NodeCapabilities::empty(), |def, res| {
             let config: CodeNodeConfig = def.parse_config()?;
-            let ai_service = res.get::<Arc<dyn AiService>>();
             let variables = res.get::<Arc<WorkflowVariables>>();
             Ok(Arc::new(CodeNode::new(
                 def.id().to_owned(),
                 config,
-                ai_service,
                 variables,
             )?))
         });

@@ -30,10 +30,10 @@ async fn resolve_workflow_variables(
         .shared_resources
         .get::<Arc<nazh_engine::WorkflowVariables>>()
         .ok_or_else(|| {
-            // 走到这里说明 deploy_workflow_with_ai 漏注入了 WorkflowVariables——引擎层 bug
+            // 走到这里说明 deploy_workflow_and_restore_variables 漏注入了 WorkflowVariables——引擎层 bug
             tracing::error!(
                 workflow_id = %workflow_id,
-                "WorkflowVariables 缺失：deploy_workflow_with_ai 应无条件注入"
+                "WorkflowVariables 缺失：deploy 应无条件注入 WorkflowVariables"
             );
             format!("内部错误：工作流 `{workflow_id}` 无 WorkflowVariables 资源")
         })

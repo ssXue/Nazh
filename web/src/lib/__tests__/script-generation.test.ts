@@ -1,5 +1,6 @@
 import type { FlowNodeEntity } from '@flowgram.ai/free-layout-editor';
 import { describe, expect, it, vi } from 'vitest';
+
 import {
   buildScriptGenerationPrompt,
   generateScript,
@@ -7,8 +8,17 @@ import {
   type NodeContext,
 } from '../script-generation';
 
-vi.mock('../../lib/tauri', () => ({
-  copilotComplete: vi.fn(),
+const { createLanguageModelMock, generateTextMock } = vi.hoisted(() => ({
+  createLanguageModelMock: vi.fn(),
+  generateTextMock: vi.fn(),
+}));
+
+vi.mock('../../ai/providers', () => ({
+  createLanguageModel: createLanguageModelMock,
+}));
+
+vi.mock('ai', () => ({
+  generateText: generateTextMock,
 }));
 
 describe('buildScriptGenerationPrompt', () => {
@@ -77,9 +87,7 @@ describe('buildScriptGenerationPrompt', () => {
     };
     const messages = buildScriptGenerationPrompt('转换数据', context);
     const userText = messages[1].content;
-    // 当前节点 pin（与上下游同样 inline 形态：端口：输入 [...] 输出 [...]）
     expect(userText).toContain('端口：输入 [in: exec/json (required)] 输出 [out: exec/any]');
-    // 上游 / 下游 pin 内联展示
     expect(userText).toContain('类型: modbusRead）');
     expect(userText).toContain('out: data/json');
     expect(userText).toContain('类型: sqlWriter）');
@@ -212,17 +220,24 @@ describe('generateScript', () => {
     downstream: [],
   };
 
-  it('调用 copilotComplete 并返回修剪后的内容', async () => {
-    const { copilotComplete } = await import('../../lib/tauri');
-    const mocked = vi.mocked(copilotComplete);
-    mocked.mockResolvedValueOnce({
-      content: '```rhai\npayload["value"] = 1;\npayload\n```',
-      model: 'test',
-      usage: undefined,
+  const mockProvider = {
+    id: 'test-provider',
+    name: 'Test Provider',
+    baseUrl: 'https://api.test.com/v1',
+    defaultModel: 'deepseek-v4-flash',
+    extraHeaders: {},
+    enabled: true,
+    hasApiKey: true,
+  };
+
+  it('通过 ai-sdk 直调并返回修剪后的内容', async () => {
+    createLanguageModelMock.mockResolvedValueOnce('mock-model');
+    generateTextMock.mockResolvedValueOnce({
+      text: '```rhai\npayload["value"] = 1;\npayload\n```',
     });
 
     const result = await generateScript('需求', mockContext, {
-      providerId: 'test-provider',
+      provider: mockProvider,
       model: 'deepseek-v4-flash',
       params: {
         temperature: 0.2,
@@ -234,43 +249,37 @@ describe('generateScript', () => {
     });
 
     expect(result).toBe('payload["value"] = 1;\npayload');
-    expect(mocked).toHaveBeenCalledTimes(1);
-    const request = mocked.mock.calls[0][0];
-    expect(request.providerId).toBe('test-provider');
-    expect(request.model).toBe('deepseek-v4-flash');
-    expect(request.messages).toHaveLength(2);
-    expect(request.params.temperature).toBe(0.2);
-    expect(request.params.maxTokens).toBe(512);
-    expect(request.params.topP).toBe(0.9);
-    expect(request.params.thinking).toEqual({ type: 'disabled' });
-    expect(request.params.reasoningEffort).toBe('high');
-    expect(request.timeoutMs).toBe(60000);
-    expect(() => JSON.stringify(request)).not.toThrow();
+    expect(createLanguageModelMock).toHaveBeenCalledWith({
+      provider: mockProvider,
+      modelOverride: 'deepseek-v4-flash',
+    });
+    expect(generateTextMock).toHaveBeenCalledTimes(1);
+    const callArgs = generateTextMock.mock.calls[0][0];
+    expect(callArgs.model).toBe('mock-model');
+    expect(callArgs.messages).toHaveLength(2);
+    expect(callArgs.temperature).toBe(0.2);
+    expect(callArgs.maxOutputTokens).toBe(512);
+    expect(callArgs.topP).toBe(0.9);
   });
 
-  it('未显式传参时回退到默认 copilot 参数', async () => {
-    const { copilotComplete } = await import('../../lib/tauri');
-    const mocked = vi.mocked(copilotComplete);
-    mocked.mockResolvedValueOnce({ content: 'payload', model: 'test', usage: undefined });
+  it('未显式传参时回退到默认参数', async () => {
+    vi.clearAllMocks();
+    createLanguageModelMock.mockResolvedValueOnce('mock-model');
+    generateTextMock.mockResolvedValueOnce({ text: 'payload' });
 
-    await generateScript('需求', mockContext, { providerId: 'test-provider' });
+    await generateScript('需求', mockContext, { provider: mockProvider });
 
-    const lastCall = mocked.mock.calls[mocked.mock.calls.length - 1];
-    const request = lastCall?.[0];
-    expect(request?.params).toEqual({
-      temperature: 0.7,
-      maxTokens: 2048,
-      topP: 1,
-    });
+    const callArgs = generateTextMock.mock.calls[0][0];
+    expect(callArgs.temperature).toBe(0.7);
+    expect(callArgs.maxOutputTokens).toBe(2048);
+    expect(callArgs.topP).toBe(1);
   });
 
   it('抛出异常时向上传播', async () => {
-    const { copilotComplete } = await import('../../lib/tauri');
-    const mocked = vi.mocked(copilotComplete);
-    mocked.mockRejectedValueOnce(new Error('连接失败'));
+    createLanguageModelMock.mockRejectedValueOnce(new Error('连接失败'));
 
     await expect(
-      generateScript('需求', mockContext, { providerId: 'p' }),
+      generateScript('需求', mockContext, { provider: mockProvider }),
     ).rejects.toThrow('连接失败');
   });
 });

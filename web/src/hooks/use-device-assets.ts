@@ -1,6 +1,13 @@
 import { useCallback, useState } from 'react';
 
-import { hasTauriRuntime, tauriEventStream } from '../lib/tauri';
+import {
+  extractDeviceFromText as aiExtractFromText,
+  extractDeviceProposal as aiExtractProposal,
+  extractDeviceProposalStream as aiExtractProposalStream,
+  type ExtractionProposal as AiExtractionProposal,
+} from '../ai/device-extraction';
+import { hasTauriRuntime, loadAiConfig } from '../lib/tauri';
+import { resolveGlobalAiProvider } from '../lib/workflow-ai';
 
 /** 设备资产摘要。 */
 export interface DeviceAssetSummary {
@@ -126,49 +133,39 @@ export function useDeviceAssets(workspacePath = '') {
   );
 
   const extractFromText = useCallback(
-    async (text: string, providerId?: string): Promise<string> => {
-      if (!hasTauriRuntime()) throw new Error('需要 Tauri 运行时');
-      return invoke<string>('extract_device_from_text', {
-        text,
-        providerId: providerId ?? null,
-      });
+    async (text: string): Promise<string> => {
+      const aiConfig = await loadAiConfig();
+      const provider = resolveGlobalAiProvider(aiConfig);
+      if (!provider) throw new Error('未配置 AI 提供商，请先在设置中配置');
+      return aiExtractFromText(text, provider);
     },
     [],
   );
 
   const extractProposal = useCallback(
-    async (text: string, providerId?: string): Promise<ExtractionProposal> => {
-      if (!hasTauriRuntime()) throw new Error('需要 Tauri 运行时');
-      return invoke<ExtractionProposal>('extract_device_proposal', {
-        text,
-        providerId: providerId ?? null,
-      });
+    async (text: string): Promise<ExtractionProposal> => {
+      const aiConfig = await loadAiConfig();
+      const provider = resolveGlobalAiProvider(aiConfig);
+      if (!provider) throw new Error('未配置 AI 提供商，请先在设置中配置');
+      const result = await aiExtractProposal(text, provider);
+      return result as ExtractionProposal;
     },
     [],
   );
 
-  /** 流式 AI 结构化抽取（复用 tauriEventStream 通用机制）。 */
+  /** 流式 AI 结构化抽取（前端直连 AI provider）。 */
   const extractProposalStream = useCallback(
     async (
       text: string,
       onDelta: (accumulated: string) => void,
       onThinking?: (accumulated: string) => void,
-      providerId?: string,
+      _providerId?: string,
       correction?: { yaml: string; error: string },
     ): Promise<string> => {
-      if (!hasTauriRuntime()) throw new Error('需要 Tauri 运行时');
-      const result = await tauriEventStream(
-        'extract_device_proposal_stream',
-        {
-          text,
-          providerId: providerId ?? null,
-          correctionYaml: correction?.yaml ?? null,
-          correctionError: correction?.error ?? null,
-        },
-        onDelta,
-        onThinking,
-      );
-      return result.text;
+      const aiConfig = await loadAiConfig();
+      const provider = resolveGlobalAiProvider(aiConfig);
+      if (!provider) throw new Error('未配置 AI 提供商，请先在设置中配置');
+      return aiExtractProposalStream(text, provider, { onDelta, onThinking }, correction);
     },
     [],
   );
@@ -216,12 +213,15 @@ export function useDeviceAssets(workspacePath = '') {
   );
 
   const extractFromPdf = useCallback(
-    async (pdfBase64: string, providerId?: string): Promise<ExtractionProposal> => {
+    async (pdfBase64: string): Promise<ExtractionProposal> => {
       if (!hasTauriRuntime()) throw new Error('需要 Tauri 运行时');
-      return invoke<ExtractionProposal>('extract_device_from_pdf', {
-        pdfBase64,
-        providerId: providerId ?? null,
-      });
+      // PDF 文本提取仍在 Rust 端（JS 无等价库）
+      const text = await invoke<string>('extract_text_from_pdf', { pdfBase64 });
+      const aiConfig = await loadAiConfig();
+      const provider = resolveGlobalAiProvider(aiConfig);
+      if (!provider) throw new Error('未配置 AI 提供商，请先在设置中配置');
+      const result = await aiExtractProposal(text, provider);
+      return result as ExtractionProposal;
     },
     [],
   );

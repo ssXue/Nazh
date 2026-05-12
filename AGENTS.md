@@ -10,7 +10,7 @@ Nazh is an industrial-edge workflow orchestration engine with AI as a first-clas
 
 Stack: **Rust engine (Cargo workspace, 15 packages) + Tauri v2 desktop shell + React 18 / FlowGram.AI canvas**.
 
-Everything runs in one process — no HTTP/gRPC server, no external broker. AI features (script generation, thinking-mode completions, workflow composition) flow through the `AiService` trait in Ring 0 (`nazh_core::ai`); the OpenAI-compatible HTTP/SSE implementation lives in the `ai` crate (ADR-0019).
+Everything runs in one process — no HTTP/gRPC server, no external broker. AI features (copilot chat, script generation, device extraction, thinking-mode completions) are called directly from the frontend via Vercel AI SDK (`ai` v6) against user-configured OpenAI-compatible providers; API keys are read on-demand from Rust encrypted storage via `load_ai_api_key` IPC（RFC-0005）. Rust side only retains AI configuration management and copilot tool dispatch.
 
 ## Build & Dev Commands
 
@@ -68,11 +68,11 @@ crates/
                      #   Zero protocol dependencies. The engine kernel.
   pipeline/          # Ring 1 — linear pipeline abstraction
   connections/       # Ring 1 — ConnectionManager, ConnectionGuard RAII, health/circuit-breaker
-  scripting/         # Ring 1 — Rhai engine base (with AI-aware ai_complete() helper)
+  scripting/         # Ring 1 — Rhai engine base（variables 注入 + helper 包）
   nodes-flow/        # Ring 1 — if / switch / loop / tryCatch / code (Rhai script) / stateMachine
   nodes-io/          # Ring 1 — timer / serial / native / modbus / http / mqtt / bark / sql / CAN/SLCAN / EtherCAT 三件套 / debugConsole / capabilityCall / humanLoop
   nodes-pure/        # Ring 1 — c2f / minutesSince / lookup pure-form Data 引脚节点（ADR-0014 Phase 3/3b）
-  ai/                # Ring 1 — OpenAI-compatible client (streaming, thinking-mode) + 壳层配置型；AiService trait 在 Ring 0（ADR-0019）
+  ai/                # Ring 1 — 壳层 AI 配置模型（provider 管理、密钥、生成参数）；HTTP 调用已前移到前端（RFC-0005）
   graph/             # Ring 1 — DAG 工作流编排：解析、校验、拓扑排序、部署与执行（ADR-0020）
   tauri-bindings/    # IPC — Tauri 命令请求/响应类型 + ts-rs 导出汇总（ADR-0017）
   store/              # Ring 1 — SQLite 持久化：变量 / 历史 / 全局变量（ADR-0022）
@@ -112,7 +112,7 @@ React / FlowGram canvas
 - **`crates/core/src/node.rs`** — `NodeTrait` with async `transform(trace_id, payload) → NodeExecution`. `NodeOutput { payload, metadata: Option<Map>, dispatch }`. `NodeDispatch::Broadcast | Route(Vec<String>)`. Metadata is `Option<Map>` for explicit None/Some(empty)/Some(non-empty) three-value semantics (B1-R0-02, 2026-05-03).
 - **`crates/core/src/plugin.rs`** — `Plugin` + `NodeRegistry` + `PluginHost` + `RuntimeResources` (typed Any bag). Engine core has **zero hardcoded nodes** — all Ring 1 crates register themselves.
 - **`crates/core/src/guard.rs`** — panic isolation helpers (AssertUnwindSafe + catch_unwind + timeout).
-- **`crates/graph/`** — `WorkflowGraph` schema, topology (Kahn cycle check), `deploy_workflow` / `deploy_workflow_with_ai`, per-node `run_node` loop, pull-path collector, pin validator. Ring 1 crate, depends on `nazh-core` + `connections` only (ADR-0020).
+- **`crates/graph/`** — `WorkflowGraph` schema, topology (Kahn cycle check), `deploy_workflow` / `deploy_workflow_and_restore_variables`, per-node `run_node` loop, pull-path collector, pin validator. Ring 1 crate, depends on `nazh-core` + `connections` only (ADR-0020).
 
 ### Type Contract (ts-rs)
 
@@ -139,7 +139,7 @@ Workflow commands are split across `workflow_deploy.rs` / `workflow_dispatch.rs`
 - deployment session files: `load_deployment_session_file`, `load_deployment_session_state_file`, `list_deployment_sessions_file`, `save_deployment_session_file`, `set_deployment_session_active_project_file`, `remove_deployment_session_file`, `clear_deployment_session_file`
 - serial: `list_serial_ports`, `test_serial_connection`
 - project library/export: `load_project_board_files`, `save_project_board_files`, `save_flowgram_export_file`
-- AI: `load_ai_config`, `save_ai_config`, `test_ai_provider`, `load_ai_asset_context`, `copilot_complete`, `copilot_complete_stream`
+- AI: `load_ai_config`, `save_ai_config`, `load_ai_api_key`, `load_ai_asset_context`, `copilot_dispatch_tool`, `copilot_get_tool_definitions`, `copilot_save_message`, `copilot_clear_embeddings`, `copilot_store_embeddings`
 - humanLoop（HITL 审批节点）: `respond_human_loop`, `list_pending_approvals`
 - reactive: `subscribe_reactive_pin`（ADR-0015 Phase 2，OutputCache watch → Tauri 事件推送）
 
@@ -170,11 +170,11 @@ These principles guide day-to-day decisions. When in doubt, reach for the princi
 1. **ADR-driven architecture evolution.** Non-trivial architecture changes go through an ADR (`docs/adr/NNNN-title.md`). Existing code changes that embody a decision should be recorded retrospectively (e.g. ADR-0008 documents the metadata separation that landed before the ADR existed). "Evaluation ADRs" (like ADR-0020) record *decisions not to act*, with trigger conditions.
 2. **Control plane vs data plane separation.** Payload (business data) flows through `DataStore` + `ContextRef`. Metadata (observability, provenance) flows through `ExecutionEvent`. Configuration (setpoints, thresholds, shared state) flows through `WorkflowVariables` (ADR-0012 Phase 1+2 已实施). These planes do not cross-contaminate.
 3. **设备语义高于协议适配。** 业务工作流的主语应是 Device / Capability / Workflow：设备作为高级语义节点或由 DSL 编译生成的能力调用节点出现；CAN 卡、串口、Modbus 连接、MQTT broker 等物理/协议通道属于全局 `ConnectionManager` 的共享连接资源，普通画布不应把它们作为首选业务节点。`serialTrigger` / `modbusRead` / `canRead` / `canWrite` 等低层协议节点可以保留为适配器、调试工具和兼容层，但 AI 编排与产品主路径应优先生成设备信号读取与 `capabilityCall` 等高级节点。详见 `docs/specs/2026-05-05-node-architecture-boundary-review.md`。
-4. **Ring purity.** Ring 0 stays free of protocol-specific dependencies. Ring 1 crates depend on Ring 0 and may compose horizontally, but should avoid creating cross-Ring-1 fan-out cycles. Prefer **trait abstraction + dependency injection** over direct imports when coupling Ring 1 crates (ADR-0019 proposes this for AI).
+4. **Ring purity.** Ring 0 stays free of protocol-specific dependencies. Ring 1 crates depend on Ring 0 and may compose horizontally, but should avoid creating cross-Ring-1 fan-out cycles. Prefer **trait abstraction + dependency injection** over direct imports when coupling Ring 1 crates.
 5. **RAII for resources.** Connections, lifecycle guards, and future resource holders use Drop-based cleanup, never explicit `close()` / `release()` call pairs. Examples: `ConnectionGuard`（连接借出）、`LifecycleGuard`（节点后台任务，ADR-0009）。
 6. **Plugin-first node registration.** Adding a node means implementing `NodeTrait` in a Ring 1 crate and registering via `Plugin::register(&mut NodeRegistry)`. Do not hardcode node types in the engine or facade. `standard_registry()` in `src/lib.rs` loads the baseline set (`FlowPlugin`, `IoPlugin`) — other plugins can be added to compose custom deployments.
 7. **Fast fail, loud logs.** Deploy-time validation (DAG, types, configs) is cheap and should happen before any node runs. Runtime failures emit `ExecutionEvent::Failed` with `trace_id`, `stage`, and structured error via `tracing::error!`. Silent drops are bugs.
-8. **AI is a first-class capability, not a bolt-on.** `ai` crate provides `AiService` trait + OpenAI-compatible client. Scripts call `ai_complete()`. The `code` node has built-in AI generation. Future AI providers (Anthropic native, local Llama, Qwen) should implement `AiService`, not replace the call site.
+8. **AI 调用前移到前端（RFC-0005）.** 所有 AI HTTP 调用（copilot chat、设备提取、provider 连接测试）由前端通过 Vercel AI SDK 直接发起，Rust 不持有 HTTP 客户端。API key 经 IPC 按需从 Rust 加密存储读取。Rust 侧仅保留 AI 配置管理和 copilot 工具分发。
 
 ## Collaboration Conventions
 
@@ -369,7 +369,7 @@ Hand-written source files should stay reviewable and single-purpose. 100-200 lin
 - **Rust unit tests (`#[cfg(test)]` modules):** per-crate, ran via `cargo test --workspace --lib`. Scripting, plugin system, event emission, template engine, etc.
 - **Rust integration tests (`tests/`):**
   - `tests/pipeline.rs` — linear pipeline timing/error/panic/timeout.
-  - `tests/workflow.rs` — DAG end-to-end with connection pool, Rhai integration, AI helpers.
+  - `tests/workflow.rs` — DAG end-to-end with connection pool, Rhai integration.
 - **Frontend unit tests (`web/src/lib/__tests__/`):** Vitest. Event parsing, state reduction, workflow status, settings, graph parsing, layout, FlowGram conversion, workflow orchestrator, AI config state.
 - **Frontend E2E (`web/e2e/`):** Playwright against compiled Tauri app. Deploy / dispatch / undeploy lifecycle.
 

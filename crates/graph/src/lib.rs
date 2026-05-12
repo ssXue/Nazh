@@ -1,7 +1,7 @@
 //! 基于 DAG 的工作流图：解析、校验与异步部署。
 //!
 //! 本 crate 将前端画布导出的 JSON AST 解析为 [`WorkflowGraph`]，
-//! 校验其为有向无环图后，通过 [`deploy_workflow`] / [`deploy_workflow_with_ai`]
+//! 校验其为有向无环图后，通过 [`deploy_workflow`] / [`deploy_workflow_and_restore_variables`]
 //! 将每个节点实例化为 Tokio 任务，并通过 MPSC 通道连接。
 //!
 //! | 子模块 | 职责 |
@@ -30,7 +30,7 @@ pub(crate) const DEFAULT_INPUT_PIN_ID: &str = "in";
 pub(crate) const DEFAULT_OUTPUT_PIN_ID: &str = "out";
 
 pub use deploy::{
-    deploy_workflow, deploy_workflow_with_ai, deploy_workflow_with_ai_and_variable_overrides,
+    deploy_workflow, deploy_workflow_and_restore_variables,
 };
 pub use types::{
     WorkflowDeployment, WorkflowDeploymentParts, WorkflowEdge, WorkflowGraph, WorkflowIngress,

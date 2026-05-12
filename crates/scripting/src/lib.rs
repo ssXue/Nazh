@@ -5,10 +5,8 @@
 //! 来复用脚本执行能力。添加新的脚本节点时只需嵌入 `ScriptNodeBase` 字段。
 
 use std::sync::Arc;
-use std::time::Duration;
 
 use nazh_core::WorkflowVariables;
-use nazh_core::ai::{AiCompletionRequest, AiGenerationParams, AiMessage, AiMessageRole, AiService};
 use rhai::{
     AST, Dynamic, Engine, EvalAltResult, Position, Scope,
     packages::Package,
@@ -90,7 +88,6 @@ impl ScriptVars {
     }
 
     /// `vars.set(name, value)` Rhai 方法：写入工作流变量（类型校验）。
-    // Rhai 1.x register_fn 要求 Dynamic 值参以 owned 形式接收；clippy 误报 needless_pass_by_value
     #[allow(clippy::needless_pass_by_value)]
     fn rhai_set(&mut self, name: &str, value: Dynamic) -> Result<(), Box<EvalAltResult>> {
         let vars = self.require_vars()?;
@@ -101,7 +98,6 @@ impl ScriptVars {
     }
 
     /// `vars.cas(name, expected, new)` Rhai 方法：比较交换，返回是否成功。
-    // Rhai 1.x register_fn 要求 Dynamic 值参以 owned 形式接收；clippy 误报 needless_pass_by_value
     #[allow(clippy::needless_pass_by_value)]
     fn rhai_cas(
         &mut self,
@@ -125,166 +121,12 @@ impl ScriptVars {
 }
 
 /// 向引擎注册 `ScriptVars` 类型及其 `get` / `set` / `cas` 方法。
-///
-/// 注意：仅注册类型与方法绑定；`ScriptVars` 实例通过 `Scope` 在每次 `evaluate` 时推入。
 fn register_vars_helpers(engine: &mut Engine) {
     engine
         .register_type_with_name::<ScriptVars>("ScriptVars")
         .register_fn("get", ScriptVars::rhai_get)
         .register_fn("set", ScriptVars::rhai_set)
         .register_fn("cas", ScriptVars::rhai_cas);
-}
-
-/// 脚本节点的通用基座。
-///
-/// 封装了引擎初始化、脚本编译和求值逻辑，供所有基于脚本的节点复用。
-/// 新增脚本节点时，在节点结构体中嵌入 `ScriptNodeBase` 字段，
-/// 然后在 `execute()` 中调用 [`evaluate`](ScriptNodeBase::evaluate) 或
-/// [`evaluate_catching`](ScriptNodeBase::evaluate_catching) 即可。
-pub struct ScriptNodeBase {
-    id: String,
-    engine: Engine,
-    ast: AST,
-    /// ADR-0012：每次 evaluate 时 push 进 Scope，供脚本通过 `vars.*` 访问。
-    script_vars: ScriptVars,
-}
-
-/// 脚本节点的 AI 运行时配置。
-#[derive(Clone)]
-pub struct ScriptAiRuntime {
-    node_id: String,
-    service: Arc<dyn AiService>,
-    provider_id: String,
-    system_prompt: Option<String>,
-    model: Option<String>,
-    params: AiGenerationParams,
-    timeout_ms: Option<u64>,
-}
-
-impl ScriptAiRuntime {
-    /// 构造脚本节点的 AI 调用器。
-    pub fn new(
-        node_id: impl Into<String>,
-        service: Arc<dyn AiService>,
-        provider_id: impl Into<String>,
-        system_prompt: Option<String>,
-        model: Option<String>,
-        params: AiGenerationParams,
-        timeout_ms: Option<u64>,
-    ) -> Result<Self, EngineError> {
-        let node_id = node_id.into();
-        let provider_id = provider_id.into();
-        if provider_id.trim().is_empty() {
-            return Err(EngineError::node_config(node_id, "AI provider_id 不能为空"));
-        }
-
-        Ok(Self {
-            node_id,
-            service,
-            provider_id,
-            system_prompt,
-            model,
-            params,
-            timeout_ms,
-        })
-    }
-
-    fn build_request(&self, prompt: String) -> AiCompletionRequest {
-        let mut messages = Vec::with_capacity(2);
-        if let Some(system_prompt) = self
-            .system_prompt
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-        {
-            messages.push(AiMessage::simple(
-                AiMessageRole::System,
-                format!(
-                    "[格式要求]\n如果用户要求结构化数据输出，请直接输出合法 JSON（无 Markdown 代码块包裹），不要附加解释性文字。\n如果用户未明确要求格式，则自由回复。\n\n{system_prompt}"
-                ),
-            ));
-        }
-        messages.push(AiMessage::simple(AiMessageRole::User, prompt));
-
-        AiCompletionRequest {
-            provider_id: self.provider_id.clone(),
-            model: self.model.clone(),
-            messages,
-            params: self.params.clone(),
-            timeout_ms: self.timeout_ms,
-            tools: vec![],
-        }
-    }
-
-    fn complete(&self, prompt: String) -> Result<Dynamic, Box<EvalAltResult>> {
-        if prompt.trim().is_empty() {
-            return Err(to_script_error("AI prompt 不能为空"));
-        }
-
-        let request = self.build_request(prompt);
-        let service = Arc::clone(&self.service);
-        let node_id = self.node_id.clone();
-        let timeout_ms = self.timeout_ms;
-        let run_ai = move || run_ai_completion_blocking(service, request, node_id, timeout_ms);
-        let result = match tokio::runtime::Handle::try_current() {
-            Ok(handle) if handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread => {
-                tokio::task::block_in_place(run_ai)
-            }
-            Ok(_) => match std::thread::spawn(run_ai).join() {
-                Ok(result) => result,
-                Err(_) => Err(format!("节点 `{}` 的 AI 调用线程发生 panic", self.node_id)),
-            },
-            Err(_) => run_ai(),
-        };
-
-        match result {
-            Ok(content) => Ok(parse_ai_response(content)),
-            Err(message) => Err(to_script_error(message)),
-        }
-    }
-}
-
-fn run_ai_completion_blocking(
-    service: Arc<dyn AiService>,
-    request: AiCompletionRequest,
-    node_id: String,
-    timeout_ms: Option<u64>,
-) -> Result<String, String> {
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(|error| format!("节点 `{node_id}` 无法创建 AI 调用运行时: {error}"))?
-        .block_on(async move {
-            let completion = service.complete(request);
-            let response = match timeout_ms {
-                Some(timeout_ms) => {
-                    tokio::time::timeout(Duration::from_millis(timeout_ms), completion)
-                        .await
-                        .map_err(|_| {
-                            format!("节点 `{node_id}` 的 AI 调用超时（{timeout_ms} ms）")
-                        })?
-                }
-                None => completion.await,
-            };
-            response
-                .map(|response| response.content)
-                .map_err(|error| error.to_string())
-        })
-}
-
-#[derive(Clone)]
-enum ScriptAiBinding {
-    Enabled(Arc<ScriptAiRuntime>),
-    Disabled(String),
-}
-
-impl ScriptAiBinding {
-    fn complete(&self, prompt: String) -> Result<Dynamic, Box<EvalAltResult>> {
-        match self {
-            Self::Enabled(runtime) => runtime.complete(prompt),
-            Self::Disabled(message) => Err(to_script_error(message.clone())),
-        }
-    }
 }
 
 // Rhai register_fn 要求 Box<EvalAltResult> 返回类型
@@ -296,40 +138,15 @@ fn to_script_error(message: impl Into<String>) -> Box<EvalAltResult> {
     ))
 }
 
-fn strip_markdown_fences(s: &str) -> &str {
-    let trimmed = s.trim();
-    if let Some(rest) = trimmed
-        .strip_prefix("```json")
-        .or_else(|| trimmed.strip_prefix("```JSON"))
-        .or_else(|| trimmed.strip_prefix("```"))
-        && let Some(body) = rest.strip_suffix("```")
-    {
-        return body.trim();
-    }
-    trimmed
-}
-
-fn parse_ai_response(content: String) -> Dynamic {
-    let cleaned = strip_markdown_fences(&content);
-    if cleaned.is_empty() {
-        return Dynamic::UNIT;
-    }
-    match serde_json::from_str::<Value>(cleaned) {
-        Ok(value) => to_dynamic(value).unwrap_or_else(|_| Dynamic::from(content)),
-        Err(_) => Dynamic::from(content),
-    }
-}
-
-fn register_ai_complete(engine: &mut Engine, node_id: &str, ai: Option<ScriptAiRuntime>) {
-    let binding = Arc::new(ai.map_or_else(
-        || ScriptAiBinding::Disabled(format!("脚本节点 `{node_id}` 未启用 AI 能力")),
-        |runtime| ScriptAiBinding::Enabled(Arc::new(runtime)),
-    ));
-
-    engine.register_fn(
-        "ai_complete",
-        move |prompt: String| -> Result<Dynamic, Box<EvalAltResult>> { binding.complete(prompt) },
-    );
+/// 脚本节点的通用基座。
+///
+/// 封装了引擎初始化、脚本编译和求值逻辑，供所有基于脚本的节点复用。
+pub struct ScriptNodeBase {
+    id: String,
+    engine: Engine,
+    ast: AST,
+    /// ADR-0012：每次 evaluate 时 push 进 Scope，供脚本通过 `vars.*` 访问。
+    script_vars: ScriptVars,
 }
 
 impl ScriptNodeBase {
@@ -341,14 +158,12 @@ impl ScriptNodeBase {
         id: impl Into<String>,
         script: &str,
         max_operations: u64,
-        ai: Option<ScriptAiRuntime>,
         variables: Option<Arc<WorkflowVariables>>,
     ) -> Result<Self, EngineError> {
         let id = id.into();
         let mut engine = Engine::new();
         engine.set_max_operations(max_operations);
         NazhScriptPackage::new().register_into_engine(&mut engine);
-        register_ai_complete(&mut engine, &id, ai);
         register_vars_helpers(&mut engine);
         let ast = engine
             .compile(script)
@@ -377,8 +192,6 @@ impl ScriptNodeBase {
     }
 
     /// 执行 Rhai 脚本，返回作用域和结果值。
-    ///
-    /// 脚本运行时错误会转换为 [`EngineError::ScriptRuntime`]。
     pub fn evaluate(&self, payload: Value) -> Result<(Scope<'static>, Dynamic), EngineError> {
         let mut scope = self.prepare_scope(payload)?;
         let result = self
@@ -389,8 +202,6 @@ impl ScriptNodeBase {
     }
 
     /// 执行 Rhai 脚本，脚本错误不转换为 `EngineError` 而是作为 `Err(String)` 返回。
-    ///
-    /// 用于需要自行处理脚本错误的节点（如 `TryCatchNode`）。
     pub fn evaluate_catching(
         &self,
         payload: Value,

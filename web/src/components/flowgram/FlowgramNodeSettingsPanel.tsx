@@ -599,7 +599,7 @@ function FlowgramNodeSettingsPanel({
         const script = await generateScriptStream(
           requirement,
           context,
-          { providerId: preferredCopilotProvider.id, model: preferredCopilotProvider.defaultModel, params: copilotParams },
+          { provider: preferredCopilotProvider, model: preferredCopilotProvider.defaultModel, params: copilotParams },
           (rawText) => setAiStreamPreview(rawText),
           (thinkingText) => setAiThinkingPreview(thinkingText),
         );

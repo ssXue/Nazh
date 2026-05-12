@@ -1,7 +1,7 @@
 //! 工作流变量的部署期初始化器（ADR-0012）。
 //!
 //! 把 [`WorkflowGraph::variables`](super::types::WorkflowGraph) 声明转成可注入
-//! 引擎的 `Arc<WorkflowVariables>`。在 `deploy_workflow_with_ai` 阶段 0（早于
+//! 引擎的 `Arc<WorkflowVariables>`。在 `deploy_workflow_and_restore_variables` 阶段 0（早于
 //! pin 校验、早于 `on_deploy`）调用——初值类型不匹配立即整图失败。
 //!
 //! ## 接受 `Option<&HashMap>` 的设计
@@ -12,7 +12,7 @@
 //! - `None`（旧图 / 未声明变量）→ 返回 `Arc::new(WorkflowVariables::empty())`
 //! - `Some(&map)` → 走 `WorkflowVariables::from_declarations(map)`，类型校验失败整图拒部署
 //!
-//! 这样 `deploy_workflow_with_ai` 的调用是单行：
+//! 这样 `deploy_workflow_and_restore_variables` 的调用是单行：
 //! `let vars = build_workflow_variables(graph.variables.as_ref())?;`
 //! ——不需要在 `deploy.rs` 里散落 `unwrap_or` / `match` 分支。
 

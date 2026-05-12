@@ -90,10 +90,9 @@ async fn 变量覆盖值在_on_deploy_前恢复且保留声明初值() {
     let mut overrides = HashMap::new();
     overrides.insert("counter".to_owned(), json!(42));
 
-    let deployment = deploy_workflow_with_ai_and_variable_overrides(
+    let deployment = deploy_workflow_and_restore_variables(
         graph,
         connections::shared_connection_manager(),
-        None,
         &NodeRegistry::new(),
         Some("wf".to_owned()),
         RuntimeResources::new(),

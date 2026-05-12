@@ -1,6 +1,6 @@
 [package]
 name = "ai"
-description = "Nazh AI 能力层（Ring 1）：OpenAI 兼容 API 客户端实现 + 壳层配置模型。AiService trait 在 nazh-core。"
+description = "壳层 AI 配置模型（Ring 1）。AI HTTP 调用已前移到前端（RFC-0005）。"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -13,19 +13,10 @@ workspace = true
 
 [dependencies]
 nazh-core.workspace = true
-async-trait.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-async-openai.workspace = true
-reqwest.workspace = true
-futures-util.workspace = true
-tokio.workspace = true
-tracing.workspace = true
 ts-rs = { workspace = true, optional = true }
 
 [features]
 default = []
 ts-export = ["dep:ts-rs", "nazh-core/ts-export"]
-
-[dev-dependencies]
-tokio.workspace = true

@@ -5,8 +5,8 @@ use std::{
 };
 
 use nazh_engine::{
-    AiService, ConnectionDefinition, EngineError, RuntimeResources, WorkflowGraph, WorkflowId,
-    deploy_workflow_with_ai_and_variable_overrides as deploy_workflow_graph,
+    ConnectionDefinition, EngineError, RuntimeResources, WorkflowGraph, WorkflowId,
+    deploy_workflow_and_restore_variables as deploy_workflow_graph,
 };
 use serde_json::{Value, json};
 use tauri::{AppHandle, Emitter, State};
@@ -88,7 +88,6 @@ pub(crate) async fn deploy_workflow_from_json(
     let node_count = graph.nodes.len();
     let edge_count = graph.edges.len();
     let registry = shared_node_registry();
-    let ai_service: Arc<dyn AiService> = state.ai_service.clone();
     let extra_resources = RuntimeResources::new()
         .with_resource(Arc::clone(&state.approval_registry))
         .with_resource(WorkflowId(Arc::new(workflow_id.clone())));
@@ -97,7 +96,6 @@ pub(crate) async fn deploy_workflow_from_json(
     let deployment = deploy_workflow_graph(
         graph,
         state.connection_manager.clone(),
-        Some(ai_service),
         registry,
         Some(workflow_id.clone()),
         extra_resources,
@@ -277,7 +275,6 @@ pub(crate) async fn deploy_workflow(
     let node_count = graph.nodes.len();
     let edge_count = graph.edges.len();
     let registry = shared_node_registry();
-    let ai_service: Arc<dyn AiService> = state.ai_service.clone();
     let extra_resources = RuntimeResources::new()
         .with_resource(Arc::clone(&state.approval_registry))
         .with_resource(WorkflowId(Arc::new(workflow_id.clone())));
@@ -285,7 +282,6 @@ pub(crate) async fn deploy_workflow(
     let deployment = match deploy_workflow_graph(
         graph,
         state.connection_manager.clone(),
-        Some(ai_service),
         registry,
         Some(workflow_id.clone()),
         extra_resources,

@@ -9,110 +9,18 @@ use std::{
 
 use async_trait::async_trait;
 use nazh_engine::{
-    AiCompletionRequest, AiCompletionResponse, AiEmbeddingRequest, AiEmbeddingResponse, AiError,
-    AiMessageRole, AiService, CodeNode, CodeNodeConfig, ConnectionDefinition, ConnectionManager,
+    CodeNode, CodeNodeConfig, ConnectionDefinition, ConnectionManager,
     DebugConsoleNode, DebugConsoleNodeConfig, EmptyPolicy, EngineError, HttpClientNode,
     HttpClientNodeConfig, ModbusReadNode, ModbusReadNodeConfig, MqttClientNode,
     MqttClientNodeConfig, MqttMode, NodeCapabilities, NodeDispatch, NodeExecution, NodeRegistry,
-    NodeTrait, PinDefinition, PinDirection, PinKind, PinType, RuntimeResources, SerialTriggerNode,
-    SerialTriggerNodeConfig, SqlWriterNode, SqlWriterNodeConfig, StreamChunk, TimerNode,
-    TimerNodeConfig, WorkflowContext, WorkflowGraph, deploy_workflow, deploy_workflow_with_ai,
+    NodeTrait, PinDefinition, PinDirection, PinKind, PinType, SerialTriggerNode,
+    SerialTriggerNodeConfig, SqlWriterNode, SqlWriterNodeConfig, TimerNode,
+    TimerNodeConfig, WorkflowContext, WorkflowGraph, deploy_workflow,
     shared_connection_manager, standard_registry,
 };
 use serde_json::json;
 use tokio::time::timeout;
 use uuid::Uuid;
-
-struct StubAiService;
-
-#[async_trait]
-impl AiService for StubAiService {
-    async fn complete(
-        &self,
-        request: AiCompletionRequest,
-    ) -> Result<AiCompletionResponse, AiError> {
-        let system_prompt = request
-            .messages
-            .iter()
-            .find(|message| matches!(message.role, AiMessageRole::System))
-            .map(|message| message.content.clone())
-            .unwrap_or_default();
-        let user_prompt = request
-            .messages
-            .iter()
-            .find(|message| matches!(message.role, AiMessageRole::User))
-            .map(|message| message.content.clone())
-            .unwrap_or_default();
-
-        Ok(AiCompletionResponse {
-            content: format!(
-                "provider={} model={} system={} user={}",
-                request.provider_id,
-                request.model.unwrap_or_else(|| "default-model".to_owned()),
-                system_prompt,
-                user_prompt
-            ),
-            usage: None,
-            model: "stub-model".to_owned(),
-            tool_calls: None,
-        })
-    }
-
-    async fn stream_complete(
-        &self,
-        _request: AiCompletionRequest,
-    ) -> Result<tokio::sync::mpsc::Receiver<Result<StreamChunk, AiError>>, AiError> {
-        panic!("workflow tests should not call stream_complete");
-    }
-
-    async fn embed(
-        &self,
-        _request: AiEmbeddingRequest,
-    ) -> Result<AiEmbeddingResponse, AiError> {
-        panic!("workflow tests should not call embed");
-    }
-}
-
-struct JsonStubAiService {
-    response_content: String,
-}
-
-impl JsonStubAiService {
-    fn new(content: &str) -> Self {
-        Self {
-            response_content: content.to_owned(),
-        }
-    }
-}
-
-#[async_trait]
-impl AiService for JsonStubAiService {
-    async fn complete(
-        &self,
-        _request: AiCompletionRequest,
-    ) -> Result<AiCompletionResponse, AiError> {
-        Ok(AiCompletionResponse {
-            content: self.response_content.clone(),
-            usage: None,
-            model: "stub-model".to_owned(),
-            tool_calls: None,
-        })
-    }
-
-    async fn stream_complete(
-        &self,
-        _request: AiCompletionRequest,
-    ) -> Result<tokio::sync::mpsc::Receiver<Result<StreamChunk, AiError>>, AiError> {
-        panic!("workflow tests should not call stream_complete");
-    }
-
-    async fn embed(
-        &self,
-        _request: AiEmbeddingRequest,
-    ) -> Result<AiEmbeddingResponse, AiError> {
-        panic!("workflow tests should not call embed");
-    }
-}
 
 #[tokio::test]
 async fn code_node_can_transform_json_payload() {
@@ -121,9 +29,7 @@ async fn code_node_can_transform_json_payload() {
         CodeNodeConfig {
             script: "payload[\"value\"] = payload[\"value\"] + 1; payload".to_owned(),
             max_operations: 10_000,
-            ai: None,
         },
-        None,
         None,
     ) {
         Ok(node) => node,
@@ -155,9 +61,7 @@ async fn code_node_can_generate_random_integer_in_range() {
         CodeNodeConfig {
             script: "payload[\"value\"] = rand(3, 7); payload".to_owned(),
             max_operations: 10_000,
-            ai: None,
         },
-        None,
         None,
     ) {
         Ok(node) => node,
@@ -206,9 +110,7 @@ async fn code_node_can_use_builtin_helper_package() {
             "#
             .to_owned(),
             max_operations: 10_000,
-            ai: None,
         },
-        None,
         None,
     ) {
         Ok(node) => node,
@@ -250,293 +152,6 @@ async fn code_node_can_use_builtin_helper_package() {
     }
 }
 
-#[tokio::test]
-async fn workflow_script_node_can_call_ai_complete() {
-    let graph = match WorkflowGraph::from_json(
-        &json!({
-            "nodes": {
-                "script": {
-                    "type": "code",
-                    "config": {
-                        "script": "payload[\"reply\"] = ai_complete(\"请回复:\" + payload[\"text\"]); payload",
-                        "ai": {
-                            "providerId": "stub-provider",
-                            "model": "gpt-script",
-                            "systemPrompt": "你是脚本测试助手",
-                            "temperature": 0.2,
-                            "maxTokens": 128,
-                            "topP": 0.9,
-                            "timeoutMs": 5_000
-                        }
-                    }
-                }
-            },
-            "edges": []
-        })
-        .to_string(),
-    ) {
-        Ok(graph) => graph,
-        Err(error) => panic!("graph JSON should parse: {error}"),
-    };
-
-    let registry = standard_registry();
-    let ai_service: Arc<dyn AiService> = Arc::new(StubAiService);
-    let mut deployment = match deploy_workflow_with_ai(
-        graph,
-        shared_connection_manager(),
-        Some(ai_service),
-        &registry,
-        None,
-        RuntimeResources::new(),
-    )
-    .await
-    {
-        Ok(deployment) => deployment,
-        Err(error) => panic!("workflow should deploy successfully: {error}"),
-    };
-
-    let submit_result = deployment
-        .submit(WorkflowContext::new(json!({ "text": "测试脚本节点" })))
-        .await;
-    assert!(submit_result.is_ok(), "workflow should accept payload");
-
-    let result = timeout(Duration::from_secs(1), deployment.next_result()).await;
-    match result {
-        Ok(Some(ctx)) => {
-            assert_eq!(
-                ctx.payload,
-                json!({
-                    "text": "测试脚本节点",
-                    "reply": "provider=stub-provider model=gpt-script system=[格式要求]\n如果用户要求结构化数据输出，请直接输出合法 JSON（无 Markdown 代码块包裹），不要附加解释性文字。\n如果用户未明确要求格式，则自由回复。\n\n你是脚本测试助手 user=请回复:测试脚本节点"
-                })
-            );
-        }
-        Ok(None) => panic!("result stream closed unexpectedly"),
-        Err(elapsed) => panic!("workflow did not produce a result in time: {elapsed}"),
-    }
-}
-
-#[tokio::test]
-async fn workflow_rejects_script_ai_config_without_ai_service() {
-    let graph = match WorkflowGraph::from_json(
-        &json!({
-            "nodes": {
-                "script": {
-                    "type": "code",
-                    "config": {
-                        "script": "payload[\"reply\"] = ai_complete(\"hello\"); payload",
-                        "ai": {
-                            "providerId": "stub-provider"
-                        }
-                    }
-                }
-            },
-            "edges": []
-        })
-        .to_string(),
-    ) {
-        Ok(graph) => graph,
-        Err(error) => panic!("graph JSON should parse: {error}"),
-    };
-
-    let registry = standard_registry();
-    let result = deploy_workflow_with_ai(
-        graph,
-        shared_connection_manager(),
-        None,
-        &registry,
-        None,
-        RuntimeResources::new(),
-    )
-    .await;
-
-    match result {
-        Ok(_) => panic!("workflow deployment should fail without ai service"),
-        Err(EngineError::InvalidGraph(message)) => {
-            assert!(
-                message.contains("AiService"),
-                "error should mention missing AiService"
-            );
-        }
-        Err(error) => panic!("unexpected error: {error}"),
-    }
-}
-
-#[tokio::test]
-async fn ai_complete_auto_parses_json_object_response() {
-    let graph = match WorkflowGraph::from_json(
-        &json!({
-            "nodes": {
-                "script": {
-                    "type": "code",
-                    "config": {
-                        "script": "let result = ai_complete(\"返回温度数据\"); payload[\"temperature\"] = result[\"temperature\"]; payload[\"status\"] = result[\"status\"]; payload",
-                        "ai": {
-                            "providerId": "json-stub"
-                        }
-                    }
-                }
-            },
-            "edges": []
-        })
-        .to_string(),
-    ) {
-        Ok(graph) => graph,
-        Err(error) => panic!("graph JSON should parse: {error}"),
-    };
-
-    let registry = standard_registry();
-    let ai_service: Arc<dyn AiService> = Arc::new(JsonStubAiService::new(
-        r#"{"temperature": 72.5, "status": "normal"}"#,
-    ));
-    let mut deployment = match deploy_workflow_with_ai(
-        graph,
-        shared_connection_manager(),
-        Some(ai_service),
-        &registry,
-        None,
-        RuntimeResources::new(),
-    )
-    .await
-    {
-        Ok(deployment) => deployment,
-        Err(error) => panic!("workflow should deploy successfully: {error}"),
-    };
-
-    let submit_result = deployment.submit(WorkflowContext::new(json!({}))).await;
-    assert!(submit_result.is_ok(), "workflow should accept payload");
-
-    let result = timeout(Duration::from_secs(1), deployment.next_result()).await;
-    match result {
-        Ok(Some(ctx)) => {
-            assert_eq!(
-                ctx.payload,
-                json!({
-                    "temperature": 72.5,
-                    "status": "normal"
-                })
-            );
-        }
-        Ok(None) => panic!("result stream closed unexpectedly"),
-        Err(elapsed) => panic!("workflow did not produce a result in time: {elapsed}"),
-    }
-}
-
-#[tokio::test]
-async fn ai_complete_keeps_plain_text_as_string() {
-    let graph = match WorkflowGraph::from_json(
-        &json!({
-            "nodes": {
-                "script": {
-                    "type": "code",
-                    "config": {
-                        "script": "let result = ai_complete(\"你好\"); payload[\"reply\"] = result; payload",
-                        "ai": {
-                            "providerId": "text-stub"
-                        }
-                    }
-                }
-            },
-            "edges": []
-        })
-        .to_string(),
-    ) {
-        Ok(graph) => graph,
-        Err(error) => panic!("graph JSON should parse: {error}"),
-    };
-
-    let registry = standard_registry();
-    let ai_service: Arc<dyn AiService> =
-        Arc::new(JsonStubAiService::new("你好，这是一段自然语言回复"));
-    let mut deployment = match deploy_workflow_with_ai(
-        graph,
-        shared_connection_manager(),
-        Some(ai_service),
-        &registry,
-        None,
-        RuntimeResources::new(),
-    )
-    .await
-    {
-        Ok(deployment) => deployment,
-        Err(error) => panic!("workflow should deploy successfully: {error}"),
-    };
-
-    let submit_result = deployment.submit(WorkflowContext::new(json!({}))).await;
-    assert!(submit_result.is_ok(), "workflow should accept payload");
-
-    let result = timeout(Duration::from_secs(1), deployment.next_result()).await;
-    match result {
-        Ok(Some(ctx)) => {
-            assert_eq!(
-                ctx.payload,
-                json!({
-                    "reply": "你好，这是一段自然语言回复"
-                })
-            );
-        }
-        Ok(None) => panic!("result stream closed unexpectedly"),
-        Err(elapsed) => panic!("workflow did not produce a result in time: {elapsed}"),
-    }
-}
-
-#[tokio::test]
-async fn ai_complete_auto_parses_json_array_response() {
-    let graph = match WorkflowGraph::from_json(
-        &json!({
-            "nodes": {
-                "script": {
-                    "type": "code",
-                    "config": {
-                        "script": "let result = ai_complete(\"返回数组\"); payload[\"count\"] = len(result); payload[\"first\"] = result[0]; payload",
-                        "ai": {
-                            "providerId": "array-stub"
-                        }
-                    }
-                }
-            },
-            "edges": []
-        })
-        .to_string(),
-    ) {
-        Ok(graph) => graph,
-        Err(error) => panic!("graph JSON should parse: {error}"),
-    };
-
-    let registry = standard_registry();
-    let ai_service: Arc<dyn AiService> = Arc::new(JsonStubAiService::new("[10, 20, 30]"));
-    let mut deployment = match deploy_workflow_with_ai(
-        graph,
-        shared_connection_manager(),
-        Some(ai_service),
-        &registry,
-        None,
-        RuntimeResources::new(),
-    )
-    .await
-    {
-        Ok(deployment) => deployment,
-        Err(error) => panic!("workflow should deploy successfully: {error}"),
-    };
-
-    let submit_result = deployment.submit(WorkflowContext::new(json!({}))).await;
-    assert!(submit_result.is_ok(), "workflow should accept payload");
-
-    let result = timeout(Duration::from_secs(1), deployment.next_result()).await;
-    match result {
-        Ok(Some(ctx)) => {
-            assert_eq!(
-                ctx.payload,
-                json!({
-                    "count": 3,
-                    "first": 10
-                })
-            );
-        }
-        Ok(None) => panic!("result stream closed unexpectedly"),
-        Err(elapsed) => panic!("workflow did not produce a result in time: {elapsed}"),
-    }
-}
 
 #[tokio::test]
 async fn workflow_graph_executes_end_to_end() {
@@ -1638,7 +1253,7 @@ async fn mqtt_publish_node_requires_connection() {
 //
 // 在 deploy_workflow 路径上验证阶段 0.5 的 pin_validator 被正确接入：
 // 用一个声明了具体 PinType 的测试节点 + 自定义 NodeRegistry，构造一条
-// 类型不兼容的边，断言 deploy_workflow_with_ai 返回 IncompatiblePinTypes。
+// 类型不兼容的边，断言 deploy_workflow 返回 IncompatiblePinTypes。
 
 /// 测试用类型化节点：input/output pin 由构造时指定。
 struct TypedTestNode {

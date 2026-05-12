@@ -1,13 +1,11 @@
 //! # Nazh AI
 //!
-//! `OpenAI` 兼容 API 的 HTTP 客户端实现 + 壳层私有 AI 配置模型（磁盘 / IPC）。
-//! `AiService` trait 与请求/响应类型在 Ring 0（`nazh_core::ai`）。
+//! 壳层 AI 配置模型（磁盘 / IPC）。
+//! AI HTTP 调用已全部前移到前端（RFC-0005），本 crate 仅保留配置管理。
 
-pub mod client;
 pub mod config;
 pub mod types;
 
-pub use client::OpenAiCompatibleService;
 pub use config::{
     AiAgentSettings, AiConfigFile, AiConfigUpdate, AiConfigView, AiProviderDraft,
     AiProviderSecretRecord, AiProviderUpsert, AiProviderView, AiSecretInput,

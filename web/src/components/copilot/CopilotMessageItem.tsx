@@ -54,17 +54,17 @@ export function CopilotMessageItem({
       <div className="copilot-msg__bubble">
         {toolCalls && toolCalls.length > 0 && (
           <div className="copilot-msg__tools">
-            {toolCalls.map((tc) =>
-              tc.calls.map((call) => {
-                const result = toolResults?.find((r) => r.toolCallId === call.id);
+            {toolCalls.flatMap((tc) =>
+              tc.names.map((name, i) => {
+                const result = toolResults?.find((r) => r.name === name);
                 const statusClass = result
                   ? result.isError
                     ? 'copilot-tool-chip--error'
                     : 'copilot-tool-chip--done'
                   : 'copilot-tool-chip--running';
                 return (
-                  <span key={call.id} className={`copilot-tool-chip ${statusClass}`}>
-                    {call.name}
+                  <span key={`${name}-${i}`} className={`copilot-tool-chip ${statusClass}`}>
+                    {name}
                   </span>
                 );
               }),

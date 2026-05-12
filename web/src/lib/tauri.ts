@@ -3,8 +3,6 @@ import { listen } from '@tauri-apps/api/event';
 import { currentMonitor, getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
 
 import type {
-  AiCompletionRequest,
-  AiCompletionResponse,
   AiConfigUpdate,
   AiConfigView,
   AiProviderDraft,
@@ -699,14 +697,6 @@ export async function saveAiConfig(update: AiConfigUpdate): Promise<AiConfigView
   return invoke<AiConfigView>('save_ai_config', { update });
 }
 
-export async function testAiProvider(draft: AiProviderDraft): Promise<AiTestResult> {
-  return invoke<AiTestResult>('test_ai_provider', { draft });
-}
-
-export async function copilotComplete(request: AiCompletionRequest): Promise<AiCompletionResponse> {
-  return invoke<AiCompletionResponse>('copilot_complete', { request });
-}
-
 export interface AiDeviceAssetContext {
   id: string;
   name: string;
@@ -752,16 +742,6 @@ export function toError(error: unknown): Error {
   return new Error(String(error));
 }
 
-export interface CopilotStreamResult {
-  text: string;
-  finishReason?: string;
-}
-
-export interface CopilotStreamRetryOptions {
-  maxRetries?: number;
-  onRetryStart?: (attempt: number, error: Error) => void | Promise<void>;
-}
-
 export function isRecoverableCopilotStreamError(error: Error): boolean {
   const message = error.message.trim().toLowerCase();
   return [
@@ -777,132 +757,16 @@ export function isRecoverableCopilotStreamError(error: Error): boolean {
   ].some((pattern) => message.includes(pattern));
 }
 
-export async function waitForCopilotRetry(delayMs: number): Promise<void> {
+async function waitForCopilotRetry(delayMs: number): Promise<void> {
   await new Promise<void>((resolve) => {
     globalThis.setTimeout(resolve, delayMs);
   });
 }
 
-async function runCopilotStreamAttempt(
-  request: AiCompletionRequest,
-  onDelta: (text: string) => void,
-  onThinking?: (text: string) => void,
-): Promise<CopilotStreamResult> {
-  const streamId = createCopilotStreamId();
-  const eventName = `copilot://stream/${streamId}`;
-  let accumulated = '';
-  let thinkingAccumulated = '';
-  let finishReason: string | undefined;
-  let stopListening: (() => void) | null = null;
-  let settled = false;
-  let resolvePromise!: (value: CopilotStreamResult) => void;
-  let rejectPromise!: (reason?: unknown) => void;
-
-  const completion = new Promise<CopilotStreamResult>((resolve, reject) => {
-    resolvePromise = resolve;
-    rejectPromise = reject;
-  });
-
-  const cleanup = () => {
-    if (stopListening) {
-      const nextStop = stopListening;
-      stopListening = null;
-      nextStop();
-    }
-  };
-
-  const resolveStream = (value: string) => {
-    if (settled) {
-      return;
-    }
-    settled = true;
-    cleanup();
-    resolvePromise({
-      text: value,
-      finishReason,
-    });
-  };
-
-  const rejectStream = (error: unknown) => {
-    if (settled) {
-      return;
-    }
-    settled = true;
-    cleanup();
-    rejectPromise(toError(error));
-  };
-
-  stopListening = await listen<{
-    delta?: string;
-    thinking?: string;
-    done?: boolean;
-    error?: string;
-    finishReason?: string;
-  }>(
-    eventName,
-    (event) => {
-      const payload = event.payload;
-      if (payload.error) {
-        rejectStream(payload.error);
-        return;
-      }
-      if (payload.finishReason?.trim()) {
-        finishReason = payload.finishReason.trim();
-      }
-      if (payload.thinking && onThinking) {
-        thinkingAccumulated += payload.thinking;
-        onThinking(thinkingAccumulated);
-      }
-      if (payload.delta) {
-        accumulated += payload.delta;
-        onDelta(accumulated);
-      }
-      if (payload.done) {
-        resolveStream(accumulated);
-      }
-    },
-  );
-
-  try {
-    await invoke<void>('copilot_complete_stream', { request, streamId });
-  } catch (error) {
-    rejectStream(error);
-  }
-
-  return completion;
+export interface TauriEventStreamResult {
+  text: string;
+  finishReason?: string;
 }
-
-export async function copilotCompleteStream(
-  request: AiCompletionRequest,
-  onDelta: (text: string) => void,
-  onThinking?: (text: string) => void,
-  retryOptions?: CopilotStreamRetryOptions,
-): Promise<CopilotStreamResult> {
-  const maxRetries = Math.max(0, Math.floor(retryOptions?.maxRetries ?? 1));
-
-  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
-    try {
-      return await runCopilotStreamAttempt(request, onDelta, onThinking);
-    } catch (error) {
-      const normalizedError = toError(error);
-      const shouldRetry =
-        attempt < maxRetries && isRecoverableCopilotStreamError(normalizedError);
-
-      if (!shouldRetry) {
-        throw normalizedError;
-      }
-
-      await retryOptions?.onRetryStart?.(attempt + 1, normalizedError);
-      onDelta('');
-      onThinking?.('');
-      await waitForCopilotRetry(350);
-    }
-  }
-
-  throw new Error('AI 流式输出重试失败');
-}
-
-// ── 通用 Tauri 事件流基础设施 ──
 // 任何 Tauri command 只要通过 copilot://stream/{streamId} 事件推送 chunk，
 // 都可以复用这套 listen + settled guard + cleanup + retry 机制。
 

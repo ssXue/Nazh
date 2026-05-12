@@ -40,8 +40,7 @@ crates/graph/src/
 关键 API：
 
 - `deploy_workflow(...)`
-- `deploy_workflow_with_ai(...)`
-- `deploy_workflow_with_ai_and_variable_overrides(...)`
+- `deploy_workflow_and_restore_variables(...)`
 - `build_workflow_variables(...)`
 - `WorkflowGraph` / `WorkflowEdge`
 - `WorkflowDeployment` / `WorkflowIngress` / `WorkflowStreams`

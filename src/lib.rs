@@ -16,7 +16,7 @@
 //! | Ring 1 | `nodes-flow` | 流程控制节点（if/switch/loop/tryCatch/code） |
 //! | Ring 1 | `nodes-io` | I/O 节点（native/timer/serial/modbus/http/mqtt/bark/sql/can/debug） |
 //! | Ring 1 | `nodes-pure` | 纯计算节点（c2f/minutesSince/lookup） |
-//! | Ring 1 | `ai` | OpenAI-compatible `AiService` 实现 |
+//! | Ring 1 | `ai` | 壳层 AI 配置模型（HTTP 调用已前移到前端） |
 //! | Ring 1 | `graph` | DAG 工作流编排：解析、校验、拓扑排序、部署与执行 |
 //! | Facade | `nazh-engine`（本 crate） | 组装 Ring 0 + Ring 1，对外统一入口 |
 //! | IPC | `tauri-bindings` | Tauri 命令请求/响应类型 + ts-rs 导出汇总 |
@@ -26,16 +26,15 @@ pub use nazh_graph::pull::merge_payload as __test_only_merge_payload;
 mod registry;
 
 pub use nazh_core::{
-    AiCompletionRequest, AiCompletionResponse, AiEmbeddingRequest, AiEmbeddingResponse, AiError,
-    AiGenerationParams, AiMessage, AiMessageRole, AiReasoningEffort, AiService, AiThinkingConfig,
-    AiThinkingMode, AiTokenUsage, AiToolCall, AiToolDefinition, AiToolResult, ArenaDataStore,
-    CachedOutput, CancellationToken, CompletedExecutionEvent, ContextRef, DataId, DataStore,
-    EmptyPolicy, EngineError, ExecutionEvent, LifecycleGuard, NodeCapabilities, NodeDispatch,
-    NodeExecution, NodeHandle, NodeLifecycleContext, NodeOutput, NodeRegistry, NodeTrait,
-    OutputCache, PinDefinition, PinDirection, PinKind, PinType, Plugin, PluginHost, PluginManifest,
-    RuntimeResources, SharedResources, StreamChunk, TypedVariableSnapshot, VariableDeclaration,
-    WorkflowContext, WorkflowNodeDefinition, WorkflowVariableEvent, WorkflowVariables,
-    emit_variable_event, into_payload_map,
+    AiError, AiGenerationParams, AiReasoningEffort, AiThinkingConfig, AiThinkingMode,
+    AiToolCall, AiToolDefinition, AiToolResult, ArenaDataStore, CachedOutput, CancellationToken,
+    CompletedExecutionEvent, ContextRef, DataId, DataStore, EmptyPolicy, EngineError,
+    ExecutionEvent, LifecycleGuard, NodeCapabilities, NodeDispatch, NodeExecution, NodeHandle,
+    NodeLifecycleContext, NodeOutput, NodeRegistry, NodeTrait, OutputCache, PinDefinition,
+    PinDirection, PinKind, PinType, Plugin, PluginHost, PluginManifest, RuntimeResources,
+    SharedResources, TypedVariableSnapshot, VariableDeclaration, WorkflowContext,
+    WorkflowNodeDefinition, WorkflowVariableEvent, WorkflowVariables, emit_variable_event,
+    into_payload_map,
 };
 
 pub use connections::{
@@ -46,7 +45,7 @@ pub use connections::{
 pub use pipeline::{PipelineHandle, PipelineStage, StageFuture, build_linear_pipeline};
 
 pub use nodes_flow::{
-    CodeNode, CodeNodeAiConfig, CodeNodeConfig, FlowPlugin, IfNode, IfNodeConfig, LoopNode,
+    CodeNode, CodeNodeConfig, FlowPlugin, IfNode, IfNodeConfig, LoopNode,
     LoopNodeConfig, PassthroughNode, SwitchBranchConfig, SwitchNode, SwitchNodeConfig,
     TryCatchNode, TryCatchNodeConfig,
 };
@@ -76,8 +75,7 @@ pub use nodes_io::{SqlWriterNode, SqlWriterNodeConfig};
 
 pub use nazh_graph::{
     WorkflowDeployment, WorkflowDeploymentParts, WorkflowEdge, WorkflowGraph, WorkflowIngress,
-    WorkflowStreams, deploy_workflow, deploy_workflow_with_ai,
-    deploy_workflow_with_ai_and_variable_overrides,
+    WorkflowStreams, deploy_workflow, deploy_workflow_and_restore_variables,
 };
 
 /// 加载全部标准库插件，返回就绪的节点注册表。

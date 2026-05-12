@@ -33,7 +33,6 @@ use std::{
     time::Duration,
 };
 
-use nazh_core::ai::AiService;
 use serde_json::Value;
 use tokio::sync::mpsc;
 
@@ -64,47 +63,12 @@ pub async fn deploy_workflow(
     connection_manager: SharedConnectionManager,
     registry: &NodeRegistry,
 ) -> Result<WorkflowDeployment, EngineError> {
-    deploy_workflow_with_ai(
+    deploy_workflow_and_restore_variables(
         graph,
         connection_manager,
-        None,
         registry,
         None,
         RuntimeResources::new(),
-    )
-    .await
-}
-
-/// 校验、实例化并将工作流图部署为并发 Tokio 任务，并可选注入 AI 服务。
-///
-/// `workflow_id` 由调用方传入，用于 [`WorkflowVariableEvent::Changed`] 事件的
-/// `workflow_id` 字段。Tauri shell 经 `derive_workflow_id` 派生后传入，保证与
-/// `DesktopWorkflow.workflow_id` 对齐；引擎内部调用 / 测试可传 `None`，
-/// 此时按 `graph.name > "anonymous"` 顺序 fallback。
-///
-/// # Errors
-///
-/// DAG 校验失败、节点实例化失败、节点 `on_deploy` 失败或不在 Tokio 运行时
-/// 中调用时返回错误。
-// 函数为四阶段部署的线性主流程（阶段 0 变量构造、阶段 0.5 实例化 + Pin 校验、
-// 阶段 1 on_deploy、阶段 2 spawn run_node），拆 helper 会切碎时序的关键不变量
-// （每阶段全部完成才能进下一阶段），损可读性。
-#[allow(clippy::too_many_lines)]
-pub async fn deploy_workflow_with_ai(
-    graph: WorkflowGraph,
-    connection_manager: SharedConnectionManager,
-    ai_service: Option<Arc<dyn AiService>>,
-    registry: &NodeRegistry,
-    workflow_id: Option<String>,
-    extra_resources: RuntimeResources,
-) -> Result<WorkflowDeployment, EngineError> {
-    deploy_workflow_with_ai_and_variable_overrides(
-        graph,
-        connection_manager,
-        ai_service,
-        registry,
-        workflow_id,
-        extra_resources,
         HashMap::new(),
     )
     .await
@@ -124,10 +88,9 @@ pub async fn deploy_workflow_with_ai(
 // 阶段 1 on_deploy、阶段 2 spawn run_node），拆 helper 会切碎时序的关键不变量
 // （每阶段全部完成才能进下一阶段），损可读性。
 #[allow(clippy::too_many_lines)]
-pub async fn deploy_workflow_with_ai_and_variable_overrides<S: BuildHasher>(
+pub async fn deploy_workflow_and_restore_variables<S: BuildHasher>(
     graph: WorkflowGraph,
     connection_manager: SharedConnectionManager,
-    ai_service: Option<Arc<dyn AiService>>,
     registry: &NodeRegistry,
     workflow_id: Option<String>,
     extra_resources: RuntimeResources,
@@ -200,9 +163,6 @@ pub async fn deploy_workflow_with_ai_and_variable_overrides<S: BuildHasher>(
     let mut resource_bag = RuntimeResources::new()
         .with_resource(connection_manager.clone())
         .with_resource(Arc::clone(&workflow_variables));
-    if let Some(ai_service) = ai_service {
-        resource_bag.insert(ai_service);
-    }
     resource_bag.merge(extra_resources);
     let shared_resources: SharedResources = Arc::new(resource_bag);
 

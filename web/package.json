@@ -13,6 +13,7 @@
     "test:e2e": "playwright test --config e2e/playwright.config.ts"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^3.0.63",
     "@flowgram.ai/core": "^1.0.11",
     "@flowgram.ai/document": "^1.0.11",
     "@flowgram.ai/export-plugin": "^1.0.11",
@@ -28,6 +29,8 @@
     "@flowgram.ai/runtime-interface": "^1.0.11",
     "@flowgram.ai/runtime-js": "^1.0.11",
     "@tauri-apps/api": "^2.10.1",
+    "@tauri-apps/plugin-http": "^2.5.9",
+    "ai": "^6.0.177",
     "js-yaml": "^4.1.1",
     "marked": "^18.0.3",
     "modern-screenshot": "^4.7.0",

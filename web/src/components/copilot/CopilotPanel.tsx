@@ -7,7 +7,8 @@ import type { CopilotConversationResponse } from '../../generated/CopilotConvers
 import type { CopilotMessageResponse } from '../../generated/CopilotMessageResponse';
 import { copilotChatStream } from '../../lib/copilot-stream';
 import type { ToolCallInfo, ToolResultInfo, CanvasOpEvent } from '../../lib/copilot-stream';
-import { hasTauriRuntime } from '../../lib/tauri';
+import { hasTauriRuntime, loadAiConfig } from '../../lib/tauri';
+import { resolveGlobalAiProvider } from '../../lib/workflow-ai';
 import { CopilotChatView } from './CopilotChatView';
 
 /// 调试日志开关——开发期间保持 true，上线后可关闭。
@@ -284,42 +285,61 @@ export function CopilotPanel({ canvasRef, onEnsureBoardOpen, workspacePath }: Co
     }
 
     try {
+      // 读取 AI 配置以获取 provider
+      const aiConfig = await loadAiConfig();
+      const activeProvider = resolveGlobalAiProvider(aiConfig);
+      if (!activeProvider) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantMsgId ? { ...m, content: '未配置 AI 提供商，请先在设置中配置', streaming: false } : m,
+          ),
+        );
+        setStatus('idle');
+        return;
+      }
+
       const result = await copilotChatStream(
         convId,
         text.trim(),
-        workspacePath,
-        (accumulated) => {
-          // 纯文本累积——AI 的自然语言回复
-          pendingUpdateRef.current = {
-            ...pendingUpdateRef.current,
-            content: accumulated,
-          };
-          scheduleFlush();
+        activeProvider,
+        {
+          toolCallingEnabled: aiConfig.agentSettings.toolCallingEnabled,
+          userSystemPrompt: aiConfig.agentSettings.systemPrompt ?? undefined,
+          temperature: aiConfig.copilotParams.temperature ?? undefined,
+          maxTokens: aiConfig.copilotParams.maxTokens ?? undefined,
+          topP: aiConfig.copilotParams.topP ?? undefined,
+          workspacePath,
         },
-        undefined,
-        (toolCallInfo) => {
-          panelLog('toolCalls 回调', { round: toolCallInfo.round, count: toolCallInfo.calls.length, names: toolCallInfo.calls.map((c) => c.name) });
-          const current = pendingUpdateRef.current;
-          pendingUpdateRef.current = {
-            ...current,
-            content: current?.content ?? '',
-            toolCalls: [...(current?.toolCalls ?? []), toolCallInfo],
-          };
-          scheduleFlush();
-        },
-        (toolResultInfo) => {
-          panelLog('toolResult 回调', { name: toolResultInfo.name, isError: toolResultInfo.isError });
-          const current = pendingUpdateRef.current;
-          pendingUpdateRef.current = {
-            ...current,
-            content: current?.content ?? '',
-            toolResults: [...(current?.toolResults ?? []), toolResultInfo],
-          };
-          scheduleFlush();
-        },
-        (op) => {
-          // 画布操作事件——由后端工具直接推送
-          panelLog('canvasOp 回调', { type: op.type, ref: op.ref, nodeType: op.nodeType });
+        {
+          onDelta: (accumulated) => {
+            pendingUpdateRef.current = {
+              ...pendingUpdateRef.current,
+              content: accumulated,
+            };
+            scheduleFlush();
+          },
+          onToolCalls: (toolCallInfo) => {
+            panelLog('toolCalls 回调', { names: toolCallInfo.names });
+            const current = pendingUpdateRef.current;
+            pendingUpdateRef.current = {
+              ...current,
+              content: current?.content ?? '',
+              toolCalls: [...(current?.toolCalls ?? []), toolCallInfo],
+            };
+            scheduleFlush();
+          },
+          onToolResult: (toolResultInfo) => {
+            panelLog('toolResult 回调', { name: toolResultInfo.name, isError: toolResultInfo.isError });
+            const current = pendingUpdateRef.current;
+            pendingUpdateRef.current = {
+              ...current,
+              content: current?.content ?? '',
+              toolResults: [...(current?.toolResults ?? []), toolResultInfo],
+            };
+            scheduleFlush();
+          },
+          onCanvasOp: (op) => {
+            panelLog('canvasOp 回调', { type: op.type, ref: op.ref, nodeType: op.nodeType });
           if (op.type === 'create_workflow') {
             if (!boardEnsuredRef.current) {
               panelLog('首次调用 onEnsureBoardOpen');
@@ -342,12 +362,12 @@ export function CopilotPanel({ canvasRef, onEnsureBoardOpen, workspacePath }: Co
               }],
               edges: [],
             });
-          } else if (op.type === 'add_edge' && op.fromId && op.toId) {
+          } else if (op.type === 'add_edge' && op.fromRef && op.toRef) {
             canvasRef.current?.addCanvasOps({
               nodes: [],
               edges: [{
-                from: op.fromId,
-                to: op.toId,
+                from: op.fromRef,
+                to: op.toRef,
                 source_port_id: op.sourcePortId,
                 target_port_id: op.targetPortId,
               }],
@@ -355,13 +375,14 @@ export function CopilotPanel({ canvasRef, onEnsureBoardOpen, workspacePath }: Co
           }
 
           // 追加到展示数据
-          const current = pendingUpdateRef.current;
-          pendingUpdateRef.current = {
-            ...current,
-            content: current?.content ?? '',
-            canvasOps: [...(current?.canvasOps ?? []), op],
-          };
-          scheduleFlush();
+            const current = pendingUpdateRef.current;
+            pendingUpdateRef.current = {
+              ...current,
+              content: current?.content ?? '',
+              canvasOps: [...(current?.canvasOps ?? []), op],
+            };
+            scheduleFlush();
+          },
         },
         abortController.signal,
       );

@@ -1,6 +1,6 @@
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
-use ai::{AiConfigFile, OpenAiCompatibleService};
+use ai::AiConfigFile;
 use nazh_engine::{ConnectionDefinition, shared_connection_manager};
 use store::{Store, StoreHandle};
 use tauri::{AppHandle, Manager};
@@ -11,44 +11,29 @@ use tokio::{
 
 use crate::{runtime::DesktopWorkflow, workspace::resolve_project_workspace_dir};
 
-/// 活跃 copilot 流的取消标志。`true` 表示前端已请求取消。
-pub(crate) type CopilotStreamCancel = Arc<std::sync::atomic::AtomicBool>;
-
 /// Tauri 托管的应用状态，持有连接池和当前活跃的工作流。
-///
-/// `ai_service` 持有具体类型（`Arc<OpenAiCompatibleService>`）而非 `dyn AiService`，
-/// 因为壳层除了 trait 方法外还要调用 inherent 的 `test_connection`（草稿配置
-/// 测试不属于 Ring 0 运行时关注点）。注入到引擎部署时会自动 unsize 到
-/// `Arc<dyn AiService>`。
 pub(crate) struct DesktopState {
     pub(crate) connection_manager: nazh_engine::SharedConnectionManager,
     pub(crate) workflows: Mutex<HashMap<String, DesktopWorkflow>>,
     pub(crate) active_workflow_id: Mutex<Option<String>>,
     pub(crate) ai_config: Arc<RwLock<AiConfigFile>>,
-    pub(crate) ai_service: Arc<OpenAiCompatibleService>,
     pub(crate) approval_registry: Arc<nazh_engine::ApprovalRegistry>,
     /// 持久化存储。`setup` 阶段从内存 Store 替换为文件 Store。
     pub(crate) store: std::sync::RwLock<Option<StoreHandle>>,
     /// 日志异步写入守护。持有到进程退出以保证刷盘。
     pub(crate) tracing_guard: std::sync::Mutex<Option<tracing_appender::non_blocking::WorkerGuard>>,
-    /// 活跃 copilot 流注册表。Key 为 stream_id，Value 为取消标志。
-    /// 用 `Arc<DashMap>` 使 spawn 任务 clone 后仍指向同一份数据。
-    pub(crate) copilot_streams: Arc<dashmap::DashMap<String, CopilotStreamCancel>>,
 }
 
 impl Default for DesktopState {
     fn default() -> Self {
         let ai_config = Arc::new(RwLock::new(AiConfigFile::default()));
-        let ai_service = Arc::new(OpenAiCompatibleService::new(Arc::clone(&ai_config)));
         Self {
             connection_manager: shared_connection_manager(),
             workflows: Mutex::new(HashMap::new()),
             active_workflow_id: Mutex::new(None),
             ai_config,
-            ai_service,
             approval_registry: Arc::new(nazh_engine::ApprovalRegistry::new()),
             tracing_guard: std::sync::Mutex::new(None),
-            copilot_streams: Arc::new(dashmap::DashMap::new()),
             store: std::sync::RwLock::new(match Store::open_unpersisted() {
                 Ok(store) => Some(StoreHandle::new(store)),
                 Err(error) => {

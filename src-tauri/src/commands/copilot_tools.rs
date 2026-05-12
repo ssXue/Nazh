@@ -763,3 +763,46 @@ fn tool_add_workflow_edge(call: &AiToolCall, ctx: &CopilotToolCtx) -> Result<Str
 
     Ok(format!("连线 {from_ref} → {to_ref} 已添加"))
 }
+
+/// 前端直调 Copilot 时使用的无状态工具调度。
+///
+/// 仅处理查询类工具（不包含画布操作，画布操作由前端直接执行）。
+/// 返回工具执行结果的 JSON 字符串。
+pub async fn dispatch_query_tool(
+    tool_name: &str,
+    arguments_json: &str,
+    connection_manager: &nazh_engine::SharedConnectionManager,
+    active_workflow_id: Option<&String>,
+    workflow_summaries: &[serde_json::Value],
+    workspace_path: Option<&String>,
+    app: &tauri::AppHandle,
+) -> Result<String, String> {
+    let call = AiToolCall {
+        id: String::new(),
+        name: tool_name.to_owned(),
+        arguments: arguments_json.to_owned(),
+    };
+
+    let ctx = CopilotToolCtx {
+        connection_manager: Arc::clone(connection_manager),
+        workflow_summaries: workflow_summaries.to_vec(),
+        active_workflow_id: active_workflow_id.cloned(),
+        workspace_path: workspace_path.cloned(),
+        app: app.clone(),
+        stream_event_name: String::new(),
+        ref_map: std::sync::Mutex::new(std::collections::HashMap::new()),
+    };
+
+    match tool_name {
+        "query_node_catalog" => tool_query_node_catalog(&call),
+        "describe_node" => tool_describe_node(&call),
+        "list_connections" => tool_list_connections(&call, &ctx).await,
+        "search_devices" => tool_search_devices(&call, &ctx).await,
+        "search_capabilities" => tool_search_capabilities(&call, &ctx).await,
+        "get_active_workflow" => tool_get_active_workflow(&call, &ctx),
+        "query_workflow_status" => tool_query_workflow_status(&call, &ctx),
+        "read_asset_yaml" => tool_read_asset_yaml(&call, &ctx).await,
+        "validate_workflow" => tool_validate_workflow(&call),
+        _ => Err(format!("未知工具: {tool_name}")),
+    }
+}

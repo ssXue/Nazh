@@ -37,7 +37,7 @@ use crate::{
 /// 前为每个节点构造一次。`shutdown` 是从工作流根 token 派生的子 token——撤销
 /// 整图时根 token 取消会沿派生链广播到所有节点。
 pub struct NodeLifecycleContext {
-    /// 与节点工厂同款的资源包（含 `SharedConnectionManager`、`Arc<dyn AiService>` 等）。
+    /// 与节点工厂同款的资源包（含 `SharedConnectionManager`、`WorkflowVariables` 等）。
     pub resources: SharedResources,
     /// 向 DAG 数据通道推消息的句柄；触发器节点用，纯变换节点忽略即可。
     pub handle: NodeHandle,

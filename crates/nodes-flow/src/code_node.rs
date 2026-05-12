@@ -11,39 +11,14 @@ use uuid::Uuid;
 use serde::{Deserialize, Serialize};
 
 use nazh_core::EngineError;
-use nazh_core::ai::{AiGenerationParams, AiReasoningEffort, AiService, AiThinkingConfig};
 use nazh_core::{NodeExecution, NodeTrait, WorkflowVariables};
-use scripting::{ScriptAiRuntime, ScriptNodeBase, default_max_operations};
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CodeNodeAiConfig {
-    pub provider_id: String,
-    #[serde(default)]
-    pub model: Option<String>,
-    #[serde(default)]
-    pub system_prompt: Option<String>,
-    #[serde(default)]
-    pub temperature: Option<f32>,
-    #[serde(default)]
-    pub max_tokens: Option<u32>,
-    #[serde(default)]
-    pub top_p: Option<f32>,
-    #[serde(default)]
-    pub thinking: Option<AiThinkingConfig>,
-    #[serde(default)]
-    pub reasoning_effort: Option<AiReasoningEffort>,
-    #[serde(default)]
-    pub timeout_ms: Option<u64>,
-}
+use scripting::{ScriptNodeBase, default_max_operations};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CodeNodeConfig {
     pub script: String,
     #[serde(default = "default_max_operations")]
     pub max_operations: u64,
-    #[serde(default)]
-    pub ai: Option<CodeNodeAiConfig>,
 }
 
 /// 沙箱化脚本节点，基于 [`ScriptNodeBase`] 实现。
@@ -55,48 +30,19 @@ impl CodeNode {
     /// # Errors
     ///
     /// 脚本编译失败时返回 [`EngineError::ScriptCompile`]。
-    #[allow(clippy::needless_pass_by_value)]
     pub fn new(
         id: impl Into<String>,
         config: CodeNodeConfig,
-        ai_service: Option<Arc<dyn AiService>>,
         variables: Option<Arc<WorkflowVariables>>,
     ) -> Result<Self, EngineError> {
         let id = id.into();
         let CodeNodeConfig {
             script,
             max_operations,
-            ai,
         } = config;
 
-        let ai = match ai {
-            Some(ai_config) => {
-                let service = ai_service.ok_or_else(|| {
-                    EngineError::invalid_graph(format!(
-                        "Code 节点 `{id}` 配置了 AI，但部署资源中缺少 AiService"
-                    ))
-                })?;
-                Some(ScriptAiRuntime::new(
-                    id.clone(),
-                    service,
-                    ai_config.provider_id,
-                    ai_config.system_prompt,
-                    ai_config.model,
-                    AiGenerationParams {
-                        temperature: ai_config.temperature,
-                        max_tokens: ai_config.max_tokens,
-                        top_p: ai_config.top_p,
-                        thinking: ai_config.thinking,
-                        reasoning_effort: ai_config.reasoning_effort,
-                    },
-                    ai_config.timeout_ms,
-                )?)
-            }
-            None => None,
-        };
-
         Ok(Self {
-            base: ScriptNodeBase::new(id, &script, max_operations, ai, variables)?,
+            base: ScriptNodeBase::new(id, &script, max_operations, variables)?,
         })
     }
 }

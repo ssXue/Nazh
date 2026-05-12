@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
-import { hasTauriRuntime, loadAiConfig, saveAiConfig, testAiProvider } from '../lib/tauri';
+import { testProviderConnection } from '../ai/test-connection';
+import { hasTauriRuntime, loadAiConfig, saveAiConfig } from '../lib/tauri';
 import { describeUnknownError } from '../lib/workflow-events';
 import type { AiConfigUpdate, AiConfigView, AiProviderDraft, AiTestResult } from '../types';
 
@@ -57,7 +58,7 @@ export function useAiConfigState() {
     setAiTesting(true);
     setAiTestResult(null);
     try {
-      const result = await testAiProvider(draft);
+      const result = await testProviderConnection(draft);
       setAiTestResult(result);
     } catch (error) {
       setAiTestResult({

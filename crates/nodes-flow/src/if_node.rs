@@ -39,7 +39,7 @@ impl IfNode {
         variables: Option<Arc<WorkflowVariables>>,
     ) -> Result<Self, EngineError> {
         Ok(Self {
-            base: ScriptNodeBase::new(id, &config.script, config.max_operations, None, variables)?,
+            base: ScriptNodeBase::new(id, &config.script, config.max_operations, variables)?,
         })
     }
 }
