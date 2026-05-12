@@ -64,10 +64,12 @@ const PROVIDER_PRESETS: ProviderPreset[] = [
   { label: 'DeepSeek Flash', name: 'DeepSeek', baseUrl: 'https://api.deepseek.com', defaultModel: 'deepseek-v4-flash' },
   { label: 'DeepSeek Pro', name: 'DeepSeek', baseUrl: 'https://api.deepseek.com', defaultModel: 'deepseek-v4-pro' },
   { label: 'OpenAI', name: 'OpenAI', baseUrl: 'https://api.openai.com/v1', defaultModel: 'gpt-4o-mini' },
+  { label: 'Kimi Code', name: 'Kimi Code', baseUrl: 'https://api.kimi.com/coding/v1', defaultModel: 'kimi-for-coding' },
   { label: '月之暗面', name: 'Moonshot', baseUrl: 'https://api.moonshot.cn/v1', defaultModel: 'moonshot-v1-8k' },
   { label: '智谱', name: 'Zhipu', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', defaultModel: 'glm-4-flash' },
   { label: '通义千问', name: 'Qwen', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', defaultModel: 'qwen-turbo' },
   { label: '硅基流动', name: 'SiliconFlow', baseUrl: 'https://api.siliconflow.cn/v1', defaultModel: 'Qwen/Qwen2.5-7B-Instruct' },
+  { label: '阶跃星辰', name: 'StepFun', baseUrl: 'https://api.stepfun.com/v1', defaultModel: 'step-2-16k' },
   { label: 'Ollama 本地', name: 'Ollama', baseUrl: 'http://localhost:11434/v1', defaultModel: 'qwen2.5:7b' },
 ];
 
@@ -763,6 +765,21 @@ export function AiConfigPanel({
                   : '如果当前已经有全局 AI，新 provider 会先作为待命配置保存；如需切换默认 AI，请在上方"全局 AI"里选择。'}
               </p>
             </div>
+
+            {aiTestResult ? (
+              <article
+                className={
+                  aiTestResult.success
+                    ? 'ai-config-panel__notice ai-config-panel__notice--success'
+                    : 'ai-config-panel__notice ai-config-panel__notice--error'
+                }
+              >
+                <strong>连接测试</strong>
+                <span>
+                  {aiTestResult.message}
+                </span>
+              </article>
+            ) : null}
 
             <div className="ai-drawer__footer">
               <div className="settings-path-actions">

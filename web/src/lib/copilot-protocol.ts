@@ -1,5 +1,6 @@
 import type { NazhNodeKind } from '../components/flowgram/flowgram-node-library';
 import type { JsonValue } from '../types';
+import { allocateNodeId } from './workflow-node-id';
 import { normalizeWorkflowAiNodeKind } from './workflow-node-capabilities';
 
 /// 调试日志开关——开发期间保持 true，上线后可关闭。
@@ -54,13 +55,6 @@ export type ProtocolOperation =
 export interface CopilotProtocolSession {
   nodeRefs: Record<string, string>;
   operations: ProtocolOperation[];
-}
-
-let nodeIdCounter = 0;
-
-function allocateNodeId(): string {
-  nodeIdCounter += 1;
-  return `ai_${Date.now().toString(36)}_${nodeIdCounter}`;
 }
 
 export function createInitialProtocolSession(): CopilotProtocolSession {

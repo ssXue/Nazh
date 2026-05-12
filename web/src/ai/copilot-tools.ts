@@ -8,6 +8,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { tool } from 'ai';
 import { z } from 'zod';
 
+import { allocateNodeId } from '../lib/workflow-node-id';
+
 /// 查询工具：通过 Rust IPC 执行。
 async function dispatchQueryTool(name: string, args: Record<string, unknown> & { workspace_path?: string | null }): Promise<string> {
   return invoke<string>('copilot_dispatch_tool', {
@@ -107,7 +109,7 @@ export function buildCopilotTools(onCanvasOp?: (op: CanvasOpEvent) => void, refM
         connection_id: z.string().optional().describe('关联的连接 ID'),
       }),
       execute: async (args): Promise<string> => {
-        const nodeId = `ai_${crypto.randomUUID().replace(/-/g, '')}`;
+        const nodeId = allocateNodeId();
         map.set(args.ref, nodeId);
         onCanvasOp?.({
           type: 'add_node',
