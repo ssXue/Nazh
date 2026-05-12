@@ -112,7 +112,7 @@ export interface CopilotStreamOptions {
 export async function copilotStream(options: CopilotStreamOptions): Promise<CopilotResult> {
   const {
     provider, modelOverride, messages, toolCallingEnabled, userSystemPrompt,
-    params, signal, callbacks,
+    params, workspacePath, signal, callbacks,
   } = options;
 
   const model = await createLanguageModel({ provider, modelOverride });
@@ -128,7 +128,7 @@ export async function copilotStream(options: CopilotStreamOptions): Promise<Copi
   const systemPrompt = systemParts.join('\n\n');
 
   // 构建工具
-  const tools = buildCopilotTools(callbacks?.onCanvasOp);
+  const tools = buildCopilotTools(callbacks?.onCanvasOp, undefined, workspacePath);
 
   copilotLog('流开始', { msgCount: messages.length, toolCallingEnabled });
 

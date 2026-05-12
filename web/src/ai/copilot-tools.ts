@@ -11,11 +11,15 @@ import { z } from 'zod';
 import { allocateNodeId } from '../lib/workflow-node-id';
 
 /// 查询工具：通过 Rust IPC 执行。
-async function dispatchQueryTool(name: string, args: Record<string, unknown> & { workspace_path?: string | null }): Promise<string> {
+async function dispatchQueryTool(
+  name: string,
+  args: Record<string, unknown>,
+  workspacePath?: string | null,
+): Promise<string> {
   return invoke<string>('copilot_dispatch_tool', {
     toolName: name,
     argumentsJson: JSON.stringify(args),
-    workspacePath: args.workspace_path ?? null,
+    workspacePath: workspacePath ?? null,
   });
 }
 
@@ -26,33 +30,37 @@ type RefMap = Map<string, string>;
 ///
 /// 画布操作通过 onCanvasOp 回调通知调用方。
 /// refMap 在多次工具调用间共享，将 AI 使用的短引用名映射到实际节点实体 ID。
-export function buildCopilotTools(onCanvasOp?: (op: CanvasOpEvent) => void, refMap?: RefMap) {
+export function buildCopilotTools(
+  onCanvasOp?: (op: CanvasOpEvent) => void,
+  refMap?: RefMap,
+  workspacePath?: string,
+) {
   const map = refMap ?? new Map<string, string>();
   return {
     // ── 查询工具 ──
     query_node_catalog: tool({
       description: '列出工作流引擎中所有可用的节点类型及其描述。',
       inputSchema: z.object({}),
-      execute: async (): Promise<string> => dispatchQueryTool('query_node_catalog', {}),
+      execute: async (): Promise<string> => dispatchQueryTool('query_node_catalog', {}, workspacePath),
     }),
     describe_node: tool({
       description: '获取指定节点类型的输入/输出 pin schema。',
       inputSchema: z.object({
         node_type: z.string().describe('节点类型标识符'),
       }),
-      execute: async ({ node_type }): Promise<string> => dispatchQueryTool('describe_node', { node_type }),
+      execute: async ({ node_type }): Promise<string> => dispatchQueryTool('describe_node', { node_type }, workspacePath),
     }),
     list_connections: tool({
       description: '列出当前配置的所有连接（串口、Modbus、MQTT、HTTP 等）。',
       inputSchema: z.object({}),
-      execute: async (): Promise<string> => dispatchQueryTool('list_connections', {}),
+      execute: async (): Promise<string> => dispatchQueryTool('list_connections', {}, workspacePath),
     }),
     search_devices: tool({
       description: '搜索已定义的设备 DSL 资产。',
       inputSchema: z.object({
         keyword: z.string().optional().describe('搜索关键词'),
       }),
-      execute: async ({ keyword }): Promise<string> => dispatchQueryTool('search_devices', { keyword }),
+      execute: async ({ keyword }): Promise<string> => dispatchQueryTool('search_devices', { keyword }, workspacePath),
     }),
     search_capabilities: tool({
       description: '搜索已定义的能力 DSL 资产。',
@@ -60,17 +68,17 @@ export function buildCopilotTools(onCanvasOp?: (op: CanvasOpEvent) => void, refM
         device_id: z.string().optional().describe('按设备 ID 过滤'),
         keyword: z.string().optional().describe('搜索关键词'),
       }),
-      execute: async (args): Promise<string> => dispatchQueryTool('search_capabilities', args),
+      execute: async (args): Promise<string> => dispatchQueryTool('search_capabilities', args, workspacePath),
     }),
     get_active_workflow: tool({
       description: '获取当前活跃工作流的结构信息。',
       inputSchema: z.object({}),
-      execute: async (): Promise<string> => dispatchQueryTool('get_active_workflow', {}),
+      execute: async (): Promise<string> => dispatchQueryTool('get_active_workflow', {}, workspacePath),
     }),
     query_workflow_status: tool({
       description: '获取所有已部署工作流的运行时状态摘要。',
       inputSchema: z.object({}),
-      execute: async (): Promise<string> => dispatchQueryTool('query_workflow_status', {}),
+      execute: async (): Promise<string> => dispatchQueryTool('query_workflow_status', {}, workspacePath),
     }),
     read_asset_yaml: tool({
       description: '读取指定设备或能力资产的完整 YAML 内容。',
@@ -78,14 +86,14 @@ export function buildCopilotTools(onCanvasOp?: (op: CanvasOpEvent) => void, refM
         asset_type: z.enum(['device', 'capability']).describe('资产类型'),
         asset_id: z.string().describe('资产 ID'),
       }),
-      execute: async (args): Promise<string> => dispatchQueryTool('read_asset_yaml', args),
+      execute: async (args): Promise<string> => dispatchQueryTool('read_asset_yaml', args, workspacePath),
     }),
     validate_workflow: tool({
       description: '验证工作流 JSON 结构是否合法。',
       inputSchema: z.object({
         workflow_json: z.string().describe('工作流 JSON 字符串'),
       }),
-      execute: async ({ workflow_json }): Promise<string> => dispatchQueryTool('validate_workflow', { workflow_json }),
+      execute: async ({ workflow_json }): Promise<string> => dispatchQueryTool('validate_workflow', { workflow_json }, workspacePath),
     }),
     // ── 画布工具 ──
     create_workflow: tool({
