@@ -3,4 +3,9 @@
 /**
  * Copilot 消息记录。
  */
-export type CopilotMessageResponse = { id: string, conversationId: string, role: string, content: string, createdAt: string, };
+export type CopilotMessageResponse = { id: string, conversationId: string, role: string, content: string,
+/**
+ * 助手消息携带的推理过程（DeepSeek 等模型的 `reasoning_content`）。
+ * 多轮工具调用时必须回传给 API，否则会触发 API 错误。
+ */
+thinking: string | null, createdAt: string, };
