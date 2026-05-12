@@ -59,6 +59,8 @@ interface UseDeploymentRestoreOptions {
   refreshConnections: () => Promise<void>;
   setStatusMessage: (message: string) => void;
   onRestoreProject: (projectId: string) => void;
+  /// EtherCAT TX/RX 任务死亡等进程级不可恢复错误回调（ADR-0023 方案 B）。
+  onEthercatFatalError?: (message: string) => void;
 }
 
 type RestoreLookupStatus = 'idle' | 'loading' | 'prompted' | 'handled' | 'none';
@@ -76,6 +78,7 @@ export function useDeploymentRestore({
   refreshConnections,
   setStatusMessage,
   onRestoreProject,
+  onEthercatFatalError,
 }: UseDeploymentRestoreOptions) {
   const [pendingRestoreSessions, setPendingRestoreSessions] = useState<PersistedDeploymentSession[]>([]);
   const [pendingRestoreActiveProjectId, setPendingRestoreActiveProjectId] = useState<string | null>(null);
@@ -298,6 +301,12 @@ export function useDeploymentRestore({
         return true;
       } catch (error) {
         const { message, detail } = describeUnknownError(error);
+        if (
+          message.includes('EtherCAT TX/RX 任务已终止') ||
+          message.includes('请重启 nazh-desktop')
+        ) {
+          onEthercatFatalError?.(message);
+        }
         appendAppError(
           'command',
           source === 'restore' ? '自动恢复部署失败' : '部署工作流失败',
@@ -311,6 +320,7 @@ export function useDeploymentRestore({
       appendAppError,
       appendRuntimeLog,
       applyDeploymentState,
+      onEthercatFatalError,
       persistDeploymentSnapshot,
       refreshConnections,
       setStatusMessage,

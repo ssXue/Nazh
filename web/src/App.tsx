@@ -14,6 +14,7 @@ import { useConnectionLibrary } from './hooks/use-connection-library';
 import { SidebarToggleIcon } from './components/app/AppIcons';
 import type { BoardWorkspaceHandle } from './components/app/BoardWorkspace';
 import type { BoardItem } from './components/app/BoardsPanel';
+import { EthercatRestartDialog } from './components/app/EthercatRestartDialog';
 import { RestoreDeploymentDialog } from './components/app/RestoreDeploymentDialog';
 import { SidebarNav } from './components/app/SidebarNav';
 import { StudioContentRouter } from './components/app/StudioContentRouter';
@@ -32,6 +33,7 @@ import { applyGlobalAiConfigToWorkflowGraph } from './lib/workflow-ai';
 import {
   hasTauriRuntime,
   listRuntimeWorkflows,
+  restartApp,
   undeployWorkflow,
 } from './lib/tauri';
 import type { ConnectionDefinition, DeployResponse, WorkflowResult, WorkflowNodeDefinition } from './types';
@@ -168,6 +170,7 @@ function App() {
   });
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const toggleSidebarCollapsed = useCallback(() => setSidebarCollapsed((prev) => !prev), []);
+  const [ethercatFatalError, setEthercatFatalError] = useState<string | null>(null);
   const currentProject = activeProject ?? projectLibrary.projects[0] ?? null;
   const connectionUsageById = useMemo(
     () => buildConnectionUsageMap(projectLibrary.projects),
@@ -330,6 +333,7 @@ function App() {
     refreshConnections: engine.refreshConnections,
     setStatusMessage: engine.setStatusMessage,
     onRestoreProject: openBoard,
+    onEthercatFatalError: setEthercatFatalError,
   });
 
   async function handleDeploy() {
@@ -490,6 +494,22 @@ function App() {
     );
   }
 
+  function renderEthercatRestartDialog() {
+    if (!ethercatFatalError) {
+      return null;
+    }
+
+    return (
+      <EthercatRestartDialog
+        message={ethercatFatalError}
+        onCancel={() => setEthercatFatalError(null)}
+        onRestart={() => {
+          void restartApp();
+        }}
+      />
+    );
+  }
+
   return (
     <main className="app-shell app-shell--studio">
       <div className="studio-body">
@@ -577,6 +597,7 @@ function App() {
         <CopilotPanel canvasRef={flowgramCanvasRef} onEnsureBoardOpen={handleEnsureBoardOpen} workspacePath={settings.projectWorkspacePath} />
       </div>
       {renderRestoreDialog()}
+      {renderEthercatRestartDialog()}
     </main>
   );
 }

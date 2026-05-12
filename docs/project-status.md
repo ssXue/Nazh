@@ -107,4 +107,4 @@
 ## 评估性 ADR
 
 - ADR-0020 `src/graph/` 编排层归属 — **已实施**（2026-05-01，拆为 `crates/graph/` Ring 1 crate，依赖 `nazh-core` + `connections`）。
-- ADR-0023 EtherCAT TX/RX 任务终止后的恢复策略 — **决议暂缓**（2026-05-06）。约束来自 ethercrab 0.7：`PduStorage::try_split` 一次性消费 + `TxRxFut` 错误分支不归还 (tx, rx)，因此一旦 socket 错误让后台 TX/RX 退出，**当前进程内无法软恢复**，需重启 nazh-desktop。诊断守卫（`ensure_maindevice` 检测 `tx_handle.is_finished()`）已落地，错误信息明确。重访触发：现场反复（一周 ≥ 3 次）/ ethercrab ≥ 0.8 改 API / 网卡热插拔成产品需求 / 进入工厂 7×24 部署。三种根治方案（Tauri 重启入口、vendor patch ethercrab、切库）已预研归档。详见 `docs/adr/0023-ethercat-tx-rx-恢复策略-暂缓.md`。
+- ADR-0023 EtherCAT TX/RX 任务终止后的恢复策略 — **方案 B 已实施**（2026-05-13）。约束来自 ethercrab 0.7：`PduStorage::try_split` 一次性消费 + `TxRxFut` 错误分支不归还 (tx, rx)，进程内无法软恢复。诊断守卫（`ensure_maindevice` 检测 `tx_handle.is_finished()`）已落地，命中时前端弹出确认对话框，用户可一键重启 nazh-desktop（IPC `restart_app` → `AppHandle::restart()`）。方案 C（vendor patch）和方案 D（切库）仍预研归档，若现场对一键重启仍不满意再评估。详见 `docs/adr/0023-ethercat-tx-rx-恢复策略-暂缓.md`。

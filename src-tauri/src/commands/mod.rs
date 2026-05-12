@@ -11,6 +11,7 @@ pub(crate) mod observability;
 pub(crate) mod project_library;
 pub(crate) mod runtime;
 pub(crate) mod serial;
+pub(crate) mod system;
 pub(crate) mod variables;
 pub(crate) mod workflow_deploy;
 pub(crate) mod workflow_dispatch;

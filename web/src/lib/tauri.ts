@@ -933,3 +933,9 @@ async function runTauriEventStreamAttempt(
 
   return completion;
 }
+
+/// 重启 nazh-desktop 应用（ADR-0023 方案 B）。
+/// 用于 EtherCAT TX/RX 任务死亡等进程级资源不可恢复场景。
+export async function restartApp(): Promise<void> {
+  return invoke<void>('restart_app');
+}

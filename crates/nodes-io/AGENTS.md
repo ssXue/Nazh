@@ -192,7 +192,7 @@ EtherCAT 主站初始化失败: EtherCAT TX/RX 任务已终止（接口 `<iface>
      ../web/node_modules/.bin/tauri dev --no-watch
    ```
 2. **检查物理链路**——`en8` 这类是 macOS USB-Ethernet 或虚拟网卡；`ifconfig` 确认 UP，必要时拔插一次 USB 适配器重置 BPF。
-3. **重启 nazh-desktop**——退出后重启，`PDU_STORAGE` 是进程级 `static`，进程退出即释放。
+3. **重启 nazh-desktop**——前端会弹出确认对话框，点击"重启应用"即可一键重启；也可手动退出后重新打开。`PDU_STORAGE` 是进程级 `static`，进程退出即释放。
 
 设计层面的取舍、可选恢复方案（Tauri 重启入口 / vendor patch / 切库）以及重新评估的触发条件见 `docs/adr/0023-ethercat-tx-rx-恢复策略-暂缓.md`。**不要在没看 ADR-0023 的情况下尝试在 `ensure_maindevice` 加重试逻辑**——`tx_rx_task` 失败路径不归还 tx/rx，所谓"重试"不可能跑得通。
 
