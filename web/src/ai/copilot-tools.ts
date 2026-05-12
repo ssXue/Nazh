@@ -17,10 +17,15 @@ async function dispatchQueryTool(name: string, args: Record<string, unknown> & {
   });
 }
 
+/// ref → 实际节点 ID 的映射表。每次 copilot 会话维护一份。
+type RefMap = Map<string, string>;
+
 /// 构建所有 copilot 工具定义（用于 ai-sdk streamText 的 tools 参数）。
 ///
 /// 画布操作通过 onCanvasOp 回调通知调用方。
-export function buildCopilotTools(onCanvasOp?: (op: CanvasOpEvent) => void) {
+/// refMap 在多次工具调用间共享，将 AI 使用的短引用名映射到实际节点实体 ID。
+export function buildCopilotTools(onCanvasOp?: (op: CanvasOpEvent) => void, refMap?: RefMap) {
+  const map = refMap ?? new Map<string, string>();
   return {
     // ── 查询工具 ──
     query_node_catalog: tool({
@@ -103,6 +108,7 @@ export function buildCopilotTools(onCanvasOp?: (op: CanvasOpEvent) => void) {
       }),
       execute: async (args): Promise<string> => {
         const nodeId = `ai_${crypto.randomUUID().replace(/-/g, '')}`;
+        map.set(args.ref, nodeId);
         onCanvasOp?.({
           type: 'add_node',
           nodeId,
@@ -124,10 +130,20 @@ export function buildCopilotTools(onCanvasOp?: (op: CanvasOpEvent) => void) {
         target_port_id: z.string().optional().describe('目标节点的输入端口 ID'),
       }),
       execute: async (args): Promise<string> => {
+        const fromId = map.get(args.from_ref);
+        const toId = map.get(args.to_ref);
+        if (!fromId) {
+          return `错误: 未知起始节点 ref "${args.from_ref}"，请先通过 add_workflow_node 创建该节点`;
+        }
+        if (!toId) {
+          return `错误: 未知目标节点 ref "${args.to_ref}"，请先通过 add_workflow_node 创建该节点`;
+        }
         onCanvasOp?.({
           type: 'add_edge',
           fromRef: args.from_ref,
           toRef: args.to_ref,
+          fromId,
+          toId,
           sourcePortId: args.source_port_id,
           targetPortId: args.target_port_id,
         });
@@ -148,6 +164,8 @@ export interface CanvasOpEvent {
   connectionId?: string;
   fromRef?: string;
   toRef?: string;
+  fromId?: string;
+  toId?: string;
   sourcePortId?: string;
   targetPortId?: string;
   name?: string;

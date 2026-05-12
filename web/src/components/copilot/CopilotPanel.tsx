@@ -366,8 +366,8 @@ export function CopilotPanel({ canvasRef, onEnsureBoardOpen, workspacePath }: Co
             canvasRef.current?.addCanvasOps({
               nodes: [],
               edges: [{
-                from: op.fromRef,
-                to: op.toRef,
+                from: op.fromId ?? op.fromRef,
+                to: op.toId ?? op.toRef,
                 source_port_id: op.sourcePortId,
                 target_port_id: op.targetPortId,
               }],
