@@ -1,6 +1,5 @@
-import { StrictMode, type ReactNode, type RefObject } from 'react';
+import { StrictMode, useCallback, useEffect, useRef, type ReactNode, type RefObject } from 'react';
 
-import { ConnectionStudio } from '../ConnectionStudio';
 import type { UseConnectionLibraryResult } from '../../hooks/use-connection-library';
 import type { UseProjectLibraryResult } from '../../hooks/use-project-library';
 import type { UseSettingsResult } from '../../hooks/use-settings';
@@ -19,12 +18,13 @@ import type {
   WorkflowWindowStatus,
 } from '../../types';
 import { clearObservability, hasTauriRuntime } from '../../lib/tauri';
+import type { CanvasNodeOp } from '../FlowgramCanvas';
 import { AboutPanel } from './AboutPanel';
 import { AiConfigPanel } from './AiConfigPanel';
 import { BoardWorkspace, type BoardWorkspaceHandle } from './BoardWorkspace';
 import { BoardsPanel, type BoardItem } from './BoardsPanel';
 import { DashboardPanel } from './DashboardPanel';
-import { DeviceModelingPanel } from './DeviceModelingPanel';
+import { InfrastructurePanel } from './InfrastructurePanel';
 import { LogsPanel } from './LogsPanel';
 import { PluginPanel } from './PluginPanel';
 import { RuntimeManagerPanel } from './RuntimeManagerPanel';
@@ -170,6 +170,29 @@ export function StudioContentRouter({
   onAiConfigSave,
   onAiProviderTest,
 }: StudioContentRouterProps) {
+  const pendingCanvasOpRef = useRef<CanvasNodeOp | null>(null);
+
+  // 当画布 ref 就绪后，消费挂起的能力添加操作
+  useEffect(() => {
+    const op = pendingCanvasOpRef.current;
+    if (!op || !flowgramCanvasRef.current) return;
+    flowgramCanvasRef.current.addCanvasOps({ nodes: [op], edges: [] });
+    pendingCanvasOpRef.current = null;
+  });
+
+  const handleAddCapabilityToCanvas = useCallback(
+    (nodeOp: CanvasNodeOp) => {
+      if (flowgramCanvasRef.current?.isReady()) {
+        flowgramCanvasRef.current.addCanvasOps({ nodes: [nodeOp], edges: [] });
+        onSectionChange('boards');
+      } else {
+        pendingCanvasOpRef.current = nodeOp;
+        onSectionChange('boards');
+      }
+    },
+    [flowgramCanvasRef, onSectionChange],
+  );
+
   switch (section) {
     case 'dashboard':
       return (
@@ -325,29 +348,15 @@ export function StudioContentRouter({
       return (
         <StrictStudioPanel>
           <section className="studio-content studio-content--panel">
-            <ScrollSurface className="panel studio-content__panel studio-content__panel--scroll panel--connection-card">
-              <ConnectionStudio
-                connections={connectionLibrary.connections}
-                setConnections={connectionLibrary.setConnections}
-                usageByConnection={connectionUsageById}
-                runtimeConnections={engine.connections}
-                isLoading={!connectionLibrary.storage.isReady}
-                storageError={connectionLibrary.storage.error}
-                onStatusMessage={(msg) => engine.setStatusMessage(msg)}
-              />
-            </ScrollSurface>
-          </section>
-        </StrictStudioPanel>
-      );
-    case 'devices':
-      return (
-        <StrictStudioPanel>
-          <section className="studio-content studio-content--panel">
             <ScrollSurface className="panel studio-content__panel studio-content__panel--scroll">
-              <DeviceModelingPanel
+              <InfrastructurePanel
                 isTauriRuntime={isTauriRuntime}
                 workspacePath={settings.projectWorkspacePath}
+                connectionLibrary={connectionLibrary}
+                usageByConnection={connectionUsageById}
+                runtimeConnections={engine.connections}
                 onStatusMessage={engine.setStatusMessage}
+                onAddCapabilityToCanvas={handleAddCapabilityToCanvas}
               />
             </ScrollSurface>
           </section>

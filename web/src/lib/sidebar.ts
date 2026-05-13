@@ -34,14 +34,8 @@ export function buildSidebarSections(
     {
       key: 'connections',
       group: 'main',
-      label: '连接',
-      badge: `${globalConnectionCount} 个`,
-    },
-    {
-      key: 'devices',
-      group: 'main',
-      label: '设备',
-      badge: hasTauriRuntime() ? 'Device DSL' : '预览态',
+      label: '资产',
+      badge: globalConnectionCount > 0 ? `${globalConnectionCount} 连接` : '设备 & 连接',
     },
     {
       key: 'plugins',

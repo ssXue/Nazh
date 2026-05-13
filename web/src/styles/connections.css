@@ -1,3 +1,118 @@
+/* ---- 全局资产管理面板（InfrastructurePanel） ---- */
+
+.infra-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+.infra-tab-bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 12px 0;
+  border-bottom: 1px solid var(--line-soft);
+  flex-shrink: 0;
+}
+
+.infra-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  border: 1px solid transparent;
+  border-bottom: none;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: transparent;
+  cursor: pointer;
+  transition:
+    color 140ms ease,
+    background 140ms ease,
+    border-color 140ms ease;
+  position: relative;
+  bottom: -1px;
+}
+
+.infra-tab:hover {
+  color: var(--text);
+  background: var(--surface-elevated);
+}
+
+.infra-tab.is-active {
+  color: var(--text);
+  background: var(--surface);
+  border-color: var(--line-soft);
+  border-bottom-color: var(--surface);
+}
+
+.infra-tab__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  background: var(--surface-elevated);
+  color: var(--text-muted);
+}
+
+.infra-tab.is-active .infra-tab__badge {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.infra-tab-bar__spacer {
+  flex: 1;
+}
+
+.infra-tab-bar__action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--accent-soft);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-soft);
+  cursor: pointer;
+  transition:
+    color 140ms ease,
+    background 140ms ease,
+    border-color 140ms ease;
+  white-space: nowrap;
+}
+
+.infra-tab-bar__action:hover {
+  color: var(--surface);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.infra-panel__content {
+  flex: 1;
+  min-height: 0;
+  overflow: visible;
+}
+
+/* ConnectionStudio 嵌入时保持原有 overflow:visible + 撑满高度的行为 */
+.infra-panel__content > .connection-studio {
+  min-height: 0;
+  height: 100%;
+  overflow: visible;
+  padding-right: 1px;
+}
+
+/* ---- connection-studio ---- */
 .connection-studio {
   display: flex;
   flex-direction: column;
@@ -224,6 +339,65 @@
   color: var(--text-soft);
   font-size: var(--font-subheadline);
   line-height: 1;
+}
+
+.connection-card__tag--accent {
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+  color: var(--accent);
+}
+
+/* ---- 连接详情面板：绑定设备列表 ---- */
+
+.connection-bound-devices {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  margin: 0 0 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  background: var(--surface-muted);
+}
+
+.connection-bound-devices__head {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--font-subheadline);
+}
+
+.connection-bound-devices__list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.connection-bound-devices__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-elevated);
+  font-size: 12px;
+}
+
+.connection-bound-devices__type {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.connection-bound-devices__unit {
+  margin-left: auto;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--surface-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
 }
 
 .connection-card__footer {
@@ -692,5 +866,24 @@
     filter: blur(0);
     transform: translateY(0) scale(1);
   }
+}
+
+/* ---- 导入设备抽屉背板（InfrastructurePanel 级全局居中） ---- */
+
+.infra-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(0 0 0 / 35%);
+  backdrop-filter: blur(4px);
+  animation: infra-backdrop-in 160ms ease;
+}
+
+@keyframes infra-backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
