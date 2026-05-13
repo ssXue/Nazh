@@ -27,6 +27,43 @@ Nazh 面向**工业边缘侧的本地部署**场景：
 | **产线质量控制** | 质检数据与设备参数脱节 | 数据清洗 → 条件判断 → 自动停线/通知 |
 | **能耗优化** | 电表/气表数据孤岛 | 定时采集 → 聚合计算 → 超阈值告警 |
 
+## 产品预览
+
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <a href="./docs/screenshots/desktop-dashboard.png">
+        <img src="./docs/screenshots/desktop-dashboard.png" alt="桌面控制台总览" width="100%" />
+      </a>
+      <br/>
+      <sub><b>桌面控制台</b> · 运行时计数、异常告警、事件流与实时流量一屏掌控</sub>
+    </td>
+    <td align="center" width="50%">
+      <a href="./docs/screenshots/project.png">
+        <img src="./docs/screenshots/project.png" alt="工作流编排画布" width="100%" />
+      </a>
+      <br/>
+      <sub><b>工作流编排</b> · FlowGram.AI 画布拖拽节点,触发器/流程/IO 一气呵成</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <a href="./docs/screenshots/DSL.png">
+        <img src="./docs/screenshots/DSL.png" alt="DSL 设备资产管理" width="100%" />
+      </a>
+      <br/>
+      <sub><b>DSL 设备库</b> · 上传 PDF / ESI 由 AI 抽取设备元数据,生成可审查的 YAML 资产</sub>
+    </td>
+    <td align="center" width="50%">
+      <a href="./docs/screenshots/连接资源管理器.png">
+        <img src="./docs/screenshots/连接资源管理器.png" alt="连接资源管理器" width="100%" />
+      </a>
+      <br/>
+      <sub><b>连接资源管理器</b> · Modbus / MQTT / HTTP 等连接集中治理,RAII 自动回收</sub>
+    </td>
+  </tr>
+</table>
+
 ---
 
 ## 👇 技术评估资料
