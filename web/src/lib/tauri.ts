@@ -472,6 +472,14 @@ export async function saveConnectionDefinitions(
   });
 }
 
+export async function resetConnectionCircuitBreaker(
+  connectionId: string,
+): Promise<void> {
+  return invoke<void>('reset_connection_circuit_breaker', {
+    connectionId,
+  });
+}
+
 export async function loadProjectBoardFiles(
   workspacePath: string,
 ): Promise<ProjectWorkspaceLoadResult> {

@@ -6,6 +6,7 @@ import {
   type SetStateAction,
 } from 'react';
 
+import type { DeviceAssetSummary } from '../hooks/use-device-assets';
 import type {
   ConnectionDefinition,
   ConnectionRecord,
@@ -17,6 +18,7 @@ import {
 import { ExpandTransition } from './app/ExpandTransition';
 import {
   listSerialPorts,
+  resetConnectionCircuitBreaker,
   testSerialConnection,
   type SerialPortInfo,
   type TestSerialResult,
@@ -55,6 +57,12 @@ interface ConnectionStudioProps {
   setConnections: Dispatch<SetStateAction<ConnectionDefinition[]>>;
   usageByConnection: Map<string, ConnectionUsageSummary>;
   runtimeConnections: ConnectionRecord[];
+  /** 连接 ID → 绑定它的设备摘要列表（来自 InfrastructurePanel 的设备资产聚合）。 */
+  devicesByConnectionId?: Map<string, DeviceAssetSummary[]>;
+  /** 来自外部（InfrastructurePanel）的预选连接 ID——例如从设备 Tab "前往连接"跳转过来时。 */
+  focusConnectionId?: string | null;
+  /** 当 focusConnectionId 被消费打开后调用，用于清空外部状态防止反复触发。 */
+  onConsumeFocus?: () => void;
   isLoading?: boolean;
   storageError?: string | null;
   onStatusMessage: (msg: string) => void;
@@ -65,6 +73,9 @@ export function ConnectionStudio({
   setConnections,
   usageByConnection,
   runtimeConnections,
+  devicesByConnectionId,
+  focusConnectionId = null,
+  onConsumeFocus,
   isLoading = false,
   storageError,
   onStatusMessage,
@@ -98,6 +109,7 @@ export function ConnectionStudio({
   const [testResult, setTestResult] = useState<TestSerialResult | null>(null);
   const [isTesting, setIsTesting] = useState(false);
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
+  const [isResettingCircuit, setIsResettingCircuit] = useState(false);
 
   useEffect(() => {
     if (isLoading) {
@@ -129,6 +141,20 @@ export function ConnectionStudio({
       setActiveConnectionIndex(connections.length > 0 ? connections.length - 1 : null);
     }
   }, [activeConnectionIndex, connections.length, isLoading]);
+
+  // 来自设备 Tab"前往连接"的跨 Tab 跳转——根据 ID 定位并自动打开对应连接卡片。
+  useEffect(() => {
+    if (!focusConnectionId || isLoading || connections.length === 0) {
+      return;
+    }
+    const index = connections.findIndex((c) => c.id === focusConnectionId);
+    if (index >= 0) {
+      setActiveConnectionIndex(index);
+    } else {
+      onStatusMessage(`连接 ${focusConnectionId} 尚未在全局连接库中创建。`);
+    }
+    onConsumeFocus?.();
+  }, [focusConnectionId, isLoading, connections, onConsumeFocus, onStatusMessage]);
 
   useEffect(() => {
     if (activeConnectionIndex === null) {
@@ -381,6 +407,28 @@ export function ConnectionStudio({
     replaceConnectionMetadata(index, nextMetadata, '连接治理策略已更新。');
   }
 
+  async function handleResetCircuitBreaker() {
+    if (activeConnectionIndex === null) {
+      return;
+    }
+    const connection = connections[activeConnectionIndex];
+    if (!connection?.id) {
+      return;
+    }
+
+    setIsResettingCircuit(true);
+    try {
+      await resetConnectionCircuitBreaker(connection.id);
+      onStatusMessage(`连接 ${connection.id} 熔断器已手动重置。`);
+    } catch (error) {
+      onStatusMessage(
+        `重置熔断器失败: ${error instanceof Error ? error.message : '未知错误'}`,
+      );
+    } finally {
+      setIsResettingCircuit(false);
+    }
+  }
+
   async function handleTestConnection() {
     if (activeConnectionIndex === null) {
       return;
@@ -555,8 +603,20 @@ export function ConnectionStudio({
                               <span className="connection-card__tag">
                                 {connection.type || 'custom'}
                               </span>
+                              {(() => {
+                                const deviceCount = connection.id
+                                  ? devicesByConnectionId?.get(connection.id)?.length ?? 0
+                                  : 0;
+                                return (
+                                  <span
+                                    className={`connection-card__tag${deviceCount > 0 ? ' connection-card__tag--accent' : ''}`}
+                                  >
+                                    {deviceCount > 0 ? `${deviceCount} 设备` : '无设备绑定'}
+                                  </span>
+                                );
+                              })()}
                               <span className="connection-card__tag">
-                                {usage.nodeIds.length > 0 ? `${usage.nodeIds.length} 节点` : '未绑定'}
+                                {usage.nodeIds.length > 0 ? `${usage.nodeIds.length} 节点` : '未绑定节点'}
                               </span>
                               <span className="connection-card__tag">
                                 {usage.projectNames.length > 0
@@ -682,10 +742,52 @@ export function ConnectionStudio({
                   </p>
                 ) : null}
 
+                {activeRuntimeState.state === 'danger' &&
+                activeRuntimeState.health?.phase === 'circuitOpen' ? (
+                  <button
+                    type="button"
+                    className="ghost"
+                    onClick={handleResetCircuitBreaker}
+                    disabled={isResettingCircuit}
+                  >
+                    {isResettingCircuit ? '重置中...' : '手动重置熔断器'}
+                  </button>
+                ) : null}
+
                 {activeRuntimeState.failureReason ? (
                   <p className="connection-card__error">{activeRuntimeState.failureReason}</p>
                 ) : null}
               </section>
+
+              {(() => {
+                const boundDevices = activeConnection.id
+                  ? devicesByConnectionId?.get(activeConnection.id) ?? []
+                  : [];
+                if (boundDevices.length === 0) {
+                  return null;
+                }
+                return (
+                  <section className="connection-bound-devices" aria-label="绑定设备列表">
+                    <div className="connection-bound-devices__head">
+                      <strong>绑定设备</strong>
+                      <span className="connection-card__tag">{boundDevices.length}</span>
+                    </div>
+                    <ul className="connection-bound-devices__list">
+                      {boundDevices.map((device) => (
+                        <li key={device.id} className="connection-bound-devices__item">
+                          <strong>{device.name}</strong>
+                          <span className="connection-bound-devices__type">{device.device_type}</span>
+                          {device.connection?.unit != null && (
+                            <span className="connection-bound-devices__unit">
+                              站号 {device.connection.unit}
+                            </span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                );
+              })()}
 
               <div className="connection-form connection-settings-panel__form">
                 <label>

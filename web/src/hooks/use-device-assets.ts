@@ -9,6 +9,13 @@ import {
 import { hasTauriRuntime, loadAiConfig } from '../lib/tauri';
 import { resolveGlobalAiProvider } from '../lib/workflow-ai';
 
+/** 设备资产摘要中携带的连接引用（与 Rust DeviceConnectionRef 对齐）。 */
+export interface DeviceConnectionRef {
+  type: string;
+  id: string;
+  unit?: number;
+}
+
 /** 设备资产摘要。 */
 export interface DeviceAssetSummary {
   id: string;
@@ -16,6 +23,8 @@ export interface DeviceAssetSummary {
   device_type: string;
   version: number;
   updated_at: string;
+  /** 设备绑定的连接资源（从 DSL connection 块派生）；未配置连接时为空。 */
+  connection?: DeviceConnectionRef;
 }
 
 /** 设备资产详情。 */
@@ -325,6 +334,26 @@ export function useDeviceAssets(workspacePath = '') {
     [loadAssets, workspacePath],
   );
 
+  const bindConnection = useCallback(
+    async (
+      assetId: string,
+      connectionType: string | null,
+      connectionId: string | null,
+      unit?: number | null,
+    ) => {
+      if (!hasTauriRuntime()) return;
+      await invoke('bind_device_connection', {
+        assetId,
+        connectionType: connectionType ?? null,
+        connectionId: connectionId ?? null,
+        unit: unit ?? null,
+        workspacePath: workspacePath.trim() || null,
+      });
+      await loadAssets();
+    },
+    [loadAssets, workspacePath],
+  );
+
   const addSignal = useCallback(
     async (assetId: string, signalYaml: string) => {
       if (!hasTauriRuntime()) return;
@@ -397,6 +426,7 @@ export function useDeviceAssets(workspacePath = '') {
     rollbackSnapshot,
     deleteSnapshot,
     patchField,
+    bindConnection,
     addSignal,
     removeSignal,
     addAlarm,

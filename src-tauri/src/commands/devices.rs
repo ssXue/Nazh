@@ -19,6 +19,9 @@ use base64::Engine;
 // ---- IPC 响应类型 ----
 
 /// 设备资产摘要（IPC 响应）。
+///
+/// `connection` 字段从设备 DSL 的 `connection` 块直接派生，
+/// 便于前端在列表视图直接展示设备绑定的连接资源（设备语义高于协议适配）。
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct DeviceAssetSummary {
     pub id: String,
@@ -26,6 +29,18 @@ pub struct DeviceAssetSummary {
     pub device_type: String,
     pub version: i64,
     pub updated_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub connection: Option<DeviceConnectionRef>,
+}
+
+/// 设备资产摘要中携带的连接引用（DSL `connection` 块的扁平视图）。
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct DeviceConnectionRef {
+    #[serde(rename = "type")]
+    pub connection_type: String,
+    pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unit: Option<u8>,
 }
 
 /// 设备资产完整详情（IPC 响应）。
@@ -90,12 +105,33 @@ pub(crate) async fn list_device_assets(
     let mut summaries = Vec::with_capacity(files.len());
     for file in files {
         let detail = load_device_detail_from_path(&app, workspace_path.as_deref(), &file).await?;
+        let connection = detail
+            .spec_json
+            .get("connection")
+            .and_then(|value| value.as_object())
+            .map(|map| DeviceConnectionRef {
+                connection_type: map
+                    .get("type")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("")
+                    .to_owned(),
+                id: map
+                    .get("id")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("")
+                    .to_owned(),
+                unit: map
+                    .get("unit")
+                    .and_then(serde_json::Value::as_u64)
+                    .and_then(|v| u8::try_from(v).ok()),
+            });
         summaries.push(DeviceAssetSummary {
             id: detail.id,
             name: detail.name,
             device_type: detail.device_type,
             version: detail.version,
             updated_at: detail.updated_at,
+            connection,
         });
     }
     summaries.sort_by(|left, right| left.id.cmp(&right.id));
@@ -460,6 +496,64 @@ pub(crate) async fn patch_device_field(
     let meta = DeviceSnapshotMeta {
         version,
         label,
+        description: String::new(),
+        reason: SnapshotReason::Edit,
+        created_at: chrono::Utc::now().to_rfc3339(),
+    };
+    append_device_snapshot(&app, workspace_path.as_deref(), &asset_id, meta).await?;
+
+    Ok(())
+}
+
+/// 绑定或解绑设备与全局连接的关联。
+///
+/// 将设备 DSL 的 `connection:` 块写入或清除。
+/// - `connection_id` / `connection_type` 均为 `None` 时，清除绑定
+/// - 否则写入或更新 `connection` 块
+#[tauri::command]
+pub(crate) async fn bind_device_connection(
+    app: AppHandle,
+    asset_id: String,
+    connection_type: Option<String>,
+    connection_id: Option<String>,
+    unit: Option<u8>,
+    workspace_path: Option<String>,
+) -> Result<(), String> {
+    let path = device_asset_latest_path(&app, workspace_path.as_deref(), &asset_id)?;
+    if !path.exists() {
+        return Err(format!("设备资产 `{asset_id}` 不存在"));
+    }
+    let yaml_text = tokio::fs::read_to_string(&path)
+        .await
+        .map_err(|e| format!("读取设备 DSL 失败: {e}"))?;
+
+    let mut spec = parse_device_yaml(&yaml_text).map_err(|e| format!("设备 DSL 解析失败: {e}"))?;
+
+    spec.connection = match (connection_id, connection_type) {
+        (Some(id), Some(connection_type)) => Some(nazh_dsl_core::ConnectionRef {
+            connection_type,
+            id,
+            unit,
+        }),
+        _ => None,
+    };
+
+    let new_yaml =
+        serde_yaml::to_string(&spec).map_err(|e| format!("序列化设备 DSL 失败: {e}"))?;
+
+    let version = next_device_asset_version(&app, workspace_path.as_deref(), &asset_id).await?;
+    write_device_asset_yaml(
+        &app,
+        workspace_path.as_deref(),
+        &asset_id,
+        version,
+        new_yaml.trim(),
+    )
+    .await?;
+
+    let meta = DeviceSnapshotMeta {
+        version,
+        label: "绑定连接".to_owned(),
         description: String::new(),
         reason: SnapshotReason::Edit,
         created_at: chrono::Utc::now().to_rfc3339(),

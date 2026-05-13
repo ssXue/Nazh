@@ -156,6 +156,185 @@
   color: var(--danger-ink);
 }
 
+.dm-btn--ghost {
+  border-color: transparent;
+  color: var(--text-muted);
+}
+
+.dm-btn--ghost:hover {
+  background: var(--surface-elevated);
+  color: var(--text);
+}
+
+/* ── 设备卡片：绑定连接行（紧凑视图） ── */
+
+.dm-card-connection {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 16px 0;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm, 8px);
+  background: var(--surface-muted);
+  font-size: 11px;
+  color: var(--text-muted);
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.dm-card-connection--missing {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.dm-card-connection--unresolved {
+  background: var(--warning-soft, var(--surface-muted));
+  color: var(--warning-ink, var(--text));
+}
+
+.dm-card-connection__type {
+  font-weight: 600;
+  color: var(--text);
+  flex-shrink: 0;
+}
+
+.dm-card-connection__id {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.dm-card-connection__unit {
+  flex-shrink: 0;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--surface-elevated);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.dm-card-connection__status {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* ── 设备卡片：icon + body 同行 ── */
+
+.dm-card-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.dm-card-row .board-card__body {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 设备卡片连接绑定下拉框 */
+
+.dm-card-connection-select {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 16px 0;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm, 8px);
+  background: var(--surface-muted);
+  font-size: 11px;
+  color: var(--text-muted);
+  min-width: 0;
+}
+
+.dm-card-connection-select select {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 4px;
+  border: 1px solid var(--line-soft);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 10px;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  outline: none;
+}
+
+.dm-card-connection-select select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+/* ── 设备详情：顶部绑定连接栏（置顶物理链路） ── */
+
+.dm-detail-connection-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 24px 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-md, 12px);
+  background: var(--surface-muted);
+  font-size: 13px;
+  flex-wrap: wrap;
+}
+
+.dm-detail-connection-bar--unresolved {
+  border-color: var(--warning-border, var(--panel-border));
+  background: var(--warning-soft, var(--surface-muted));
+}
+
+.dm-detail-connection-bar--missing {
+  color: var(--muted);
+  font-style: italic;
+  border-style: dashed;
+}
+
+.dm-detail-connection-bar__head {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.dm-detail-connection-bar__type {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.dm-detail-connection-bar__id {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.dm-detail-connection-bar__unit {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--surface-elevated);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.dm-detail-connection-bar__tail {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.dm-detail-connection-bar__hint {
+  font-size: 11px;
+  color: var(--warning-ink, var(--text-muted));
+}
+
 /* ── 详情弹窗（居中浮层） ── */
 
 .dm-detail-dialog {

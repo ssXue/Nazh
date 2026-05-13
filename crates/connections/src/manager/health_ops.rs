@@ -177,6 +177,33 @@ impl ConnectionManager {
         Ok(())
     }
 
+    /// 手动重置熔断器，清除 `circuit_open_until`、连续失败计数和重连计数，
+    /// 将连接恢复到空闲态以允许立即重试。
+    ///
+    /// # Errors
+    ///
+    /// 当连接 ID 不存在时返回 `EngineError`。
+    pub async fn reset_circuit_breaker(&self, connection_id: &str) -> Result<(), EngineError> {
+        let entry = self.entry(connection_id).await?;
+        let mut record = entry
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let now = Utc::now();
+
+        record.health.circuit_open_until = None;
+        record.health.rate_limited_until = None;
+        record.health.next_retry_at = None;
+        record.health.consecutive_failures = 0;
+        record.health.reconnect_attempts = 0;
+        record.health.phase = ConnectionHealthState::Idle;
+        record.health.last_state_changed_at = Some(now);
+        record.health.last_checked_at = Some(now);
+        record.health.diagnosis = Some("熔断器已被手动重置，连接恢复空闲态".to_owned());
+        record.health.recommended_action = Some("可重新部署工作流或手动测试连接".to_owned());
+
+        Ok(())
+    }
+
     /// 将全部连接切回空闲态。
     pub async fn mark_all_idle(&self, diagnosis: impl Into<String>) {
         let diagnosis = diagnosis.into();

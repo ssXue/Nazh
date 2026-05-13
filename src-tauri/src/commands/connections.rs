@@ -47,6 +47,18 @@ pub(crate) async fn load_connection_definitions(
 }
 
 #[tauri::command]
+pub(crate) async fn reset_connection_circuit_breaker(
+    state: State<'_, DesktopState>,
+    connection_id: String,
+) -> Result<(), String> {
+    state
+        .connection_manager
+        .reset_circuit_breaker(&connection_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub(crate) async fn save_connection_definitions(
     app: AppHandle,
     state: State<'_, DesktopState>,

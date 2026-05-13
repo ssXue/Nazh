@@ -3,9 +3,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { hasTauriRuntime } from '../../lib/tauri';
 import { formatRelativeTimestamp } from '../../lib/projects';
 import { useDeviceAssets } from '../../hooks/use-device-assets';
-import type { DeviceAssetDetail } from '../../hooks/use-device-assets';
+import type { DeviceAssetDetail, DeviceAssetSummary } from '../../hooks/use-device-assets';
 import { useCapabilities } from '../../hooks/use-capabilities';
 import type { CapabilitySummary, CapabilityDetail, GeneratedCapability } from '../../hooks/use-capabilities';
+import type { ConnectionDefinition, ConnectionRecord } from '../../types';
+import { connectionRuntimeState } from '../connection-studio-utils';
 import {
   SparklesIcon,
   PlusIcon,
@@ -15,32 +17,86 @@ import {
   BackIcon,
   PencilIcon,
   SnapshotIcon,
+  ConnectionsIcon,
 } from './AppIcons';
-import { DeviceImportDrawer } from './DeviceImportDrawer';
 import { ExpandTransition } from './ExpandTransition';
 
 interface DeviceModelingPanelProps {
   isTauriRuntime: boolean;
   workspacePath: string;
+  /** 全局连接资源定义，用于在设备卡片/详情显示绑定连接信息。 */
+  connections?: ConnectionDefinition[];
+  /** 运行时连接快照，用于显示连接健康状态。 */
+  runtimeConnections?: ConnectionRecord[];
+  /** 设备详情中点击"切换到连接"时回调，由 InfrastructurePanel 处理跨 Tab 跳转。 */
+  onJumpToConnection?: (connectionId: string) => void;
   onStatusMessage: (message: string) => void;
+  /** 将能力添加到画布的回调（来自 InfrastructurePanel/StudioContentRouter）。 */
+  onAddCapabilityToCanvas?: (nodeOp: import('../FlowgramCanvas').CanvasNodeOp) => void;
+}
+
+/** 设备绑定的连接摘要——给卡片/详情共用的派生结构。 */
+interface DeviceConnectionBinding {
+  connectionId: string;
+  connectionType: string;
+  unit: number | null;
+  /** 全局连接库中是否存在该 ID 的定义（true = 已绑定有效连接）。 */
+  isResolved: boolean;
+  /** 全局连接库中匹配到的定义（解析名称、参数）。 */
+  definition: ConnectionDefinition | undefined;
+  /** 运行时连接（含 health 快照）。 */
+  runtime: ConnectionRecord | undefined;
+}
+
+function buildDeviceConnectionBinding(
+  asset: DeviceAssetSummary,
+  connectionsById: Map<string, ConnectionDefinition>,
+  runtimeById: Map<string, ConnectionRecord>,
+): DeviceConnectionBinding | null {
+  const ref = asset.connection;
+  if (!ref?.id?.trim()) {
+    return null;
+  }
+  const cid = ref.id.trim();
+  const definition = connectionsById.get(cid);
+  return {
+    connectionId: cid,
+    connectionType: ref.type?.trim() || definition?.type || '',
+    unit: typeof ref.unit === 'number' ? ref.unit : null,
+    isResolved: Boolean(definition),
+    definition,
+    runtime: runtimeById.get(cid),
+  };
 }
 
 export function DeviceModelingPanel({
   isTauriRuntime,
   workspacePath,
+  connections = [],
+  runtimeConnections = [],
+  onJumpToConnection,
   onStatusMessage,
+  onAddCapabilityToCanvas,
 }: DeviceModelingPanelProps) {
+  const connectionsById = useMemo(
+    () => new Map(connections.map((c) => [c.id, c])),
+    [connections],
+  );
+  const runtimeById = useMemo(
+    () => new Map(runtimeConnections.map((c) => [c.id, c])),
+    [runtimeConnections],
+  );
   const {
     assets,
     loading,
     loadAssets,
     loadDetail,
     deleteAsset,
+    bindConnection,
   } = useDeviceAssets(workspacePath);
 
   const [detail, setDetail] = useState<DeviceAssetDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [importDrawerOpen, setImportDrawerOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
   const filteredAssets = useMemo(() => {
@@ -135,32 +191,6 @@ export function DeviceModelingPanel({
       )}
 
       <div className="dm-grid">
-        {/* 虚线添加卡片 */}
-        <button
-          type="button"
-          className="board-card board-card--create"
-          onClick={() => setImportDrawerOpen(true)}
-        >
-          <div className="board-card__icon board-card__icon--create">
-            <PlusIcon />
-          </div>
-          <div className="board-card__body">
-            <strong className="board-card__name">导入设备</strong>
-            <span className="board-card__desc">
-              从 PDF 说明书或文本自动提取设备信息，生成设备模型。
-            </span>
-          </div>
-          <div className="board-card__chips">
-            <span className="board-card__chip board-card__chip--create">PDF 导入</span>
-            <span className="board-card__chip board-card__chip--create">AI 提取</span>
-          </div>
-          <div className="board-card__footer">
-            <span className="board-card__meta">
-              {assets.length === 0 ? '当前还没有设备' : '继续添加设备'}
-            </span>
-          </div>
-        </button>
-
         {loading ? (
           <div className="dm-loading-card">加载中...</div>
         ) : filteredAssets.length === 0 && assets.length > 0 ? (
@@ -169,53 +199,73 @@ export function DeviceModelingPanel({
             <span>尝试其他搜索词</span>
           </div>
         ) : (
-          filteredAssets.map((asset) => {
-            return (
-              <article
-                key={asset.id}
-                className="board-card board-card--entry"
-                role="button"
-                tabIndex={0}
-                onClick={() => void handleOpenDetail(asset.id)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    void handleOpenDetail(asset.id);
-                  }
-                }}
-              >
+          filteredAssets.map((asset) => (
+            <article
+              key={asset.id}
+              className="board-card board-card--entry"
+              role="button"
+              tabIndex={0}
+              onClick={() => void handleOpenDetail(asset.id)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  void handleOpenDetail(asset.id);
+                }
+              }}
+            >
+              <div className="dm-card-row">
                 <div className="board-card__icon">
                   <DeviceIcon />
                 </div>
-
                 <div className="board-card__body">
                   <strong className="board-card__name" title={asset.name}>{asset.name}</strong>
                   <span className="board-card__desc">{asset.device_type}</span>
                 </div>
+              </div>
 
-                <div className="board-card__chips">
-                  <span className="board-card__chip">{asset.device_type}</span>
-                  <span className="board-card__chip">{`${asset.version} 个快照`}</span>
-                </div>
+              <div className="dm-card-connection-select" onClick={(e) => e.stopPropagation()}>
+                <ConnectionsIcon width={12} height={12} />
+                <select
+                  value={asset.connection?.id ?? ''}
+                  onChange={(e) => {
+                    const cid = e.target.value;
+                    if (!cid) {
+                      void bindConnection(asset.id, null, null, null);
+                    } else {
+                      const def = connectionsById.get(cid);
+                      void bindConnection(asset.id, def?.type ?? '', cid, asset.connection?.unit ?? null);
+                    }
+                  }}
+                >
+                  <option value="">未绑定</option>
+                  {connections.map((c) => (
+                    <option key={c.id} value={c.id}>{c.id}</option>
+                  ))}
+                </select>
+              </div>
 
-                <div className="board-card__footer">
-                  <span className="board-card__meta">{formatRelativeTimestamp(asset.updated_at)}</span>
-                  <button
-                    type="button"
-                    className="board-card__delete"
-                    aria-label={`删除设备 ${asset.name}`}
-                    title={`删除设备 ${asset.name}`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      void handleDelete(asset.id);
-                    }}
-                  >
-                    <DeleteActionIcon />
-                  </button>
-                </div>
-              </article>
-            );
-          })
+              <div className="board-card__chips">
+                <span className="board-card__chip">{asset.device_type}</span>
+                <span className="board-card__chip">{`${asset.version} 个快照`}</span>
+              </div>
+
+              <div className="board-card__footer">
+                <span className="board-card__meta">{formatRelativeTimestamp(asset.updated_at)}</span>
+                <button
+                  type="button"
+                  className="board-card__delete"
+                  aria-label={`删除设备 ${asset.name}`}
+                  title={`删除设备 ${asset.name}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void handleDelete(asset.id);
+                  }}
+                >
+                  <DeleteActionIcon />
+                </button>
+              </div>
+            </article>
+          ))
         )}
       </div>
     </div>
@@ -225,32 +275,25 @@ export function DeviceModelingPanel({
     <DetailPanel
       detail={detail}
       workspacePath={workspacePath}
+      connectionsById={connectionsById}
+      runtimeById={runtimeById}
+      onJumpToConnection={onJumpToConnection}
       onReload={() => void handleOpenDetail(detail.id)}
       onBack={handleCloseDetail}
       onDelete={() => void handleDelete(detail.id)}
       onStatusMessage={onStatusMessage}
+      onAddCapabilityToCanvas={onAddCapabilityToCanvas}
     />
   ) : null;
 
   return (
     <div className="device-modeling">
       <ExpandTransition
-        active={!!showDetail || importDrawerOpen}
-        loading={detailLoading && !importDrawerOpen}
+        active={!!showDetail}
+        loading={detailLoading}
         mode="centered"
         base={gridBase}
-        overlay={
-          importDrawerOpen ? (
-            <DeviceImportDrawer
-              workspacePath={workspacePath}
-              onClose={() => setImportDrawerOpen(false)}
-              onSaved={() => { setImportDrawerOpen(false); void loadAssets(); }}
-              onStatusMessage={onStatusMessage}
-            />
-          ) : (
-            detailOverlay
-          )
-        }
+        overlay={detailOverlay}
       />
     </div>
   );
@@ -266,17 +309,25 @@ function DeviceTypeBadge({ type }: { type: string }) {
 function DetailPanel({
   detail,
   workspacePath,
+  connectionsById,
+  runtimeById,
+  onJumpToConnection,
   onReload,
   onBack,
   onDelete,
   onStatusMessage,
+  onAddCapabilityToCanvas,
 }: {
   detail: DeviceAssetDetail;
   workspacePath: string;
+  connectionsById: Map<string, ConnectionDefinition>;
+  runtimeById: Map<string, ConnectionRecord>;
+  onJumpToConnection?: (connectionId: string) => void;
   onReload: () => void;
   onBack: () => void;
   onDelete: () => void;
   onStatusMessage: (msg: string) => void;
+  onAddCapabilityToCanvas?: (nodeOp: import('../FlowgramCanvas').CanvasNodeOp) => void;
 }) {
   const [tab, setTab] = useState<'signals' | 'capabilities' | 'snapshots'>('signals');
   const [patching, setPatching] = useState(false);
@@ -364,6 +415,14 @@ function DetailPanel({
         </button>
       </div>
 
+      {/* 绑定连接栏（置顶，物理链路一目了然） */}
+      <DeviceConnectionBar
+        detail={detail}
+        connectionsById={connectionsById}
+        runtimeById={runtimeById}
+        onJumpToConnection={onJumpToConnection}
+      />
+
       {/* Tab 切换 */}
       <div className="dm-tabs">
         <button
@@ -393,7 +452,7 @@ function DetailPanel({
         {tab === 'signals' ? (
           <SignalsTab detail={detail} workspacePath={workspacePath} onReload={onReload} onStatusMessage={onStatusMessage} />
         ) : tab === 'capabilities' ? (
-          <CapabilitiesTab deviceId={detail.id} workspacePath={workspacePath} />
+          <CapabilitiesTab deviceId={detail.id} workspacePath={workspacePath} onAddToCanvas={onAddCapabilityToCanvas} />
         ) : (
           <SnapshotsTab deviceId={detail.id} workspacePath={workspacePath} onReload={onReload} onStatusMessage={onStatusMessage} />
         )}
@@ -426,7 +485,6 @@ function SignalsTab({
   const spec = detail.spec_json;
   const signals = (spec?.signals ?? []) as Array<Record<string, unknown>>;
   const alarms = (spec?.alarms ?? []) as Array<Record<string, unknown>>;
-  const connection = spec?.connection as Record<string, unknown> | undefined;
 
   const patch = useCallback(
     async (jsonPath: string, value: string) => {
@@ -506,33 +564,6 @@ function SignalsTab({
 
   return (
     <div className="dm-detail-body">
-      {/* 连接信息 */}
-      {connection && (
-        <div className="dm-section-card">
-          <div className="dm-section-card__header">
-            <h3>连接</h3>
-          </div>
-          <div className="dm-section-card__body">
-            <div className="dm-connection-fields">
-              <div className="dm-conn-field">
-                <span className="dm-conn-field__label">类型</span>
-                <EditableField value={String(connection.type ?? '-')} label="connection.type" onSave={(v) => void patch('/connection/type', v)} disabled={patching} />
-              </div>
-              <div className="dm-conn-field">
-                <span className="dm-conn-field__label">连接 ID</span>
-                <EditableField value={String(connection.id ?? '-')} label="connection.id" onSave={(v) => void patch('/connection/id', v)} disabled={patching} />
-              </div>
-              {connection.unit != null && (
-                <div className="dm-conn-field">
-                  <span className="dm-conn-field__label">站号</span>
-                  <EditableField value={String(connection.unit)} label="connection.unit" onSave={(v) => void patch('/connection/unit', v)} disabled={patching} />
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* 信号表 */}
       <div className="dm-section-card">
         <div className="dm-section-card__header">
@@ -744,7 +775,11 @@ function SignalsTab({
 }
 
 /** 能力 Tab。 */
-function CapabilitiesTab({ deviceId, workspacePath }: { deviceId: string; workspacePath: string }) {
+function CapabilitiesTab({ deviceId, workspacePath, onAddToCanvas }: {
+  deviceId: string;
+  workspacePath: string;
+  onAddToCanvas?: (nodeOp: import('../FlowgramCanvas').CanvasNodeOp) => void;
+}) {
   const {
     capabilities,
     loading,
@@ -898,6 +933,29 @@ function CapabilitiesTab({ deviceId, workspacePath }: { deviceId: string; worksp
                 </div>
               </div>
             </div>
+            {onAddToCanvas ? (
+              <button
+                type="button"
+                className="dm-btn dm-btn--ghost"
+                title="添加到画布"
+                onClick={() => {
+                  const impl = capDetail.spec_json?.implementation as Record<string, unknown> | undefined;
+                  onAddToCanvas({
+                    id: `capability_call_${capDetail.id.replace(/[^a-zA-Z0-9_-]/g, '_')}`,
+                    type: 'capabilityCall',
+                    label: capDetail.name,
+                    config: {
+                      capability_id: capDetail.id,
+                      device_id: deviceId,
+                      implementation: impl ?? { type: 'script', content: 'payload' },
+                      args: {},
+                    },
+                  });
+                }}
+              >
+                添加到画布
+              </button>
+            ) : null}
             <button
               type="button"
               className="dm-btn dm-btn--danger"
@@ -1311,4 +1369,69 @@ function implTypeBadgeClass(type: string): string {
   if (lower.includes('write')) return 'dm-badge--impl-write';
   if (lower.includes('control')) return 'dm-badge--impl-control';
   return '';
+}
+
+/** 设备卡片上的连接绑定行（紧凑视图）。 */
+/** 设备详情顶部的绑定连接栏（置顶展示物理链路 + 切换连接入口）。 */
+function DeviceConnectionBar({
+  detail,
+  connectionsById,
+  runtimeById,
+  onJumpToConnection,
+}: {
+  detail: DeviceAssetDetail;
+  connectionsById: Map<string, ConnectionDefinition>;
+  runtimeById: Map<string, ConnectionRecord>;
+  onJumpToConnection?: (connectionId: string) => void;
+}) {
+  const conn = detail.spec_json?.connection as
+    | { type?: string; id?: string; unit?: number }
+    | undefined;
+  if (!conn?.id?.trim()) {
+    return (
+      <div className="dm-detail-connection-bar dm-detail-connection-bar--missing">
+        <ConnectionsIcon width={14} height={14} />
+        <span>该设备尚未绑定连接，下方信号表的源会因此无法读取。</span>
+      </div>
+    );
+  }
+  const cid = conn.id.trim();
+  const definition = connectionsById.get(cid);
+  const runtime = runtimeById.get(cid);
+  const runtimeState = connectionRuntimeState(runtime);
+  const isResolved = Boolean(definition);
+
+  return (
+    <div className={`dm-detail-connection-bar${isResolved ? '' : ' dm-detail-connection-bar--unresolved'}`}>
+      <div className="dm-detail-connection-bar__head">
+        <ConnectionsIcon width={14} height={14} />
+        <span className="dm-detail-connection-bar__type">{conn.type || definition?.type || '未知协议'}</span>
+        <span className="dm-detail-connection-bar__id">{cid}</span>
+        {conn.unit != null && (
+          <span className="dm-detail-connection-bar__unit">站号 {conn.unit}</span>
+        )}
+      </div>
+      <div className="dm-detail-connection-bar__tail">
+        <span className={`connection-status is-${runtimeState.state}`}>
+          <span className="connection-status__dot" />
+          {runtimeState.label}
+        </span>
+        {!isResolved && (
+          <span className="dm-detail-connection-bar__hint">
+            未在全局连接库中找到该 ID，先在连接 Tab 中创建。
+          </span>
+        )}
+        {onJumpToConnection && (
+          <button
+            type="button"
+            className="dm-btn dm-btn--ghost"
+            onClick={() => onJumpToConnection(cid)}
+            title="切换到连接 Tab 并定位此连接"
+          >
+            前往连接
+          </button>
+        )}
+      </div>
+    </div>
+  );
 }
