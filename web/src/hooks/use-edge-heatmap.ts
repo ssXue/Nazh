@@ -1,15 +1,16 @@
 //! ADR-0016 边热力图状态管理。
 //!
 //! 维护最近窗口内的边传输统计，供 FlowgramCanvas 边渲染使用。
-//! 数据变更后通过 onUpdate 回调通知 Canvas 同步触发 FlowGram linesManager.forceUpdate()。
+//! 数据变更后按固定节奏合并通知 Canvas 触发 FlowGram linesManager.forceUpdate()。
 //! 边 key 使用 `from_node/from_pin→to_node/to_pin` 格式。
 
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 
 import type { EdgeTransmitSummary, BackpressureDetected } from '../types';
 
 const DEFAULT_SOURCE_PIN = 'out';
 const DEFAULT_TARGET_PIN = 'in';
+const EDGE_HEATMAP_RENDER_INTERVAL_MS = 100;
 
 export interface EdgeHeatEntry {
   /** 源节点 ID。 */
@@ -82,12 +83,34 @@ export function findEdgeHeatEntry(
 export function useEdgeHeatmap(onUpdate?: () => void) {
   const heatRef = useRef<EdgeHeatMap>(new Map());
   const bpTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const notifyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastNotifyAtRef = useRef<number | null>(null);
   const onUpdateRef = useRef(onUpdate);
   onUpdateRef.current = onUpdate;
 
-  const notify = useCallback(() => {
+  const flushNotify = useCallback(() => {
+    notifyTimerRef.current = null;
+    lastNotifyAtRef.current = Date.now();
     onUpdateRef.current?.();
   }, []);
+
+  const notify = useCallback(() => {
+    const now = Date.now();
+    const lastNotifyAt = lastNotifyAtRef.current;
+    if (lastNotifyAt === null || now - lastNotifyAt >= EDGE_HEATMAP_RENDER_INTERVAL_MS) {
+      if (notifyTimerRef.current) {
+        clearTimeout(notifyTimerRef.current);
+        notifyTimerRef.current = null;
+      }
+      lastNotifyAtRef.current = now;
+      onUpdateRef.current?.();
+      return;
+    }
+
+    if (!notifyTimerRef.current) {
+      notifyTimerRef.current = setTimeout(flushNotify, EDGE_HEATMAP_RENDER_INTERVAL_MS - (now - lastNotifyAt));
+    }
+  }, [flushNotify]);
 
   const recordEdgeTransmit = useCallback((summary: EdgeTransmitSummary) => {
     const key = edgeHeatKey(summary);
@@ -146,8 +169,15 @@ export function useEdgeHeatmap(onUpdate?: () => void) {
       clearTimeout(timer);
     }
     bpTimersRef.current.clear();
+    if (notifyTimerRef.current) {
+      clearTimeout(notifyTimerRef.current);
+      notifyTimerRef.current = null;
+    }
+    lastNotifyAtRef.current = null;
     // 清空不需要触发 UI 更新（工作流已反部署）
   }, []);
+
+  useEffect(() => clearEdgeHeatmap, [clearEdgeHeatmap]);
 
   const getEdgeHeatmap = useCallback((): EdgeHeatMap => heatRef.current, []);
 
