@@ -2,7 +2,8 @@
 //!
 //! 通过连接级共享 CAN 会话发送单帧 CAN 数据。
 //! 帧 ID 和 data 可从 payload 动态提取，或由 config 中的默认值覆盖。
-//! 无连接时走 MockBackend，记录发送但不实际操作硬件。
+//! 未配置 `connection_id` 时 fail-fast 报错；仅当 `config.simulation = true`
+//! 显式开启时使用 `MockBackend`（记录发送但不实际操作硬件，对齐 `modbusRead` 标杆）。
 
 use async_trait::async_trait;
 use chrono::Utc;
@@ -28,6 +29,10 @@ pub struct CanWriteNodeConfig {
     /// 连接 ID（引用 `ConnectionManager` 中的连接定义）。
     #[serde(default)]
     pub connection_id: Option<String>,
+    /// 显式模拟模式。未配置 `connection_id` 时必须置为 true，
+    /// 避免现场漏配时静默走 `MockBackend` 给出假"发送成功"。对齐 `modbusRead`。
+    #[serde(default)]
+    pub simulation: bool,
     /// 默认帧 ID（可被 payload 中的 `can_id` 覆盖）。
     #[serde(default)]
     pub can_id: Option<u32>,
@@ -137,11 +142,16 @@ impl NodeTrait for CanWriteNode {
     ) -> Result<NodeExecution, EngineError> {
         let (payload_map, frame) = self.frame_from_payload(payload)?;
 
-        let connection_id = self
-            .config
-            .connection_id
-            .clone()
-            .unwrap_or_else(|| "mock-can".to_owned());
+        let connection_id = match self.config.connection_id.clone() {
+            Some(id) => id,
+            None if self.config.simulation => "mock-can".to_owned(),
+            None => {
+                return Err(EngineError::node_config(
+                    self.id.clone(),
+                    "CAN Write 缺少 connection_id；仅测试/demo 可显式设置 simulation=true 使用 Mock CAN 后端",
+                ));
+            }
+        };
 
         let runtime = CanBusRuntime::new(self.connection_manager.clone(), connection_id);
         let session = runtime
@@ -209,7 +219,13 @@ impl NodeTrait for CanWriteNode {
     async fn on_deploy(&self, ctx: NodeLifecycleContext) -> Result<LifecycleGuard, EngineError> {
         let connection_id = match &self.config.connection_id {
             Some(id) => id.clone(),
-            None => return Ok(LifecycleGuard::noop()),
+            None if self.config.simulation => return Ok(LifecycleGuard::noop()),
+            None => {
+                return Err(EngineError::node_config(
+                    self.id.clone(),
+                    "CAN Write 缺少 connection_id；仅测试/demo 可显式设置 simulation=true 使用 Mock CAN 后端",
+                ));
+            }
         };
 
         // 验证连接并预热共享会话
@@ -308,6 +324,7 @@ mod tests {
             "can-write-1",
             CanWriteNodeConfig {
                 connection_id: None,
+                simulation: true,
                 can_id: None,
                 is_extended: false,
             },
@@ -322,11 +339,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn 无连接时走_mock_回退并标记模拟() {
+    async fn 显式_simulation_时使用模拟数据() {
         let node = CanWriteNode::new(
             "can-write-1",
             CanWriteNodeConfig {
                 connection_id: None,
+                simulation: true,
                 can_id: Some(0x123),
                 is_extended: false,
             },
@@ -341,6 +359,34 @@ mod tests {
 
         assert_eq!(metadata["can"]["simulated"], Value::Bool(true));
         assert!(metadata["can"].get("connection").is_none());
+    }
+
+    #[tokio::test]
+    async fn 未显式_simulation_时缺少_connection_id_应报错() {
+        let node = CanWriteNode::new(
+            "can-write-1",
+            CanWriteNodeConfig {
+                connection_id: None,
+                simulation: false,
+                can_id: Some(0x123),
+                is_extended: false,
+            },
+            shared_connection_manager(),
+        );
+
+        let err = node
+            .transform(Uuid::new_v4(), json!({ "data": [1, 2, 3] }))
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(err, EngineError::NodeConfig { .. }),
+            "未显式 simulation=true 时不应静默走 Mock CAN 后端: {err:?}"
+        );
+        assert!(
+            err.to_string().contains("simulation=true"),
+            "错误消息应引导用户显式设置 simulation=true: {err}"
+        );
     }
 
     #[tokio::test]
@@ -366,6 +412,7 @@ mod tests {
             "can-write-fast",
             CanWriteNodeConfig {
                 connection_id: Some("can-fast".to_owned()),
+                simulation: false,
                 can_id: Some(0x123),
                 is_extended: false,
             },
@@ -404,6 +451,7 @@ mod tests {
             "can-read-shared",
             CanReadNodeConfig {
                 connection_id: Some("can-shared".to_owned()),
+                simulation: false,
                 can_id: None,
                 is_extended: false,
                 timeout_ms: 80,
@@ -414,6 +462,7 @@ mod tests {
             "can-write-shared",
             CanWriteNodeConfig {
                 connection_id: Some("can-shared".to_owned()),
+                simulation: false,
                 can_id: Some(0x123),
                 is_extended: false,
             },

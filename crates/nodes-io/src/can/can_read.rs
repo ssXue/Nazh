@@ -1,7 +1,8 @@
 //! CAN 帧接收节点。
 //!
 //! 通过连接级共享 CAN 会话接收单帧 CAN 数据，将帧内容转换为 JSON payload。
-//! 无连接时自动回退到 `MockBackend` 生成模拟帧。
+//! 未配置 `connection_id` 时 fail-fast 报错；仅当 `config.simulation = true`
+//! 显式开启时使用 `MockBackend` 模拟帧（对齐 `modbusRead` 标杆）。
 //!
 //! 节点级 CAN ID 过滤在接收到帧后本地执行，不过滤共享总线。
 
@@ -29,6 +30,10 @@ pub struct CanReadNodeConfig {
     /// 连接 ID（引用 `ConnectionManager` 中的连接定义）。
     #[serde(default)]
     pub connection_id: Option<String>,
+    /// 显式模拟模式。未配置 `connection_id` 时必须置为 true，
+    /// 避免现场漏配时静默走 `MockBackend` 给出假数据。对齐 `modbusRead`。
+    #[serde(default)]
+    pub simulation: bool,
     /// 可选：只接收指定 CAN ID 的帧。
     #[serde(default)]
     pub can_id: Option<u32>,
@@ -105,11 +110,16 @@ impl NodeTrait for CanReadNode {
                 .map_err(|error| EngineError::node_config(self.id.clone(), error.to_string()))?;
         }
 
-        let connection_id = self
-            .config
-            .connection_id
-            .clone()
-            .unwrap_or_else(|| "mock-can".to_owned());
+        let connection_id = match self.config.connection_id.clone() {
+            Some(id) => id,
+            None if self.config.simulation => "mock-can".to_owned(),
+            None => {
+                return Err(EngineError::node_config(
+                    self.id.clone(),
+                    "CAN Read 缺少 connection_id；仅测试/demo 可显式设置 simulation=true 使用 Mock CAN 后端",
+                ));
+            }
+        };
 
         let runtime = CanBusRuntime::new(self.connection_manager.clone(), connection_id);
         let session = runtime
@@ -191,7 +201,13 @@ impl NodeTrait for CanReadNode {
     async fn on_deploy(&self, ctx: NodeLifecycleContext) -> Result<LifecycleGuard, EngineError> {
         let connection_id = match &self.config.connection_id {
             Some(id) => id.clone(),
-            None => return Ok(LifecycleGuard::noop()),
+            None if self.config.simulation => return Ok(LifecycleGuard::noop()),
+            None => {
+                return Err(EngineError::node_config(
+                    self.id.clone(),
+                    "CAN Read 缺少 connection_id；仅测试/demo 可显式设置 simulation=true 使用 Mock CAN 后端",
+                ));
+            }
         };
 
         // 验证连接并预热共享会话
@@ -221,6 +237,7 @@ mod tests {
     fn output_pin_是_json() {
         let node = make_node(CanReadNodeConfig {
             connection_id: None,
+            simulation: true,
             can_id: None,
             is_extended: false,
             timeout_ms: 1000,
@@ -236,6 +253,7 @@ mod tests {
     async fn 标准帧_can_id_超限会失败() {
         let node = make_node(CanReadNodeConfig {
             connection_id: None,
+            simulation: true,
             can_id: Some(0x800),
             is_extended: false,
             timeout_ms: 1,
@@ -249,9 +267,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn 无连接时走_mock_回退并标记模拟() {
+    async fn 显式_simulation_时使用模拟数据() {
         let node = make_node(CanReadNodeConfig {
             connection_id: None,
+            simulation: true,
             can_id: None,
             is_extended: false,
             timeout_ms: 1,
@@ -262,5 +281,30 @@ mod tests {
 
         assert_eq!(metadata["can"]["simulated"], Value::Bool(true));
         assert!(metadata["can"].get("connection").is_none());
+    }
+
+    #[tokio::test]
+    async fn 未显式_simulation_时缺少_connection_id_应报错() {
+        let node = make_node(CanReadNodeConfig {
+            connection_id: None,
+            simulation: false,
+            can_id: None,
+            is_extended: false,
+            timeout_ms: 1,
+        });
+
+        let err = node
+            .transform(Uuid::new_v4(), Value::Null)
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(err, EngineError::NodeConfig { .. }),
+            "未显式 simulation=true 时不应静默走 Mock CAN 后端: {err:?}"
+        );
+        assert!(
+            err.to_string().contains("simulation=true"),
+            "错误消息应引导用户显式设置 simulation=true: {err}"
+        );
     }
 }

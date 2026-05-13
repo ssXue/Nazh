@@ -18,8 +18,8 @@
 | `modbusRead` | Modbus TCP | 寄存器读取（有连接走真实协议；无连接必须显式 `simulation: true` 才走模拟） |
 | `httpClient` | HTTP(S) | 通用 HTTP 请求（三种 body 模式：json / template / dingtalk_markdown） |
 | `mqttClient` | MQTT | 两种模式：publish（变换节点）/ subscribe（触发器，壳层启动订阅） |
-| `canRead` | CAN/SLCAN | 通过 USB-CAN SLCAN 适配器接收 CAN 帧（无连接走 Mock 回退） |
-| `canWrite` | CAN/SLCAN | 通过 USB-CAN SLCAN 适配器发送 CAN 帧（无连接走 Mock 回退） |
+| `canRead` | CAN/SLCAN | 通过 USB-CAN SLCAN 适配器接收 CAN 帧（默认 fail-fast；`config.simulation=true` 时显式启用 Mock 后端） |
+| `canWrite` | CAN/SLCAN | 通过 USB-CAN SLCAN 适配器发送 CAN 帧（默认 fail-fast；`config.simulation=true` 时显式启用 Mock 后端） |
 | `ethercatPdoRead` | EtherCAT | 读取从站 PDO 输入数据（ethercrab 真实后端 / Mock 回退） |
 | `ethercatPdoWrite` | EtherCAT | 写入从站 PDO 输出数据（ethercrab 真实后端 / Mock 回退） |
 | `ethercatStatus` | EtherCAT | 查询所有从站状态与通道信息 |
@@ -237,7 +237,12 @@ EtherCAT 主站初始化失败: EtherCAT TX/RX 任务已终止（接口 `<iface>
 
 - `sqlWriter.database_path` 必须显式配置；测试 fixture 也要给出项目内或临时路径，禁止静默写入 `./nazh-local.sqlite3`。
 - `modbusRead` 无 `connection_id` 时默认拒绝运行；只有测试/demo 明确设置 `simulation: true` 时才允许正弦模拟读数。
+- `canRead` / `canWrite` 默认 fail-fast：无 `connection_id` 且 `simulation: false`（默认值）时，`on_deploy` 与 `transform` 双重防御直接报错；只有显式 `simulation: true` 才使用 `MockBackend`。这条与 `modbusRead` 对齐，避免现场漏配时静默给出假数据/假"发送成功"。
 - CAN/SLCAN 配置必须显式声明 `interface` / `channel` / `baud_rate` / `bitrate`；EtherCAT 配置必须显式声明 `backend` / `interface` / `cycle_time_ms` / `op_timeout_ms`。mock 后端也按同一规则写全字段。
+
+### 新增 DEVICE_IO 节点的 simulation 约定
+
+新增 `DEVICE_IO` 能力的节点时，**禁止**通过 `unwrap_or("mock-*")` 等隐式 fallback 静默走模拟后端。如需保留模拟通路，必须暴露**显式** `simulation: bool` 字段（默认 `false`），并在 `transform` / `on_deploy` 双层做 fail-fast 校验。错误消息需引导用户显式设置 `simulation=true`，与 `modbusRead` / `canRead` / `canWrite` 的错误文案保持一致风格。
 
 ### 模板引擎
 

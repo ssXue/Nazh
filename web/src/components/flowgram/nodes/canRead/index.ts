@@ -8,7 +8,7 @@ export const definition = {
   palette: { title: 'CAN Read', badge: 'CAN' },
   ai: {
     hint:
-      'CAN 读取节点；config 可含 can_id, is_extended, timeout_ms；需要绑定 can / can-slcan / slcan 连接。',
+      'CAN 读取节点；config 可含 can_id, is_extended, timeout_ms；需要绑定 can / can-slcan / slcan 连接。默认 fail-fast；如需测试无连接模拟，显式置 simulation=true。',
   },
   requiresConnection: true,
 
@@ -27,6 +27,7 @@ export const definition = {
         can_id: null,
         is_extended: false,
         timeout_ms: 1000,
+        simulation: false,
       },
     };
   },
@@ -45,6 +46,8 @@ export const definition = {
         typeof rawConfig.timeout_ms === 'number' && Number.isFinite(rawConfig.timeout_ms)
           ? Math.max(1, Math.round(rawConfig.timeout_ms))
           : 1000,
+      simulation:
+        typeof rawConfig.simulation === 'boolean' ? rawConfig.simulation : false,
     };
   },
 

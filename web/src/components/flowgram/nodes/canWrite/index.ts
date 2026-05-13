@@ -8,7 +8,7 @@ export const definition = {
   palette: { title: 'CAN Write', badge: 'CAN' },
   ai: {
     hint:
-      'CAN 发送节点；config 可含 can_id, is_extended；payload 可提供 can_id、data、is_extended，需要绑定 can / can-slcan / slcan 连接。',
+      'CAN 发送节点；config 可含 can_id, is_extended；payload 可提供 can_id、data、is_extended，需要绑定 can / can-slcan / slcan 连接。默认 fail-fast；如需测试无连接模拟，显式置 simulation=true。',
   },
   requiresConnection: true,
 
@@ -25,6 +25,7 @@ export const definition = {
       config: {
         can_id: null,
         is_extended: false,
+        simulation: false,
       },
     };
   },
@@ -39,6 +40,8 @@ export const definition = {
           : null,
       is_extended:
         typeof rawConfig.is_extended === 'boolean' ? rawConfig.is_extended : false,
+      simulation:
+        typeof rawConfig.simulation === 'boolean' ? rawConfig.simulation : false,
     };
   },
 

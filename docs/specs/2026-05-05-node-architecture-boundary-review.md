@@ -1,6 +1,6 @@
 # 节点架构边界评审
 
-> **状态：** 评审结论，部分收口（2026-05-09：`capabilityCall` 真实协议执行已接入；2026-05-13：阶段 2 前端分类调整完成，含 capabilityCall 连接绑定补齐与 AI prompt 调整；设备信号读取/事件入口仍待后续设计）
+> **状态：** 评审结论，部分收口（2026-05-09：`capabilityCall` 真实协议执行已接入；2026-05-13：阶段 1 完成 `canRead` / `canWrite` 显式 simulation 开关 + fail-fast，阶段 2 完成前端分类调整含 capabilityCall 连接绑定补齐与 AI prompt 调整；设备信号读取/事件入口仍待后续设计）
 > **日期：** 2026-05-05
 > **触发：** 复核项目初始原则：设备是高级节点，CAN 卡、串口等物理通道是全局连接资源
 > **关联：** RFC-0004、ADR-0005、ADR-0009、ADR-0018、ADR-0021
@@ -79,6 +79,8 @@
 - 节点卡片文案避免把 CAN 卡、串口描述成业务能力；应描述为“适配器/调试入口”。
 
 ### 4. 收紧生产环境的模拟回退
+
+> **状态：** 2026-05-13 已完成 `canRead` / `canWrite` 引入显式 `simulation` 开关 + 默认 fail-fast + `on_deploy` 双层防御，对齐 `modbusRead` 标杆。`modbusRead` 已有此能力。`crates/nodes-io/AGENTS.md` 增设"新增 DEVICE_IO 节点的 simulation 约定" checklist。
 
 `modbusRead` 无连接走正弦模拟，`canRead` / `canWrite` 无连接走 Mock。这个行为对 demo 和测试友好，但对工业运行容易掩盖配置缺失。
 
