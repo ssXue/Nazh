@@ -78,7 +78,18 @@ async fn node_handle_emit_发出_started_completed_事件() {
     let store: Arc<dyn DataStore> = Arc::new(ArenaDataStore::new());
     let (event_tx, mut event_rx) = mpsc::channel(8);
     let (downstream_tx, mut downstream_rx) = mpsc::channel(4);
-    let handle = NodeHandle::new("trigger-1", store, vec![downstream_tx], event_tx);
+    let handle = NodeHandle::new(
+        "trigger-1",
+        store,
+        vec![EmitTarget {
+            sender: downstream_tx,
+            from_pin: "out".to_owned(),
+            to_node: "downstream".to_owned(),
+            to_pin: "in".to_owned(),
+            edge_kind: PinKind::Exec,
+        }],
+        event_tx,
+    );
 
     handle
         .emit(serde_json::json!({"value": 42}), Map::new())
@@ -87,6 +98,12 @@ async fn node_handle_emit_发出_started_completed_事件() {
 
     let started = event_rx.recv().await.unwrap();
     assert!(matches!(started, ExecutionEvent::Started { .. }));
+    // ADR-0016：emit 现在也会发射 EdgeTransmitSummary
+    let edge_summary = event_rx.recv().await.unwrap();
+    assert!(
+        matches!(edge_summary, ExecutionEvent::EdgeTransmitSummary(_)),
+        "expect EdgeTransmitSummary, got {edge_summary:?}"
+    );
     let completed = event_rx.recv().await.unwrap();
     match completed {
         ExecutionEvent::Completed(event) => {
@@ -130,7 +147,18 @@ async fn node_handle_emit_下游关闭不报错() {
     let (event_tx, _event_rx) = mpsc::channel(8);
     let (downstream_tx, downstream_rx) = mpsc::channel::<ContextRef>(1);
     drop(downstream_rx); // 立即关闭下游
-    let handle = NodeHandle::new("trigger-3", store_dyn, vec![downstream_tx], event_tx);
+    let handle = NodeHandle::new(
+        "trigger-3",
+        store_dyn,
+        vec![EmitTarget {
+            sender: downstream_tx,
+            from_pin: "out".to_owned(),
+            to_node: "downstream".to_owned(),
+            to_pin: "in".to_owned(),
+            edge_kind: PinKind::Exec,
+        }],
+        event_tx,
+    );
 
     // 不应返回 Err；只是 tracing::debug! 记录
     handle
@@ -167,7 +195,18 @@ async fn node_handle_emit_事件通道满时仍不阻塞数据通路() {
         })
         .unwrap();
     let (downstream_tx, mut downstream_rx) = mpsc::channel(4);
-    let handle = NodeHandle::new("trigger-full", store, vec![downstream_tx], event_tx);
+    let handle = NodeHandle::new(
+        "trigger-full",
+        store,
+        vec![EmitTarget {
+            sender: downstream_tx,
+            from_pin: "out".to_owned(),
+            to_node: "downstream".to_owned(),
+            to_pin: "in".to_owned(),
+            edge_kind: PinKind::Exec,
+        }],
+        event_tx,
+    );
 
     match tokio::time::timeout(
         Duration::from_millis(100),

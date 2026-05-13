@@ -19,8 +19,8 @@ use tokio::sync::mpsc;
 use tracing::Instrument;
 
 use nazh_core::{
-    ContextRef, DataStore, EdgeTransmitSummary, EngineError, ExecutionEvent, NodeDispatch,
-    NodeTrait, OutputCache, PinKind,
+    BackpressureDetected, BackpressurePolicy, ContextRef, DataStore, EdgeTransmitSummary,
+    EngineError, ExecutionEvent, NodeDispatch, NodeTrait, OutputCache, PinKind,
     event::{emit_event, emit_failure},
     guard::guarded_execute,
 };
@@ -28,44 +28,108 @@ use nazh_core::{
 use super::pull::{EdgesByConsumer, PureMemo};
 use super::types::DownstreamTarget;
 
+/// ADR-0016：边传输统计窗口刷新间隔。
+const EDGE_WINDOW_DURATION: Duration = Duration::from_millis(100);
+
 /// ADR-0016：单条边的传输累计窗口。
 ///
-/// 每次 `record()` 累加一次传输统计；窗口满（≥100ms）时 `flush()` 发出
-/// [`EdgeTransmitSummary`] 事件并重置计数。
+/// 每次 `record()` 累加一次传输统计并检测背压；窗口满（≥100ms）时
+/// `flush_if_ready()` 发出 [`EdgeTransmitSummary`] 事件并重置计数。
+/// 循环退出时 `force_flush()` 无条件刷新剩余数据。
 struct EdgeWindow {
     from_pin: String,
     to_node: String,
     to_pin: String,
     edge_kind: PinKind,
+    channel_capacity: usize,
     transmit_count: usize,
     max_queue_depth: usize,
     window_start: Instant,
+    /// 本窗口周期内是否已发射过背压告警（限频）。
+    backpressure_reported: bool,
 }
 
 impl EdgeWindow {
-    fn new(from_pin: String, to_node: String, to_pin: String, edge_kind: PinKind) -> Self {
+    fn new(
+        from_pin: String,
+        to_node: String,
+        to_pin: String,
+        edge_kind: PinKind,
+        channel_capacity: usize,
+    ) -> Self {
         Self {
             from_pin,
             to_node,
             to_pin,
             edge_kind,
+            channel_capacity,
             transmit_count: 0,
             max_queue_depth: 0,
             window_start: Instant::now(),
+            backpressure_reported: false,
         }
     }
 
-    fn record(&mut self, queue_depth: usize) {
+    /// 记录一次边传输并检测背压。
+    ///
+    /// 当队列深度达到容量 80% 时发射 [`BackpressureDetected`]，
+    /// 每窗口周期最多发射一次以避免重复告警。
+    fn record(
+        &mut self,
+        queue_depth: usize,
+        from_node: &str,
+        event_tx: &mpsc::Sender<ExecutionEvent>,
+    ) {
         self.transmit_count += 1;
         self.max_queue_depth = self.max_queue_depth.max(queue_depth);
+
+        if !self.backpressure_reported
+            && self.channel_capacity > 0
+            && queue_depth * 10 >= self.channel_capacity * 8
+        {
+            emit_event(
+                event_tx,
+                ExecutionEvent::BackpressureDetected(BackpressureDetected {
+                    at_node: self.to_node.clone(),
+                    incoming_pin: self.to_pin.clone(),
+                    channel_capacity: self.channel_capacity,
+                    channel_depth: queue_depth,
+                    policy: BackpressurePolicy::Block,
+                    dropped_since_last_report: 0,
+                    detected_at: format_instant(Instant::now()),
+                }),
+            );
+            self.backpressure_reported = true;
+            tracing::warn!(
+                from_node,
+                from_pin = %self.from_pin,
+                to_node = %self.to_node,
+                to_pin = %self.to_pin,
+                queue_depth,
+                capacity = self.channel_capacity,
+                "ADR-0016：检测到背压，队列深度达到容量 80% 以上",
+            );
+        }
     }
 
-    /// 若窗口已满（≥100ms）或有数据待发，构造并发出 [`EdgeTransmitSummary`]，
-    /// 然后重置计数。无数据时不发事件。
-    fn flush(&mut self, from_node: &str, event_tx: &mpsc::Sender<ExecutionEvent>) {
+    /// 若窗口已满（≥100ms）且有数据，构造并发出 [`EdgeTransmitSummary`]，
+    /// 然后重置计数。窗口未满时跳过。
+    fn flush_if_ready(&mut self, from_node: &str, event_tx: &mpsc::Sender<ExecutionEvent>) {
+        if self.transmit_count == 0 || self.window_start.elapsed() < EDGE_WINDOW_DURATION {
+            return;
+        }
+        self.do_flush(from_node, event_tx);
+    }
+
+    /// 无条件刷新剩余数据（用于循环退出时保底）。
+    fn force_flush(&mut self, from_node: &str, event_tx: &mpsc::Sender<ExecutionEvent>) {
         if self.transmit_count == 0 {
             return;
         }
+        self.do_flush(from_node, event_tx);
+    }
+
+    fn do_flush(&mut self, from_node: &str, event_tx: &mpsc::Sender<ExecutionEvent>) {
         let now = Instant::now();
         emit_event(
             event_tx,
@@ -83,6 +147,7 @@ impl EdgeWindow {
         );
         self.transmit_count = 0;
         self.max_queue_depth = 0;
+        self.backpressure_reported = false;
         self.window_start = now;
     }
 }
@@ -152,12 +217,30 @@ pub(crate) async fn run_node(
                 target.target_node_id.clone(),
                 to_pin,
                 target.edge_kind,
+                target.sender.max_capacity(),
             );
             (key, window)
         })
         .collect();
 
-    while let Some(ctx_ref) = input_rx.recv().await {
+    let mut edge_flush_interval = tokio::time::interval(EDGE_WINDOW_DURATION);
+    edge_flush_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+
+    loop {
+        let ctx_ref = tokio::select! {
+            maybe_ctx_ref = input_rx.recv() => {
+                let Some(ctx_ref) = maybe_ctx_ref else {
+                    break;
+                };
+                ctx_ref
+            }
+            _ = edge_flush_interval.tick() => {
+                for window in edge_windows.values_mut() {
+                    window.flush_if_ready(&node_id, &event_tx);
+                }
+                continue;
+            }
+        };
         let trace_id = ctx_ref.trace_id;
 
         emit_event(
@@ -343,7 +426,7 @@ pub(crate) async fn run_node(
                                     .sender
                                     .max_capacity()
                                     .saturating_sub(target.sender.capacity());
-                                window.record(queue_depth);
+                                window.record(queue_depth, &node_id, &event_tx);
                             }
                         }
                         if let Some(error) = downstream_error {
@@ -394,17 +477,15 @@ pub(crate) async fn run_node(
         // ADR-0014 Phase 5：trace 完成后清理 PureMemo（释放内存）
         pure_memo.clear_trace(trace_id);
 
-        // ADR-0016：刷新有数据的边传输窗口。
-        // 当前策略：每个执行周期末尾 flush 所有有数据的窗口。
-        // 未来可在高频场景下改回 100ms 窗口定时 flush。
+        // ADR-0016：刷新满足 100ms 窗口条件的边传输统计。
         for window in edge_windows.values_mut() {
-            window.flush(&node_id, &event_tx);
+            window.flush_if_ready(&node_id, &event_tx);
         }
     }
 
-    // ADR-0016：循环退出时 flush 剩余窗口（理论上为空，保底）。
+    // ADR-0016：循环退出时无条件 flush 剩余窗口。
     for window in edge_windows.values_mut() {
-        window.flush(&node_id, &event_tx);
+        window.force_flush(&node_id, &event_tx);
     }
 }
 

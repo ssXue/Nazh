@@ -4,7 +4,6 @@ import type { BackpressurePolicy } from "./BackpressurePolicy";
 /**
  * 背压告警事件（ADR-0016）。
  *
- * 下游 channel 深度接近容量上限时发出。
- * 发射逻辑暂未实施（类型就位，`#[allow(dead_code)]` 抑制警告）。
+ * 下游 channel 深度达到容量 80% 时由 Runner 边窗口发出。
  */
 export type BackpressureDetected = { at_node: string, incoming_pin: string, channel_capacity: number, channel_depth: number, policy: BackpressurePolicy, dropped_since_last_report: bigint, detected_at: string, };

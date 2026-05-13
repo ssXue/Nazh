@@ -1837,13 +1837,16 @@ async fn edge_transmit_summary_emitted_on_dispatch() {
         Err(error) => panic!("workflow 应部署成功: {error}"),
     };
 
-    match deployment
-        .submit(WorkflowContext::new(json!({ "value": 42 })))
+    // 发送两条消息，第二条触发 flush_if_ready（100ms 窗口已过）。
+    deployment
+        .submit(WorkflowContext::new(json!({ "value": 1 })))
         .await
-    {
-        Ok(()) => {}
-        Err(error) => panic!("dispatch 应成功: {error}"),
-    }
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(120)).await;
+    deployment
+        .submit(WorkflowContext::new(json!({ "value": 2 })))
+        .await
+        .unwrap();
 
     // 收集事件直到收到 EdgeTransmitSummary 或超时。
     let deadline = Duration::from_secs(2);
@@ -1870,7 +1873,6 @@ async fn edge_transmit_summary_emitted_on_dispatch() {
         }
     }
 
-    // 手动 flush 剩余窗口——drop deployment 触发 run_node 退出。
     drop(deployment);
 
     assert!(found_summary, "应在事件流中收到 EdgeTransmitSummary");

@@ -242,6 +242,8 @@ export function StudioContentRouter({
               runtimeState: engine.runtimeState,
               workflowStatus,
               canTestRun,
+              getEdgeHeatmap: engine.getEdgeHeatmap,
+              registerEdgeHeatUpdate: engine.registerEdgeHeatUpdate,
             }}
             flowgramAppearance={{
               accentHex: settings.accentHex,

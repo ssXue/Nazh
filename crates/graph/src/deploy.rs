@@ -45,7 +45,7 @@ use super::types::{
 use super::variables_init::build_workflow_variables;
 use connections::SharedConnectionManager;
 use nazh_core::{
-    ArenaDataStore, CancellationToken, ContextRef, DataStore, EngineError, NodeHandle,
+    ArenaDataStore, CancellationToken, ContextRef, DataStore, EmitTarget, EngineError, NodeHandle,
     NodeLifecycleContext, NodeRegistry, NodeTrait, OutputCache, PinKind, RuntimeResources,
     SharedResources, WorkflowVariableEvent,
 };
@@ -237,6 +237,31 @@ pub async fn deploy_workflow_and_restore_variables<S: BuildHasher>(
         reactive_output_pin_ids_by_node.insert(id.clone(), reactive_pin_ids);
     }
 
+    // ADR-0016：边 → PinKind 查找表，阶段 1 / 阶段 2 共用。
+    // Key = (from_node, source_port_id)，Value = PinKind。
+    let edge_kind_lookup: HashMap<(String, Option<String>), PinKind> = graph
+        .edges
+        .iter()
+        .map(|edge| {
+            let from_node = nodes_by_id.get(&edge.from).ok_or_else(|| {
+                EngineError::invalid_graph(format!(
+                    "edge_kind_lookup：源节点 `{}` 不存在",
+                    edge.from
+                ))
+            })?;
+            let port_id = edge
+                .source_port_id
+                .as_deref()
+                .unwrap_or(super::DEFAULT_OUTPUT_PIN_ID);
+            let kind = from_node
+                .output_pins()
+                .into_iter()
+                .find(|p| p.id == port_id)
+                .map_or(PinKind::Exec, |p| p.kind);
+            Ok(((edge.from.clone(), edge.source_port_id.clone()), kind))
+        })
+        .collect::<Result<HashMap<_, _>, EngineError>>()?;
+
     // ---- 阶段 1：on_deploy ----
     //
     // 拓扑序保证上游节点先完成 on_deploy，让下游节点 on_deploy 时上游的资源
@@ -250,15 +275,34 @@ pub async fn deploy_workflow_and_restore_variables<S: BuildHasher>(
             EngineError::invalid_graph(format!("阶段 1：节点 `{node_id}` 在阶段 0.5 缺失"))
         })?;
 
-        // 触发器节点 emit 时直接广播给所有下游 sender，不按 port 路由——
-        // 路由语义只对 transform 路径有效（ADR-0008 metadata 通道是另一回事）。
-        let downstream_for_handle = topology
+        // ADR-0016：构建带边元数据的下游目标，供 NodeHandle::emit 发射 EdgeTransmitSummary。
+        let downstream_for_handle: Vec<EmitTarget> = topology
             .downstream
             .get(node_id)
             .into_iter()
             .flat_map(|edges| edges.iter())
-            .filter_map(|edge| senders.get(&edge.to).cloned())
-            .collect::<Vec<_>>();
+            .filter_map(|edge| {
+                senders.get(&edge.to).cloned().map(|sender| {
+                    let edge_kind = edge_kind_lookup
+                        .get(&(edge.from.clone(), edge.source_port_id.clone()))
+                        .copied()
+                        .unwrap_or(PinKind::Exec);
+                    EmitTarget {
+                        sender,
+                        from_pin: edge
+                            .source_port_id
+                            .clone()
+                            .unwrap_or_else(|| super::DEFAULT_OUTPUT_PIN_ID.to_owned()),
+                        to_node: edge.to.clone(),
+                        to_pin: edge
+                            .target_port_id
+                            .clone()
+                            .unwrap_or_else(|| super::DEFAULT_INPUT_PIN_ID.to_owned()),
+                        edge_kind,
+                    }
+                })
+            })
+            .collect();
 
         let handle = NodeHandle::new(
             node_id.clone(),
@@ -302,31 +346,6 @@ pub async fn deploy_workflow_and_restore_variables<S: BuildHasher>(
     );
     // ADR-0014 Phase 4：Pure memo 全局共享实例
     let pure_memo: Arc<super::pull::PureMemo> = Arc::new(super::pull::PureMemo::new());
-
-    // ADR-0016：边 → PinKind 查找表，供 DownstreamTarget 填充 edge_kind。
-    // Key = (from_node, source_port_id)，Value = PinKind。
-    let edge_kind_lookup: HashMap<(String, Option<String>), PinKind> = graph
-        .edges
-        .iter()
-        .map(|edge| {
-            let from_node = nodes_by_id.get(&edge.from).ok_or_else(|| {
-                EngineError::invalid_graph(format!(
-                    "edge_kind_lookup：源节点 `{}` 不存在",
-                    edge.from
-                ))
-            })?;
-            let port_id = edge
-                .source_port_id
-                .as_deref()
-                .unwrap_or(super::DEFAULT_OUTPUT_PIN_ID);
-            let kind = from_node
-                .output_pins()
-                .into_iter()
-                .find(|p| p.id == port_id)
-                .map_or(PinKind::Exec, |p| p.kind);
-            Ok(((edge.from.clone(), edge.source_port_id.clone()), kind))
-        })
-        .collect::<Result<HashMap<_, _>, EngineError>>()?;
 
     for node_id in &topology.deployment_order {
         let Some(node) = nodes_index.get(node_id).cloned() else {

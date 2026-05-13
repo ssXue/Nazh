@@ -38,6 +38,50 @@ describe('parseWorkflowEventPayload', () => {
     expect(result).toEqual({ kind: 'finished', nodeId: '', traceId: 'trace-005' });
   });
 
+  it('解析 EdgeTransmitSummary 事件，透传边汇总载荷', () => {
+    const payload = {
+      EdgeTransmitSummary: {
+        from_node: 'source',
+        from_pin: 'out',
+        to_node: 'sink',
+        to_pin: 'in',
+        edge_kind: 'exec',
+        transmit_count: 3,
+        max_queue_depth: 1,
+        window_started_at: '2026-05-13T00:00:00Z',
+        window_ended_at: '2026-05-13T00:00:00.100Z',
+      },
+    };
+    const result = parseWorkflowEventPayload(payload);
+    expect(result).toEqual({
+      kind: 'edge-transmit-summary',
+      nodeId: 'source',
+      traceId: '',
+      edgeTransmitSummary: payload.EdgeTransmitSummary,
+    });
+  });
+
+  it('解析 BackpressureDetected 事件，透传背压载荷', () => {
+    const payload = {
+      BackpressureDetected: {
+        at_node: 'sink',
+        incoming_pin: 'in',
+        channel_capacity: 64,
+        channel_depth: 52,
+        policy: 'block',
+        dropped_since_last_report: 0,
+        detected_at: '2026-05-13T00:00:00Z',
+      },
+    };
+    const result = parseWorkflowEventPayload(payload);
+    expect(result).toEqual({
+      kind: 'backpressure-detected',
+      nodeId: 'sink',
+      traceId: '',
+      backpressureDetected: payload.BackpressureDetected,
+    });
+  });
+
   it('输入 null 时返回 null', () => {
     expect(parseWorkflowEventPayload(null)).toBeNull();
   });

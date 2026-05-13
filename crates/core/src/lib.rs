@@ -33,7 +33,8 @@ pub use event::CompletedExecutionEvent;
 pub use event::ExecutionEvent;
 pub use event::{BackpressureDetected, BackpressurePolicy, EdgeTransmitSummary};
 pub use lifecycle::{
-    LifecycleGuard, NodeHandle, NodeLifecycleContext, blocking_sleep_or_cancel, sleep_or_cancel,
+    EmitTarget, LifecycleGuard, NodeHandle, NodeLifecycleContext, blocking_sleep_or_cancel,
+    sleep_or_cancel,
 };
 pub use node::{
     NodeCapabilities, NodeDispatch, NodeExecution, NodeOutput, NodeTrait, into_payload_map,

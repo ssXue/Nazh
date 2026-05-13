@@ -101,4 +101,21 @@ describe('reduceRuntimeState', () => {
     expect(state.failedNodeIds).toContain('node-b');
     expect(state.lastEventType).toBe('finished');
   });
+
+  it('边级观测事件不重置当前 trace 与运行状态', () => {
+    const current = reduceRuntimeState(
+      EMPTY_RUNTIME_STATE,
+      makeEvent({ kind: 'completed', nodeId: 'timer', traceId: 'trace-timer' }),
+    );
+
+    const next = reduceRuntimeState(
+      current,
+      makeEvent({ kind: 'edge-transmit-summary', nodeId: 'timer', traceId: '' }),
+    );
+
+    expect(next).toBe(current);
+    expect(next.traceId).toBe('trace-timer');
+    expect(next.lastEventType).toBe('completed');
+    expect(next.completedNodeIds).toContain('timer');
+  });
 });

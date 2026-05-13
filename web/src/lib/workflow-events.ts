@@ -179,6 +179,13 @@ export function reduceRuntimeState(
   current: WorkflowRuntimeState,
   event: ParsedWorkflowEvent,
 ): WorkflowRuntimeState {
+  // ADR-0016：边级观测事件只驱动热力图，不属于节点生命周期。
+  // 不能用空 traceId 触发状态机重置，否则 Timer 等触发器高频 emit 时
+  // 会把画布运行态打回 deployed，导致热力图叠加条件失效。
+  if (event.kind === 'edge-transmit-summary' || event.kind === 'backpressure-detected') {
+    return current;
+  }
+
   const baseState =
     current.traceId === event.traceId
       ? current
@@ -227,10 +234,6 @@ export function reduceRuntimeState(
       nextState.failedNodeIds = baseState.failedNodeIds;
       nextState.outputNodeIds = baseState.outputNodeIds;
       return nextState;
-    // ADR-0016：边级观测事件不影响运行时状态机——透传。
-    case 'edge-transmit-summary':
-    case 'backpressure-detected':
-      return baseState;
   }
 }
 

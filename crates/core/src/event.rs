@@ -81,8 +81,7 @@ pub struct EdgeTransmitSummary {
 
 /// 背压告警事件（ADR-0016）。
 ///
-/// 下游 channel 深度接近容量上限时发出。
-/// 发射逻辑暂未实施（类型就位，`#[allow(dead_code)]` 抑制警告）。
+/// 下游 channel 深度达到容量 80% 时由 Runner 边窗口发出。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
 #[serde(rename_all = "snake_case")]

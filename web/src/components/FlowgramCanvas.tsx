@@ -83,6 +83,11 @@ import {
   FlowgramNodeCard,
 } from './flowgram/FlowgramNodeCards';
 import { FlowgramToolbar } from './flowgram/FlowgramToolbar';
+import {
+  edgeHeatLevel,
+  findEdgeHeatEntry,
+  type EdgeHeatMap,
+} from '../hooks/use-edge-heatmap';
 
 export interface FlowgramCanvasResources {
   connections: ConnectionDefinition[];
@@ -95,6 +100,10 @@ export interface FlowgramCanvasRuntime {
   runtimeState: WorkflowRuntimeState;
   workflowStatus: WorkflowWindowStatus;
   canTestRun?: boolean;
+  /** ADR-0016：获取边热力图快照。 */
+  getEdgeHeatmap?: () => EdgeHeatMap;
+  /** ADR-0016：注册热力图数据变更回调。 */
+  registerEdgeHeatUpdate?: (callback: (() => void) | null) => void;
 }
 
 export interface FlowgramCanvasAppearance {
@@ -177,6 +186,15 @@ interface InternalFlowDownloadService {
   setDownloading: (value: boolean) => void;
 }
 
+interface FlowgramLineRuntimeSnapshot {
+  isWorkflowRuntimeMapped: boolean;
+  activeNodeIds: Set<string>;
+  completedNodeIds: Set<string>;
+  failedNodeIds: Set<string>;
+  outputNodeIds: Set<string>;
+  getEdgeHeatmap: (() => EdgeHeatMap) | null;
+}
+
 function isBusinessFlowNode(node: FlowNodeEntity | null): node is FlowNodeEntity {
   if (!node || node.flowNodeType === FlowNodeBaseType.GROUP) {
     return false;
@@ -220,6 +238,39 @@ function getDefaultOutputPortId(node: FlowNodeEntity | null): string | undefined
   };
   const nodeType = normalizeNodeKind(rawData.nodeType ?? node.flowNodeType);
   return getLogicNodeBranchDefinitions(nodeType, rawData.config)[0]?.key;
+}
+
+function resolveLineRuntimeStatusFromSnapshot(
+  line: WorkflowLineEntity,
+  snapshot: FlowgramLineRuntimeSnapshot,
+): RuntimeNodeStatus {
+  if (!snapshot.isWorkflowRuntimeMapped) {
+    return 'idle';
+  }
+
+  const fromId = line.info.from || line.from?.id;
+  const toId = line.info.to || line.to?.id;
+  if (!fromId) {
+    return 'idle';
+  }
+
+  if ((toId && snapshot.failedNodeIds.has(toId)) || snapshot.failedNodeIds.has(fromId)) {
+    return 'failed';
+  }
+
+  if (snapshot.activeNodeIds.has(fromId) || (toId && snapshot.activeNodeIds.has(toId))) {
+    return 'running';
+  }
+
+  if ((toId && snapshot.outputNodeIds.has(toId)) || snapshot.outputNodeIds.has(fromId)) {
+    return 'output';
+  }
+
+  if ((toId && snapshot.completedNodeIds.has(toId)) || snapshot.completedNodeIds.has(fromId)) {
+    return 'completed';
+  }
+
+  return 'idle';
 }
 
 // FlowgramContainerCard / FlowgramNodeCard / FlowgramToolButton / FlowgramToolbar
@@ -372,6 +423,22 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
     workflowStatus,
     workflowStatusLabel,
   ]);
+  const lineRuntimeRef = useRef<FlowgramLineRuntimeSnapshot>({
+    isWorkflowRuntimeMapped: false,
+    activeNodeIds: new Set(),
+    completedNodeIds: new Set(),
+    failedNodeIds: new Set(),
+    outputNodeIds: new Set(),
+    getEdgeHeatmap: null,
+  });
+  lineRuntimeRef.current = {
+    isWorkflowRuntimeMapped,
+    activeNodeIds,
+    completedNodeIds,
+    failedNodeIds,
+    outputNodeIds,
+    getEdgeHeatmap: runtime.getEdgeHeatmap ?? null,
+  };
 
   const resolveNodeRuntimeStatus = useCallback(
     (nodeId: string): RuntimeNodeStatus => {
@@ -402,60 +469,77 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
 
   const resolveLineRuntimeStatus = useCallback(
     (line: WorkflowLineEntity): RuntimeNodeStatus => {
-      if (!isWorkflowRuntimeMapped) {
-        return 'idle';
-      }
-
-      const fromId = line.from?.id;
-      const toId = line.to?.id;
-      if (!fromId) {
-        return 'idle';
-      }
-
-      if ((toId && failedNodeIds.has(toId)) || failedNodeIds.has(fromId)) {
-        return 'failed';
-      }
-
-      if (activeNodeIds.has(fromId) || (toId && activeNodeIds.has(toId))) {
-        return 'running';
-      }
-
-      if ((toId && outputNodeIds.has(toId)) || outputNodeIds.has(fromId)) {
-        return 'output';
-      }
-
-      if ((toId && completedNodeIds.has(toId)) || completedNodeIds.has(fromId)) {
-        return 'completed';
-      }
-
-      return 'idle';
+      return resolveLineRuntimeStatusFromSnapshot(line, lineRuntimeRef.current);
     },
-    [activeNodeIds, completedNodeIds, failedNodeIds, isWorkflowRuntimeMapped, outputNodeIds],
+    [],
   );
 
   const isFlowingLine = useCallback(
     (_ctx: FreeLayoutPluginContext, line: WorkflowLineEntity) =>
-      resolveLineRuntimeStatus(line) === 'running',
-    [resolveLineRuntimeStatus],
+      resolveLineRuntimeStatusFromSnapshot(line, lineRuntimeRef.current) === 'running',
+    [],
   );
 
   const isErrorLine = useCallback(
     (_ctx: FreeLayoutPluginContext, fromPort: { node: FlowNodeEntity }, toPort?: { node: FlowNodeEntity }) =>
-      isWorkflowRuntimeMapped &&
+      lineRuntimeRef.current.isWorkflowRuntimeMapped &&
       Boolean(
-        (fromPort?.node?.id && failedNodeIds.has(fromPort.node.id)) ||
-          (toPort?.node?.id && failedNodeIds.has(toPort.node.id)),
+        (fromPort?.node?.id && lineRuntimeRef.current.failedNodeIds.has(fromPort.node.id)) ||
+          (toPort?.node?.id && lineRuntimeRef.current.failedNodeIds.has(toPort.node.id)),
       ),
-    [failedNodeIds, isWorkflowRuntimeMapped],
+    [],
   );
 
   const setLineClassName = useCallback(
     (_ctx: FreeLayoutPluginContext, line: WorkflowLineEntity) => {
-      const lineStatus = resolveLineRuntimeStatus(line);
-      return lineStatus === 'idle' ? 'flowgram-line' : `flowgram-line flowgram-line--${lineStatus}`;
+      const snapshot = lineRuntimeRef.current;
+      const lineStatus = resolveLineRuntimeStatusFromSnapshot(line, snapshot);
+      const base = lineStatus === 'idle' ? 'flowgram-line' : `flowgram-line flowgram-line--${lineStatus}`;
+
+      // ADR-0016：边热力图叠加（运行态下根据传输统计着色）。
+      // getEdgeHeatmap 返回的是 ref（对象引用不变），闭包始终能读到最新数据。
+      // 热力图数据变更后由下方 useEffect 调用 linesManager.forceUpdate() 触发边重渲染。
+      if (snapshot.getEdgeHeatmap) {
+        const heatmap = snapshot.getEdgeHeatmap();
+        const fromId = line.info.from || line.from?.id;
+        const toId = line.info.to || line.to?.id;
+        if (fromId && toId && heatmap.size > 0) {
+          const entry = findEdgeHeatEntry(
+            heatmap,
+            fromId,
+            line.info.fromPort,
+            toId,
+            line.info.toPort,
+          );
+          if (entry?.backpressure) {
+            return `${base} flowgram-line--backpressure`;
+          }
+          if (entry && entry.transmitCount > 0) {
+            return `${base} flowgram-line--heat-${edgeHeatLevel(entry.transmitCount)}`;
+          }
+        }
+      }
+
+      return base;
     },
-    [resolveLineRuntimeStatus],
+    [],
   );
+
+  // ADR-0016：当 editorCtx 就绪时，注册热力图更新回调。
+  // 回调在 Tauri 事件循环中同步触发 linesManager.forceUpdate()，
+  // 不经过 React 渲染周期，确保边样式实时更新。
+  useEffect(() => {
+    if (!editorCtx || !runtime.registerEdgeHeatUpdate) {
+      return;
+    }
+    const forceUpdateLines = () => {
+      editorCtx.document.linesManager.forceUpdate();
+    };
+    runtime.registerEdgeHeatUpdate(forceUpdateLines);
+    return () => {
+      runtime.registerEdgeHeatUpdate?.(null);
+    };
+  }, [editorCtx, runtime.registerEdgeHeatUpdate]);
 
   // 连接期 pin 类型校验：用户拖边瞬间被调用——pin schema 缓存命中且
   // 类型不兼容时返回 false 拒收，否则放行（缓存未命中也放行，部署期

@@ -1691,6 +1691,59 @@ html[data-theme='dark'] .flowgram-card--loop .sub-canvas-border::before {
   opacity: 1 !important;
 }
 
+/* ADR-0016：边热力图（传输热度着色） */
+.flowgram-line--heat-1 path,
+.flowgram-line--heat-1 svg path {
+  stroke: var(--success) !important;
+  stroke-width: 2px !important;
+  opacity: 0.9 !important;
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--success) 55%, transparent));
+}
+
+.flowgram-line--heat-2 path,
+.flowgram-line--heat-2 svg path {
+  stroke: var(--warning) !important;
+  stroke-width: 3px !important;
+  opacity: 0.95 !important;
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--warning) 60%, transparent));
+}
+
+.flowgram-line--heat-3 path,
+.flowgram-line--heat-3 svg path {
+  stroke: #f97316 !important;
+  stroke-width: 3.5px !important;
+  opacity: 1 !important;
+  filter: drop-shadow(0 0 8px rgba(249, 115, 22, 0.55));
+}
+
+.flowgram-line--heat-4 path,
+.flowgram-line--heat-4 svg path {
+  stroke: #f43f5e !important;
+  stroke-width: 4px !important;
+  opacity: 1 !important;
+  filter: drop-shadow(0 0 10px rgba(244, 63, 94, 0.65));
+  animation: flowgram-line-heat-pulse 0.9s ease-in-out infinite;
+}
+
+/* ADR-0016：背压告警（红色闪烁） */
+.flowgram-line--backpressure path,
+.flowgram-line--backpressure svg path {
+  stroke: var(--danger) !important;
+  stroke-width: 3.5px !important;
+  opacity: 1 !important;
+  animation: flowgram-line-backpressure-pulse 0.6s ease-in-out infinite;
+}
+
+@keyframes flowgram-line-backpressure-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+@keyframes flowgram-line-heat-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.72; }
+}
+
 .flowgram-stats--runtime {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }

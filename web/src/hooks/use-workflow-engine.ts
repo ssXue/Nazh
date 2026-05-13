@@ -4,10 +4,11 @@
 //! 连接列表、运行时状态机）及其对应的 useEffect 副作用逻辑，
 //! 包括 Tauri 事件监听、全局错误捕获和自适应窗口大小。
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { BoardItem } from '../components/app/BoardsPanel';
 import type { SidebarSection } from '../components/app/types';
+import { useEdgeHeatmap, type EdgeHeatMap } from './use-edge-heatmap';
 import {
   enableAdaptiveWindowSizing,
   hasTauriRuntime,
@@ -63,6 +64,8 @@ export interface WorkflowEngineState {
   connections: ConnectionRecord[];
   runtimeState: WorkflowRuntimeState;
   isRuntimeDockCollapsed: boolean;
+  /** ADR-0016：获取当前边热力图快照。 */
+  getEdgeHeatmap: () => EdgeHeatMap;
 }
 
 /** 操作工作流引擎状态的回调集合。 */
@@ -78,6 +81,8 @@ export interface WorkflowEngineActions {
   addResult: (result: WorkflowResult) => void;
   refreshConnections: () => Promise<void>;
   setIsRuntimeDockCollapsed: React.Dispatch<React.SetStateAction<boolean>>;
+  /** ADR-0016：注册边热力图数据变更回调（由 FlowgramCanvas 调用）。 */
+  registerEdgeHeatUpdate: (callback: (() => void) | null) => void;
 }
 
 /** 工作流引擎 hook 的完整返回类型（状态 + 操作）。 */
@@ -111,6 +116,10 @@ export function useWorkflowEngine(
   const [runtimeState, setRuntimeState] = useState<WorkflowRuntimeState>(EMPTY_RUNTIME_STATE);
   const [isRuntimeDockCollapsed, setIsRuntimeDockCollapsed] = useState(true);
   const activeWorkflowIdRef = useRef<string | null>(null);
+  const edgeHeatUpdateRef = useRef<(() => void) | null>(null);
+  const { recordEdgeTransmit, recordBackpressure, clearEdgeHeatmap, getEdgeHeatmap } = useEdgeHeatmap(
+    () => edgeHeatUpdateRef.current?.(),
+  );
 
   useEffect(() => {
     activeWorkflowIdRef.current = deployInfo?.workflowId?.trim() || null;
@@ -187,6 +196,10 @@ export function useWorkflowEngine(
       setStatusMessage(message);
     }
   }
+
+  const registerEdgeHeatUpdate = useCallback((callback: (() => void) | null) => {
+    edgeHeatUpdateRef.current = callback;
+  }, []);
 
   // 切换工程时默认隐藏运行观测，避免遮挡工作面。
   useEffect(() => {
@@ -322,6 +335,16 @@ export function useWorkflowEngine(
               parsedEvent.error ?? null,
             );
             break;
+          case 'edge-transmit-summary':
+            if (parsedEvent.edgeTransmitSummary) {
+              recordEdgeTransmit(parsedEvent.edgeTransmitSummary);
+            }
+            break;
+          case 'backpressure-detected':
+            if (parsedEvent.backpressureDetected) {
+              recordBackpressure(parsedEvent.backpressureDetected);
+            }
+            break;
         }
       }
     }).then((cleanup) => {
@@ -365,6 +388,7 @@ export function useWorkflowEngine(
 
       setDeployInfo(null);
       setRuntimeState(EMPTY_RUNTIME_STATE);
+      clearEdgeHeatmap();
       appendRuntimeLog(
         'system',
         payload.hadWorkflow ? 'warn' : 'info',
@@ -442,6 +466,7 @@ export function useWorkflowEngine(
     connections,
     runtimeState,
     isRuntimeDockCollapsed,
+    getEdgeHeatmap,
     setStatusMessage,
     appendRuntimeLog,
     appendAppError,
@@ -455,5 +480,6 @@ export function useWorkflowEngine(
     },
     refreshConnections,
     setIsRuntimeDockCollapsed,
+    registerEdgeHeatUpdate,
   };
 }

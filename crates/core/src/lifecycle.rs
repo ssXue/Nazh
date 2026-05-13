@@ -27,8 +27,8 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::{
-    CompletedExecutionEvent, ContextRef, DataStore, EngineError, ExecutionEvent, SharedResources,
-    WorkflowVariables, event::emit_event,
+    CompletedExecutionEvent, ContextRef, DataStore, EdgeTransmitSummary, EngineError,
+    ExecutionEvent, PinKind, SharedResources, WorkflowVariables, event::emit_event,
 };
 
 /// 节点部署钩子可用的受限上下文。
@@ -62,10 +62,28 @@ pub struct NodeHandle {
     inner: Arc<NodeHandleInner>,
 }
 
+/// ADR-0016：NodeHandle 下游目标及边元数据。
+///
+/// 携带边级信息供 `emit()` 路径发射 [`EdgeTransmitSummary`]。
+/// 与 `run_node` 路径的 `DownstreamTarget` 等价但更轻量——
+/// 触发器节点每次 `emit` 发送单条 ContextRef，无需窗口累计。
+pub struct EmitTarget {
+    /// 下游节点的消息发送端。
+    pub sender: mpsc::Sender<ContextRef>,
+    /// 本边源端口 ID（缺省 `"out"`）。
+    pub from_pin: String,
+    /// 下游节点 ID。
+    pub to_node: String,
+    /// 本边目标端口 ID（缺省 `"in"`）。
+    pub to_pin: String,
+    /// 边类型。
+    pub edge_kind: PinKind,
+}
+
 struct NodeHandleInner {
     node_id: String,
     store: Arc<dyn DataStore>,
-    downstream: Vec<mpsc::Sender<ContextRef>>,
+    downstream: Vec<EmitTarget>,
     event_tx: mpsc::Sender<ExecutionEvent>,
 }
 
@@ -76,7 +94,7 @@ impl NodeHandle {
     pub fn new(
         node_id: impl Into<String>,
         store: Arc<dyn DataStore>,
-        downstream: Vec<mpsc::Sender<ContextRef>>,
+        downstream: Vec<EmitTarget>,
         event_tx: mpsc::Sender<ExecutionEvent>,
     ) -> Self {
         Self {
@@ -126,20 +144,43 @@ impl NodeHandle {
             },
         );
 
-        // 3. 广播 ContextRef 到下游
+        // 3. 广播 ContextRef 到下游 + ADR-0016：发射 EdgeTransmitSummary
         let ctx_ref = ContextRef::new(trace_id, data_id, Some(inner.node_id.clone()));
         if inner.downstream.is_empty() {
             inner.store.release(&data_id);
         }
 
-        for sender in &inner.downstream {
-            if sender.send(ctx_ref.clone()).await.is_err() {
+        for target in &inner.downstream {
+            if target.sender.send(ctx_ref.clone()).await.is_err() {
                 inner.store.release(&data_id);
                 tracing::debug!(
                     node_id = %inner.node_id,
                     "下游 channel 已关闭，触发数据丢弃"
                 );
+                continue;
             }
+
+            // ADR-0016：触发器节点每次 emit 发送单条 ContextRef，
+            // 立即发射 EdgeTransmitSummary（无需窗口累计）。
+            let queue_depth = target
+                .sender
+                .max_capacity()
+                .saturating_sub(target.sender.capacity());
+            let now_ts = chrono::Utc::now().to_rfc3339();
+            emit_event(
+                &inner.event_tx,
+                ExecutionEvent::EdgeTransmitSummary(EdgeTransmitSummary {
+                    from_node: inner.node_id.clone(),
+                    from_pin: target.from_pin.clone(),
+                    to_node: target.to_node.clone(),
+                    to_pin: target.to_pin.clone(),
+                    edge_kind: target.edge_kind,
+                    transmit_count: 1,
+                    max_queue_depth: queue_depth,
+                    window_started_at: now_ts.clone(),
+                    window_ended_at: now_ts,
+                }),
+            );
         }
 
         // 4. 发 Completed 事件（携带元数据；空 metadata 转 None 与 transform 路径一致）

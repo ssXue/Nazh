@@ -150,6 +150,76 @@ async fn data_only_output_不进入_result_stream() {
     );
 }
 
+#[tokio::test]
+async fn 边传输窗口在节点空闲时也会定时刷新() {
+    let store = Arc::new(ArenaDataStore::new());
+    let store_dyn: Arc<dyn DataStore> = store.clone();
+    let (input_tx, input_rx) = mpsc::channel(1);
+    let (downstream_tx, mut downstream_rx) = mpsc::channel(4);
+    let (result_tx, _result_rx) = mpsc::channel(1);
+    let (event_tx, mut event_rx) = mpsc::channel(16);
+
+    let trace_id = Uuid::new_v4();
+    let data_id = store.write(json!({"value": 42}), 1).unwrap();
+
+    let runner = tokio::spawn(run_node(
+        Arc::new(EchoNode),
+        None,
+        input_rx,
+        vec![DownstreamTarget {
+            source_port_id: None,
+            sender: downstream_tx,
+            target_node_id: "sink".to_owned(),
+            target_port_id: None,
+            edge_kind: PinKind::Exec,
+        }],
+        result_tx,
+        event_tx,
+        store_dyn,
+        Arc::new(OutputCache::new()),
+        HashSet::new(),
+        Arc::new(EdgesByConsumer::default()),
+        Arc::new(HashMap::new()),
+        Arc::new(HashMap::new()),
+        Arc::new(HashMap::new()),
+        Arc::new(PureMemo::new()),
+        HashSet::new(),
+    ));
+
+    input_tx
+        .send(ContextRef::new(trace_id, data_id, None))
+        .await
+        .unwrap();
+
+    let deadline = tokio::time::sleep(Duration::from_secs(1));
+    tokio::pin!(deadline);
+
+    let mut summary = None;
+    loop {
+        tokio::select! {
+            event = event_rx.recv() => {
+                if let Some(ExecutionEvent::EdgeTransmitSummary(edge_summary)) = event {
+                    summary = Some(edge_summary);
+                    break;
+                }
+            }
+            () = &mut deadline => break,
+        }
+    }
+
+    let summary = summary.expect("应在节点继续等待输入时定时刷新边传输窗口");
+    assert_eq!(summary.from_node, "echo");
+    assert_eq!(summary.from_pin, "out");
+    assert_eq!(summary.to_node, "sink");
+    assert_eq!(summary.to_pin, "in");
+    assert_eq!(summary.transmit_count, 1);
+
+    assert!(downstream_rx.try_recv().is_ok(), "下游仍应收到 ContextRef");
+
+    drop(input_tx);
+    runner.await.unwrap();
+}
+
 #[test]
 fn broadcast_同时含_exec_与_data_输出时不是_data_only() {
     let data_output_pin_ids = HashSet::from(["latest".to_owned()]);
