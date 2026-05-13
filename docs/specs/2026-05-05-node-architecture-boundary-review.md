@@ -1,6 +1,6 @@
 # 节点架构边界评审
 
-> **状态：** 评审结论，部分收口（2026-05-09：`capabilityCall` 真实协议执行已接入；设备信号读取/事件入口仍待后续设计）
+> **状态：** 评审结论，部分收口（2026-05-09：`capabilityCall` 真实协议执行已接入；2026-05-13：阶段 2 前端分类调整完成，含 capabilityCall 连接绑定补齐与 AI prompt 调整；设备信号读取/事件入口仍待后续设计）
 > **日期：** 2026-05-05
 > **触发：** 复核项目初始原则：设备是高级节点，CAN 卡、串口等物理通道是全局连接资源
 > **关联：** RFC-0004、ADR-0005、ADR-0009、ADR-0018、ADR-0021
@@ -66,6 +66,8 @@
 这一步完成后，`modbusRead` / `serialTrigger` / `canRead` 的普通业务使用场景就可以迁移到设备语义节点。
 
 ### 3. 调整前端节点库和 AI 编排默认面
+
+> **状态：** 2026-05-13 已完成阶段 2 第一轮：`NODE_CATEGORIES` 新增"设备能力"分组并置顶；`capabilityCall` 迁入新组并强化"业务编排首选"文案；`serialTrigger` / `modbusRead` / `canRead` / `canWrite` / `mqttClient` 描述加"【调试/适配器】"语义并保留在"硬件接口"组；`settings-shared.tsx::supportsConnectionBinding` 补上 `capabilityCall` 让 UI 显示连接绑定区，`connectionMatchesNodeType` 默认接受任意协议连接（按 capability impl kind 动态过滤留给阶段 3）；`NODE_TEMPLATES` 中 `serial-trigger` / `modbus-temperature` 描述加"【调试】"前缀但不删除熟悉入口；`copilot.ts` system prompt 调整为"首选 capabilityCall、低层协议仅调试用"。EtherCAT 三件套保持原状（capabilityCall 未适配 EtherCAT capability snapshot 之前用户没替代路径）。
 
 前端当前把低层节点列在普通库里，且连接匹配逻辑直接围绕 `serialTrigger` / `canRead` / `canWrite` / `modbusRead` 展开，见 `web/src/components/flowgram/nodes/settings-shared.tsx:204`。
 

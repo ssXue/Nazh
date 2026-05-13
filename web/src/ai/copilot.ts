@@ -72,7 +72,7 @@ const TOOL_CALLING_PROMPT = `
 - 不要输出关于工具调用的说明文字，直接调用工具
 - 节点类型只能从 \`query_node_catalog\` 返回的列表中选择
 - \`ref\` 是你自定义的简短英文别名（如 timer、modbus_read），不是系统 ID
-- 需要连接的节点（如 modbusRead、serialTrigger）需传入 \`connection_id\`
+- 需要连接的节点首选 capabilityCall（业务能力调用，自动按 capability 实现走 Modbus/MQTT/Serial/CAN）；低层协议节点（modbusRead、serialTrigger、canRead、canWrite）仅用于调试或兼容场景，都需传入 \`connection_id\`
 - 对于工业场景，优先从最小可运行链路开始
 - 纯问答（不涉及创建/修改工作流）直接用 Markdown 回答，不需要调用工具
 

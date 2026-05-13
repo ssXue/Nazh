@@ -214,6 +214,7 @@ export function isEthercatConnectionType(connectionType: string): boolean {
 export function supportsConnectionBinding(nodeType: string): boolean {
   return (
     nodeType === 'native' ||
+    nodeType === 'capabilityCall' ||
     nodeType === 'modbusRead' ||
     nodeType === 'serialTrigger' ||
     nodeType === 'canRead' ||
@@ -229,6 +230,10 @@ export function supportsConnectionBinding(nodeType: string): boolean {
 
 export function connectionMatchesNodeType(nodeType: string, connection: ConnectionDefinition): boolean {
   switch (nodeType) {
+    case 'capabilityCall':
+      // capabilityCall 的协议在 DSL 编译期确定，UI 不再二次过滤——接受任意类型连接。
+      // 按 capability impl kind 动态过滤的方案留给阶段 3（与 deviceSignalRead / deviceEventTrigger 一同重写）。
+      return true;
     case 'serialTrigger':
       return isSerialConnectionType(connection.type);
     case 'canRead':

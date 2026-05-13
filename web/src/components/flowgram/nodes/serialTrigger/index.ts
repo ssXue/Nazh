@@ -2,7 +2,7 @@ import { type NodeDefinition, type NodeSeed, type NodeValidationContext, type No
 
 export const definition = {
   kind: 'serialTrigger' as const,
-  catalog: { category: '硬件接口', description: '接收串口外设数据流并触发工作流' },
+  catalog: { category: '硬件接口', description: '【调试/适配器】接收串口原始帧；业务编排优先用"设备能力"分组' },
   fallbackLabel: 'Serial Trigger',
   palette: { title: 'Serial Trigger', badge: 'Serial' },
   ai: { hint: '串口触发；通常不填写 connectionId，等待用户后续绑定。' },

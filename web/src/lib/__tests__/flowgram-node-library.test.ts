@@ -225,6 +225,14 @@ describe('NodeDefinition registry', () => {
     });
   });
 
+  it('capabilityCall 归属"设备能力"分组', () => {
+    // 设备/连接节点边界收口阶段 2：业务工作流首选 capabilityCall，
+    // 不应回退到“硬件接口”与裸协议节点同列。
+    expect(getNodeCatalogInfo('capabilityCall')).toMatchObject({
+      category: '设备能力',
+    });
+  });
+
   it('区分具名输出端口和运行时路由分支', () => {
     expect(getLogicNodeBranchDefinitions('modbusRead', {})).toEqual([
       { key: 'out', label: 'out' },

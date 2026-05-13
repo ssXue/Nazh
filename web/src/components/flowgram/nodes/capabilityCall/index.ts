@@ -16,7 +16,7 @@ function normalizeImplementation(value: unknown) {
 
 export const definition = {
   kind: 'capabilityCall' as const,
-  catalog: { category: '硬件接口', description: '调用已审查 Capability DSL 的设备能力快照' },
+  catalog: { category: '设备能力', description: '调用已审查 Capability DSL 的设备能力——业务编排首选；按 capability 实现自动走 Modbus/MQTT/Serial/CAN' },
   fallbackLabel: 'Capability Call',
   palette: { title: 'Capability Call', badge: 'Cap' },
   ai: {

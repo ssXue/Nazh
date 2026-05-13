@@ -2,7 +2,7 @@ import { type NodeDefinition, type NodeSeed, type NodeValidationContext, type No
 
 export const definition = {
   kind: 'mqttClient' as const,
-  catalog: { category: '硬件接口', description: '发布或订阅 MQTT 消息' },
+  catalog: { category: '硬件接口', description: '发布或订阅 MQTT 消息；作为设备协议时建议由 capabilityCall 封装' },
   fallbackLabel: 'MQTT Client',
   palette: { title: 'MQTT Client', badge: 'MQTT' },
   ai: { hint: 'MQTT 发布或订阅；config.mode 为 publish 或 subscribe，通常不填写 connectionId。' },

@@ -531,14 +531,14 @@ const NODE_TEMPLATES: import('./nodes/shared').FlowgramPaletteItem[] = [
   {
     key: 'serial-trigger',
     title: '串口触发',
-    description: '监听扫码枪、RFID 等串口外设主动上报。',
+    description: '【调试】监听扫码枪、RFID 等串口外设主动上报。',
     badge: 'Serial',
     seed: { idPrefix: 'serial_trigger', kind: 'serialTrigger', label: 'Serial Trigger', timeoutMs: null, config: { inject: { source: 'serial' } } },
   },
   {
     key: 'modbus-temperature',
     title: 'Modbus 采集',
-    description: '读取 Modbus 寄存器。',
+    description: '【调试】读取 Modbus 寄存器。',
     badge: 'Modbus',
     seed: { idPrefix: 'modbus_read', kind: 'modbusRead', label: 'Modbus Read', timeoutMs: 1000, config: { unit_id: 1, register: 40001, quantity: 1, register_type: 'holding', base_value: 64, amplitude: 6 } },
   },

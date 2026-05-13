@@ -3,7 +3,7 @@ import { parseNonNegativeInteger } from '../settings-shared';
 
 export const definition = {
   kind: 'canWrite' as const,
-  catalog: { category: '硬件接口', description: '通过 SLCAN 发送 CAN 帧' },
+  catalog: { category: '硬件接口', description: '【调试/适配器】通过 SLCAN 发送 CAN 原始帧；业务编排优先用 capabilityCall' },
   fallbackLabel: 'CAN Write',
   palette: { title: 'CAN Write', badge: 'CAN' },
   ai: {

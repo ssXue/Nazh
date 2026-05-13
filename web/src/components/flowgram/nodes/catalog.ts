@@ -1,4 +1,5 @@
 export const NODE_CATEGORIES = [
+  '设备能力',
   '流程控制',
   '脚本执行',
   '数据注入',

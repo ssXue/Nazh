@@ -3,7 +3,7 @@ import { parseNonNegativeInteger, parsePositiveInteger } from '../settings-share
 
 export const definition = {
   kind: 'canRead' as const,
-  catalog: { category: '硬件接口', description: '通过 SLCAN 接收 CAN 帧' },
+  catalog: { category: '硬件接口', description: '【调试/适配器】通过 SLCAN 接收 CAN 原始帧；业务编排优先用"设备能力"分组' },
   fallbackLabel: 'CAN Read',
   palette: { title: 'CAN Read', badge: 'CAN' },
   ai: {

@@ -3,7 +3,7 @@ import { parsePositiveInteger, parseFiniteNumber } from '../settings-shared';
 
 export const definition = {
   kind: 'modbusRead' as const,
-  catalog: { category: '硬件接口', description: '读取 Modbus 寄存器并将遥测数据写入 payload' },
+  catalog: { category: '硬件接口', description: '【调试/适配器】直接读取 Modbus 寄存器；业务编排优先用 capabilityCall' },
   fallbackLabel: 'Modbus Read',
   palette: { title: 'Modbus Read', badge: 'Modbus' },
   ai: {
