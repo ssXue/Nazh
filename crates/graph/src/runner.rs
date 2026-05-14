@@ -525,6 +525,6 @@ fn output_is_data_only(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 #[path = "runner_tests.rs"]
 mod tests;

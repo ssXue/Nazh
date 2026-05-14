@@ -28,10 +28,9 @@ pub(crate) async fn restart_app(app: AppHandle) {
     }
 }
 
-/// 枚举本机所有网络接口，供 EtherCAT 等需要绑定物理网卡的连接面板使用。
+/// 枚举本机所有网络接口，供 `EtherCAT` 等需要绑定物理网卡的连接面板使用。
 #[tauri::command]
-pub(crate) async fn list_network_interfaces(
-) -> Result<Vec<NetworkInterfaceInfo>, String> {
+pub(crate) async fn list_network_interfaces() -> Result<Vec<NetworkInterfaceInfo>, String> {
     let interfaces = pnet_datalink::interfaces();
     let result = interfaces
         .into_iter()
@@ -43,7 +42,7 @@ pub(crate) async fn list_network_interfaces(
                 .ips
                 .iter()
                 .filter(|ip| ip.is_ipv4())
-                .map(|ip| ip.to_string())
+                .map(std::string::ToString::to_string)
                 .collect();
             NetworkInterfaceInfo {
                 name: iface.name,

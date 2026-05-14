@@ -177,11 +177,13 @@ pub fn run() {
             if let Ok(data_dir) = app.path().app_local_data_dir() {
                 match session_marker::init(&data_dir) {
                     Some(session_marker::SessionAnomaly::Panicked(report)) => {
-                        let panicked_at = chrono::DateTime::from_timestamp_millis(
-                            report.panicked_at_ms as i64,
-                        )
-                        .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
-                        .unwrap_or_else(|| report.panicked_at_ms.to_string());
+                        #[allow(clippy::cast_possible_wrap)]
+                        let panicked_at =
+                            chrono::DateTime::from_timestamp_millis(report.panicked_at_ms as i64)
+                                .map_or_else(
+                                    || report.panicked_at_ms.to_string(),
+                                    |dt| dt.format("%Y-%m-%d %H:%M:%S").to_string(),
+                                );
                         tracing::warn!(
                             panicked_at = %panicked_at,
                             panic_location = ?report.location,
@@ -195,10 +197,13 @@ pub fn run() {
                         pid,
                         started_at_ms,
                     }) => {
+                        #[allow(clippy::cast_possible_wrap)]
                         let prev_start =
                             chrono::DateTime::from_timestamp_millis(started_at_ms as i64)
-                                .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
-                                .unwrap_or_else(|| started_at_ms.to_string());
+                                .map_or_else(
+                                    || started_at_ms.to_string(),
+                                    |dt| dt.format("%Y-%m-%d %H:%M:%S").to_string(),
+                                );
                         tracing::warn!(
                             prev_pid = pid,
                             prev_start = %prev_start,
@@ -217,11 +222,11 @@ pub fn run() {
                 // 注册窗口关闭事件：标记正常退出
                 let data_dir_close = app.path().app_local_data_dir().ok();
                 window.on_window_event(move |event| {
-                    if let tauri::WindowEvent::CloseRequested { .. } = event {
-                        if let Some(ref dir) = data_dir_close {
-                            session_marker::clean_shutdown(dir);
-                            tracing::info!("应用正常关闭，会话标记已清理");
-                        }
+                    if let tauri::WindowEvent::CloseRequested { .. } = event
+                        && let Some(ref dir) = data_dir_close
+                    {
+                        session_marker::clean_shutdown(dir);
+                        tracing::info!("应用正常关闭，会话标记已清理");
                     }
                 });
             } else {

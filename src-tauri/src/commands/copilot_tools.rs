@@ -854,14 +854,8 @@ fn tool_delete_workflow_node(call: &AiToolCall, ctx: &CopilotToolCtx) -> Result<
 
 fn tool_delete_workflow_edge(call: &AiToolCall, ctx: &CopilotToolCtx) -> Result<String, String> {
     let args = parse_args(call)?;
-    let from = args["from"]
-        .as_str()
-        .ok_or("缺少 from 参数")?
-        .to_owned();
-    let to = args["to"]
-        .as_str()
-        .ok_or("缺少 to 参数")?
-        .to_owned();
+    let from = args["from"].as_str().ok_or("缺少 from 参数")?.to_owned();
+    let to = args["to"].as_str().ok_or("缺少 to 参数")?.to_owned();
 
     tracing::info!(
         from = %from,

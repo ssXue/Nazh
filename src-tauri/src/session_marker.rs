@@ -43,7 +43,7 @@ struct SessionMarker {
     started_at_ms: u64,
 }
 
-/// 全局存储 data_dir，供 panic hook 写入崩溃报告。
+/// 全局存储 `data_dir`，供 panic hook 写入崩溃报告。
 static DATA_DIR: OnceLock<PathBuf> = OnceLock::new();
 
 /// 初始化会话守护：检测上次异常、写入本次标记、安装 panic hook。
@@ -77,25 +77,24 @@ fn detect_anomaly(data_dir: &Path) -> Option<SessionAnomaly> {
     let crash_path = data_dir.join(CRASH_FILE);
 
     // 优先检查崩溃报告（panic 导致的异常退出）
-    if let Ok(content) = std::fs::read_to_string(&crash_path) {
-        if let Ok(report) = serde_json::from_str::<CrashReport>(&content) {
-            let _ = std::fs::remove_file(&crash_path);
-            let _ = std::fs::remove_file(&marker_path);
-            return Some(SessionAnomaly::Panicked(report));
-        }
+    if let Ok(content) = std::fs::read_to_string(&crash_path)
+        && let Ok(report) = serde_json::from_str::<CrashReport>(&content)
+    {
+        let _ = std::fs::remove_file(&crash_path);
+        let _ = std::fs::remove_file(&marker_path);
+        return Some(SessionAnomaly::Panicked(report));
     }
 
     // 其次检查残留标记（非 panic 异常：SIGKILL / 断电 / 强制退出）
-    if let Ok(content) = std::fs::read_to_string(&marker_path) {
-        if let Ok(marker) = serde_json::from_str::<SessionMarker>(&content) {
-            if marker.pid != std::process::id() {
-                let _ = std::fs::remove_file(&marker_path);
-                return Some(SessionAnomaly::KilledExternally {
-                    pid: marker.pid,
-                    started_at_ms: marker.started_at_ms,
-                });
-            }
-        }
+    if let Ok(content) = std::fs::read_to_string(&marker_path)
+        && let Ok(marker) = serde_json::from_str::<SessionMarker>(&content)
+        && marker.pid != std::process::id()
+    {
+        let _ = std::fs::remove_file(&marker_path);
+        return Some(SessionAnomaly::KilledExternally {
+            pid: marker.pid,
+            started_at_ms: marker.started_at_ms,
+        });
     }
 
     None
@@ -112,9 +111,8 @@ fn write_marker(data_dir: &Path) {
 }
 
 fn write_crash_report(info: &PanicHookInfo) {
-    let data_dir = match DATA_DIR.get() {
-        Some(d) => d,
-        None => return,
+    let Some(data_dir) = DATA_DIR.get() else {
+        return;
     };
 
     let message = info
@@ -148,9 +146,9 @@ fn write_crash_report(info: &PanicHookInfo) {
     }
 }
 
+#[allow(clippy::cast_possible_truncation)]
 fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0)
+        .map_or(0, |d| d.as_millis() as u64)
 }

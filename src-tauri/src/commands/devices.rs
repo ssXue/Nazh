@@ -538,8 +538,7 @@ pub(crate) async fn bind_device_connection(
         _ => None,
     };
 
-    let new_yaml =
-        serde_yaml::to_string(&spec).map_err(|e| format!("序列化设备 DSL 失败: {e}"))?;
+    let new_yaml = serde_yaml::to_string(&spec).map_err(|e| format!("序列化设备 DSL 失败: {e}"))?;
 
     let version = next_device_asset_version(&app, workspace_path.as_deref(), &asset_id).await?;
     write_device_asset_yaml(
