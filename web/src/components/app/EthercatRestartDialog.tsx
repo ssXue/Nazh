@@ -4,6 +4,10 @@ interface EthercatRestartDialogProps {
   onRestart: () => void;
 }
 
+/// 开发模式下 webview 从 Vite dev server 加载（http://localhost:1420），
+/// `app.restart()` 会杀掉 tauri dev 进程连带 Vite，新进程无法加载前端。
+const isDevMode = window.location.protocol === 'http:' || window.location.protocol === 'https:';
+
 export function EthercatRestartDialog({
   message,
   onCancel,
@@ -32,7 +36,16 @@ export function EthercatRestartDialog({
             {message}
             <br />
             <br />
-            当前进程内无法恢复 EtherCAT 连接，需要重启 nazh-desktop。重启后请重新部署工作流。
+            {isDevMode ? (
+              <>
+                当前进程内无法恢复 EtherCAT 连接。开发模式下无法自动重启（Vite dev server
+                不随应用重启），请关闭应用后手动重新启动 tauri dev。
+              </>
+            ) : (
+              <>
+                当前进程内无法恢复 EtherCAT 连接，需要重启 nazh-desktop。重启后请重新部署工作流。
+              </>
+            )}
           </p>
         </div>
 
@@ -49,7 +62,7 @@ export function EthercatRestartDialog({
             className="restore-dialog__action restore-dialog__action--primary"
             onClick={onRestart}
           >
-            重启应用
+            {isDevMode ? '关闭应用' : '重启应用'}
           </button>
         </div>
       </div>
