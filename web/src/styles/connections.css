@@ -7,95 +7,39 @@
   height: 100%;
 }
 
-.infra-tab-bar {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: 8px 12px 0;
-  border-bottom: 1px solid var(--line-soft);
-  flex-shrink: 0;
+/* 标题栏 tab 切换：上部圆角，下部平齐贴合内容区 */
+.infra-tabs {
+  display: inline-flex;
+  gap: 0;
+  align-items: stretch;
+  height: 100%;
 }
 
-.infra-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 6px 12px;
-  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
-  border: 1px solid transparent;
-  border-bottom: none;
-  font-size: 13px;
-  font-weight: 500;
+.infra-tabs__item {
+  position: relative;
+  padding: 6px 20px;
+  border: none;
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  font-size: 14px;
+  font-weight: 600;
   color: var(--text-muted);
   background: transparent;
   cursor: pointer;
+  letter-spacing: 0.01em;
   transition:
     color 140ms ease,
-    background 140ms ease,
-    border-color 140ms ease;
-  position: relative;
-  bottom: -1px;
+    background 140ms ease;
 }
 
-.infra-tab:hover {
+.infra-tabs__item:hover {
   color: var(--text);
   background: var(--surface-elevated);
 }
 
-.infra-tab.is-active {
-  color: var(--text);
-  background: var(--surface);
-  border-color: var(--line-soft);
-  border-bottom-color: var(--surface);
-}
-
-.infra-tab__badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 18px;
-  height: 16px;
-  padding: 0 5px;
-  border-radius: 8px;
-  font-size: 10px;
-  font-weight: 600;
-  line-height: 1;
-  background: var(--surface-elevated);
-  color: var(--text-muted);
-}
-
-.infra-tab.is-active .infra-tab__badge {
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-
-.infra-tab-bar__spacer {
-  flex: 1;
-}
-
-.infra-tab-bar__action {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 14px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--accent-soft);
-  font-size: 12px;
-  font-weight: 600;
+.infra-tabs__item.is-active {
   color: var(--accent);
   background: var(--accent-soft);
-  cursor: pointer;
-  transition:
-    color 140ms ease,
-    background 140ms ease,
-    border-color 140ms ease;
-  white-space: nowrap;
-}
-
-.infra-tab-bar__action:hover {
-  color: var(--surface);
-  background: var(--accent);
-  border-color: var(--accent);
+  font-weight: 700;
 }
 
 .infra-panel__content {

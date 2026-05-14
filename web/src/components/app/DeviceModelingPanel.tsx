@@ -33,6 +33,8 @@ interface DeviceModelingPanelProps {
   onStatusMessage: (message: string) => void;
   /** 将能力添加到画布的回调（来自 InfrastructurePanel/StudioContentRouter）。 */
   onAddCapabilityToCanvas?: (nodeOp: import('../FlowgramCanvas').CanvasNodeOp) => void;
+  /** 由 InfrastructurePanel 传入 true 以跳过 grid view 的 panel__header（外层已统一渲染）。 */
+  hideHeader?: boolean;
 }
 
 /** 设备绑定的连接摘要——给卡片/详情共用的派生结构。 */
@@ -77,6 +79,7 @@ export function DeviceModelingPanel({
   onJumpToConnection,
   onStatusMessage,
   onAddCapabilityToCanvas,
+  hideHeader = false,
 }: DeviceModelingPanelProps) {
   const connectionsById = useMemo(
     () => new Map(connections.map((c) => [c.id, c])),
@@ -167,15 +170,17 @@ export function DeviceModelingPanel({
 
   const gridBase = (
     <div className="dm-grid-view">
-      <div
-        className="panel__header panel__header--desktop window-safe-header"
-        data-window-drag-region
-      >
-        <div className="panel__header__heading">
-          <h2>设备资产</h2>
-          <span>{assets.length} 个设备资产</span>
+      {!hideHeader && (
+        <div
+          className="panel__header panel__header--desktop window-safe-header"
+          data-window-drag-region
+        >
+          <div className="panel__header__heading">
+            <h2>设备资产</h2>
+            <span>{assets.length} 个设备资产</span>
+          </div>
         </div>
-      </div>
+      )}
 
       {assets.length > 0 && (
         <div className="dm-grid-search" data-no-window-drag>

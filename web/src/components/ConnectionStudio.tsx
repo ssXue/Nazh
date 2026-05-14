@@ -66,6 +66,8 @@ interface ConnectionStudioProps {
   isLoading?: boolean;
   storageError?: string | null;
   onStatusMessage: (msg: string) => void;
+  /** 由 InfrastructurePanel 传入 true 以跳过顶部 panel__header（外层已统一渲染）。 */
+  hideHeader?: boolean;
 }
 
 export function ConnectionStudio({
@@ -79,6 +81,7 @@ export function ConnectionStudio({
   isLoading = false,
   storageError,
   onStatusMessage,
+  hideHeader = false,
 }: ConnectionStudioProps) {
   const runtimeById = useMemo(
     () => new Map(runtimeConnections.map((connection) => [connection.id, connection])),
@@ -517,17 +520,19 @@ export function ConnectionStudio({
 
   return (
     <section className="connection-studio">
-      <div
-        className="panel__header panel__header--desktop window-safe-header"
-        data-window-drag-region
-      >
-        <div className="panel__header__heading">
-          <h2>连接资源编辑</h2>
+      {!hideHeader && (
+        <div
+          className="panel__header panel__header--desktop window-safe-header"
+          data-window-drag-region
+        >
+          <div className="panel__header__heading">
+            <h2>连接资源编辑</h2>
+          </div>
+          <span className="panel__badge">
+            {connections.length > 0 ? `${connections.length} 项` : '未配置'}
+          </span>
         </div>
-        <span className="panel__badge">
-          {connections.length > 0 ? `${connections.length} 项` : '未配置'}
-        </span>
-      </div>
+      )}
 
       {storageError ? <p className="connection-card__error">{storageError}</p> : null}
 

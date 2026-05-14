@@ -79,38 +79,49 @@ export function InfrastructurePanel({
     setActiveTab('connections');
   }, []);
 
+  const activeCount = activeTab === 'devices'
+    ? deviceSummaries.length
+    : connectionLibrary.connections.length;
+
   return (
     <section className="infra-panel">
-      <nav className="infra-tab-bar" aria-label="资产管理视图切换">
-        <button
-          type="button"
-          className={`infra-tab${activeTab === 'devices' ? ' is-active' : ''}`}
-          onClick={() => handleTabChange('devices')}
-        >
-          设备
-          {deviceSummaries.length > 0 && (
-            <span className="infra-tab__badge">{deviceSummaries.length}</span>
-          )}
-        </button>
-        <button
-          type="button"
-          className={`infra-tab${activeTab === 'connections' ? ' is-active' : ''}`}
-          onClick={() => handleTabChange('connections')}
-        >
-          连接
-          {connectionLibrary.connections.length > 0 && (
-            <span className="infra-tab__badge">{connectionLibrary.connections.length}</span>
-          )}
-        </button>
-        <div className="infra-tab-bar__spacer" />
-        <button
-          type="button"
-          className="infra-tab-bar__action"
-          onClick={() => setImportDrawerOpen(true)}
-        >
-          接入设备
-        </button>
-      </nav>
+      <div
+        className="panel__header panel__header--desktop window-safe-header"
+        data-window-drag-region
+      >
+        <nav className="infra-tabs" role="tablist" data-no-window-drag>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'devices'}
+            className={`infra-tabs__item${activeTab === 'devices' ? ' is-active' : ''}`}
+            onClick={() => handleTabChange('devices')}
+          >
+            设备
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'connections'}
+            className={`infra-tabs__item${activeTab === 'connections' ? ' is-active' : ''}`}
+            onClick={() => handleTabChange('connections')}
+          >
+            连接
+          </button>
+        </nav>
+        <div className="panel__header-actions" data-no-window-drag>
+          <span className="panel__badge">
+            {activeCount > 0 ? `${activeCount} 项` : '无'}
+          </span>
+          <button
+            type="button"
+            className="panel__action"
+            onClick={() => setImportDrawerOpen(true)}
+          >
+            接入设备
+          </button>
+        </div>
+      </div>
 
       <div className="infra-panel__content">
         {activeTab === 'devices' ? (
@@ -122,6 +133,7 @@ export function InfrastructurePanel({
             onJumpToConnection={handleJumpToConnection}
             onStatusMessage={onStatusMessage}
             onAddCapabilityToCanvas={onAddCapabilityToCanvas}
+            hideHeader
           />
         ) : (
           <ConnectionStudio
@@ -135,6 +147,7 @@ export function InfrastructurePanel({
             focusConnectionId={focusConnectionId}
             onConsumeFocus={() => setFocusConnectionId(null)}
             onStatusMessage={onStatusMessage}
+            hideHeader
           />
         )}
       </div>
