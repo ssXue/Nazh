@@ -511,13 +511,13 @@
   resize: none;
   border: none;
   border-radius: var(--radius-md);
-  padding: 6px 4px;
+  padding: 12px 4px;
   font-size: var(--font-callout);
   line-height: 1.4;
   background: transparent;
   color: var(--fg);
   font-family: inherit;
-  min-height: 32px;
+  min-height: 64px;
   max-height: 400px;
   outline: none;
 }

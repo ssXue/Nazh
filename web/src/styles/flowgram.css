@@ -183,7 +183,6 @@ html[data-theme='dark'] .flowgram-host {
 }
 
 .flowgram-form input,
-.flowgram-form textarea,
 .flowgram-form select {
   width: 100%;
   border: 1px solid var(--line-strong);
@@ -191,12 +190,24 @@ html[data-theme='dark'] .flowgram-host {
   padding: 0.58rem 0.68rem;
   background: var(--panel);
   color: var(--text);
-  resize: vertical;
   font-size: var(--font-body);
 }
 
 .flowgram-form textarea {
+  width: 100%;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  padding: 0.58rem 0.68rem;
+  background: var(--panel);
+  color: var(--text);
+  font-size: var(--font-body);
+  resize: vertical;
   min-height: 72px;
+}
+
+/* CodeMirror 代码编辑器容器 */
+.flowgram-code-editor .cm-editor {
+  border-radius: var(--radius-md);
 }
 
 /* HITL 紧凑字段行编辑器 */
@@ -893,7 +904,7 @@ html[data-theme='dark'] .flowgram-host {
   margin-top: var(--flowgram-floating-top-offset, 74px);
   width: min(332px, calc(100vw - 48px));
   max-width: 332px;
-  height: calc(100vh - var(--flowgram-floating-top-offset, 74px) - 70px);
+  height: calc(100% - var(--flowgram-floating-top-offset, 74px) - 80px);
   background: rgb(255, 255, 255);
 }
 
@@ -1311,7 +1322,7 @@ html[data-theme='dark'] .flowgram-floating-panel--node {
   bottom: 18px;
   z-index: var(--z-content);
   display: grid;
-  grid-template-columns: minmax(0, max-content);
+  grid-template-columns: 1fr 1fr;
   justify-content: end;
   justify-items: end;
   align-content: end;

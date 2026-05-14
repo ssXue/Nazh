@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 
 import type { NodeSettingsProps } from '../settings-shared';
+import { CodeEditor } from '../../CodeEditor';
 
 interface SelectOption {
   value: string;
@@ -106,11 +107,10 @@ export function HumanLoopNodeSettings({ draft, updateDraft }: NodeSettingsProps)
       </label>
       <label>
         <span>审批说明</span>
-        <textarea
+        <CodeEditor
           value={draft.hitlDescription}
-          onChange={(e) => updateDraft({ hitlDescription: e.target.value })}
+          onChange={(value) => updateDraft({ hitlDescription: value })}
           placeholder="向审批人说明需要确认的内容"
-          rows={2}
         />
       </label>
       <label>

@@ -1,4 +1,5 @@
 import type { NodeSettingsProps } from '../settings-shared';
+import { CodeEditor } from '../../CodeEditor';
 
 export function CapabilityCallNodeSettings({ draft, updateDraft }: NodeSettingsProps) {
   return (
@@ -19,18 +20,18 @@ export function CapabilityCallNodeSettings({ draft, updateDraft }: NodeSettingsP
       </label>
       <label>
         <span>执行快照</span>
-        <textarea
-          rows={8}
+        <CodeEditor
+          language="json"
           value={draft.capabilityImplementationJson}
-          onChange={(event) => updateDraft({ capabilityImplementationJson: event.target.value })}
+          onChange={(value) => updateDraft({ capabilityImplementationJson: value })}
         />
       </label>
       <label>
         <span>参数</span>
-        <textarea
-          rows={5}
+        <CodeEditor
+          language="json"
           value={draft.capabilityArgsJson}
-          onChange={(event) => updateDraft({ capabilityArgsJson: event.target.value })}
+          onChange={(value) => updateDraft({ capabilityArgsJson: value })}
         />
       </label>
     </>

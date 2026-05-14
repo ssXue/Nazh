@@ -3,6 +3,7 @@ import {
   getDefaultHttpAlarmTitleTemplate,
 } from '../../flowgram-node-library';
 import type { NodeSettingsProps } from '../settings-shared';
+import { CodeEditor } from '../../CodeEditor';
 
 export function HttpClientNodeSettings({ draft, updateDraft, selectedConnection, resolvedHttpBodyMode, resolvedHttpWebhookKind }: NodeSettingsProps) {
   return (
@@ -43,18 +44,18 @@ export function HttpClientNodeSettings({ draft, updateDraft, selectedConnection,
       {resolvedHttpBodyMode === 'dingtalk_markdown' ? (
         <label>
           <span>标题模板</span>
-          <textarea
+          <CodeEditor
             value={draft.httpTitleTemplate}
-            onChange={(event) => updateDraft({ httpTitleTemplate: event.target.value })}
+            onChange={(value) => updateDraft({ httpTitleTemplate: value })}
           />
         </label>
       ) : null}
       {resolvedHttpBodyMode !== 'json' ? (
         <label>
           <span>{resolvedHttpBodyMode === 'dingtalk_markdown' ? '消息模板' : '请求体模板'}</span>
-          <textarea
+          <CodeEditor
             value={draft.httpBodyTemplate}
-            onChange={(event) => updateDraft({ httpBodyTemplate: event.target.value })}
+            onChange={(value) => updateDraft({ httpBodyTemplate: value })}
           />
         </label>
       ) : null}

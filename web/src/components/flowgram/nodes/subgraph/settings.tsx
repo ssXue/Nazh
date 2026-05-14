@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 
 import type { NodeSettingsProps } from '../settings-shared';
+import { CodeEditor } from '../../CodeEditor';
 
 /**
  * 子图节点设置面板——编辑标签 + 参数绑定（JSON key-value）。
@@ -9,9 +10,9 @@ export function SubgraphNodeSettings({ draft, updateDraft }: NodeSettingsProps) 
   const bindingsJson = JSON.stringify(draft.parameterBindings, null, 2);
 
   const handleBindingsChange = useCallback(
-    (event: React.ChangeEvent<HTMLTextAreaElement>) => {
+    (value: string) => {
       try {
-        const parsed = JSON.parse(event.target.value);
+        const parsed = JSON.parse(value);
         if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
           updateDraft({
             parameterBindings: parsed,
@@ -28,11 +29,11 @@ export function SubgraphNodeSettings({ draft, updateDraft }: NodeSettingsProps) 
     <>
       <label>
         <span>参数绑定</span>
-        <textarea
+        <CodeEditor
+          language="json"
           value={bindingsJson}
           onChange={handleBindingsChange}
           placeholder='{"host": "192.168.1.10"}'
-          rows={4}
         />
       </label>
     </>

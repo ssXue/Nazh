@@ -1,4 +1,5 @@
 import type { NodeSettingsProps } from '../settings-shared';
+import { CodeEditor } from '../../CodeEditor';
 
 export function MqttClientNodeSettings({ draft, updateDraft }: NodeSettingsProps) {
   return (
@@ -29,9 +30,9 @@ export function MqttClientNodeSettings({ draft, updateDraft }: NodeSettingsProps
       {draft.mqttMode === 'publish' ? (
         <label>
           <span>载荷模板</span>
-          <textarea
+          <CodeEditor
             value={draft.mqttPayloadTemplate}
-            onChange={(event) => updateDraft({ mqttPayloadTemplate: event.target.value })}
+            onChange={(value) => updateDraft({ mqttPayloadTemplate: value })}
           />
         </label>
       ) : null}

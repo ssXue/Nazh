@@ -1,5 +1,6 @@
 import type { NodeSettingsProps } from '../settings-shared';
 import { getPrimaryEditorLabel } from '../settings-shared';
+import { CodeEditor } from '../../CodeEditor';
 
 export function LoopNodeSettings({ draft, updateDraft, aiGenerating, preferredCopilotProvider, aiGenerateButtonTitle, onOpenAiDialog }: NodeSettingsProps) {
   return (
@@ -16,7 +17,7 @@ export function LoopNodeSettings({ draft, updateDraft, aiGenerating, preferredCo
           {aiGenerating ? '生成中...' : 'AI 生成'}
         </button>
       </span>
-      <textarea value={draft.script} onChange={(event) => updateDraft({ script: event.target.value })} />
+      <CodeEditor value={draft.script} onChange={(value) => updateDraft({ script: value })} />
     </label>
   );
 }

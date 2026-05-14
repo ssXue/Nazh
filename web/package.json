@@ -15,6 +15,10 @@
   "dependencies": {
     "@ai-sdk/openai": "^3.0.63",
     "@ai-sdk/openai-compatible": "^2.0.47",
+    "@codemirror/lang-javascript": "^6.2.5",
+    "@codemirror/lang-json": "^6.0.2",
+    "@codemirror/state": "^6.6.0",
+    "@codemirror/view": "^6.43.0",
     "@flowgram.ai/core": "^1.0.11",
     "@flowgram.ai/document": "^1.0.11",
     "@flowgram.ai/export-plugin": "^1.0.11",

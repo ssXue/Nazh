@@ -1,5 +1,6 @@
 import type { NodeSettingsProps } from '../settings-shared';
 import { SwitchBar } from '../settings-shared';
+import { CodeEditor } from '../../CodeEditor';
 
 export function BarkPushNodeSettings({ draft, updateDraft, selectedConnection }: NodeSettingsProps) {
   return (
@@ -50,9 +51,9 @@ export function BarkPushNodeSettings({ draft, updateDraft, selectedConnection }:
       </label>
       <label>
         <span>{draft.barkContentMode === 'markdown' ? 'Markdown 模板' : '消息模板'}</span>
-        <textarea
+        <CodeEditor
           value={draft.barkBodyTemplate}
-          onChange={(event) => updateDraft({ barkBodyTemplate: event.target.value })}
+          onChange={(value) => updateDraft({ barkBodyTemplate: value })}
         />
       </label>
       <label>
