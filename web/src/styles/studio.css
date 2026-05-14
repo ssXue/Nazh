@@ -538,6 +538,20 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
   padding: 2px 0 0;
 }
 
+.studio-content--panel > .panel:has(.about-screen) {
+  padding: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+.studio-content--about {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+  padding: 0;
+}
+
 .studio-content--panel > .panel::after {
   display: none;
 }

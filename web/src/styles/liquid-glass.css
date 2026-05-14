@@ -329,6 +329,14 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
   padding: 18px;
 }
 
+.studio-content--panel > .panel:has(.about-screen) {
+  padding: 0;
+}
+
+.studio-content--about {
+  padding: 0;
+}
+
 .liquid-scroll-surface {
   --scroll-mask-top: 0px;
   --scroll-mask-bottom: 0px;
