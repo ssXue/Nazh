@@ -12,6 +12,8 @@ import type {
   ConnectionRecord,
   JsonValue,
 } from '../types';
+import { SpotlightCard } from './animations/SpotlightCard';
+
 import {
   DeleteActionIcon,
 } from './app/AppIcons';
@@ -580,7 +582,8 @@ export function ConnectionStudio({
                     const isActive = activeConnectionIndex === index;
 
                     return (
-                      <article
+                      <SpotlightCard
+                        as="article"
                         key={`${connection.id || 'connection'}-${index}`}
                         className={`connection-card ${isActive ? 'is-active' : ''}`}
                         data-testid="connection-card"
@@ -594,6 +597,7 @@ export function ConnectionStudio({
                             setActiveConnectionIndex(index);
                           }
                         }}
+                        spotlightColor="rgba(74, 114, 201, 0.06)"
                       >
                         <div className="connection-card__main">
                           <div className="connection-card__icon">
@@ -646,7 +650,7 @@ export function ConnectionStudio({
                         {runtimeState.failureReason ? (
                           <p className="connection-card__error">{runtimeState.failureReason}</p>
                         ) : null}
-                      </article>
+                      </SpotlightCard>
                     );
                   })}
                 </div>

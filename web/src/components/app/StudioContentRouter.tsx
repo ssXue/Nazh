@@ -1,5 +1,6 @@
 import { StrictMode, useCallback, useEffect, useRef, type ReactNode, type RefObject } from 'react';
 
+import { AnimatedContent } from '../animations/AnimatedContent';
 import type { UseConnectionLibraryResult } from '../../hooks/use-connection-library';
 import type { UseProjectLibraryResult } from '../../hooks/use-project-library';
 import type { UseSettingsResult } from '../../hooks/use-settings';
@@ -193,272 +194,241 @@ export function StudioContentRouter({
     [flowgramCanvasRef, onSectionChange],
   );
 
-  switch (section) {
-    case 'dashboard':
-      return (
-        <StrictStudioPanel>
-          <section className="studio-content studio-content--panel">
-            <ScrollSurface className="panel studio-content__panel studio-content__panel--scroll">
-              <DashboardPanel
-                userId={CURRENT_USER_NAME}
-                activeBoardName={activeBoard?.name ?? null}
-                boardCount={boardItems.length}
-                graphNodeCount={graphNodeCount}
-                graphEdgeCount={graphEdgeCount}
-                graphConnectionCount={graphConnectionCount}
-                activeNodeCount={engine.runtimeState.activeNodeIds.length}
-                completedNodeCount={engine.runtimeState.completedNodeIds.length}
-                failedNodeCount={engine.runtimeState.failedNodeIds.length}
-                outputNodeCount={engine.runtimeState.outputNodeIds.length}
-                eventCount={engine.eventFeed.length}
-                resultCount={engine.results.length}
-                statusMessage={engine.statusMessage}
-                workflowStatus={workflowStatus}
-                traceId={engine.runtimeState.traceId}
-                lastEventType={engine.runtimeState.lastEventType}
-                lastNodeId={engine.runtimeState.lastNodeId}
-                lastUpdatedAt={engine.runtimeState.lastUpdatedAt}
-                connections={engine.connections}
-                eventFeed={engine.eventFeed}
-                onNavigateToBoards={onBackToBoards}
-              />
-            </ScrollSurface>
-          </section>
-        </StrictStudioPanel>
-      );
-    case 'boards':
-      if (!activeBoard || !activeProject) {
-        return (
-          <StrictStudioPanel>
-            <section className="studio-content studio-content--panel">
-              <ScrollSurface className="panel studio-content__panel studio-content__panel--scroll">
-                <BoardsPanel
-                  boards={boardItems}
-                  onOpenBoard={onOpenBoard}
-                  onCreateBoard={onCreateBoard}
-                  onImportBoardFile={onImportBoardFile}
-                  onDeleteBoard={onDeleteBoard}
-                />
-              </ScrollSurface>
-            </section>
-          </StrictStudioPanel>
-        );
-      }
-
-      return (
-        <section className="studio-content studio-content--board">
-          <BoardWorkspace
-            ref={flowgramCanvasRef}
-            project={activeProject}
-            graph={graph}
-            nodeCount={graphNodeCount}
-            connectionPreview={connectionPreview}
-            themeMode={settings.resolvedThemeMode}
-            isRuntimeDockCollapsed={engine.isRuntimeDockCollapsed}
-            flowgramResources={{
-              connections: connectionLibrary.connections,
-              aiProviders: aiConfig?.providers ?? [],
-              activeAiProviderId: aiConfig?.activeProviderId ?? null,
-              copilotParams: aiConfig?.copilotParams ?? {},
-            }}
-            flowgramRuntime={{
-              runtimeState: engine.runtimeState,
-              workflowStatus,
-              canTestRun,
-              getEdgeHeatmap: engine.getEdgeHeatmap,
-              registerEdgeHeatUpdate: engine.registerEdgeHeatUpdate,
-            }}
-            flowgramAppearance={{
-              accentHex: settings.accentHex,
-              themeMode: settings.resolvedThemeMode,
-              nodeCodeColor: settings.accentThemeVariables['--node-code'],
-            }}
-            flowgramExportTarget={{
-              workspacePath: settings.projectWorkspacePath,
-              workflowName: activeProject.name,
-            }}
-            flowgramActions={{
-              onRunRequested: onStartDeploy,
-              onStopRequested: onStopDeploy,
-              onTestRunRequested: onTestRun,
-              onGraphChange,
-              onError: engine.handleFlowgramError,
-              onStatusMessage: engine.setStatusMessage,
-            }}
-            runtimeDock={{
-              eventFeed: engine.eventFeed,
-              appErrors: engine.appErrors,
-              results: engine.results,
-              activeWorkflowId: currentBoardDeployInfo?.workflowId ?? null,
-              payloadText,
-              deployInfo: currentBoardDeployInfo,
-              onPayloadTextChange,
-            }}
-            onToggleRuntimeDockCollapsed={() =>
-              engine.setIsRuntimeDockCollapsed((current) => !current)
-            }
-            onBack={onBackToBoards}
-            onRename={(name) => projectLibrary.updateProjectDraft(activeProject.id, { name })}
-            onCreateSnapshot={onCreateSnapshot}
-            onDeleteSnapshot={onDeleteSnapshot}
-            onRollbackSnapshot={onRollbackSnapshot}
-            onEnvironmentChange={onEnvironmentChange}
-            onEnvironmentSave={onEnvironmentSave}
-            onDuplicateEnvironment={onDuplicateEnvironment}
-            onDeleteEnvironment={onDeleteEnvironment}
-          />
-        </section>
-      );
-    case 'runtime':
-      return (
-        <StrictStudioPanel>
-          <section className="studio-content studio-content--panel">
-            <ScrollSurface className="panel studio-content__panel studio-content__panel--scroll">
-              <RuntimeManagerPanel
-                workspacePath={settings.projectWorkspacePath}
-                themeMode={settings.resolvedThemeMode}
-                activeBoardId={activeBoard?.id ?? null}
-                onOpenBoard={(boardId) => {
-                  const targetBoard =
-                    boardItems.find((board) => board.id === boardId) ?? {
-                      id: boardId,
-                      name: boardId,
-                      description: '',
-                      nodeCount: 0,
-                      updatedAt: '',
-                      snapshotCount: 0,
-                      environmentCount: 0,
-                      environmentName: '未选择环境',
-                      migrationNote: null,
-                    };
-                  onOpenBoard(targetBoard);
-                }}
-                onPersistActiveProject={onPersistActiveProject}
-                onBeforeWorkflowStop={onBeforeWorkflowStop}
-                onAfterWorkflowStop={onAfterWorkflowStop}
-                onRemovePersistedDeployment={onRemovePersistedDeployment}
-                onStatusMessage={engine.setStatusMessage}
-                onRuntimeCountChange={onRuntimeCountChange}
-              />
-            </ScrollSurface>
-          </section>
-        </StrictStudioPanel>
-      );
-    case 'connections':
-      return (
-        <StrictStudioPanel>
-          <section className="studio-content studio-content--panel">
-            <ScrollSurface className="panel studio-content__panel studio-content__panel--scroll">
-              <InfrastructurePanel
-                isTauriRuntime={isTauriRuntime}
-                workspacePath={settings.projectWorkspacePath}
-                connectionLibrary={connectionLibrary}
-                usageByConnection={connectionUsageById}
-                runtimeConnections={engine.connections}
-                onStatusMessage={engine.setStatusMessage}
-                onAddCapabilityToCanvas={handleAddCapabilityToCanvas}
-              />
-            </ScrollSurface>
-          </section>
-        </StrictStudioPanel>
-      );
-    case 'plugins':
-      return (
-        <StrictStudioPanel>
-          <section className="studio-content studio-content--panel">
-            <ScrollSurface className="panel studio-content__panel studio-content__panel--scroll">
-              <PluginPanel isTauriRuntime={isTauriRuntime} />
-            </ScrollSurface>
-          </section>
-        </StrictStudioPanel>
-      );
-    case 'logs':
-      return (
-        <StrictStudioPanel>
-          <section className="studio-content studio-content--panel">
-            <ScrollSurface className="panel studio-content__panel studio-content__panel--scroll">
-              <LogsPanel
-                eventFeed={engine.eventFeed}
-                appErrors={engine.appErrors}
-                resultCount={engine.results.length}
-                themeMode={settings.resolvedThemeMode}
-                activeBoardName={activeBoard?.name ?? null}
-                workspacePath={settings.projectWorkspacePath}
-                activeTraceId={engine.runtimeState.traceId}
-                onClearLogs={() => {
-                  engine.clearLogs();
-                  if (hasTauriRuntime()) {
-                    void clearObservability(settings.projectWorkspacePath);
-                  }
-                }}
-              />
-            </ScrollSurface>
-          </section>
-        </StrictStudioPanel>
-      );
-    case 'settings':
-      return (
-        <StrictStudioPanel>
-          <section className="studio-content studio-content--panel">
-            <ScrollSurface className="panel studio-content__panel studio-content__panel--scroll">
-              <SettingsPanel
-                isTauriRuntime={isTauriRuntime}
-                runtimeModeLabel={runtimeModeLabel}
-                workflowStatusLabel={workflowStatusLabel}
-                statusMessage={engine.statusMessage}
-                themeMode={settings.themeMode}
-                onThemeModeChange={settings.setThemeMode}
-                accentPreset={settings.accentPreset}
-                accentOptions={ACCENT_PRESET_OPTIONS}
-                customAccentHex={settings.customAccentHex}
-                onAccentPresetChange={settings.setAccentPreset}
-                onCustomAccentChange={settings.setCustomAccentHex}
-                motionMode={settings.motionMode}
-                onMotionModeChange={settings.setMotionMode}
-                startupPage={settings.startupPage}
-                onStartupPageChange={settings.setStartupPage}
-                projectWorkspacePath={settings.projectWorkspacePath}
-                projectWorkspaceResolvedPath={projectLibrary.storage.resolvedWorkspacePath}
-                projectWorkspaceBoardsDirectoryPath={projectLibrary.storage.boardsDirectoryPath}
-                projectWorkspaceUsingDefault={projectLibrary.storage.usingDefaultLocation}
-                projectWorkspaceIsSyncing={projectLibrary.storage.isSyncing}
-                projectWorkspaceError={projectLibrary.storage.error}
-                onProjectWorkspacePathChange={settings.setProjectWorkspacePath}
-                gridVisible={settings.gridVisible}
-                onGridVisibleChange={settings.setGridVisible}
-              />
-            </ScrollSurface>
-          </section>
-        </StrictStudioPanel>
-      );
-    case 'ai':
-      return (
-        <StrictStudioPanel>
-          <section className="studio-content studio-content--panel">
-            <ScrollSurface className="panel studio-content__panel studio-content__panel--scroll">
-              <AiConfigPanel
-                isTauriRuntime={isTauriRuntime}
-                aiConfig={aiConfig}
-                aiConfigLoading={aiConfigLoading}
-                aiConfigError={aiConfigError}
-                onAiConfigSave={onAiConfigSave}
-                onAiProviderTest={onAiProviderTest}
-                aiTestResult={aiTestResult}
-                aiTesting={aiTesting}
-              />
-            </ScrollSurface>
-          </section>
-        </StrictStudioPanel>
-      );
-    case 'about':
-      return (
-        <StrictStudioPanel>
-          <section className="studio-content studio-content--panel">
-            <ScrollSurface className="panel studio-content__panel studio-content__panel--scroll">
-              <AboutPanel />
-            </ScrollSurface>
-          </section>
-        </StrictStudioPanel>
-      );
+  // 画布工作区——不走面板动画
+  if (section === 'boards' && activeBoard && activeProject) {
+    return (
+      <section className="studio-content studio-content--board">
+        <BoardWorkspace
+          ref={flowgramCanvasRef}
+          project={activeProject}
+          graph={graph}
+          nodeCount={graphNodeCount}
+          connectionPreview={connectionPreview}
+          themeMode={settings.resolvedThemeMode}
+          isRuntimeDockCollapsed={engine.isRuntimeDockCollapsed}
+          flowgramResources={{
+            connections: connectionLibrary.connections,
+            aiProviders: aiConfig?.providers ?? [],
+            activeAiProviderId: aiConfig?.activeProviderId ?? null,
+            copilotParams: aiConfig?.copilotParams ?? {},
+          }}
+          flowgramRuntime={{
+            runtimeState: engine.runtimeState,
+            workflowStatus,
+            canTestRun,
+            getEdgeHeatmap: engine.getEdgeHeatmap,
+            registerEdgeHeatUpdate: engine.registerEdgeHeatUpdate,
+          }}
+          flowgramAppearance={{
+            accentHex: settings.accentHex,
+            themeMode: settings.resolvedThemeMode,
+            nodeCodeColor: settings.accentThemeVariables['--node-code'],
+          }}
+          flowgramExportTarget={{
+            workspacePath: settings.projectWorkspacePath,
+            workflowName: activeProject.name,
+          }}
+          flowgramActions={{
+            onRunRequested: onStartDeploy,
+            onStopRequested: onStopDeploy,
+            onTestRunRequested: onTestRun,
+            onGraphChange,
+            onError: engine.handleFlowgramError,
+            onStatusMessage: engine.setStatusMessage,
+          }}
+          runtimeDock={{
+            eventFeed: engine.eventFeed,
+            appErrors: engine.appErrors,
+            results: engine.results,
+            activeWorkflowId: currentBoardDeployInfo?.workflowId ?? null,
+            payloadText,
+            deployInfo: currentBoardDeployInfo,
+            onPayloadTextChange,
+          }}
+          onToggleRuntimeDockCollapsed={() =>
+            engine.setIsRuntimeDockCollapsed((current) => !current)
+          }
+          onBack={onBackToBoards}
+          onRename={(name) => projectLibrary.updateProjectDraft(activeProject.id, { name })}
+          onCreateSnapshot={onCreateSnapshot}
+          onDeleteSnapshot={onDeleteSnapshot}
+          onRollbackSnapshot={onRollbackSnapshot}
+          onEnvironmentChange={onEnvironmentChange}
+          onEnvironmentSave={onEnvironmentSave}
+          onDuplicateEnvironment={onDuplicateEnvironment}
+          onDeleteEnvironment={onDeleteEnvironment}
+        />
+      </section>
+    );
   }
+
+  // 所有面板页——统一入场动画
+  const panel = (() => {
+    switch (section) {
+      case 'dashboard':
+        return (
+          <DashboardPanel
+            userId={CURRENT_USER_NAME}
+            activeBoardName={activeBoard?.name ?? null}
+            boardCount={boardItems.length}
+            graphNodeCount={graphNodeCount}
+            graphEdgeCount={graphEdgeCount}
+            graphConnectionCount={graphConnectionCount}
+            activeNodeCount={engine.runtimeState.activeNodeIds.length}
+            completedNodeCount={engine.runtimeState.completedNodeIds.length}
+            failedNodeCount={engine.runtimeState.failedNodeIds.length}
+            outputNodeCount={engine.runtimeState.outputNodeIds.length}
+            eventCount={engine.eventFeed.length}
+            resultCount={engine.results.length}
+            statusMessage={engine.statusMessage}
+            workflowStatus={workflowStatus}
+            traceId={engine.runtimeState.traceId}
+            lastEventType={engine.runtimeState.lastEventType}
+            lastNodeId={engine.runtimeState.lastNodeId}
+            lastUpdatedAt={engine.runtimeState.lastUpdatedAt}
+            connections={engine.connections}
+            eventFeed={engine.eventFeed}
+            onNavigateToBoards={onBackToBoards}
+          />
+        );
+      case 'boards':
+        return (
+          <BoardsPanel
+            boards={boardItems}
+            onOpenBoard={onOpenBoard}
+            onCreateBoard={onCreateBoard}
+            onImportBoardFile={onImportBoardFile}
+            onDeleteBoard={onDeleteBoard}
+          />
+        );
+      case 'runtime':
+        return (
+          <RuntimeManagerPanel
+            workspacePath={settings.projectWorkspacePath}
+            themeMode={settings.resolvedThemeMode}
+            activeBoardId={activeBoard?.id ?? null}
+            onOpenBoard={(boardId) => {
+              const targetBoard =
+                boardItems.find((board) => board.id === boardId) ?? {
+                  id: boardId,
+                  name: boardId,
+                  description: '',
+                  nodeCount: 0,
+                  updatedAt: '',
+                  snapshotCount: 0,
+                  environmentCount: 0,
+                  environmentName: '未选择环境',
+                  migrationNote: null,
+                };
+              onOpenBoard(targetBoard);
+            }}
+            onPersistActiveProject={onPersistActiveProject}
+            onBeforeWorkflowStop={onBeforeWorkflowStop}
+            onAfterWorkflowStop={onAfterWorkflowStop}
+            onRemovePersistedDeployment={onRemovePersistedDeployment}
+            onStatusMessage={engine.setStatusMessage}
+            onRuntimeCountChange={onRuntimeCountChange}
+          />
+        );
+      case 'connections':
+        return (
+          <InfrastructurePanel
+            isTauriRuntime={isTauriRuntime}
+            workspacePath={settings.projectWorkspacePath}
+            connectionLibrary={connectionLibrary}
+            usageByConnection={connectionUsageById}
+            runtimeConnections={engine.connections}
+            onStatusMessage={engine.setStatusMessage}
+            onAddCapabilityToCanvas={handleAddCapabilityToCanvas}
+          />
+        );
+      case 'plugins':
+        return <PluginPanel isTauriRuntime={isTauriRuntime} />;
+      case 'logs':
+        return (
+          <LogsPanel
+            eventFeed={engine.eventFeed}
+            appErrors={engine.appErrors}
+            resultCount={engine.results.length}
+            themeMode={settings.resolvedThemeMode}
+            activeBoardName={activeBoard?.name ?? null}
+            workspacePath={settings.projectWorkspacePath}
+            activeTraceId={engine.runtimeState.traceId}
+            onClearLogs={() => {
+              engine.clearLogs();
+              if (hasTauriRuntime()) {
+                void clearObservability(settings.projectWorkspacePath);
+              }
+            }}
+          />
+        );
+      case 'settings':
+        return (
+          <SettingsPanel
+            isTauriRuntime={isTauriRuntime}
+            runtimeModeLabel={runtimeModeLabel}
+            workflowStatusLabel={workflowStatusLabel}
+            statusMessage={engine.statusMessage}
+            themeMode={settings.themeMode}
+            onThemeModeChange={settings.setThemeMode}
+            accentPreset={settings.accentPreset}
+            accentOptions={ACCENT_PRESET_OPTIONS}
+            customAccentHex={settings.customAccentHex}
+            onAccentPresetChange={settings.setAccentPreset}
+            onCustomAccentChange={settings.setCustomAccentHex}
+            motionMode={settings.motionMode}
+            onMotionModeChange={settings.setMotionMode}
+            startupPage={settings.startupPage}
+            onStartupPageChange={settings.setStartupPage}
+            projectWorkspacePath={settings.projectWorkspacePath}
+            projectWorkspaceResolvedPath={projectLibrary.storage.resolvedWorkspacePath}
+            projectWorkspaceBoardsDirectoryPath={projectLibrary.storage.boardsDirectoryPath}
+            projectWorkspaceUsingDefault={projectLibrary.storage.usingDefaultLocation}
+            projectWorkspaceIsSyncing={projectLibrary.storage.isSyncing}
+            projectWorkspaceError={projectLibrary.storage.error}
+            onProjectWorkspacePathChange={settings.setProjectWorkspacePath}
+            gridVisible={settings.gridVisible}
+            onGridVisibleChange={settings.setGridVisible}
+          />
+        );
+      case 'ai':
+        return (
+          <AiConfigPanel
+            isTauriRuntime={isTauriRuntime}
+            aiConfig={aiConfig}
+            aiConfigLoading={aiConfigLoading}
+            aiConfigError={aiConfigError}
+            onAiConfigSave={onAiConfigSave}
+            onAiProviderTest={onAiProviderTest}
+            aiTestResult={aiTestResult}
+            aiTesting={aiTesting}
+          />
+        );
+      case 'about':
+        return <AboutPanel />;
+    }
+  })();
+
+  // about 页不需要 ScrollSurface/AnimatedContent 包裹，直接全屏渲染
+  if (section === 'about') {
+    return (
+      <StrictStudioPanel>
+        <section className="studio-content studio-content--about">
+          {panel}
+        </section>
+      </StrictStudioPanel>
+    );
+  }
+
+  return (
+    <StrictStudioPanel>
+      <AnimatedContent key={section} triggerOnMount distance={20} duration={0.35}>
+        <section className="studio-content studio-content--panel">
+          <ScrollSurface className="panel studio-content__panel studio-content__panel--scroll">
+            {panel}
+          </ScrollSurface>
+        </section>
+      </AnimatedContent>
+    </StrictStudioPanel>
+  );
 }

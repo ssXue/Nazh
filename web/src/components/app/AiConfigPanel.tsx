@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import { SwitchBar } from '../flowgram/nodes/settings-shared';
+import { BorderGlow } from '../animations/BorderGlow';
 
 import type { AiConfigPanelProps } from './types';
 import type {
@@ -523,7 +524,7 @@ export function AiConfigPanel({
                 <div className="ai-config-panel__card-list">
                   {aiConfig.providers.map((provider) => {
                     const isGlobalProvider = provider.id === activeProvider?.id;
-                    return (
+                    const card = (
                       <article
                         key={provider.id}
                         className={`ai-provider-card${isGlobalProvider ? ' ai-provider-card--active' : ''}`}
@@ -579,6 +580,21 @@ export function AiConfigPanel({
                           </button>
                         </div>
                       </article>
+                    );
+
+                    return isGlobalProvider ? (
+                      <BorderGlow
+                        key={provider.id}
+                        animated
+                        colors={['#6e89d6', '#7eaa90', '#c29b6b']}
+                        borderRadius={12}
+                        glowColor="40 80 80"
+                        className={`ai-provider-card--glow-wrapper${isGlobalProvider ? ' ai-provider-card--active' : ''}`}
+                      >
+                        {card}
+                      </BorderGlow>
+                    ) : (
+                      card
                     );
                   })}
                 </div>

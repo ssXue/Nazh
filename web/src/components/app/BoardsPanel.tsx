@@ -130,7 +130,9 @@ export function BoardsPanel({
 
         {boards.length === 0 ? (
           <div className="boards-panel__empty" data-testid="board-empty-state">
-            <strong>当前没有工程</strong>
+            <strong>
+              当前没有工程
+            </strong>
             <span>可以先创建一个工程，或从右上角导入已有项目包。</span>
           </div>
         ) : (

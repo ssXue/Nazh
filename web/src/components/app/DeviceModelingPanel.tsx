@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
+import { SpotlightCard } from '../animations/SpotlightCard';
 import { hasTauriRuntime } from '../../lib/tauri';
 import { formatRelativeTimestamp } from '../../lib/projects';
 import { useDeviceAssets } from '../../hooks/use-device-assets';
@@ -205,9 +206,10 @@ export function DeviceModelingPanel({
           </div>
         ) : (
           filteredAssets.map((asset) => (
-            <article
+            <SpotlightCard
+              as="article"
               key={asset.id}
-              className="board-card board-card--entry"
+              className="dm-card"
               role="button"
               tabIndex={0}
               onClick={() => void handleOpenDetail(asset.id)}
@@ -217,6 +219,7 @@ export function DeviceModelingPanel({
                   void handleOpenDetail(asset.id);
                 }
               }}
+              spotlightColor="rgba(74, 114, 201, 0.06)"
             >
               <div className="dm-card-row">
                 <div className="board-card__icon">
@@ -269,7 +272,7 @@ export function DeviceModelingPanel({
                   <DeleteActionIcon />
                 </button>
               </div>
-            </article>
+            </SpotlightCard>
           ))
         )}
       </div>

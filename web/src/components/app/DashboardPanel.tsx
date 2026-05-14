@@ -1,6 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 
 import type { ConnectionRecord, RuntimeLogEntry, WorkflowWindowStatus } from '../../types';
+import { BlurText } from '../animations/BlurText';
+import { CountUp } from '../animations/CountUp';
+import { SpotlightCard } from '../animations/SpotlightCard';
 
 interface DashboardPanelProps {
   userId: string;
@@ -174,7 +177,13 @@ export function DashboardPanel({
       <section className="dashboard-hero">
         <div className="dashboard-hero__context">
           <strong className="dashboard-hero__title">
-            {activeBoardName ? activeBoardName : 'Nazh 控制台'}
+            <BlurText
+              text={activeBoardName ? activeBoardName : 'Nazh 控制台'}
+              animateBy="words"
+              delay={80}
+              direction="top"
+              className="dashboard-hero__title"
+            />
           </strong>
           <div className="dashboard-hero__status-row">
             <span className={`dashboard-hero__status-badge is-${statusTone}`}>{statusLabel}</span>
@@ -223,33 +232,33 @@ export function DashboardPanel({
 
       {/* KPI Row */}
       <div className="dashboard-kpi-grid">
-        <div className={`dashboard-kpi-card${activeNodeCount > 0 ? ' is-pulsing' : ''}`}>
-          <span className="dashboard-kpi-card__value is-active">{activeNodeCount}</span>
+        <SpotlightCard className={`dashboard-kpi-card${activeNodeCount > 0 ? ' is-pulsing' : ''}`} spotlightColor="rgba(74, 114, 201, 0.1)">
+          <CountUp to={activeNodeCount} className="dashboard-kpi-card__value is-active" duration={1.2} />
           <span className="dashboard-kpi-card__label">运行中</span>
-        </div>
-        <div className="dashboard-kpi-card">
-          <span className="dashboard-kpi-card__value is-success">{completedNodeCount}</span>
+        </SpotlightCard>
+        <SpotlightCard className="dashboard-kpi-card" spotlightColor="rgba(108, 154, 130, 0.1)">
+          <CountUp to={completedNodeCount} className="dashboard-kpi-card__value is-success" duration={1.2} />
           <span className="dashboard-kpi-card__label">已完成</span>
-        </div>
-        <div className={`dashboard-kpi-card${failedNodeCount > 0 ? ' has-alert' : ''}`}>
-          <span className="dashboard-kpi-card__value is-danger">{failedNodeCount}</span>
+        </SpotlightCard>
+        <SpotlightCard className={`dashboard-kpi-card${failedNodeCount > 0 ? ' has-alert' : ''}`} spotlightColor="rgba(185, 122, 130, 0.1)">
+          <CountUp to={failedNodeCount} className="dashboard-kpi-card__value is-danger" duration={1.2} />
           <span className="dashboard-kpi-card__label">异常</span>
-        </div>
-        <div className="dashboard-kpi-card">
-          <span className="dashboard-kpi-card__value">{eventCount}</span>
+        </SpotlightCard>
+        <SpotlightCard className="dashboard-kpi-card" spotlightColor="rgba(74, 114, 201, 0.08)">
+          <CountUp to={eventCount} className="dashboard-kpi-card__value" duration={1.2} />
           <span className="dashboard-kpi-card__label">事件</span>
-        </div>
-        <div className="dashboard-kpi-card">
-          <span className="dashboard-kpi-card__value">{resultCount}</span>
+        </SpotlightCard>
+        <SpotlightCard className="dashboard-kpi-card" spotlightColor="rgba(74, 114, 201, 0.08)">
+          <CountUp to={resultCount} className="dashboard-kpi-card__value" duration={1.2} />
           <span className="dashboard-kpi-card__label">输出</span>
-        </div>
-        <div className="dashboard-kpi-card">
-          <span className="dashboard-kpi-card__value">{connectionSummary.total}</span>
+        </SpotlightCard>
+        <SpotlightCard className="dashboard-kpi-card" spotlightColor="rgba(74, 114, 201, 0.08)">
+          <CountUp to={connectionSummary.total} className="dashboard-kpi-card__value" duration={1.2} />
           <span className="dashboard-kpi-card__label">连接</span>
           {connectionSummary.failed > 0 && (
             <span className="dashboard-kpi-card__badge is-danger">{connectionSummary.failed} 故障</span>
           )}
-        </div>
+        </SpotlightCard>
       </div>
 
       {/* Middle row: Alerts + Event Feed */}

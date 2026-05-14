@@ -76,6 +76,124 @@
   font-size: var(--font-callout, 12px);
 }
 
+/* ── 设备卡片——与连接卡片视觉统一 ── */
+
+.dm-card {
+  position: relative;
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  background:
+    radial-gradient(circle at 18% 12%, var(--accent-soft), transparent 34%),
+    linear-gradient(180deg, var(--panel-strong), var(--panel));
+  box-shadow: none;
+  overflow: hidden;
+  cursor: pointer;
+  text-align: left;
+  transition:
+    border-color 180ms ease,
+    transform 180ms ease;
+}
+
+.dm-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(120deg, rgba(var(--accent-rgb) / 0.12), transparent 46%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 180ms ease;
+}
+
+.dm-card:hover {
+  transform: translateY(-1px);
+}
+
+.dm-card:hover::before {
+  opacity: 1;
+}
+
+.dm-card .board-card__icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-md);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  flex-shrink: 0;
+}
+
+.dm-card .board-card__icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.dm-card .board-card__name {
+  font-size: var(--font-body, 13px);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dm-card .board-card__desc {
+  font-size: var(--font-callout, 12px);
+  color: var(--muted);
+}
+
+.dm-card .board-card__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.dm-card .board-card__chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--surface-muted);
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.dm-card .board-card__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.dm-card .board-card__meta {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.dm-card .board-card__delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.dm-card .board-card__delete:hover,
+.dm-card .board-card__delete:focus-visible {
+  background: var(--danger-soft);
+  color: var(--danger-ink);
+}
+
 
 /* ── 设备类型标记 ── */
 
