@@ -109,11 +109,11 @@ export function buildFlowgramShortcutHandlers(
     shortcuts: ['backspace', 'delete'],
     isEnabled: () => {
       const sel = selectService.selection;
-      return sel.length > 0 && sel.some((n) => n.flowNodeType !== FlowNodeBaseType.ROOT);
+      return sel.length > 0 && sel.some((n) => (n as WorkflowNodeEntity).flowNodeType !== FlowNodeBaseType.ROOT);
     },
     execute: () => {
       const selectable = selectService.selection.filter(
-        (n) => n.flowNodeType !== FlowNodeBaseType.ROOT && !n.disposed,
+        (n) => (n as WorkflowNodeEntity).flowNodeType !== FlowNodeBaseType.ROOT && !n.disposed,
       );
       for (const node of selectable) {
         node.dispose();
@@ -131,15 +131,15 @@ export function buildFlowgramShortcutHandlers(
     shortcuts: ['meta d', 'ctrl d'],
     isEnabled: () => {
       const sel = selectService.selection;
-      return sel.length > 0 && sel.some((n) => n.flowNodeType !== FlowNodeBaseType.ROOT);
+      return sel.length > 0 && sel.some((n) => (n as WorkflowNodeEntity).flowNodeType !== FlowNodeBaseType.ROOT);
     },
     execute: () => {
       const selectable = selectService.selection.filter(
-        (n) => n.flowNodeType !== FlowNodeBaseType.ROOT && !n.disposed,
+        (n) => (n as WorkflowNodeEntity).flowNodeType !== FlowNodeBaseType.ROOT && !n.disposed,
       );
       const copied: WorkflowNodeEntity[] = [];
       for (const node of selectable) {
-        const newNode = ctx.document.copyNode(node);
+        const newNode = ctx.document.copyNode(node as WorkflowNodeEntity);
         if (newNode) {
           copied.push(newNode);
         }

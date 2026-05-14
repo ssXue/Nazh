@@ -872,7 +872,7 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
     const rawData = (node.getExtInfo() ?? {}) as { nodeType?: string; label?: string };
     return {
       id: node.id,
-      type: rawData.nodeType ?? node.flowNodeType,
+      type: rawData.nodeType ?? String(node.flowNodeType),
       label: rawData.label || undefined,
     };
   }, []);

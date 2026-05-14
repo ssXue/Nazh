@@ -30,10 +30,8 @@ export function buildRuntimeContextPrompt(
   // 节点列表
   parts.push('节点：');
   for (const [id, def] of nodeEntries) {
-    const typeStr = def.node_type ?? 'unknown';
-    const labelStr = def.label ? ` ${def.label}` : '';
     const connStr = def.connection_id ? ` → 连接: ${def.connection_id}` : '';
-    parts.push(`- ${id} [${typeStr}]${labelStr}${connStr}`);
+    parts.push(`- ${id} [${def.type}]${connStr}`);
   }
 
   // 连线摘要

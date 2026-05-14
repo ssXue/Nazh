@@ -6,7 +6,7 @@
 
 import { useCallback, useEffect, useRef, type MouseEvent } from 'react';
 
-import type { FreeLayoutPluginContext } from '@flowgram.ai/free-layout-editor';
+import { type FreeLayoutPluginContext, type WorkflowNodeEntity } from '@flowgram.ai/free-layout-editor';
 
 export interface ContextMenuState {
   x: number;
@@ -29,11 +29,11 @@ export function FlowgramContextMenu({ state, editorCtx, onClose }: FlowgramConte
   const handleDuplicate = useCallback(() => {
     if (!editorCtx) return;
     const sel = editorCtx.document.selectServices.selection.filter(
-      (n) => n.flowNodeType !== 'GROUP' && !n.disposed,
+      (n) => (n as WorkflowNodeEntity).flowNodeType !== 'GROUP' && !n.disposed,
     );
     const copied = [];
     for (const node of sel) {
-      const newNode = editorCtx.document.copyNode(node);
+      const newNode = editorCtx.document.copyNode(node as WorkflowNodeEntity);
       if (newNode) copied.push(newNode);
     }
     if (copied.length > 0) {
@@ -45,7 +45,7 @@ export function FlowgramContextMenu({ state, editorCtx, onClose }: FlowgramConte
   const handleDelete = useCallback(() => {
     if (!editorCtx) return;
     const sel = editorCtx.document.selectServices.selection.filter(
-      (n) => n.flowNodeType !== 'GROUP' && !n.disposed,
+      (n) => (n as WorkflowNodeEntity).flowNodeType !== 'GROUP' && !n.disposed,
     );
     for (const node of sel) {
       node.dispose();
