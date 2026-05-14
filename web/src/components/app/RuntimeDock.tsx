@@ -504,7 +504,6 @@ function DockPanelContent({
       <section className="runtime-dock__panel is-active" role="tabpanel">
         <div className="runtime-dock__panel-header">
           <h3>执行事件流</h3>
-          <div className="runtime-dock__panel-actions">
             <button
               type="button"
               className={`runtime-dock__panel-tool ${hasCopiedEventFeed ? 'is-active' : ''}`}
@@ -515,7 +514,6 @@ function DockPanelContent({
             >
               <CopyIcon width={14} height={14} />
             </button>
-          </div>
         </div>
         <div className="runtime-dock__panel-body">
           <div
