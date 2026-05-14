@@ -39,6 +39,7 @@ export async function copilotChatStream(
   options: {
     toolCallingEnabled: boolean;
     userSystemPrompt?: string;
+    runtimeContextPrompt?: string;
     temperature?: number;
     maxTokens?: number;
     topP?: number;
@@ -77,6 +78,7 @@ export async function copilotChatStream(
     messages,
     toolCallingEnabled: options.toolCallingEnabled,
     userSystemPrompt: options.userSystemPrompt,
+    runtimeContextPrompt: options.runtimeContextPrompt,
     params: {
       temperature: options.temperature,
       maxTokens: options.maxTokens,

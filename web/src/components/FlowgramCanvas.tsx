@@ -22,6 +22,7 @@ import {
 } from 'react';
 
 import { FlowgramNodeAddPanel } from './flowgram/FlowgramNodeAddPanel';
+import { FlowgramContextMenu, type ContextMenuState } from './flowgram/FlowgramContextMenu';
 import type { ResolvedThemeMode, ThemeMode } from './app/types';
 import { FLOWGRAM_NODE_SETTINGS_PANEL_KEY } from './flowgram/FlowgramNodeSettingsPanel';
 import {
@@ -161,6 +162,8 @@ export interface FlowgramCanvasHandle {
   loadWorkflowGraph: (graph: WorkflowGraph) => void;
   addCanvasOps: (ops: CanvasOps) => void;
   autoLayout: () => void;
+  /** 当前选中节点的摘要信息，供 copilot 等外部消费者使用。 */
+  getSelectedNode: () => { id: string; type: string; label?: string } | null;
 }
 
 interface InternalFlowExportImageService {
@@ -310,6 +313,7 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
   const lastCopilotYRef = useRef(0);
   const initialFlowgramDataRef = useRef<FlowgramWorkflowJSON | null>(null);
   const pendingFitViewRef = useRef(true);
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const flowgramData = useMemo(() => {
     if (!graph) {
       return null;
@@ -862,6 +866,17 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
     }
   }, [editorCtx]);
 
+  const getSelectedNodeSummary = useCallback((): { id: string; type: string; label?: string } | null => {
+    const node = selectedNodeRef.current;
+    if (!node) return null;
+    const rawData = (node.getExtInfo() ?? {}) as { nodeType?: string; label?: string };
+    return {
+      id: node.id,
+      type: rawData.nodeType ?? node.flowNodeType,
+      label: rawData.label || undefined,
+    };
+  }, []);
+
   useImperativeHandle(
     ref,
     () => ({
@@ -871,8 +886,9 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
       loadWorkflowGraph,
       addCanvasOps,
       autoLayout: handleAutoLayout,
+      getSelectedNode: getSelectedNodeSummary,
     }),
-    [addCanvasOps, buildCurrentWorkflowGraph, editorCtx, handleAutoLayout, loadWorkflowGraph],
+    [addCanvasOps, buildCurrentWorkflowGraph, editorCtx, getSelectedNodeSummary, handleAutoLayout, loadWorkflowGraph],
   );
 
   const handleSaveCurrentGraph = useCallback(() => {
@@ -882,6 +898,34 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
 
     emitCurrentGraphChange(editorCtx);
   }, [editorCtx, emitCurrentGraphChange]);
+
+  const handleContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      if (!editorCtx) return;
+
+      // 判断右键目标是节点还是画布空白区
+      const selectService = editorCtx.document.selectServices;
+      const sel = selectService.selection;
+      const hasNodeSelection = sel.length > 0 && sel.some((n) => n.flowNodeType !== FlowNodeBaseType.ROOT);
+
+      if (hasNodeSelection) {
+        // 取选中节点的 connection_id（取第一个有 connection_id 的）
+        let connectionId: string | undefined;
+        for (const node of sel) {
+          const ext = (node.getExtInfo() ?? {}) as { connection_id?: string };
+          if (ext.connection_id) {
+            connectionId = ext.connection_id;
+            break;
+          }
+        }
+        setContextMenu({ x: e.clientX, y: e.clientY, target: 'node', connectionId });
+      } else {
+        setContextMenu({ x: e.clientX, y: e.clientY, target: 'canvas' });
+      }
+    },
+    [editorCtx],
+  );
 
   const handleDownloadCurrentGraph = useCallback(
     async (format: FlowDownloadFormat) => {
@@ -1177,7 +1221,7 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
   });
 
   return (
-    <section className="canvas-shell">
+    <section className="canvas-shell" onContextMenu={handleContextMenu}>
       {!resolvedGraph || !resolvedFlowgramData ? (
         <div className="canvas-empty">无有效流程</div>
       ) : (
@@ -1215,6 +1259,13 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
           </div>
         </FreeLayoutEditorProvider>
       )}
+      {contextMenu ? (
+        <FlowgramContextMenu
+          state={contextMenu}
+          editorCtx={editorCtx}
+          onClose={() => setContextMenu(null)}
+        />
+      ) : null}
     </section>
   );
 });

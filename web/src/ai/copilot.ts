@@ -48,6 +48,7 @@ const TOOL_CALLING_PROMPT = `
 当用户要求创建或修改工作流时，直接调用工具，不要先说"我来查看"或"让我先了解一下"。
 
 ### 上下文查询工具
+画布状态（节点、连线、选中节点）已作为系统提示的一部分自动注入，通常不需要主动查询。仅在需要精确的运行时数据（如变量值、执行时间、部署状态）时才调用以下工具。
 - \`query_node_catalog\`：列出所有可用节点类型
 - \`describe_node\`：查看指定节点的输入/输出 pin schema
 - \`list_connections\`：查看已配置的连接
@@ -102,6 +103,8 @@ export interface CopilotStreamOptions {
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
   toolCallingEnabled: boolean;
   userSystemPrompt?: string;
+  /// 运行时画布上下文文本（由 copilot-context.ts 构建）。
+  runtimeContextPrompt?: string;
   params?: AiGenerationParams;
   workspacePath?: string;
   signal?: AbortSignal;
@@ -112,7 +115,7 @@ export interface CopilotStreamOptions {
 export async function copilotStream(options: CopilotStreamOptions): Promise<CopilotResult> {
   const {
     provider, modelOverride, messages, toolCallingEnabled, userSystemPrompt,
-    params, workspacePath, signal, callbacks,
+    runtimeContextPrompt, params, workspacePath, signal, callbacks,
   } = options;
 
   const model = await createLanguageModel({ provider, modelOverride });
@@ -124,6 +127,9 @@ export async function copilotStream(options: CopilotStreamOptions): Promise<Copi
   }
   if (userSystemPrompt?.trim()) {
     systemParts.push(`\n\n用户补充指令：${userSystemPrompt.trim()}`);
+  }
+  if (runtimeContextPrompt) {
+    systemParts.push(runtimeContextPrompt);
   }
   const systemPrompt = systemParts.join('\n\n');
 

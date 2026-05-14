@@ -9,6 +9,7 @@ import { copilotChatStream } from '../../lib/copilot-stream';
 import type { ToolCallInfo, ToolResultInfo, CanvasOpEvent } from '../../lib/copilot-stream';
 import { hasTauriRuntime, loadAiConfig } from '../../lib/tauri';
 import { resolveGlobalAiProvider } from '../../lib/workflow-ai';
+import { buildRuntimeContextPrompt } from '../../ai/copilot-context';
 import { CopilotChatView } from './CopilotChatView';
 
 /// 调试日志开关——开发期间保持 true，上线后可关闭。
@@ -301,6 +302,12 @@ export function CopilotPanel({ canvasRef, onEnsureBoardOpen, workspacePath }: Co
         return;
       }
 
+      // 收集运行时画布上下文
+      const currentGraph = canvasRef.current?.getCurrentWorkflowGraph() ?? null;
+      const selectedNode = canvasRef.current?.getSelectedNode() ?? null;
+      const runtimeContextPrompt = buildRuntimeContextPrompt(currentGraph, selectedNode);
+      panelLog('runtime context', { nodeCount: currentGraph ? Object.keys(currentGraph.nodes).length : 0, selected: selectedNode?.id });
+
       const result = await copilotChatStream(
         convId,
         text.trim(),
@@ -308,6 +315,7 @@ export function CopilotPanel({ canvasRef, onEnsureBoardOpen, workspacePath }: Co
         {
           toolCallingEnabled: aiConfig.agentSettings.toolCallingEnabled,
           userSystemPrompt: aiConfig.agentSettings.systemPrompt ?? undefined,
+          runtimeContextPrompt,
           temperature: aiConfig.copilotParams.temperature ?? undefined,
           maxTokens: aiConfig.copilotParams.maxTokens ?? undefined,
           topP: aiConfig.copilotParams.topP ?? undefined,
