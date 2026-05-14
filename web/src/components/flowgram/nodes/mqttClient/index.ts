@@ -33,12 +33,21 @@ export const definition = {
     };
   },
 
+  getOutputPorts() {
+    return [{ key: 'out', label: 'out' }];
+  },
+
   getNodeSize() {
     return { width: 214, height: 132 };
   },
 
   buildRegistryMeta() {
-    return { defaultExpanded: true, size: this.getNodeSize() };
+    return {
+      defaultExpanded: true,
+      size: this.getNodeSize(),
+      defaultPorts: [{ type: 'input' as const }],
+      useDynamicPort: true,
+    };
   },
 
   validate(_ctx: NodeValidationContext): NodeValidation[] {

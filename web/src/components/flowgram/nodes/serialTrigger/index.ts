@@ -25,12 +25,23 @@ export const definition = {
     };
   },
 
+  getOutputPorts() {
+    return [{ key: 'out', label: 'out' }];
+  },
+
   getNodeSize() {
     return { width: 214, height: 132 };
   },
 
   buildRegistryMeta() {
-    return { defaultExpanded: true, size: this.getNodeSize() };
+    // 触发器节点：输出端口受控渲染以匹配 Rust 端 pin id。
+    // 保留默认 input port——FlowGram 在无边时仍需要 input port 实体。
+    return {
+      defaultExpanded: true,
+      size: this.getNodeSize(),
+      defaultPorts: [{ type: 'input' as const }],
+      useDynamicPort: true,
+    };
   },
 
   validate(_ctx: NodeValidationContext): NodeValidation[] {
