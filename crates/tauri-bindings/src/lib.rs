@@ -10,6 +10,7 @@
 mod copilot;
 mod deployment_session;
 mod export;
+mod network;
 mod observability;
 mod runtime;
 mod serial;
@@ -20,6 +21,7 @@ pub use copilot::*;
 pub use deployment_session::*;
 #[cfg(feature = "ts-export")]
 pub use export::export_all;
+pub use network::*;
 pub use observability::*;
 pub use runtime::*;
 pub use serial::*;

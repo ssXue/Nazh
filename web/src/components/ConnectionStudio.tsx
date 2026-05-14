@@ -20,10 +20,12 @@ import {
 import { ExpandTransition } from './app/ExpandTransition';
 import {
   listSerialPorts,
+  listNetworkInterfaces,
   resetConnectionCircuitBreaker,
   testSerialConnection,
   type SerialPortInfo,
   type TestSerialResult,
+  type NetworkInterfaceInfo,
 } from '../lib/tauri';
 
 // 从拆分模块导入
@@ -111,6 +113,8 @@ export function ConnectionStudio({
   const [pendingDeleteIndex, setPendingDeleteIndex] = useState<number | null>(null);
   const [scannedPorts, setScannedPorts] = useState<SerialPortInfo[]>([]);
   const [isScanningPorts, setIsScanningPorts] = useState(false);
+  const [scannedInterfaces, setScannedInterfaces] = useState<NetworkInterfaceInfo[]>([]);
+  const [isScanningInterfaces, setIsScanningInterfaces] = useState(false);
   const [testResult, setTestResult] = useState<TestSerialResult | null>(null);
   const [isTesting, setIsTesting] = useState(false);
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
@@ -499,6 +503,20 @@ export function ConnectionStudio({
       })
       .finally(() => {
         setIsScanningPorts(false);
+      });
+  }
+
+  function handleRefreshInterfaces() {
+    setIsScanningInterfaces(true);
+    listNetworkInterfaces()
+      .then((ifaces) => {
+        setScannedInterfaces(ifaces);
+      })
+      .catch(() => {
+        setScannedInterfaces([]);
+      })
+      .finally(() => {
+        setIsScanningInterfaces(false);
       });
   }
 
@@ -1158,15 +1176,36 @@ export function ConnectionStudio({
                         <option value="mock">Mock（模拟）</option>
                       </select>
                     </label>
-                    <label>
+                    <label className="serial-port-field">
                       <span>网络接口</span>
-                      <input
-                        value={metadataString(activeConnection.metadata, 'interface', 'eth0')}
-                        onChange={(event) =>
-                          handleMetadataFieldChange(activeConnectionIndex, 'interface', event.target.value)
-                        }
-                        placeholder="eth0"
-                      />
+                      <div className="serial-port-select">
+                        <select
+                          value={metadataString(activeConnection.metadata, 'interface', 'eth0')}
+                          onChange={(event) =>
+                            handleMetadataFieldChange(activeConnectionIndex, 'interface', event.target.value)
+                          }
+                        >
+                          <option value="">-- 选择网卡 --</option>
+                          {scannedInterfaces
+                            .filter((iface) => !iface.isLoopback)
+                            .map((iface) => (
+                              <option key={iface.name} value={iface.name}>
+                                {iface.name}
+                                {iface.mac ? ` (${iface.mac})` : ''}
+                                {!iface.isUp ? ' [DOWN]' : ''}
+                              </option>
+                            ))}
+                        </select>
+                        <button
+                          type="button"
+                          className="ghost"
+                          onClick={handleRefreshInterfaces}
+                          disabled={isScanningInterfaces}
+                          title="刷新网卡列表"
+                        >
+                          {isScanningInterfaces ? '扫描中...' : '刷新'}
+                        </button>
+                      </div>
                     </label>
                     <label>
                       <span>周期 (ms)</span>

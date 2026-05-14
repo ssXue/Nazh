@@ -29,6 +29,8 @@ serde_json.workspace = true
 # ADR-0009 后 src-tauri 仅用 serialport 做 list_serial_ports / test_serial_connection
 # 等 IPC 命令；rumqttc / tokio-modbus 已完全交给 nodes-io，从依赖清单移除。
 serialport.workspace = true
+# 网络接口枚举（EtherCAT 网卡选择等）。
+pnet_datalink = "0.35"
 tauri = { version = "2", features = ["macos-private-api"] }
 tokio.workspace = true
 dashmap.workspace = true

@@ -2741,6 +2741,7 @@ dependencies = [
  "nazh-dsl-core",
  "nazh-engine",
  "pdf-extract",
+ "pnet_datalink",
  "quick-xml",
  "serde",
  "serde_json",

@@ -586,6 +586,19 @@ export async function listSerialPorts(): Promise<SerialPortInfo[]> {
   return invoke<SerialPortInfo[]>('list_serial_ports');
 }
 
+export interface NetworkInterfaceInfo {
+  name: string;
+  description: string;
+  mac: string | null;
+  ipv4: string[];
+  isLoopback: boolean;
+  isUp: boolean;
+}
+
+export async function listNetworkInterfaces(): Promise<NetworkInterfaceInfo[]> {
+  return invoke<NetworkInterfaceInfo[]>('list_network_interfaces');
+}
+
 export interface TestSerialResult {
   ok: boolean;
   message: string;

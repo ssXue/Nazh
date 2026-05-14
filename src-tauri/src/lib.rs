@@ -284,7 +284,8 @@ pub fn run() {
             commands::capabilities::generate_capabilities_from_device_cmd,
             commands::capabilities::save_capability_sources,
             commands::capabilities::load_capability_sources,
-            commands::system::restart_app
+            commands::system::restart_app,
+            commands::system::list_network_interfaces
         ]);
 
     if let Err(error) = builder.run(tauri::generate_context!()) {
