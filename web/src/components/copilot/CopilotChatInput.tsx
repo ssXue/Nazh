@@ -1,5 +1,7 @@
 import { useCallback } from 'react';
 
+import { BorderGlow } from '../animations/BorderGlow';
+
 import type { CopilotSessionStatus } from './CopilotPanel';
 
 interface Props {
@@ -31,7 +33,16 @@ export function CopilotChatInput({ value, onChange, onSend, status, onCancel }: 
   }, [onChange]);
 
   return (
-    <div className="copilot-input">
+    <BorderGlow
+      className="copilot-input"
+      animated={generating}
+      glowColor="220 80 70"
+      colors={['#5b7fd6', '#6bc9a0', '#d4a056']}
+      borderRadius={12}
+      glowRadius={30}
+      glowIntensity={generating ? 2.0 : 1.2}
+      backgroundColor="var(--surface)"
+    >
       <textarea
         className="copilot-input__textarea"
         placeholder="输入消息… (Enter 发送，Shift+Enter 换行)"
@@ -65,6 +76,6 @@ export function CopilotChatInput({ value, onChange, onSend, status, onCancel }: 
           </button>
         </span>
       )}
-    </div>
+    </BorderGlow>
   );
 }

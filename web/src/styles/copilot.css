@@ -441,11 +441,21 @@
   gap: 6px;
   padding: 8px 10px;
   margin: 0 10px 10px;
-  background: var(--surface);
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-medium);
   flex-shrink: 0;
+}
+
+/* BorderGlow 接管边框和背景时，覆盖默认样式 */
+.copilot-input.border-glow-card {
+  border: none;
+  background: var(--surface);
+  box-shadow: var(--shadow-medium);
+}
+
+.copilot-input .border-glow-inner {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  flex-direction: row;
 }
 
 .copilot-input__textarea {
