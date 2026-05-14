@@ -87,7 +87,7 @@
     conic-gradient(from var(--cursor-angle) at center, transparent 5%, black 15%, black 85%, transparent 95%);
 
   mask-composite: subtract, add, add, add, add, add;
-  opacity: calc(var(--fill-opacity, 0.5) * (var(--edge-proximity) - var(--color-sensitivity)) / (100 - var(--color-sensitivity)));
+  opacity: calc(var(--fill-opacity, 0.3) * (var(--edge-proximity) - var(--color-sensitivity)) / (100 - var(--color-sensitivity)));
   mix-blend-mode: soft-light;
 }
 
@@ -128,4 +128,6 @@
   position: relative;
   overflow: auto;
   z-index: 1;
+  background: var(--card-bg, var(--panel-strong, rgba(255, 255, 255, 0.85)));
+  border-radius: calc(var(--border-radius) - 1px);
 }

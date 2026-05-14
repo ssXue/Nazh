@@ -16,6 +16,8 @@ interface BorderGlowProps {
   glowIntensity?: number;
   coneSpread?: number;
   animated?: boolean;
+  /** animated 时是否循环播放，默认 true。设为 false 只播放一圈。 */
+  loop?: boolean;
   colors?: string[];
   fillOpacity?: number;
 }
@@ -84,6 +86,7 @@ export function BorderGlow({
   glowIntensity = 1.0,
   coneSpread = 25,
   animated = false,
+  loop = true,
   colors = ['#6e89d6', '#7eaa90', '#c29b6b'],
   fillOpacity = 0.5,
 }: BorderGlowProps) {
@@ -126,13 +129,35 @@ export function BorderGlow({
     card.style.setProperty('--cursor-angle', `${getCursorAngle(card, x, y).toFixed(3)}deg`);
   }, [reduced, getEdgeProximity, getCursorAngle]);
 
+  // 单次扫光动画（官方原始实现）
   useEffect(() => {
-    if (reduced || !animated || !cardRef.current) return;
+    if (reduced || !animated || loop || !cardRef.current) return;
+    const card = cardRef.current;
+    const angleStart = 110;
+    const angleEnd = 465;
+    card.classList.add('sweep-active');
+    card.style.setProperty('--cursor-angle', `${angleStart}deg`);
+
+    animateValue({ duration: 500, onUpdate: (v) => card.style.setProperty('--edge-proximity', `${v}`) });
+    animateValue({ ease: easeInCubic, duration: 1500, end: 50, onUpdate: (v) => {
+      card.style.setProperty('--cursor-angle', `${(angleEnd - angleStart) * (v / 100) + angleStart}deg`);
+    }});
+    animateValue({ ease: easeOutCubic, delay: 1500, duration: 2250, start: 50, end: 100, onUpdate: (v) => {
+      card.style.setProperty('--cursor-angle', `${(angleEnd - angleStart) * (v / 100) + angleStart}deg`);
+    }});
+    animateValue({ ease: easeInCubic, delay: 2500, duration: 1500, start: 100, end: 0,
+      onUpdate: (v) => card.style.setProperty('--edge-proximity', `${v}`),
+      onEnd: () => card.classList.remove('sweep-active'),
+    });
+  }, [reduced, animated, loop]);
+
+  // 循环扫光动画（rAF 连续旋转）
+  useEffect(() => {
+    if (reduced || !animated || !loop || !cardRef.current) return;
     const card = cardRef.current;
     let stopped = false;
     let angle = 110;
     let frameId: number;
-    // 每帧旋转角度（度），约 3.5 秒一圈
     const speed = 360 / (3.5 * 60);
 
     card.classList.add('sweep-active');
@@ -152,7 +177,7 @@ export function BorderGlow({
       card.classList.remove('sweep-active');
       card.style.setProperty('--edge-proximity', '0');
     };
-  }, [reduced, animated]);
+  }, [reduced, animated, loop]);
 
   if (reduced) {
     return <div className={className}>{children}</div>;

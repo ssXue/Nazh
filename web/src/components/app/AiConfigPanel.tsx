@@ -586,15 +586,19 @@ export function AiConfigPanel({
                       <BorderGlow
                         key={provider.id}
                         animated
+                        loop={false}
                         colors={['#6e89d6', '#7eaa90', '#c29b6b']}
                         borderRadius={12}
                         glowColor="40 80 80"
-                        className={`ai-provider-card--glow-wrapper${isGlobalProvider ? ' ai-provider-card--active' : ''}`}
+                        backgroundColor="linear-gradient(135deg, color-mix(in srgb, var(--accent-soft) 60%, var(--surface-muted)), var(--surface-muted))"
+                        className="ai-provider-card--glow-wrapper"
                       >
                         {card}
                       </BorderGlow>
                     ) : (
-                      card
+                      <div key={provider.id} className="ai-provider-card--plain-wrapper">
+                        {card}
+                      </div>
                     );
                   })}
                 </div>
