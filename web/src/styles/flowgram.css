@@ -1594,6 +1594,15 @@ html[data-theme='dark'] .flowgram-card--loop .sub-canvas-border::before {
   line-height: 1.5;
 }
 
+/* debugConsole 节点运行时输出——等宽 + 截断 */
+.flowgram-card--debugConsole .flowgram-card__preview {
+  font-family: var(--font-mono, ui-monospace, 'SF Mono', Menlo, monospace);
+  font-size: 11px;
+  white-space: pre;
+  overflow: hidden;
+  max-height: 6em;
+}
+
 .flowgram-card__branches {
   display: grid;
   gap: 6px;

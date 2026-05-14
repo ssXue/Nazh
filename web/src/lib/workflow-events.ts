@@ -18,6 +18,8 @@ export interface ParsedWorkflowEvent {
   nodeId: string;
   traceId: string;
   error?: string;
+  /** Completed 事件携带的 metadata（可能含 debug_console 等节点级观测数据）。 */
+  metadata?: Record<string, unknown> | null;
   /** ADR-0016：边传输汇总载荷（kind = 'edge-transmit-summary'）。 */
   edgeTransmitSummary?: EdgeTransmitSummary;
   /** ADR-0016：背压告警载荷（kind = 'backpressure-detected'）。 */
@@ -34,6 +36,7 @@ export const EMPTY_RUNTIME_STATE: WorkflowRuntimeState = {
   completedNodeIds: [],
   failedNodeIds: [],
   outputNodeIds: [],
+  debugOutputs: {},
 };
 
 export function pushUnique(items: string[], item: string): string[] {
@@ -125,6 +128,7 @@ export function parseWorkflowEventPayload(payload: unknown): ParsedWorkflowEvent
       kind: 'completed',
       nodeId: event.Completed.stage,
       traceId: event.Completed.trace_id,
+      metadata: event.Completed.metadata ?? null,
     };
   }
 
@@ -210,12 +214,23 @@ export function reduceRuntimeState(
       nextState.failedNodeIds = removeItem(baseState.failedNodeIds, event.nodeId);
       nextState.outputNodeIds = removeItem(baseState.outputNodeIds, event.nodeId);
       return nextState;
-    case 'completed':
+    case 'completed': {
       nextState.activeNodeIds = removeItem(baseState.activeNodeIds, event.nodeId);
       nextState.completedNodeIds = pushUnique(baseState.completedNodeIds, event.nodeId);
       nextState.failedNodeIds = removeItem(baseState.failedNodeIds, event.nodeId);
       nextState.outputNodeIds = baseState.outputNodeIds;
+      // debugConsole 节点：从 metadata 提取格式化 payload 供节点卡片显示。
+      const debugMeta = event.metadata?.['debug_console'] as Record<string, unknown> | undefined;
+      if (debugMeta && typeof debugMeta.rendered_payload === 'string') {
+        nextState.debugOutputs = {
+          ...baseState.debugOutputs,
+          [event.nodeId]: debugMeta.rendered_payload,
+        };
+      } else {
+        nextState.debugOutputs = baseState.debugOutputs;
+      }
       return nextState;
+    }
     case 'failed':
       nextState.activeNodeIds = removeItem(baseState.activeNodeIds, event.nodeId);
       nextState.completedNodeIds = removeItem(baseState.completedNodeIds, event.nodeId);

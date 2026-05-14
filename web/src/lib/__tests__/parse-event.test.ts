@@ -9,10 +9,29 @@ describe('parseWorkflowEventPayload', () => {
     expect(result).toEqual({ kind: 'started', nodeId: 'node-a', traceId: 'trace-001' });
   });
 
-  it('解析 Completed 事件，返回 kind=completed', () => {
+  it('解析 Completed 事件，返回 kind=completed 及 metadata', () => {
     const payload = { Completed: { stage: 'node-b', trace_id: 'trace-002' } };
     const result = parseWorkflowEventPayload(payload);
-    expect(result).toEqual({ kind: 'completed', nodeId: 'node-b', traceId: 'trace-002' });
+    expect(result).toEqual({ kind: 'completed', nodeId: 'node-b', traceId: 'trace-002', metadata: null });
+  });
+
+  it('解析 Completed 事件，透传 metadata', () => {
+    const payload = {
+      Completed: {
+        stage: 'debug-1',
+        trace_id: 'trace-debug',
+        metadata: {
+          debug_console: { label: '测试', pretty: true, rendered_payload: '{"x":1}' },
+        },
+      },
+    };
+    const result = parseWorkflowEventPayload(payload);
+    expect(result).toEqual({
+      kind: 'completed',
+      nodeId: 'debug-1',
+      traceId: 'trace-debug',
+      metadata: payload.Completed.metadata,
+    });
   });
 
   it('解析 Failed 事件，返回 kind=failed 及 error 字段', () => {

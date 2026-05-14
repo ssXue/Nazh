@@ -161,6 +161,8 @@ export interface WorkflowRuntimeState {
   completedNodeIds: string[];
   failedNodeIds: string[];
   outputNodeIds: string[];
+  /** debugConsole 节点最近一次格式化输出（nodeId → rendered payload）。 */
+  debugOutputs: Record<string, string>;
 }
 
 export type WorkflowWindowStatus =

@@ -32,6 +32,8 @@ export interface FlowgramNodeMaterialProps {
   node: FlowNodeEntity;
   activated?: boolean;
   runtimeStatus?: RuntimeNodeStatus;
+  /** debugConsole 节点最近一次格式化输出（仅在 nodeType === 'debugConsole' 时有值）。 */
+  debugOutput?: string;
   accentHex: string;
   nodeCodeColor: string;
 }
@@ -176,7 +178,7 @@ export function FlowgramNodeCard(props: FlowgramNodeMaterialProps) {
                         : nodeType === 'sqlWriter'
                         ? `${rawData?.config?.table ?? 'workflow_logs'} → ${rawData?.config?.database_path ?? './nazh-local.sqlite3'}`
                         : nodeType === 'debugConsole'
-                      ? rawData?.config?.label ?? 'Console output'
+                      ? props.debugOutput ?? rawData?.config?.label ?? 'Console output'
                       : nodeType === 'subgraphInput'
                         ? '输入桥接'
                         : nodeType === 'subgraphOutput'

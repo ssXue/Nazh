@@ -75,6 +75,7 @@ impl NodeTrait for DebugConsoleNode {
                 "label": label,
                 "pretty": self.config.pretty,
                 "logged_at": Utc::now().to_rfc3339(),
+                "rendered_payload": rendered_payload,
             }),
         )]);
 

@@ -594,16 +594,20 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
           />
         );
       }
+      const debugOutput = rawType === 'debugConsole'
+        ? runtimeState.debugOutputs[props.node.id]
+        : undefined;
       return (
         <FlowgramNodeCard
           {...props}
           runtimeStatus={resolveNodeRuntimeStatus(props.node.id)}
+          debugOutput={debugOutput}
           accentHex={accentHex}
           nodeCodeColor={nodeCodeColor}
         />
       );
     },
-    [accentHex, nodeCodeColor, resolveNodeRuntimeStatus],
+    [accentHex, nodeCodeColor, resolveNodeRuntimeStatus, runtimeState.debugOutputs],
   );
   const materials = useMemo(
     () => ({
