@@ -870,12 +870,6 @@ html[data-theme='dark'] .flowgram-host {
   border-radius: var(--radius-pill);
 }
 
-.flowgram-settings-host {
-  position: relative;
-  width: 100%;
-  height: 100%;
-}
-
 .flowgram-floating-panel {
   position: relative;
   pointer-events: auto;
@@ -886,7 +880,9 @@ html[data-theme='dark'] .flowgram-host {
   background: var(--panel);
   box-shadow: 0 18px 40px rgba(15, 23, 42, 0.12);
   padding: 12px;
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   z-index: calc(var(--z-popup) + 21);
   isolation: isolate;
 }
@@ -897,7 +893,7 @@ html[data-theme='dark'] .flowgram-host {
   margin-top: var(--flowgram-floating-top-offset, 74px);
   width: min(332px, calc(100vw - 48px));
   max-width: 332px;
-  height: calc(100% - var(--flowgram-floating-top-offset, 74px));
+  height: calc(100vh - var(--flowgram-floating-top-offset, 74px) - 70px);
   background: rgb(255, 255, 255);
 }
 
@@ -949,6 +945,13 @@ html[data-theme='dark'] .flowgram-floating-panel--node {
   justify-content: space-between;
   gap: 8px;
   margin-bottom: 10px;
+  flex-shrink: 0;
+}
+
+.flowgram-panel-scroll {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .flowgram-floating-panel__close {

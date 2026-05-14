@@ -646,8 +646,7 @@ function FlowgramNodeSettingsPanel({
   };
 
   return (
-    <div className="flowgram-settings-host">
-      <section className="flowgram-floating-panel flowgram-floating-panel--node">
+    <section className="flowgram-floating-panel flowgram-floating-panel--node">
       <div className="flowgram-floating-panel__header">
         <div className="flowgram-floating-panel__header-left">
           <h3>{resolveNodeDisplayLabel(draft.nodeType, draft.label)}</h3>
@@ -672,6 +671,7 @@ function FlowgramNodeSettingsPanel({
         </div>
       </div>
 
+      <div className="flowgram-panel-scroll">
       <div className="flowgram-form">
         <label>
           <span>显示名称</span>
@@ -760,7 +760,7 @@ function FlowgramNodeSettingsPanel({
           <article className="flowgram-note flowgram-note--danger">{aiGenerateError}</article>
         ) : null}
       </div>
-    </section>
+      </div>
 
       {aiDialogOpen ? (
         <div
@@ -837,7 +837,7 @@ function FlowgramNodeSettingsPanel({
           </div>
         </div>
       ) : null}
-    </div>
+    </section>
   );
 }
 
