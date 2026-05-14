@@ -8,8 +8,10 @@ import {
   LogsIcon,
   PayloadIcon,
   PlusIcon,
+  SparklesIcon,
   XCloseIcon,
 } from './AppIcons';
+import { sendToCopilot } from '../../lib/copilot-send';
 import { JsonCodeEditor } from '@flowgram.ai/form-materials';
 import {
   buildEventFeedPlainText,
@@ -537,9 +539,27 @@ function DockPanelContent({
                       <em className="runtime-log__badge">{entry.tag}</em>
                     ) : null}
                   </span>
-                  <span className="runtime-log__message">{entry.message}</span>
-                  {entry.detail ? (
-                    <div className="runtime-log__detail">{entry.detail}</div>
+                  <span className="runtime-log__message">
+                    {entry.message}
+                    {entry.detail ? (
+                      <span className="runtime-log__detail">{entry.detail}</span>
+                    ) : null}
+                  </span>
+                  {entry.level === 'error' ? (
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      className="runtime-log__ai-icon"
+                      title="发送给 AI 分析"
+                      onClick={() => {
+                        const parts = [`运行时错误：${entry.message}`];
+                        if (entry.detail) parts.push(`详情：${entry.detail}`);
+                        if (entry.source) parts.push(`来源：${entry.source}`);
+                        if (entry.nodeId) parts.push(`节点：${entry.nodeId}`);
+                        if (entry.traceId) parts.push(`Trace：${entry.traceId}`);
+                        sendToCopilot(parts.join('\n'));
+                      }}
+                    ><SparklesIcon width={13} height={13} /></span>
                   ) : null}
                 </div>
               ))

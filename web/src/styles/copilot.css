@@ -323,9 +323,9 @@
 }
 
 .copilot-md pre {
-  margin: 8px 0;
+  margin: 0;
   padding: 10px 12px;
-  border-radius: var(--radius-sm);
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
   background: var(--fill-tertiary);
   overflow-x: auto;
 }
@@ -335,6 +335,54 @@
   padding: 0;
   font-size: var(--font-caption1);
   line-height: 1.6;
+}
+
+/* --- 代码块容器（带头部） --- */
+
+.copilot-code-block {
+  margin: 8px 0;
+  border-radius: var(--radius-sm);
+  background: var(--fill-tertiary);
+  overflow: hidden;
+}
+
+.copilot-code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--line-faint);
+}
+
+.copilot-code-lang {
+  font-size: 11px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  text-transform: lowercase;
+}
+
+.copilot-code-copy {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0;
+  transition: background 120ms, color 120ms;
+}
+
+.copilot-code-copy:hover {
+  background: var(--fill-secondary);
+  color: var(--fg);
+}
+
+.copilot-code-copy--done {
+  color: var(--accent);
 }
 
 .copilot-md blockquote {

@@ -532,6 +532,11 @@
   border-bottom: 1px solid var(--line-faint);
   font-size: var(--font-callout);
   line-height: 1.4;
+  position: relative;
+}
+
+.runtime-log__line:hover {
+  background: var(--fill-tertiary);
 }
 
 .runtime-log__line:last-child {
@@ -581,14 +586,37 @@
 .runtime-log__message {
   min-width: 0;
   word-break: break-word;
+  padding-right: 28px;
 }
 
 .runtime-log__detail {
-  grid-column: 3;
-  min-width: 0;
   color: var(--muted);
   white-space: pre-wrap;
   word-break: break-word;
+  margin-left: 8px;
+}
+
+/* ── 错误事件 AI 图标 ──────────────────────────── */
+
+.runtime-log__ai-icon {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms, color 120ms;
+}
+
+.runtime-log__line:hover .runtime-log__ai-icon {
+  opacity: 1;
+}
+
+.runtime-log__ai-icon:hover {
+  color: var(--accent);
 }
 
 .runtime-log ::selection {
