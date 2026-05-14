@@ -12,6 +12,9 @@ const FLOWGRAM_SELECT_ALL_COMMAND = 'nazh.flowgram.selectAll';
 const FLOWGRAM_CLEAR_SELECTION_COMMAND = 'nazh.flowgram.clearSelection';
 const FLOWGRAM_FIT_VIEW_COMMAND = 'nazh.flowgram.fitView';
 const FLOWGRAM_REDO_WINDOWS_COMMAND = 'nazh.flowgram.redoWindows';
+const FLOWGRAM_DELETE_SELECTED_COMMAND = 'nazh.flowgram.deleteSelected';
+const FLOWGRAM_DUPLICATE_SELECTED_COMMAND = 'nazh.flowgram.duplicateSelected';
+const FLOWGRAM_UNDO_WINDOWS_COMMAND = 'nazh.flowgram.undoWindows';
 
 export function isMacLikeShortcutPlatform(): boolean {
   if (typeof navigator === 'undefined') {
@@ -84,7 +87,68 @@ export function buildFlowgramShortcutHandlers(
         void ctx.history.redo();
       },
     });
+    handlers.push({
+      commandId: FLOWGRAM_UNDO_WINDOWS_COMMAND,
+      commandDetail: {
+        label: 'Undo',
+      },
+      shortcuts: ['ctrl z'],
+      isEnabled: () => !isMacLikeShortcutPlatform() && ctx.history.canUndo(),
+      execute: () => {
+        void ctx.history.undo();
+      },
+    });
   }
+
+  // 删除选中节点
+  handlers.push({
+    commandId: FLOWGRAM_DELETE_SELECTED_COMMAND,
+    commandDetail: {
+      label: 'Delete selected nodes',
+    },
+    shortcuts: ['backspace', 'delete'],
+    isEnabled: () => {
+      const sel = selectService.selection;
+      return sel.length > 0 && sel.some((n) => n.flowNodeType !== FlowNodeBaseType.ROOT);
+    },
+    execute: () => {
+      const selectable = selectService.selection.filter(
+        (n) => n.flowNodeType !== FlowNodeBaseType.ROOT && !n.disposed,
+      );
+      for (const node of selectable) {
+        node.dispose();
+      }
+      selectService.clear();
+    },
+  });
+
+  // 复制选中节点
+  handlers.push({
+    commandId: FLOWGRAM_DUPLICATE_SELECTED_COMMAND,
+    commandDetail: {
+      label: 'Duplicate selected nodes',
+    },
+    shortcuts: ['meta d', 'ctrl d'],
+    isEnabled: () => {
+      const sel = selectService.selection;
+      return sel.length > 0 && sel.some((n) => n.flowNodeType !== FlowNodeBaseType.ROOT);
+    },
+    execute: () => {
+      const selectable = selectService.selection.filter(
+        (n) => n.flowNodeType !== FlowNodeBaseType.ROOT && !n.disposed,
+      );
+      const copied: WorkflowNodeEntity[] = [];
+      for (const node of selectable) {
+        const newNode = ctx.document.copyNode(node);
+        if (newNode) {
+          copied.push(newNode);
+        }
+      }
+      if (copied.length > 0) {
+        selectService.selection = copied;
+      }
+    },
+  });
 
   return handlers;
 }
