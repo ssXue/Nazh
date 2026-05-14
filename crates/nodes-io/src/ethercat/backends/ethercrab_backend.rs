@@ -136,7 +136,7 @@ struct SlaveEntry {
 /// EtherCrab 真实后端。
 pub struct EthercrabBackend {
     maindevice: Arc<MainDevice<'static>>,
-    group: Arc<Mutex<OpGroup>>,
+    group: Arc<Mutex<Option<OpGroup>>>,
     slaves: Vec<SlaveEntry>,
     cycle_time_ms: u64,
     process_handle: Mutex<Option<tokio::task::JoinHandle<()>>>,
@@ -202,7 +202,7 @@ impl EthercrabBackend {
                 }
             }
 
-            let group = Arc::new(Mutex::new(group));
+            let group = Arc::new(Mutex::new(Some(group)));
             let process_handle =
                 spawn_process_data_loop(Arc::clone(&maindevice), Arc::clone(&group), cycle_time_ms);
 
@@ -230,7 +230,8 @@ impl Drop for EthercrabBackend {
 #[async_trait]
 impl EthercatBus for EthercrabBackend {
     async fn read_inputs(&self, slave_address: u16) -> Result<Vec<u8>, EthercatError> {
-        let group = self.group.lock().await;
+        let guard = self.group.lock().await;
+        let group = guard.as_ref().ok_or(EthercatError::Closed)?;
         let target_index = resolve_slave_index(&self.slaves, slave_address).ok_or(
             EthercatError::SlaveNotFound {
                 address: slave_address,
@@ -255,7 +256,8 @@ impl EthercatBus for EthercrabBackend {
     }
 
     async fn write_outputs(&self, slave_address: u16, data: &[u8]) -> Result<(), EthercatError> {
-        let group = self.group.lock().await;
+        let guard = self.group.lock().await;
+        let group = guard.as_ref().ok_or(EthercatError::Closed)?;
         let target_index = resolve_slave_index(&self.slaves, slave_address).ok_or(
             EthercatError::SlaveNotFound {
                 address: slave_address,
@@ -321,6 +323,50 @@ impl EthercatBus for EthercrabBackend {
         Ok(())
     }
 
+    async fn safe_shutdown(&self) -> Result<(), EthercatError> {
+        // 1. 停止周期过程数据循环
+        if let Ok(mut guard) = self.process_handle.try_lock()
+            && let Some(handle) = guard.take()
+        {
+            handle.abort();
+        }
+
+        // 2. 取出 group（拿到独占所有权）
+        let group = {
+            let mut guard = self.group.lock().await;
+            guard.take()
+        };
+
+        let Some(group) = group else {
+            tracing::info!("EtherCAT 主站会话已释放（group 已为空）");
+            return Ok(());
+        };
+
+        // 3. 将所有从站输出清零 + 最终一次 TX/RX，确保物理输出进入安全态
+        for subdevice in group.iter(&self.maindevice) {
+            let mut io = subdevice.io_raw_mut();
+            let outputs = io.outputs();
+            outputs.fill(0);
+        }
+        if let Err(error) = group.tx_rx(&self.maindevice).await {
+            tracing::warn!(?error, "EtherCAT 安全关闭期间最终 TX/RX 失败");
+        }
+
+        // 4. OP → SAFE-OP：停止过程数据交换，从站进入安全状态
+        match group.into_safe_op(&self.maindevice).await {
+            Ok(_safe_op_group) => {
+                tracing::info!("EtherCAT 从站已安全切换到 SAFE-OP 状态");
+                // SafeOp group drop 时自动释放 PDO 映射
+            }
+            Err(error) => {
+                tracing::warn!(?error, "EtherCAT 进入 SAFE-OP 失败，从站可能保持在 OP 状态");
+            }
+        }
+
+        tracing::info!("EtherCAT 主站安全关闭完成");
+        Ok(())
+    }
+
     fn channel_info(&self) -> String {
         format!(
             "ethercrab ({} 从站, {}ms 周期)",
@@ -377,7 +423,7 @@ async fn wait_for_all_op(
 /// 这里以连接配置的周期持续刷新；读写节点仍通过同一把锁串行访问 PDI。
 fn spawn_process_data_loop(
     maindevice: Arc<MainDevice<'static>>,
-    group: Arc<Mutex<OpGroup>>,
+    group: Arc<Mutex<Option<OpGroup>>>,
     cycle_time_ms: u64,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
@@ -388,7 +434,10 @@ fn spawn_process_data_loop(
         loop {
             let started_at = Instant::now();
             let result = {
-                let group = group.lock().await;
+                let guard = group.lock().await;
+                let Some(group) = guard.as_ref() else {
+                    break;
+                };
                 group.tx_rx(&maindevice).await
             };
 

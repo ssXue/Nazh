@@ -116,6 +116,20 @@ impl ConnectionManager {
         sessions.remove(connection_id);
     }
 
+    /// 从缓存取出并返回共享会话（downcast 后的 `Arc<T>`）。
+    ///
+    /// 调用方拿到 `Arc` 后可自行执行异步清理（如 `EtherCAT` OP → SAFE-OP），
+    /// 完成后直接 drop Arc 即可。适用于需要异步清理闭包的场景。
+    pub async fn take_shared_session<T: Send + Sync + 'static>(
+        &self,
+        connection_id: &str,
+    ) -> Option<std::sync::Arc<T>> {
+        let mut sessions = self.shared_sessions.write().await;
+        sessions
+            .remove(connection_id)
+            .and_then(|s| std::sync::Arc::downcast(s).ok())
+    }
+
     /// 清理并移除连接级共享会话。
     ///
     /// 从缓存取出会话，调用 `cleanup` 执行协议级关闭，然后从缓存移除。

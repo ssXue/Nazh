@@ -124,6 +124,11 @@ impl EthercatBus for MockBackend {
         Ok(())
     }
 
+    async fn safe_shutdown(&self) -> Result<(), EthercatError> {
+        tracing::info!("Mock EtherCAT 主站安全关闭（无实际操作）");
+        Ok(())
+    }
+
     fn channel_info(&self) -> String {
         format!(
             "mock-ethercat ({} 从站, {}ms 周期)",

@@ -72,6 +72,12 @@ pub trait EthercatBus: Send + Sync {
     /// 单例继续保活，等待下一次部署复用。
     fn shutdown(&self) -> Result<(), EthercatError>;
 
+    /// 安全关闭 EtherCAT 主站：将所有从站从 OP 状态过渡到 SAFE-OP 后再释放资源。
+    ///
+    /// 反部署时优先使用此方法，避免从站因 TX/RX 中断而触发 SM 看门狗进入错误状态。
+    /// 若调用方无法使用 async（如 `Drop`），可退而使用同步版本 [`shutdown`](Self::shutdown)。
+    async fn safe_shutdown(&self) -> Result<(), EthercatError>;
+
     /// 返回通道信息（用于 metadata）。
     fn channel_info(&self) -> String;
 }

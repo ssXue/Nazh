@@ -63,13 +63,28 @@ impl SharedEthercatSession {
         self.lease.as_ref()
     }
 
-    /// 关闭主站并释放硬件资源。
+    /// 同步关闭主站并释放硬件资源（后备方案，用于无法使用 async 的场景）。
+    ///
+    /// 正常反部署路径应使用 [`safe_cleanup`](Self::safe_cleanup) 执行 OP → SAFE-OP 过渡。
+    #[allow(dead_code)]
     pub fn cleanup(&self) {
         if let Ok(mut guard) = self.bus.try_lock()
             && let Some(bus) = guard.take()
             && let Err(error) = bus.shutdown()
         {
             tracing::warn!(?error, "EtherCAT 主站会话清理失败");
+        }
+    }
+
+    /// 安全关闭主站：异步执行 OP → SAFE-OP 状态过渡后释放硬件资源。
+    ///
+    /// 反部署时优先使用此方法，避免从站因 TX/RX 中断而触发 SM 看门狗。
+    pub async fn safe_cleanup(&self) {
+        let mut guard = self.bus.lock().await;
+        if let Some(bus) = guard.take()
+            && let Err(error) = bus.safe_shutdown().await
+        {
+            tracing::warn!(?error, "EtherCAT 安全关闭失败，回退到同步清理");
         }
     }
 }
@@ -111,14 +126,14 @@ impl EthercatRuntime {
     }
 
     /// 关闭共享会话并从连接管理器移除。
-    #[allow(dead_code)]
     pub async fn shutdown(&self) {
-        self.connection_manager
-            .cleanup_and_remove_shared_session::<SharedEthercatSession>(
-                &self.connection_id,
-                SharedEthercatSession::cleanup,
-            )
+        let session = self
+            .connection_manager
+            .take_shared_session::<SharedEthercatSession>(&self.connection_id)
             .await;
+        if let Some(session) = session {
+            session.safe_cleanup().await;
+        }
     }
 
     /// 记录运行期总线失败并清理共享会话，下一次操作会重新建连。
@@ -137,6 +152,8 @@ impl EthercatRuntime {
 }
 
 /// 构造随部署撤销自动关闭 EtherCAT 共享会话的生命周期守卫。
+///
+/// 撤销时先执行 OP → SAFE-OP 安全过渡，再移除会话缓存。
 pub fn lifecycle_guard(
     ctx: NodeLifecycleContext,
     connection_manager: SharedConnectionManager,
@@ -145,12 +162,12 @@ pub fn lifecycle_guard(
     let token = ctx.shutdown.clone();
     let join = tokio::spawn(async move {
         token.cancelled().await;
-        connection_manager
-            .cleanup_and_remove_shared_session::<SharedEthercatSession>(
-                &connection_id,
-                SharedEthercatSession::cleanup,
-            )
+        let session = connection_manager
+            .take_shared_session::<SharedEthercatSession>(&connection_id)
             .await;
+        if let Some(session) = session {
+            session.safe_cleanup().await;
+        }
     });
     LifecycleGuard::from_task(ctx.shutdown, join)
 }
