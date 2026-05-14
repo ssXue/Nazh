@@ -904,22 +904,16 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
       e.preventDefault();
       if (!editorCtx) return;
 
-      // 判断右键目标是节点还是画布空白区
-      const selectService = editorCtx.document.selectServices;
-      const sel = selectService.selection;
-      const hasNodeSelection = sel.length > 0 && sel.some((n) => n.flowNodeType !== FlowNodeBaseType.ROOT);
+      const nodeEl = (e.target as HTMLElement).closest('[data-node-id]');
+      const nodeId = nodeEl?.getAttribute('data-node-id');
+      const entity = nodeId
+        ? (editorCtx.document.getNode(nodeId) as FlowNodeEntity | undefined)
+        : undefined;
 
-      if (hasNodeSelection) {
-        // 取选中节点的 connection_id（取第一个有 connection_id 的）
-        let connectionId: string | undefined;
-        for (const node of sel) {
-          const ext = (node.getExtInfo() ?? {}) as { connection_id?: string };
-          if (ext.connection_id) {
-            connectionId = ext.connection_id;
-            break;
-          }
-        }
-        setContextMenu({ x: e.clientX, y: e.clientY, target: 'node', connectionId });
+      if (entity && entity.flowNodeType !== FlowNodeBaseType.ROOT) {
+        editorCtx.document.selectServices.selectNode(entity);
+        const ext = (entity.getExtInfo() ?? {}) as { connection_id?: string };
+        setContextMenu({ x: e.clientX, y: e.clientY, target: 'node', connectionId: ext.connection_id });
       } else {
         setContextMenu({ x: e.clientX, y: e.clientY, target: 'canvas' });
       }
