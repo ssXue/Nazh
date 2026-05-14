@@ -10,6 +10,7 @@ mod events;
 mod observability;
 mod registry;
 mod runtime;
+mod session_marker;
 mod state;
 mod util;
 mod workspace;
@@ -172,8 +173,57 @@ pub fn run() {
                 }
             }
 
+            // 初始化会话守护：检测上次异常退出 + 写标记 + 安装 panic hook
+            if let Ok(data_dir) = app.path().app_local_data_dir() {
+                match session_marker::init(&data_dir) {
+                    Some(session_marker::SessionAnomaly::Panicked(report)) => {
+                        let panicked_at = chrono::DateTime::from_timestamp_millis(
+                            report.panicked_at_ms as i64,
+                        )
+                        .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
+                        .unwrap_or_else(|| report.panicked_at_ms.to_string());
+                        tracing::warn!(
+                            panicked_at = %panicked_at,
+                            panic_location = ?report.location,
+                            panic_message = %report.message,
+                            "检测到上次会话因 panic 崩溃（{}），位于 {}",
+                            panicked_at,
+                            report.location.as_deref().unwrap_or("未知位置"),
+                        );
+                    }
+                    Some(session_marker::SessionAnomaly::KilledExternally {
+                        pid,
+                        started_at_ms,
+                    }) => {
+                        let prev_start =
+                            chrono::DateTime::from_timestamp_millis(started_at_ms as i64)
+                                .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
+                                .unwrap_or_else(|| started_at_ms.to_string());
+                        tracing::warn!(
+                            prev_pid = pid,
+                            prev_start = %prev_start,
+                            "检测到上次会话被外部终止（SIGKILL / 断电等），PID {} 启动于 {}",
+                            pid,
+                            prev_start,
+                        );
+                    }
+                    None => {}
+                }
+            }
+
             if let Some(window) = app.get_webview_window("main") {
                 apply_window_glass(&window);
+
+                // 注册窗口关闭事件：标记正常退出
+                let data_dir_close = app.path().app_local_data_dir().ok();
+                window.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { .. } = event {
+                        if let Some(ref dir) = data_dir_close {
+                            session_marker::clean_shutdown(dir);
+                            tracing::info!("应用正常关闭，会话标记已清理");
+                        }
+                    }
+                });
             } else {
                 tracing::warn!("未找到主窗口，跳过玻璃效果初始化");
             }

@@ -1,4 +1,4 @@
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use tauri_bindings::NetworkInterfaceInfo;
 
 /// 重启 nazh-desktop 应用。
@@ -7,6 +7,10 @@ use tauri_bindings::NetworkInterfaceInfo;
 /// Tauri v2 的 `AppHandle::restart()` 永不返回，调用后进程立即终止并重新启动。
 #[tauri::command]
 pub(crate) async fn restart_app(app: AppHandle) {
+    // 清理启动标记，避免下次启动时误报意外终止
+    if let Ok(data_dir) = app.path().app_local_data_dir() {
+        crate::session_marker::clean_shutdown(&data_dir);
+    }
     app.restart();
 }
 
