@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState, type RefObject } from 'react';
 
 import { invoke } from '@tauri-apps/api/core';
 
@@ -11,6 +11,7 @@ import { hasTauriRuntime, loadAiConfig } from '../../lib/tauri';
 import { resolveGlobalAiProvider } from '../../lib/workflow-ai';
 import { buildRuntimeContextPrompt } from '../../ai/copilot-context';
 import { CopilotChatView } from './CopilotChatView';
+import { registerCopilotSend } from '../../lib/copilot-send';
 
 /// 调试日志开关——开发期间保持 true，上线后可关闭。
 const DEBUG_PANEL = true;
@@ -59,7 +60,12 @@ const COPILOT_MIN_WIDTH = 320;
 const COPILOT_MAX_WIDTH = 720;
 const COPILOT_DEFAULT_WIDTH = 440;
 
-export function CopilotPanel({ canvasRef, onEnsureBoardOpen, workspacePath }: CopilotPanelProps) {
+export interface CopilotPanelHandle {
+  sendMessage: (text: string) => void;
+}
+
+export const CopilotPanel = forwardRef<CopilotPanelHandle, CopilotPanelProps>(
+  function CopilotPanel({ canvasRef, onEnsureBoardOpen, workspacePath }, ref) {
   const [collapsed, setCollapsed] = useState(false);
   const [panelWidth, setPanelWidth] = useState(COPILOT_DEFAULT_WIDTH);
   const [conversations, setConversations] = useState<CopilotConversationResponse[]>([]);
@@ -383,6 +389,16 @@ export function CopilotPanel({ canvasRef, onEnsureBoardOpen, workspacePath }: Co
                 target_port_id: op.targetPortId,
               }],
             });
+          } else if (op.type === 'update_node' && op.nodeId) {
+            canvasRef.current?.updateCanvasNode(op.nodeId, {
+              label: op.label,
+              config: op.config,
+              connectionId: op.connectionId,
+            });
+          } else if (op.type === 'delete_node' && op.nodeId) {
+            canvasRef.current?.deleteCanvasNode(op.nodeId);
+          } else if (op.type === 'delete_edge' && op.from && op.to) {
+            canvasRef.current?.deleteCanvasEdge(op.from, op.to);
           }
 
           // 追加到展示数据
@@ -461,6 +477,19 @@ export function CopilotPanel({ canvasRef, onEnsureBoardOpen, workspacePath }: Co
     }
   }, [activeId, status, isTauri, refreshConversations, canvasRef, onEnsureBoardOpen, flushPendingUpdate, scheduleFlush, workspacePath]);
 
+  useImperativeHandle(ref, () => ({
+    sendMessage: (text: string) => {
+      setCollapsed(false);
+      void handleSend(text);
+    },
+  }), [handleSend]);
+
+  /// 注册全局 copilot 发送通道，供 RuntimeDock 等外部组件使用。
+  useEffect(() => registerCopilotSend((text) => {
+    setCollapsed(false);
+    void handleSend(text);
+  }), [handleSend]);
+
   if (collapsed) {
     return (
       <button
@@ -535,4 +564,5 @@ export function CopilotPanel({ canvasRef, onEnsureBoardOpen, workspacePath }: Co
       </div>
     </section>
   );
-}
+  },
+);

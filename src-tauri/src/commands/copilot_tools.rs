@@ -357,6 +357,65 @@ pub fn all_copilot_tools() -> Vec<AiToolDefinition> {
                 "required": ["from_ref", "to_ref"]
             }),
         },
+        // --- 画布编辑/删除工具 ---
+        AiToolDefinition {
+            name: "edit_workflow_node".to_owned(),
+            description: "修改画布上已有节点的配置。node_id 必须是当前画布上存在的节点 ID（从画布状态中可见）。只传需要修改的字段，未传的字段保持不变。".to_owned(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "node_id": {
+                        "type": "string",
+                        "description": "目标节点的实际 ID"
+                    },
+                    "label": {
+                        "type": "string",
+                        "description": "新显示名称"
+                    },
+                    "config": {
+                        "type": "object",
+                        "description": "要更新的配置字段（与现有配置浅合并）"
+                    },
+                    "connection_id": {
+                        "type": "string",
+                        "description": "新的关联连接 ID"
+                    }
+                },
+                "required": ["node_id"]
+            }),
+        },
+        AiToolDefinition {
+            name: "delete_workflow_node".to_owned(),
+            description: "删除画布上的一个节点及其所有连线。node_id 必须是当前画布上存在的节点 ID。".to_owned(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "node_id": {
+                        "type": "string",
+                        "description": "要删除的节点实际 ID"
+                    }
+                },
+                "required": ["node_id"]
+            }),
+        },
+        AiToolDefinition {
+            name: "delete_workflow_edge".to_owned(),
+            description: "删除两个节点之间的连线。".to_owned(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "from": {
+                        "type": "string",
+                        "description": "起始节点 ID"
+                    },
+                    "to": {
+                        "type": "string",
+                        "description": "目标节点 ID"
+                    }
+                },
+                "required": ["from", "to"]
+            }),
+        },
     ]
 }
 
@@ -375,6 +434,9 @@ pub async fn dispatch_tool(call: &AiToolCall, ctx: &CopilotToolCtx) -> AiToolRes
         "create_workflow" => tool_create_workflow(call, ctx),
         "add_workflow_node" => tool_add_workflow_node(call, ctx),
         "add_workflow_edge" => tool_add_workflow_edge(call, ctx),
+        "edit_workflow_node" => tool_edit_workflow_node(call, ctx),
+        "delete_workflow_node" => tool_delete_workflow_node(call, ctx),
+        "delete_workflow_edge" => tool_delete_workflow_edge(call, ctx),
         _ => Err(format!("未知工具: {}", call.name)),
     };
     to_tool_result(call, result)
@@ -732,6 +794,93 @@ fn tool_add_workflow_edge(call: &AiToolCall, ctx: &CopilotToolCtx) -> Result<Str
     );
 
     Ok(format!("连线 {from_ref} → {to_ref} 已添加"))
+}
+
+fn tool_edit_workflow_node(call: &AiToolCall, ctx: &CopilotToolCtx) -> Result<String, String> {
+    let args = parse_args(call)?;
+    let node_id = args["node_id"]
+        .as_str()
+        .ok_or("缺少 node_id 参数")?
+        .to_owned();
+    let label = args["label"].as_str().map(str::to_owned);
+    let config = args.get("config").cloned();
+    let connection_id = args["connection_id"].as_str().map(str::to_owned);
+
+    tracing::info!(
+        node_id = %node_id,
+        "copilot edit_workflow_node"
+    );
+
+    let _ = ctx.app.emit(
+        &ctx.stream_event_name,
+        json!({
+            "canvasOp": {
+                "type": "update_node",
+                "nodeId": node_id,
+                "label": label,
+                "config": config,
+                "connectionId": connection_id,
+            }
+        }),
+    );
+
+    Ok(format!("节点 {node_id} 已更新"))
+}
+
+fn tool_delete_workflow_node(call: &AiToolCall, ctx: &CopilotToolCtx) -> Result<String, String> {
+    let args = parse_args(call)?;
+    let node_id = args["node_id"]
+        .as_str()
+        .ok_or("缺少 node_id 参数")?
+        .to_owned();
+
+    tracing::info!(
+        node_id = %node_id,
+        "copilot delete_workflow_node"
+    );
+
+    let _ = ctx.app.emit(
+        &ctx.stream_event_name,
+        json!({
+            "canvasOp": {
+                "type": "delete_node",
+                "nodeId": node_id,
+            }
+        }),
+    );
+
+    Ok(format!("节点 {node_id} 已删除"))
+}
+
+fn tool_delete_workflow_edge(call: &AiToolCall, ctx: &CopilotToolCtx) -> Result<String, String> {
+    let args = parse_args(call)?;
+    let from = args["from"]
+        .as_str()
+        .ok_or("缺少 from 参数")?
+        .to_owned();
+    let to = args["to"]
+        .as_str()
+        .ok_or("缺少 to 参数")?
+        .to_owned();
+
+    tracing::info!(
+        from = %from,
+        to = %to,
+        "copilot delete_workflow_edge"
+    );
+
+    let _ = ctx.app.emit(
+        &ctx.stream_event_name,
+        json!({
+            "canvasOp": {
+                "type": "delete_edge",
+                "from": from,
+                "to": to,
+            }
+        }),
+    );
+
+    Ok(format!("连线 {from} → {to} 已删除"))
 }
 
 /// 前端直调 Copilot 时使用的无状态工具调度。

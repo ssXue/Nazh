@@ -25,6 +25,7 @@ import { FlowgramNodeAddPanel } from './flowgram/FlowgramNodeAddPanel';
 import { FlowgramContextMenu, type ContextMenuState } from './flowgram/FlowgramContextMenu';
 import type { ResolvedThemeMode, ThemeMode } from './app/types';
 import { FLOWGRAM_NODE_SETTINGS_PANEL_KEY } from './flowgram/FlowgramNodeSettingsPanel';
+import { usesDynamicPorts } from './flowgram/nodes/settings-shared';
 import {
   getLogicNodeBranchDefinitions,
   isKnownEditorNodeType,
@@ -164,6 +165,12 @@ export interface FlowgramCanvasHandle {
   autoLayout: () => void;
   /** 当前选中节点的摘要信息，供 copilot 等外部消费者使用。 */
   getSelectedNode: () => { id: string; type: string; label?: string } | null;
+  /** 修改已有节点的配置（浅合并）。 */
+  updateCanvasNode: (nodeId: string, patch: { label?: string; config?: Record<string, unknown>; connectionId?: string }) => boolean;
+  /** 删除节点及其所有连线。 */
+  deleteCanvasNode: (nodeId: string) => boolean;
+  /** 删除两节点间的第一条匹配连线。 */
+  deleteCanvasEdge: (from: string, to: string) => boolean;
 }
 
 interface InternalFlowExportImageService {
@@ -877,6 +884,64 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
     };
   }, []);
 
+  /// Copilot 编辑工具：浅合并节点配置。
+  const updateCanvasNode = useCallback(
+    (nodeId: string, patch: { label?: string; config?: Record<string, unknown>; connectionId?: string }): boolean => {
+      if (!editorCtx) return false;
+      const node = editorCtx.document.getNode(nodeId);
+      if (!node || node.disposed || node.flowNodeType === FlowNodeBaseType.ROOT) return false;
+
+      const current = (node.getExtInfo() ?? {}) as Record<string, unknown>;
+      const currentConfig = (current.config as Record<string, unknown>) ?? {};
+
+      const nextExtInfo: Record<string, unknown> = {
+        ...current,
+        ...(patch.label !== undefined ? { label: patch.label } : {}),
+        ...(patch.config ? { config: { ...currentConfig, ...patch.config } } : {}),
+        ...(patch.connectionId !== undefined ? { connectionId: patch.connectionId || null } : {}),
+      };
+
+      node.updateExtInfo(nextExtInfo);
+
+      const nodeType = (nextExtInfo.nodeType as string) ?? String(node.flowNodeType);
+      if (usesDynamicPorts(nodeType)) {
+        window.requestAnimationFrame(() => { node.ports.updateDynamicPorts(); });
+      }
+      return true;
+    },
+    [editorCtx],
+  );
+
+  /// Copilot 删除工具：移除节点及其连线。
+  const deleteCanvasNode = useCallback(
+    (nodeId: string): boolean => {
+      if (!editorCtx) return false;
+      const node = editorCtx.document.getNode(nodeId);
+      if (!node || node.disposed || node.flowNodeType === FlowNodeBaseType.ROOT) return false;
+      node.dispose();
+      return true;
+    },
+    [editorCtx],
+  );
+
+  /// Copilot 删除工具：移除 from→to 的第一条匹配连线。
+  const deleteCanvasEdge = useCallback(
+    (from: string, to: string): boolean => {
+      if (!editorCtx) return false;
+      const lines = editorCtx.document.linesManager.getAllLines();
+      for (const line of lines) {
+        const lineFrom = line.info.from || (line.from as { id?: string } | undefined)?.id;
+        const lineTo = line.info.to || (line.to as { id?: string } | undefined)?.id;
+        if (lineFrom === from && lineTo === to) {
+          line.dispose();
+          return true;
+        }
+      }
+      return false;
+    },
+    [editorCtx],
+  );
+
   useImperativeHandle(
     ref,
     () => ({
@@ -887,8 +952,11 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
       addCanvasOps,
       autoLayout: handleAutoLayout,
       getSelectedNode: getSelectedNodeSummary,
+      updateCanvasNode,
+      deleteCanvasNode,
+      deleteCanvasEdge,
     }),
-    [addCanvasOps, buildCurrentWorkflowGraph, editorCtx, getSelectedNodeSummary, handleAutoLayout, loadWorkflowGraph],
+    [addCanvasOps, buildCurrentWorkflowGraph, deleteCanvasEdge, deleteCanvasNode, editorCtx, getSelectedNodeSummary, handleAutoLayout, loadWorkflowGraph, updateCanvasNode],
   );
 
   const handleSaveCurrentGraph = useCallback(() => {

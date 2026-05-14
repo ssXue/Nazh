@@ -160,12 +160,54 @@ export function buildCopilotTools(
         return `连线 ${args.from_ref} → ${args.to_ref} 已添加`;
       },
     }),
+    // ── 编辑/删除工具 ──
+    edit_workflow_node: tool({
+      description: '修改画布上已有节点的配置。node_id 必须是当前画布上存在的节点 ID（从画布状态中可见）。只传需要修改的字段，未传的字段保持不变。',
+      inputSchema: z.object({
+        node_id: z.string().describe('目标节点的实际 ID'),
+        label: z.string().optional().describe('新显示名称'),
+        config: z.record(z.unknown()).optional().describe('要更新的配置字段（与现有配置浅合并）'),
+        connection_id: z.string().optional().describe('新的关联连接 ID'),
+      }),
+      execute: async (args): Promise<string> => {
+        onCanvasOp?.({
+          type: 'update_node',
+          nodeId: args.node_id,
+          label: args.label,
+          config: args.config,
+          connectionId: args.connection_id,
+        });
+        return `节点 ${args.node_id} 已更新`;
+      },
+    }),
+    delete_workflow_node: tool({
+      description: '删除画布上的一个节点及其所有连线。node_id 必须是当前画布上存在的节点 ID。',
+      inputSchema: z.object({
+        node_id: z.string().describe('要删除的节点实际 ID'),
+      }),
+      execute: async (args): Promise<string> => {
+        onCanvasOp?.({ type: 'delete_node', nodeId: args.node_id });
+        return `节点 ${args.node_id} 已删除`;
+      },
+    }),
+    delete_workflow_edge: tool({
+      description: '删除两个节点之间的连线。',
+      inputSchema: z.object({
+        from: z.string().describe('起始节点 ID'),
+        to: z.string().describe('目标节点 ID'),
+      }),
+      execute: async (args): Promise<string> => {
+        onCanvasOp?.({ type: 'delete_edge', from: args.from, to: args.to });
+        return `连线 ${args.from} → ${args.to} 已删除`;
+      },
+    }),
   };
 }
 
 /// 画布操作事件类型（与 CopilotPanel 兼容）。
 export interface CanvasOpEvent {
-  type: 'add_node' | 'add_edge' | 'create_workflow';
+  type: 'add_node' | 'add_edge' | 'create_workflow'
+      | 'update_node' | 'delete_node' | 'delete_edge';
   nodeId?: string;
   ref?: string;
   nodeType?: string;
@@ -179,4 +221,6 @@ export interface CanvasOpEvent {
   sourcePortId?: string;
   targetPortId?: string;
   name?: string;
+  from?: string;
+  to?: string;
 }
