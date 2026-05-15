@@ -25,7 +25,8 @@ pub(crate) async fn load_connection_definitions(
         state
             .connection_manager
             .replace_connections(Vec::<ConnectionDefinition>::new())
-            .await;
+            .await
+            .map_err(|e| format!("连接校验失败: {e}"))?;
         return Ok(ConnectionDefinitionsLoadResult {
             definitions: Vec::new(),
             file_exists,
@@ -39,7 +40,8 @@ pub(crate) async fn load_connection_definitions(
     state
         .connection_manager
         .replace_connections(defs.clone())
-        .await;
+        .await
+        .map_err(|e| format!("连接定义校验失败: {e}"))?;
     Ok(ConnectionDefinitionsLoadResult {
         definitions: defs,
         file_exists,
@@ -78,6 +80,7 @@ pub(crate) async fn save_connection_definitions(
     state
         .connection_manager
         .replace_connections(definitions)
-        .await;
+        .await
+        .map_err(|e| format!("连接定义校验失败: {e}"))?;
     Ok(())
 }

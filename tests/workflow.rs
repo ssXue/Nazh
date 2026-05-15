@@ -877,7 +877,8 @@ async fn http_client_node_posts_payload_and_records_response() {
                 "method": "POST",
             }),
         })
-        .await;
+        .await
+        .unwrap();
 
     let node = match HttpClientNode::new(
         "dingtalk-alert",
@@ -1035,7 +1036,8 @@ async fn http_alarm_node_renders_dingtalk_markdown_body() {
                 "at_mobiles": ["13800000000"],
             }),
         })
-        .await;
+        .await
+        .unwrap();
 
     let node = match HttpClientNode::new(
         "http_alarm",

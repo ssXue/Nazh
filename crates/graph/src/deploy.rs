@@ -202,7 +202,7 @@ pub async fn deploy_workflow_and_restore_variables<S: BuildHasher>(
 
     connection_manager
         .upsert_connections(graph.connections)
-        .await;
+        .await?;
 
     // ADR-0014 Phase 3：构造 Data 入边反向索引（每个 consumer → 其 Data 入边列表）
     let edges_by_consumer = Arc::new(super::pull::build_edges_by_consumer(&classified.data_edges));

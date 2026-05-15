@@ -8,9 +8,9 @@ It is read by both humans and AI agents (Claude Code, OpenCode, Cursor, etc.). `
 
 Nazh is an industrial-edge workflow orchestration engine with AI as a first-class capability. It connects device ingestion, data transformation, scripted logic, AI-assisted authoring, and a desktop operations UI into a single local runtime.
 
-Stack: **Rust engine (Cargo workspace, 15 packages) + Tauri v2 desktop shell + React 18 / FlowGram.AI canvas**.
+Stack: **Rust engine (Cargo workspace, 15 packages) + Tauri v2 desktop shell + React 19 / FlowGram.AI canvas**.
 
-Everything runs in one process — no HTTP/gRPC server, no external broker. AI features (copilot chat, script generation, device extraction, thinking-mode completions) are called directly from the frontend via Vercel AI SDK (`ai` v6) against user-configured OpenAI-compatible providers; API keys are read on-demand from Rust encrypted storage via `load_ai_api_key` IPC（RFC-0005）. Rust side only retains AI configuration management and copilot tool dispatch.
+Everything runs in one process — no HTTP/gRPC server, no external broker. AI features (copilot chat, script generation, device extraction, thinking-mode completions) are called directly from the frontend via Vercel AI SDK (`ai` v6) against user-configured OpenAI-compatible providers; API keys are read on-demand via `load_ai_api_key` IPC from local config storage（RFC-0005；当前为明文本地配置，尚未接入 OS keychain）. Rust side only retains AI configuration management and copilot tool dispatch.
 
 ## Build & Dev Commands
 
@@ -58,7 +58,7 @@ cargo deny check
 
 1. **Rust Engine** — Cargo workspace rooted at `/` with 15 packages (see below). Public facade is the `nazh-engine` library crate at `src/lib.rs`.
 2. **Tauri Shell** (`src-tauri/`) — Desktop app binary `nazh-desktop`. Exposes IPC commands to the frontend, bridges engine events to the UI, manages shell-side concerns (observability store, project library files, DSL asset YAML mirrors, AI config, runtime dispatch queues, deployment session files).
-3. **React Frontend** (`web/`) — Vite + React 18 + TypeScript + FlowGram.AI. Communicates **exclusively** via Tauri `invoke` / `Window::emit` — no HTTP or gRPC.
+3. **React Frontend** (`web/`) — Vite + React 19 + TypeScript + FlowGram.AI. Communicates **exclusively** via Tauri `invoke` / `Window::emit` — no HTTP or gRPC.
 
 ### Cargo Workspace Layout (Ring 0 / Ring 1)
 
@@ -127,21 +127,22 @@ IPC boundary types are defined once in Rust and auto-generated to TypeScript via
 
 Workflow commands are split across `workflow_deploy.rs` / `workflow_dispatch.rs` / `workflow_undeploy.rs` (since 2026-05-03, was single `workflow.rs`). Other command domains remain in their respective files (`ai.rs`, `catalog.rs`, `connections.rs`, `variables.rs`, `devices.rs`, etc.).
 
-77 commands covering:
+82 commands covering:
 - workflow lifecycle/runtime: `deploy_workflow`, `dispatch_payload`, `undeploy_workflow`, `list_runtime_workflows`, `set_active_runtime_workflow`, `list_dead_letters`
 - node / pin catalog: `list_node_types`, `describe_node_pins`
 - workflow variables: `snapshot_workflow_variables`, `set_workflow_variable`, `delete_workflow_variable`, `reset_workflow_variable`, `query_variable_history`, `set_global_variable`, `get_global_variable`, `list_global_variables`, `delete_global_variable`
-- connections: `list_connections`, `load_connection_definitions`, `save_connection_definitions`
-- device assets（RFC-0004 Phase 1）: `list_device_assets`, `load_device_asset`, `save_device_asset`, `delete_device_asset`, `list_asset_versions`, `load_asset_version`, `list_device_snapshots`, `create_device_snapshot`, `rollback_device_snapshot`, `delete_device_snapshot`, `patch_device_field`, `add_device_signal`, `remove_device_signal`, `add_device_alarm`, `remove_device_alarm`, `extract_device_from_text`, `extract_device_from_text_stream`, `generate_pin_schema`, `save_device_asset_sources`, `load_device_asset_sources`, `extract_text_from_pdf`, `extract_device_from_pdf`, `import_ethercat_esi`
-- device AI extraction（RFC-0004 Phase 4A）: `extract_device_proposal`, `extract_device_proposal_stream`
+- connections: `list_connections`, `load_connection_definitions`, `save_connection_definitions`, `reset_connection_circuit_breaker`
+- device assets（RFC-0004 Phase 1）: `list_device_assets`, `load_device_asset`, `save_device_asset`, `delete_device_asset`, `list_asset_versions`, `load_asset_version`, `list_device_snapshots`, `create_device_snapshot`, `rollback_device_snapshot`, `delete_device_snapshot`, `patch_device_field`, `bind_device_connection`, `add_device_signal`, `remove_device_signal`, `add_device_alarm`, `remove_device_alarm`, `generate_pin_schema`, `save_device_asset_sources`, `load_device_asset_sources`, `extract_text_from_pdf`, `import_ethercat_esi`
 - capabilities（RFC-0004 Phase 2）: `list_capabilities`, `load_capability`, `save_capability`, `delete_capability`, `list_capability_versions`, `load_capability_version`, `generate_capabilities_from_device_cmd`, `save_capability_sources`, `load_capability_sources`
 - observability: `query_observability`, `clear_observability`
 - deployment session files: `load_deployment_session_file`, `load_deployment_session_state_file`, `list_deployment_sessions_file`, `save_deployment_session_file`, `set_deployment_session_active_project_file`, `remove_deployment_session_file`, `clear_deployment_session_file`
 - serial: `list_serial_ports`, `test_serial_connection`
 - project library/export: `load_project_board_files`, `save_project_board_files`, `save_flowgram_export_file`
-- AI: `load_ai_config`, `save_ai_config`, `load_ai_api_key`, `load_ai_asset_context`, `copilot_dispatch_tool`, `copilot_get_tool_definitions`, `copilot_save_message`, `copilot_clear_embeddings`, `copilot_store_embeddings`
+- AI config: `load_ai_config`, `save_ai_config`, `load_ai_api_key`, `load_ai_asset_context`
+- copilot 会话管理: `copilot_list_conversations`, `copilot_create_conversation`, `copilot_delete_conversation`, `copilot_rename_conversation`, `copilot_load_conversation`, `copilot_dispatch_tool`, `copilot_save_message`, `copilot_get_tool_definitions`
 - humanLoop（HITL 审批节点）: `respond_human_loop`, `list_pending_approvals`
 - reactive: `subscribe_reactive_pin`（ADR-0015 Phase 2，OutputCache watch → Tauri 事件推送）
+- system: `restart_app`, `list_network_interfaces`
 
 Device / Capability DSL assets are persisted only as reviewable YAML under the active workspace: `dsl/devices/*.device.yaml`, `dsl/devices/versions/*.device.yaml`, `dsl/devices/sources/*.sources.yaml`, `dsl/capabilities/*.capability.yaml`, `dsl/capabilities/versions/*.capability.yaml`, and `dsl/capabilities/sources/*.sources.yaml`. They are not stored in SQLite. The canvas AI edit path reads these reviewed YAML files via `load_ai_asset_context` before asking the model to modify a workflow.
 
@@ -172,9 +173,9 @@ These principles guide day-to-day decisions. When in doubt, reach for the princi
 3. **设备语义高于协议适配。** 业务工作流的主语应是 Device / Capability / Workflow：设备作为高级语义节点或由 DSL 编译生成的能力调用节点出现；CAN 卡、串口、Modbus 连接、MQTT broker 等物理/协议通道属于全局 `ConnectionManager` 的共享连接资源，普通画布不应把它们作为首选业务节点。`serialTrigger` / `modbusRead` / `canRead` / `canWrite` 等低层协议节点可以保留为适配器、调试工具和兼容层，但 AI 编排与产品主路径应优先生成设备信号读取与 `capabilityCall` 等高级节点。详见 `docs/specs/2026-05-05-node-architecture-boundary-review.md`。
 4. **Ring purity.** Ring 0 stays free of protocol-specific dependencies. Ring 1 crates depend on Ring 0 and may compose horizontally, but should avoid creating cross-Ring-1 fan-out cycles. Prefer **trait abstraction + dependency injection** over direct imports when coupling Ring 1 crates.
 5. **RAII for resources.** Connections, lifecycle guards, and future resource holders use Drop-based cleanup, never explicit `close()` / `release()` call pairs. Examples: `ConnectionGuard`（连接借出）、`LifecycleGuard`（节点后台任务，ADR-0009）。
-6. **Plugin-first node registration.** Adding a node means implementing `NodeTrait` in a Ring 1 crate and registering via `Plugin::register(&mut NodeRegistry)`. Do not hardcode node types in the engine or facade. `standard_registry()` in `src/lib.rs` loads the baseline set (`FlowPlugin`, `IoPlugin`) — other plugins can be added to compose custom deployments.
+6. **Plugin-first node registration.** Adding a node means implementing `NodeTrait` in a Ring 1 crate and registering via `Plugin::register(&mut NodeRegistry)`. Do not hardcode node types in the engine or facade. `standard_registry()` in `src/lib.rs` loads the baseline set (`FlowPlugin`, `IoPlugin`, `PurePlugin`) — other plugins can be added to compose custom deployments.
 7. **Fast fail, loud logs.** Deploy-time validation (DAG, types, configs) is cheap and should happen before any node runs. Runtime failures emit `ExecutionEvent::Failed` with `trace_id`, `stage`, and structured error via `tracing::error!`. Silent drops are bugs.
-8. **AI 调用前移到前端（RFC-0005）.** 所有 AI HTTP 调用（copilot chat、设备提取、provider 连接测试）由前端通过 Vercel AI SDK 直接发起，Rust 不持有 HTTP 客户端。API key 经 IPC 按需从 Rust 加密存储读取。Rust 侧仅保留 AI 配置管理和 copilot 工具分发。
+8. **AI 调用前移到前端（RFC-0005）.** 所有 AI HTTP 调用（copilot chat、设备提取、provider 连接测试）由前端通过 Vercel AI SDK 直接发起，Rust 不持有 HTTP 客户端。API key 经 IPC 按需从本地配置读取（当前为明文本地存储）。Rust 侧仅保留 AI 配置管理和 copilot 工具分发。
 
 ## Collaboration Conventions
 

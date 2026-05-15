@@ -143,7 +143,8 @@ async fn upsert_connection_不替换正在借出的连接记录() {
 
     manager
         .upsert_connection(http_connection("http-main", "http://127.0.0.1/new"))
-        .await;
+        .await
+        .unwrap();
 
     let Err(err) = manager.acquire("http-main").await else {
         panic!("正在借出的连接不应被新记录替换为可再次借出");
@@ -166,7 +167,8 @@ async fn replace_connections_不替换正在借出的连接记录() {
 
     manager
         .replace_connections([http_connection("http-main", "http://127.0.0.1/new")])
-        .await;
+        .await
+        .unwrap();
 
     let Err(err) = manager.acquire("http-main").await else {
         panic!("整体替换不应绕过正在借出的旧记录");

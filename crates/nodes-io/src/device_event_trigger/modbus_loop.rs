@@ -167,6 +167,8 @@ async fn poll_all_signals(
 }
 
 /// 从 connection metadata 提取 Modbus 单元 ID。
+///
+/// 缺失时返回 1（Modbus 协议标准默认 unit ID），属于协议常量而非运行时 fallback。
 fn extract_unit_id(_source: &SignalSourceSnapshot, metadata: &serde_json::Value) -> u8 {
     metadata
         .get("unit")

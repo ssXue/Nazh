@@ -92,25 +92,30 @@ impl DesktopState {
                         if let Ok(defs) =
                             serde_json::from_str::<Vec<nazh_engine::ConnectionDefinition>>(&text)
                         {
-                            manager.replace_connections(defs).await;
+                            if let Err(e) = manager.replace_connections(defs).await {
+                                tracing::warn!("启动期连接定义校验失败，跳过加载: {e}");
+                                let _ = manager
+                                    .replace_connections(Vec::<ConnectionDefinition>::new())
+                                    .await;
+                            }
                         } else {
-                            manager
+                            let _ = manager
                                 .replace_connections(Vec::<ConnectionDefinition>::new())
                                 .await;
                         }
                     } else {
-                        manager
+                        let _ = manager
                             .replace_connections(Vec::<ConnectionDefinition>::new())
                             .await;
                     }
                 } else {
-                    manager
+                    let _ = manager
                         .replace_connections(Vec::<ConnectionDefinition>::new())
                         .await;
                 }
             }
             Err(_) => {
-                manager
+                let _ = manager
                     .replace_connections(Vec::<ConnectionDefinition>::new())
                     .await;
             }

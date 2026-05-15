@@ -72,36 +72,70 @@ impl ConnectionManager {
     }
 
     /// 插入或替换连接定义（幂等操作）。
-    pub async fn upsert_connection(&self, definition: ConnectionDefinition) {
+    ///
+    /// # Errors
+    ///
+    /// 连接定义校验失败时返回 [`EngineError::ConnectionInvalidConfiguration`]。
+    pub async fn upsert_connection(
+        &self,
+        definition: ConnectionDefinition,
+    ) -> Result<(), EngineError> {
+        if let Err(reason) = validate_connection_definition(&definition.kind, &definition.metadata)
+        {
+            return Err(EngineError::ConnectionInvalidConfiguration {
+                connection_id: definition.id,
+                reason,
+            });
+        }
+
         let id = definition.id.clone();
         if self.has_shared_session(&id).await {
-            return;
+            return Ok(());
         }
 
         let record = build_record(definition);
         let mut connections = self.connections.write().await;
         if connections.get(&id).is_some_and(connection_record_in_use) {
-            return;
+            return Ok(());
         }
 
         connections.insert(id.clone(), Arc::new(Mutex::new(record)));
         drop(connections);
 
         self.reset_attempt_window(&id);
+        Ok(())
     }
 
-    /// 批量插入或替换连接定义。
+    /// 批量插入或替换连接定义。校验失败时立即返回错误，不写入任何连接。
+    ///
+    /// # Errors
+    ///
+    /// 任意连接定义校验失败时返回 [`EngineError::ConnectionInvalidConfiguration`]。
     pub async fn upsert_connections(
         &self,
         definitions: impl IntoIterator<Item = ConnectionDefinition>,
-    ) {
+    ) -> Result<Vec<String>, EngineError> {
         let next_definitions = definitions.into_iter().collect::<Vec<_>>();
+
+        // 部署期 fail-fast：校验全部定义后再写入。
+        for definition in &next_definitions {
+            if let Err(reason) =
+                validate_connection_definition(&definition.kind, &definition.metadata)
+            {
+                return Err(EngineError::ConnectionInvalidConfiguration {
+                    connection_id: definition.id.clone(),
+                    reason,
+                });
+            }
+        }
+
         let next_ids = next_definitions
             .iter()
             .map(|definition| definition.id.clone())
             .collect::<Vec<_>>();
         let active_session_ids = self.shared_session_ids().await;
 
+        let mut inserted = Vec::new();
         let mut connections = self.connections.write().await;
         for definition in next_definitions {
             if connections
@@ -112,48 +146,66 @@ impl ConnectionManager {
                 continue;
             }
 
-            connections.insert(
-                definition.id.clone(),
-                Arc::new(Mutex::new(build_record(definition))),
-            );
+            let id = definition.id.clone();
+            connections.insert(id.clone(), Arc::new(Mutex::new(build_record(definition))));
+            inserted.push(id);
         }
         drop(connections);
 
         self.reset_attempt_windows(next_ids);
+        Ok(inserted)
     }
 
-    /// 用给定定义整体替换连接资源池。
+    /// 用给定定义整体替换连接资源池。校验失败时立即返回错误，不替换任何连接。
+    ///
+    /// # Errors
+    ///
+    /// 任意连接定义校验失败时返回 [`EngineError::ConnectionInvalidConfiguration`]。
     pub async fn replace_connections(
         &self,
         definitions: impl IntoIterator<Item = ConnectionDefinition>,
-    ) {
+    ) -> Result<Vec<String>, EngineError> {
         if self.has_any_shared_session().await {
-            return;
+            return Ok(Vec::new());
         }
 
         let next_definitions = definitions.into_iter().collect::<Vec<_>>();
+
+        // 部署期 fail-fast：校验全部定义后再替换。
+        for definition in &next_definitions {
+            if let Err(reason) =
+                validate_connection_definition(&definition.kind, &definition.metadata)
+            {
+                return Err(EngineError::ConnectionInvalidConfiguration {
+                    connection_id: definition.id.clone(),
+                    reason,
+                });
+            }
+        }
+
         let next_ids = next_definitions
             .iter()
             .map(|definition| definition.id.clone())
             .collect::<Vec<_>>();
 
         let mut next_connections = HashMap::new();
+        let mut inserted = Vec::new();
         for definition in next_definitions {
-            next_connections.insert(
-                definition.id.clone(),
-                Arc::new(Mutex::new(build_record(definition))),
-            );
+            let id = definition.id.clone();
+            next_connections.insert(id.clone(), Arc::new(Mutex::new(build_record(definition))));
+            inserted.push(id);
         }
 
         let mut connections = self.connections.write().await;
         if connections.values().any(connection_record_in_use) {
-            return;
+            return Ok(Vec::new());
         }
 
         *connections = next_connections;
         drop(connections);
 
         self.reset_attempt_windows(next_ids);
+        Ok(inserted)
     }
 
     /// 按 ID 定位连接的内层 `Arc`，释放外层读锁后返回。

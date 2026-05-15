@@ -244,12 +244,14 @@ pub(crate) async fn deploy_workflow(
             state
                 .connection_manager
                 .replace_connections(definitions)
-                .await;
+                .await
+                .map_err(|e| format!("连接定义校验失败: {e}"))?;
         } else {
             state
                 .connection_manager
                 .upsert_connections(definitions)
-                .await;
+                .await
+                .map_err(|e| format!("连接定义校验失败: {e}"))?;
         }
     }
     let observability_store = if let Some(context) = observability_context.clone() {

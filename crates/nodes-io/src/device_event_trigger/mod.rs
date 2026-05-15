@@ -133,6 +133,9 @@ impl DeviceEventTriggerNode {
     }
 
     /// 校验 `connection_id` 并获取连接 host/port。
+    ///
+    /// host 缺失或为空字符串时返回错误——空 host 永远不是有效配置。
+    /// port 缺失时使用 1883（MQTT 协议标准端口），属于协议常量而非运行时 fallback。
     async fn resolve_connection(&self, connection_id: &str) -> Result<(String, u16), EngineError> {
         let mut guard = self.connection_manager.acquire(connection_id).await?;
         let metadata = guard.lease().metadata.clone();
@@ -140,8 +143,14 @@ impl DeviceEventTriggerNode {
         let host = metadata
             .get("host")
             .and_then(Value::as_str)
-            .unwrap_or_default()
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| EngineError::ConnectionInvalidConfiguration {
+                connection_id: connection_id.to_owned(),
+                reason: "MQTT host 缺失或为空".to_owned(),
+            })?
             .to_owned();
+        // 1883 是 MQTT 协议标准端口；上游 validate_connection_definition 已校验必填字段，
+        // 此处 unwrap_or 仅作为防御性回退。
         let port = metadata
             .get("port")
             .and_then(Value::as_u64)

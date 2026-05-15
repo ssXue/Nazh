@@ -1,7 +1,7 @@
 //! Modbus 寄存器读取节点。
 //!
 //! 当配置了 `connection_id` 时，通过真实 Modbus TCP 协议读取寄存器值；
-//! 否则使用正弦函数模拟传感器读数作为回退。
+//! 未配置 `connection_id` 时需要显式设置 `simulation=true`，使用正弦函数模拟传感器读数。
 
 use async_trait::async_trait;
 use chrono::Utc;

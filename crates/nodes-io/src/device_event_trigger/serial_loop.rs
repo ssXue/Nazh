@@ -145,6 +145,10 @@ fn parse_delimiter(delimiter: &str) -> Vec<u8> {
 }
 
 /// 从连接元数据提取串口参数。
+///
+/// `baud_rate` 缺失时使用 9600，`delimiter` 缺失时使用 `\n`——两者为串口通信领域常用默认值，
+/// 属于协议常量而非运行时配置 fallback。`port_path` 缺失时返回空字符串，
+/// 上游 `validate_connection_definition` 已校验该字段为必填。
 fn parse_serial_metadata(metadata: &serde_json::Value) -> (String, u32, String) {
     let port_path = metadata
         .get("port_path")
