@@ -46,6 +46,7 @@ mod tests {
             "humanLoop",
             "canRead",
             "canWrite",
+            "deviceEventTrigger",
             "ethercatPdoRead",
             "ethercatPdoWrite",
             "ethercatStatus",
@@ -58,12 +59,12 @@ mod tests {
     }
 
     #[test]
-    fn 两个插件合并后覆盖全部_28_种节点类型() {
+    fn 两个插件合并后覆盖全部_29_种节点类型() {
         let registry = standard_registry();
         assert_eq!(
             registry.registered_types().len(),
-            28,
-            "应注册 28 种节点类型"
+            29,
+            "应注册 29 种节点类型"
         );
     }
 
@@ -110,6 +111,10 @@ mod tests {
         expect("humanLoop", NodeCapabilities::BRANCHING);
         expect("canRead", NodeCapabilities::DEVICE_IO);
         expect("canWrite", NodeCapabilities::DEVICE_IO);
+        expect(
+            "deviceEventTrigger",
+            NodeCapabilities::TRIGGER | NodeCapabilities::DEVICE_IO,
+        );
         expect("ethercatPdoRead", NodeCapabilities::DEVICE_IO);
         expect("ethercatPdoWrite", NodeCapabilities::DEVICE_IO);
         expect("ethercatStatus", NodeCapabilities::DEVICE_IO);

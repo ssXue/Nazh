@@ -57,6 +57,58 @@ pub enum ByteOrderSnapshot {
     LittleEndian,
 }
 
+/// 信号源快照——编译期从 `SignalSpec.source` 复制。
+///
+/// serde 格式与 `dsl-core::SignalSource` 字段级兼容，
+/// conformance test 守护一致性（对标 `CapabilityImplSnapshot` 模式）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum SignalSourceSnapshot {
+    Register {
+        register: u16,
+        data_type: DataTypeSnapshot,
+        #[serde(default)]
+        bit: Option<u8>,
+    },
+    CanFrame {
+        can_id: u32,
+        #[serde(default)]
+        is_extended: bool,
+        byte_offset: u8,
+        byte_length: u8,
+        data_type: DataTypeSnapshot,
+        #[serde(default)]
+        byte_order: ByteOrderSnapshot,
+    },
+    Topic {
+        topic: String,
+    },
+    SerialCommand {
+        command: String,
+    },
+    EthercatPdo {
+        #[serde(default)]
+        slave_address: Option<u16>,
+        pdo_index: u16,
+        entry_index: u16,
+        sub_index: u8,
+        bit_len: u16,
+    },
+}
+
+impl SignalSourceSnapshot {
+    /// 返回 serde tag 值（如 "register"、"topic"）。
+    pub fn type_tag(&self) -> &'static str {
+        match self {
+            Self::Register { .. } => "register",
+            Self::CanFrame { .. } => "can_frame",
+            Self::Topic { .. } => "topic",
+            Self::SerialCommand { .. } => "serial_command",
+            Self::EthercatPdo { .. } => "ethercat_pdo",
+        }
+    }
+}
+
 // ---- 错误类型 ----
 
 #[derive(Debug, thiserror::Error)]

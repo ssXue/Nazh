@@ -45,6 +45,8 @@ mod timer;
 mod bark_push;
 #[cfg(feature = "io-can")]
 mod can;
+#[cfg(any(feature = "io-mqtt", feature = "io-can"))]
+mod device_event_trigger;
 #[cfg(feature = "io-modbus")]
 mod device_signal_read;
 #[cfg(feature = "io-ethercat")]
@@ -70,8 +72,15 @@ pub use human_loop::registry::{HumanLoopResponse, PendingApprovalSummary, Respon
 pub use native::{NativeNode, NativeNodeConfig};
 pub use timer::{TimerNode, TimerNodeConfig};
 
+pub use signal_decode::SignalSourceSnapshot;
+
 #[cfg(feature = "io-can")]
 pub use can::{CanReadNode, CanReadNodeConfig, CanWriteNode, CanWriteNodeConfig};
+
+#[cfg(any(feature = "io-mqtt", feature = "io-can"))]
+pub use device_event_trigger::{
+    DeviceEventTriggerConfig, DeviceEventTriggerNode, SignalListenerSnapshot,
+};
 
 #[cfg(feature = "io-ethercat")]
 pub use ethercat::{
@@ -82,7 +91,7 @@ pub use ethercat::{
 #[cfg(feature = "io-notify")]
 pub use bark_push::{BarkPushNode, BarkPushNodeConfig};
 #[cfg(feature = "io-modbus")]
-pub use device_signal_read::{DeviceSignalReadConfig, DeviceSignalReadNode, SignalSourceSnapshot};
+pub use device_signal_read::{DeviceSignalReadConfig, DeviceSignalReadNode};
 #[cfg(feature = "io-http")]
 pub use http_client::{HttpClientNode, HttpClientNodeConfig};
 #[cfg(feature = "io-modbus")]
@@ -294,6 +303,23 @@ impl Plugin for IoPlugin {
             let cm = downcast_connection_manager(&res)?;
             Ok(Arc::new(CanReadNode::new(def.id().to_owned(), config, cm)))
         });
+
+        // ADR-0024 Phase 2：设备事件触发节点。
+        #[cfg(any(feature = "io-mqtt", feature = "io-can"))]
+        registry.register_with_capabilities(
+            "deviceEventTrigger",
+            NodeCapabilities::TRIGGER | NodeCapabilities::DEVICE_IO,
+            |def, res| {
+                let mut config: DeviceEventTriggerConfig = def.parse_config()?;
+                inherit_connection_id(&mut config.connection_id, def);
+                let cm = downcast_connection_manager(&res)?;
+                Ok(Arc::new(DeviceEventTriggerNode::new(
+                    def.id().to_owned(),
+                    config,
+                    cm,
+                )?))
+            },
+        );
 
         #[cfg(feature = "io-can")]
         registry.register_with_capabilities("canWrite", NodeCapabilities::DEVICE_IO, |def, res| {

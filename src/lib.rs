@@ -56,7 +56,11 @@ pub use nodes_io::{
     ResponseAction, TimerNode, TimerNodeConfig, WorkflowId,
 };
 
+pub use nodes_io::SignalSourceSnapshot;
 pub use nodes_io::signal_decode;
+
+#[cfg(any(feature = "io-mqtt", feature = "io-can"))]
+pub use nodes_io::{DeviceEventTriggerConfig, DeviceEventTriggerNode, SignalListenerSnapshot};
 
 pub use nodes_pure::{C2fNode, LookupNode, LookupNodeConfig, MinutesSinceNode, PurePlugin};
 
@@ -67,7 +71,6 @@ pub use nodes_io::{CanReadNode, CanReadNodeConfig, CanWriteNode, CanWriteNodeCon
 #[cfg(feature = "io-modbus")]
 pub use nodes_io::{
     DeviceSignalReadConfig, DeviceSignalReadNode, ModbusReadNode, ModbusReadNodeConfig,
-    SignalSourceSnapshot,
 };
 #[cfg(feature = "io-http")]
 pub use nodes_io::{HttpClientNode, HttpClientNodeConfig};
