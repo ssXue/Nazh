@@ -1,8 +1,14 @@
 import { useCallback } from 'react';
 
+import { useSettings } from '../../hooks/use-settings';
+
 import { BorderGlow } from '../animations/BorderGlow';
 
 import type { CopilotSessionStatus } from './CopilotPanel';
+
+/** 亮色主题用更深的发光颜色，暗色主题保持原值 */
+const GLOW_LIGHT = { glowColor: '220 75 55', colors: ['#3f5cb5', '#4a9e78', '#b8883e'] as const };
+const GLOW_DARK  = { glowColor: '220 80 70', colors: ['#5b7fd6', '#6bc9a0', '#d4a056'] as const };
 
 interface Props {
   value: string;
@@ -14,6 +20,9 @@ interface Props {
 
 export function CopilotChatInput({ value, onChange, onSend, status, onCancel }: Props) {
   const generating = status === 'generating';
+  const { resolvedThemeMode } = useSettings();
+  const isDark = resolvedThemeMode === 'dark';
+  const glow = isDark ? GLOW_DARK : GLOW_LIGHT;
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -36,10 +45,10 @@ export function CopilotChatInput({ value, onChange, onSend, status, onCancel }: 
     <BorderGlow
       className="copilot-input"
       animated={generating}
-      glowColor="220 80 70"
-      colors={['#5b7fd6', '#6bc9a0', '#d4a056']}
+      glowColor={glow.glowColor}
+      colors={[...glow.colors]}
       borderRadius={12}
-      glowRadius={30}
+      glowRadius={isDark ? 30 : 24}
       glowIntensity={generating ? 2.0 : 1.2}
       backgroundColor="var(--surface)"
     >

@@ -88,6 +88,11 @@
 
   mask-composite: subtract, add, add, add, add, add;
   opacity: calc(var(--fill-opacity, 0.3) * (var(--edge-proximity) - var(--color-sensitivity)) / (100 - var(--color-sensitivity)));
+  mix-blend-mode: multiply;
+}
+
+/* 暗色主题：渐变填充使用柔光混合 */
+html[data-theme='dark'] .border-glow-card::after {
   mix-blend-mode: soft-light;
 }
 
@@ -102,6 +107,11 @@
     );
 
   opacity: calc((var(--edge-proximity) - var(--edge-sensitivity)) / (100 - var(--edge-sensitivity)));
+  mix-blend-mode: normal;
+}
+
+/* 暗色主题：additive 发光效果（亮色主题 plus-lighter 在白底不可见） */
+html[data-theme='dark'] .border-glow-card > .edge-light {
   mix-blend-mode: plus-lighter;
 }
 
@@ -122,12 +132,17 @@
     0 0 25px 2px var(--glow-color-20);
 }
 
+/* 亮色主题：发光颜色加饱和、微降亮度以增强浅底可见度 */
+html:not([data-theme='dark']) .border-glow-card > .edge-light::before {
+  filter: brightness(0.85) saturate(1.3);
+}
+
 .border-glow-inner {
   display: flex;
   flex-direction: column;
   position: relative;
   overflow: auto;
   z-index: 1;
-  background: var(--card-bg, var(--panel-strong, rgba(255, 255, 255, 0.85)));
+  background: transparent;
   border-radius: calc(var(--border-radius) - 1px);
 }
