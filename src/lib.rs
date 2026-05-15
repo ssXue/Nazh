@@ -56,16 +56,21 @@ pub use nodes_io::{
     ResponseAction, TimerNode, TimerNodeConfig, WorkflowId,
 };
 
+pub use nodes_io::signal_decode;
+
 pub use nodes_pure::{C2fNode, LookupNode, LookupNodeConfig, MinutesSinceNode, PurePlugin};
 
 #[cfg(feature = "io-notify")]
 pub use nodes_io::{BarkPushNode, BarkPushNodeConfig};
 #[cfg(feature = "io-can")]
 pub use nodes_io::{CanReadNode, CanReadNodeConfig, CanWriteNode, CanWriteNodeConfig};
+#[cfg(feature = "io-modbus")]
+pub use nodes_io::{
+    DeviceSignalReadConfig, DeviceSignalReadNode, ModbusReadNode, ModbusReadNodeConfig,
+    SignalSourceSnapshot,
+};
 #[cfg(feature = "io-http")]
 pub use nodes_io::{HttpClientNode, HttpClientNodeConfig};
-#[cfg(feature = "io-modbus")]
-pub use nodes_io::{ModbusReadNode, ModbusReadNodeConfig};
 #[cfg(feature = "io-mqtt")]
 pub use nodes_io::{MqttClientNode, MqttClientNodeConfig, MqttMode};
 #[cfg(feature = "io-serial")]

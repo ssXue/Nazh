@@ -37,6 +37,7 @@ mod tests {
             "timer",
             "serialTrigger",
             "modbusRead",
+            "deviceSignalRead",
             "mqttClient",
             "httpClient",
             "barkPush",
@@ -57,12 +58,12 @@ mod tests {
     }
 
     #[test]
-    fn 两个插件合并后覆盖全部_27_种节点类型() {
+    fn 两个插件合并后覆盖全部_28_种节点类型() {
         let registry = standard_registry();
         assert_eq!(
             registry.registered_types().len(),
-            27,
-            "应注册 27 种节点类型"
+            28,
+            "应注册 28 种节点类型"
         );
     }
 
@@ -101,6 +102,7 @@ mod tests {
             NodeCapabilities::TRIGGER | NodeCapabilities::DEVICE_IO,
         );
         expect("modbusRead", NodeCapabilities::DEVICE_IO);
+        expect("deviceSignalRead", NodeCapabilities::DEVICE_IO);
         expect("httpClient", NodeCapabilities::NETWORK_IO);
         expect("mqttClient", NodeCapabilities::NETWORK_IO);
         expect("barkPush", NodeCapabilities::NETWORK_IO);

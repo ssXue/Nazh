@@ -30,6 +30,7 @@ use nazh_core::{
     WorkflowNodeDefinition, WorkflowVariables,
 };
 
+pub mod signal_decode;
 pub mod template;
 
 // 永远启用的轻量节点
@@ -44,6 +45,8 @@ mod timer;
 mod bark_push;
 #[cfg(feature = "io-can")]
 mod can;
+#[cfg(feature = "io-modbus")]
+mod device_signal_read;
 #[cfg(feature = "io-ethercat")]
 mod ethercat;
 #[cfg(feature = "io-http")]
@@ -78,6 +81,8 @@ pub use ethercat::{
 
 #[cfg(feature = "io-notify")]
 pub use bark_push::{BarkPushNode, BarkPushNodeConfig};
+#[cfg(feature = "io-modbus")]
+pub use device_signal_read::{DeviceSignalReadConfig, DeviceSignalReadNode, SignalSourceSnapshot};
 #[cfg(feature = "io-http")]
 pub use http_client::{HttpClientNode, HttpClientNodeConfig};
 #[cfg(feature = "io-modbus")]
@@ -208,6 +213,23 @@ impl Plugin for IoPlugin {
                     config,
                     cm,
                 )))
+            },
+        );
+
+        // ADR-0024 Phase 1：设备信号读取节点。
+        #[cfg(feature = "io-modbus")]
+        registry.register_with_capabilities(
+            "deviceSignalRead",
+            NodeCapabilities::DEVICE_IO,
+            |def, res| {
+                let mut config: DeviceSignalReadConfig = def.parse_config()?;
+                inherit_connection_id(&mut config.connection_id, def);
+                let cm = downcast_connection_manager(&res)?;
+                Ok(Arc::new(DeviceSignalReadNode::new(
+                    def.id().to_owned(),
+                    config,
+                    cm,
+                )?))
             },
         );
 

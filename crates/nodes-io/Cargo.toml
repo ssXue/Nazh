@@ -25,6 +25,10 @@ thiserror.workspace = true
 url.workspace = true
 uuid.workspace = true
 
+# 脚本引擎：signal_decode 共享 scale 求值依赖，不按协议门控。
+rhai.workspace = true
+scripting.workspace = true
+
 # 协议依赖通过 io-* features 选择启用，便于边缘构建按需裁剪。
 reqwest = { workspace = true, optional = true }
 rusqlite = { workspace = true, optional = true }
