@@ -343,6 +343,71 @@ fn float_to_value(f: f64) -> Value {
     serde_json::Number::from_f64(f).map_or(Value::Null, Value::Number)
 }
 
+/// 解码 MQTT Topic payload 字节为 JSON `Value`。
+///
+/// Topic 信号通常为纯数值载荷。优先尝试 JSON 解析 → 数字 → UTF-8 字符串 →
+/// 十六进制回退。供 `deviceSignalRead`（Topic 源）和 `deviceEventTrigger`（`mqtt_loop`）共用。
+pub fn decode_topic_payload(payload: &[u8], signal_id: &str) -> Value {
+    // 优先尝试 JSON 解析。
+    if let Ok(parsed) = serde_json::from_slice::<Value>(payload) {
+        match parsed {
+            v @ (Value::Number(_) | Value::Bool(_)) => return v,
+            Value::String(s) => {
+                if let Some(n) = serde_json::Number::from_f64(s.parse::<f64>().unwrap_or(f64::NAN))
+                {
+                    return Value::Number(n);
+                }
+                return Value::String(s);
+            }
+            other => return other,
+        }
+    }
+
+    // 回退：UTF-8 字符串。
+    if let Ok(s) = std::str::from_utf8(payload) {
+        if let Some(n) = serde_json::Number::from_f64(s.parse::<f64>().unwrap_or(f64::NAN)) {
+            return Value::Number(n);
+        }
+        return Value::String(s.to_owned());
+    }
+
+    // 无法解码，回退到十六进制。
+    let hex: String =
+        payload
+            .iter()
+            .fold(String::with_capacity(payload.len() * 2), |mut acc, b| {
+                use std::fmt::Write;
+                let _ = write!(acc, "{b:02X}");
+                acc
+            });
+    tracing::warn!(signal_id, hex, "Topic payload 无法解码，使用十六进制回退");
+    Value::String(hex)
+}
+
+/// 从 `EtherCAT` PDO 输入字节流中按字节偏移提取指定长度的数据。
+///
+/// `EtherCAT` 主站 [`read_inputs()`](crate::ethercat::EthercatBus::read_inputs) 返回从站的完整输入 PDO 字节流。
+/// 本函数按 `byte_offset` 和 `byte_len` 提取子切片供后续 `decode_raw_bytes` 解码。
+pub fn extract_pdo_bytes(
+    pdo_data: &[u8],
+    byte_offset: usize,
+    byte_len: usize,
+) -> Result<&[u8], DecodeError> {
+    let end = byte_offset
+        .checked_add(byte_len)
+        .ok_or(DecodeError::BufferTooShort {
+            needed: usize::MAX,
+            actual: pdo_data.len(),
+        })?;
+    if end > pdo_data.len() {
+        return Err(DecodeError::BufferTooShort {
+            needed: end,
+            actual: pdo_data.len(),
+        });
+    }
+    Ok(&pdo_data[byte_offset..end])
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
@@ -679,5 +744,62 @@ mod tests {
             serde_json::to_string(&ByteOrderSnapshot::LittleEndian).unwrap(),
             r#""little_endian""#
         );
+    }
+
+    // ---- decode_topic_payload ----
+
+    #[test]
+    fn topic_json_number() {
+        let val = decode_topic_payload(b"42.5", "test");
+        assert_eq!(
+            val,
+            Value::Number(serde_json::Number::from_f64(42.5).unwrap())
+        );
+    }
+
+    #[test]
+    fn topic_json_bool() {
+        let val = decode_topic_payload(b"true", "test");
+        assert_eq!(val, Value::Bool(true));
+    }
+
+    #[test]
+    fn topic_string_number() {
+        let val = decode_topic_payload(b"100", "test");
+        assert_eq!(val, Value::Number(serde_json::Number::from(100)));
+    }
+
+    #[test]
+    fn topic_utf8_text() {
+        let val = decode_topic_payload("温度正常".as_bytes(), "test");
+        assert_eq!(val, Value::String("温度正常".to_owned()));
+    }
+
+    #[test]
+    fn topic_hex_fallback() {
+        let val = decode_topic_payload(&[0xFF, 0xFE], "test");
+        assert_eq!(val, Value::String("FFFE".to_owned()));
+    }
+
+    // ---- extract_pdo_bytes ----
+
+    #[test]
+    fn pdo_extract_valid() {
+        let data = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06];
+        let slice = extract_pdo_bytes(&data, 2, 2).unwrap();
+        assert_eq!(slice, &[0x03, 0x04]);
+    }
+
+    #[test]
+    fn pdo_extract_out_of_bounds() {
+        let data = [0x01, 0x02];
+        let err = extract_pdo_bytes(&data, 1, 4).unwrap_err();
+        assert!(matches!(
+            err,
+            DecodeError::BufferTooShort {
+                needed: 5,
+                actual: 2
+            }
+        ));
     }
 }

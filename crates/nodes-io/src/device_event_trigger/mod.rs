@@ -1,7 +1,8 @@
-//! 设备事件触发节点（ADR-0024 Phase 2）。
+//! 设备事件触发节点（ADR-0024 Phase 2/3）。
 //!
-//! 通过 `on_deploy` 启动后台事件监听循环，归一化 MQTT Topic / CAN Frame 事件为
-//! 设备信号更新，经 `signal_decode` 解码、scale 求值后通过 `NodeHandle::emit` 推进 DAG。
+//! 通过 `on_deploy` 启动后台事件监听循环，归一化 MQTT `Topic` / CAN `CanFrame` / Modbus `Register` /
+//! `SerialCommand` 事件为设备信号更新，经 `signal_decode` 解码、scale 求值后通过
+//! `NodeHandle::emit` 推进 DAG。
 //!
 //! 生命周期模型：event 语义——`on_deploy` 后台循环，`LifecycleGuard` 管理清理。
 //! `transform` 仅用于 simulation 模式下的单次模拟输出。
@@ -22,8 +23,12 @@ use crate::signal_decode::{SignalSourceSnapshot, compile_scale, create_scale_eng
 
 #[cfg(feature = "io-can")]
 mod can_loop;
+#[cfg(feature = "io-modbus")]
+mod modbus_loop;
 #[cfg(feature = "io-mqtt")]
 mod mqtt_loop;
+#[cfg(feature = "io-serial")]
+mod serial_loop;
 
 /// 单个信号的监听配置快照。
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -36,6 +41,11 @@ pub struct SignalListenerSnapshot {
     pub unit: Option<String>,
 }
 
+/// 默认 poll 间隔（毫秒）。
+fn default_poll_interval_ms() -> u64 {
+    1000
+}
+
 /// 设备事件触发节点配置。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceEventTriggerConfig {
@@ -45,6 +55,9 @@ pub struct DeviceEventTriggerConfig {
     pub signals: Vec<SignalListenerSnapshot>,
     #[serde(default)]
     pub simulation: bool,
+    /// Modbus Register 轮询间隔（毫秒），默认 1000。
+    #[serde(default = "default_poll_interval_ms")]
+    pub poll_interval_ms: u64,
 }
 
 /// 预编译的信号监听项（signal 配置 + scale AST）。
@@ -137,11 +150,15 @@ impl DeviceEventTriggerNode {
         Ok((host, port))
     }
 
-    /// 为每个 signal 预编译 scale AST。
-    fn compile_signals(&self) -> Result<Vec<CompiledSignal>, EngineError> {
+    /// 按 source 过滤后为匹配的 signal 预编译 scale AST。
+    fn compile_signals_filtered(
+        &self,
+        predicate: impl Fn(&SignalSourceSnapshot) -> bool,
+    ) -> Result<Vec<CompiledSignal>, EngineError> {
         self.config
             .signals
             .iter()
+            .filter(|sig| predicate(&sig.source))
             .map(|sig| {
                 let scale_ast = compile_scale(&sig.scale).map_err(|e| {
                     EngineError::node_config(
@@ -216,99 +233,179 @@ impl NodeTrait for DeviceEventTriggerNode {
             ));
         }
 
-        let compiled = self.compile_signals()?;
+        // 按 source 类型分组，每组独立编译（CompiledSignal 包含非 Clone 的 rhai 类型）。
+        let mqtt_signals =
+            self.compile_signals_filtered(|s| matches!(s, SignalSourceSnapshot::Topic { .. }))?;
 
-        // 按 source 类型分组。
-        let mqtt_signals: Vec<CompiledSignal> = compiled
-            .into_iter()
-            .filter(|cs| matches!(cs.listener.source, SignalSourceSnapshot::Topic { .. }))
-            .collect();
+        let can_signals =
+            self.compile_signals_filtered(|s| matches!(s, SignalSourceSnapshot::CanFrame { .. }))?;
 
-        // 重新编译 CAN signals（上面 consume 了 compiled）。
-        let compiled2 = self.compile_signals()?;
-        let can_signals: Vec<CompiledSignal> = compiled2
-            .into_iter()
-            .filter(|cs| matches!(cs.listener.source, SignalSourceSnapshot::CanFrame { .. }))
-            .collect();
+        let modbus_signals =
+            self.compile_signals_filtered(|s| matches!(s, SignalSourceSnapshot::Register { .. }))?;
 
-        let has_mqtt = !mqtt_signals.is_empty();
-        let has_can = !can_signals.is_empty();
+        let serial_signals = self.compile_signals_filtered(|s| {
+            matches!(s, SignalSourceSnapshot::SerialCommand { .. })
+        })?;
 
-        if !has_mqtt && !has_can {
+        if mqtt_signals.is_empty()
+            && can_signals.is_empty()
+            && modbus_signals.is_empty()
+            && serial_signals.is_empty()
+        {
             return Err(EngineError::node_config(
                 self.id.clone(),
-                "Phase 2 仅支持 Topic (MQTT) 和 CanFrame 事件源".to_owned(),
+                "signals 列表中没有可监听的事件源".to_owned(),
             ));
         }
 
         let (host, port) = self.resolve_connection(&connection_id).await?;
 
-        let id = self.id.clone();
-        let device_id = self.config.device_id.clone();
-        let handle = ctx.handle.clone();
-        let token = ctx.shutdown.clone();
-        let connection_manager = self.connection_manager.clone();
-
-        // 单个 orchestrator task 管理 MQTT 和 CAN listeners。
-        let join = tokio::spawn(async move {
-            let mut tasks = Vec::new();
-
-            #[cfg(feature = "io-mqtt")]
-            if has_mqtt {
-                let task_id = id.clone();
-                let task_cm = connection_manager.clone();
-                let task_handle = handle.clone();
-                let task_token = token.clone();
-                let task_conn_id = connection_id.clone();
-                let task_device_id = device_id.clone();
-                tasks.push(tokio::spawn(async move {
-                    mqtt_loop::run_mqtt_listener_loop(
-                        &task_id,
-                        &task_conn_id,
-                        &host,
-                        port,
-                        &mqtt_signals,
-                        &task_cm,
-                        &task_handle,
-                        &task_token,
-                        &task_device_id,
-                    )
-                    .await;
-                }));
-            }
-
-            #[cfg(feature = "io-can")]
-            if has_can {
-                let task_id = id.clone();
-                let task_cm = connection_manager.clone();
-                let task_handle = handle.clone();
-                let task_token = token.clone();
-                let task_conn_id = connection_id.clone();
-                let task_device_id = device_id.clone();
-                tasks.push(tokio::spawn(async move {
-                    can_loop::run_can_listener_loop(
-                        &task_id,
-                        &task_conn_id,
-                        &can_signals,
-                        &task_cm,
-                        &task_handle,
-                        &task_token,
-                        &task_device_id,
-                    )
-                    .await;
-                }));
-            }
-
-            // 等待取消信号。
-            token.cancelled().await;
-            // 子任务会因 token 取消而自行退出。
-            for task in tasks {
-                let _ = task.await;
-            }
-        });
+        let join = spawn_orchestrator(
+            &self.id,
+            &connection_id,
+            &host,
+            port,
+            &self.config.device_id,
+            mqtt_signals,
+            can_signals,
+            modbus_signals,
+            serial_signals,
+            &self.connection_manager,
+            &ctx.handle,
+            &ctx.shutdown,
+            self.config.poll_interval_ms,
+        );
 
         Ok(LifecycleGuard::from_task(ctx.shutdown, join))
     }
+}
+
+/// 启动 orchestrator task 管理所有协议 listeners。
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+fn spawn_orchestrator(
+    id: &str,
+    connection_id: &str,
+    host: &str,
+    port: u16,
+    device_id: &str,
+    mqtt_signals: Vec<CompiledSignal>,
+    can_signals: Vec<CompiledSignal>,
+    modbus_signals: Vec<CompiledSignal>,
+    serial_signals: Vec<CompiledSignal>,
+    connection_manager: &SharedConnectionManager,
+    handle: &nazh_core::NodeHandle,
+    token: &nazh_core::CancellationToken,
+    poll_interval_ms: u64,
+) -> tokio::task::JoinHandle<()> {
+    let id = id.to_owned();
+    let connection_id = connection_id.to_owned();
+    let host = host.to_owned();
+    let device_id = device_id.to_owned();
+    let connection_manager = connection_manager.clone();
+    let handle = handle.clone();
+    let token = token.clone();
+
+    tokio::spawn(async move {
+        let mut tasks = Vec::new();
+
+        #[cfg(feature = "io-mqtt")]
+        if !mqtt_signals.is_empty() {
+            let task_id = id.clone();
+            let task_cm = connection_manager.clone();
+            let task_handle = handle.clone();
+            let task_token = token.clone();
+            let task_conn_id = connection_id.clone();
+            let task_device_id = device_id.clone();
+            tasks.push(tokio::spawn(async move {
+                mqtt_loop::run_mqtt_listener_loop(
+                    &task_id,
+                    &task_conn_id,
+                    &host,
+                    port,
+                    &mqtt_signals,
+                    &task_cm,
+                    &task_handle,
+                    &task_token,
+                    &task_device_id,
+                )
+                .await;
+            }));
+        }
+
+        #[cfg(feature = "io-can")]
+        if !can_signals.is_empty() {
+            let task_id = id.clone();
+            let task_cm = connection_manager.clone();
+            let task_handle = handle.clone();
+            let task_token = token.clone();
+            let task_conn_id = connection_id.clone();
+            let task_device_id = device_id.clone();
+            tasks.push(tokio::spawn(async move {
+                can_loop::run_can_listener_loop(
+                    &task_id,
+                    &task_conn_id,
+                    &can_signals,
+                    &task_cm,
+                    &task_handle,
+                    &task_token,
+                    &task_device_id,
+                )
+                .await;
+            }));
+        }
+
+        #[cfg(feature = "io-modbus")]
+        if !modbus_signals.is_empty() {
+            let task_id = id.clone();
+            let task_cm = connection_manager.clone();
+            let task_handle = handle.clone();
+            let task_token = token.clone();
+            let task_conn_id = connection_id.clone();
+            let task_device_id = device_id.clone();
+            tasks.push(tokio::spawn(async move {
+                modbus_loop::run_modbus_poll_loop(
+                    &task_id,
+                    &task_conn_id,
+                    &modbus_signals,
+                    &task_cm,
+                    &task_handle,
+                    &task_token,
+                    &task_device_id,
+                    poll_interval_ms,
+                )
+                .await;
+            }));
+        }
+
+        #[cfg(feature = "io-serial")]
+        if !serial_signals.is_empty() {
+            let task_id = id.clone();
+            let task_cm = connection_manager.clone();
+            let task_handle = handle.clone();
+            let task_token = token.clone();
+            let task_conn_id = connection_id.clone();
+            let task_device_id = device_id.clone();
+            tasks.push(tokio::spawn(async move {
+                serial_loop::run_serial_listen_loop(
+                    &task_id,
+                    &task_conn_id,
+                    &serial_signals,
+                    &task_cm,
+                    &task_handle,
+                    &task_token,
+                    &task_device_id,
+                )
+                .await;
+            }));
+        }
+
+        // 等待取消信号。
+        token.cancelled().await;
+        // 子任务会因 token 取消而自行退出。
+        for task in tasks {
+            let _ = task.await;
+        }
+    })
 }
 
 #[cfg(test)]
@@ -335,6 +432,7 @@ mod tests {
             device_id: "test_device".to_owned(),
             signals: vec![topic_signal()],
             simulation: true,
+            poll_interval_ms: 1000,
         }
     }
 

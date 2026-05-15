@@ -78,6 +78,8 @@ import { definition as c2fDef } from './nodes/c2f';
 import { definition as lookupDef } from './nodes/lookup';
 import { definition as humanLoopDef } from './nodes/humanLoop';
 import { definition as minutesSinceDef } from './nodes/minutesSince';
+import { definition as deviceSignalReadDef } from './nodes/deviceSignalRead';
+import { definition as deviceEventTriggerDef } from './nodes/deviceEventTrigger';
 
 interface FlowgramNodeData {
   label?: string;
@@ -102,6 +104,7 @@ const ALL_DEFS = [
   httpClientDef, barkPushDef, sqlWriterDef, debugConsoleDef,
   subgraphDef, subgraphInputDef, subgraphOutputDef,
   c2fDef, minutesSinceDef, lookupDef, humanLoopDef,
+  deviceSignalReadDef, deviceEventTriggerDef,
 ] as const satisfies readonly NodeDefinition[];
 
 export type KnownEditorNodeType = (typeof ALL_DEFS)[number]['kind'];

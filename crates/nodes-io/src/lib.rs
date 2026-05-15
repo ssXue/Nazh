@@ -45,9 +45,20 @@ mod timer;
 mod bark_push;
 #[cfg(feature = "io-can")]
 mod can;
-#[cfg(any(feature = "io-mqtt", feature = "io-can"))]
+#[cfg(any(
+    feature = "io-mqtt",
+    feature = "io-can",
+    feature = "io-modbus",
+    feature = "io-serial"
+))]
 mod device_event_trigger;
-#[cfg(feature = "io-modbus")]
+#[cfg(any(
+    feature = "io-modbus",
+    feature = "io-can",
+    feature = "io-mqtt",
+    feature = "io-serial",
+    feature = "io-ethercat"
+))]
 mod device_signal_read;
 #[cfg(feature = "io-ethercat")]
 mod ethercat;
@@ -77,7 +88,12 @@ pub use signal_decode::SignalSourceSnapshot;
 #[cfg(feature = "io-can")]
 pub use can::{CanReadNode, CanReadNodeConfig, CanWriteNode, CanWriteNodeConfig};
 
-#[cfg(any(feature = "io-mqtt", feature = "io-can"))]
+#[cfg(any(
+    feature = "io-mqtt",
+    feature = "io-can",
+    feature = "io-modbus",
+    feature = "io-serial"
+))]
 pub use device_event_trigger::{
     DeviceEventTriggerConfig, DeviceEventTriggerNode, SignalListenerSnapshot,
 };
@@ -90,7 +106,13 @@ pub use ethercat::{
 
 #[cfg(feature = "io-notify")]
 pub use bark_push::{BarkPushNode, BarkPushNodeConfig};
-#[cfg(feature = "io-modbus")]
+#[cfg(any(
+    feature = "io-modbus",
+    feature = "io-can",
+    feature = "io-mqtt",
+    feature = "io-serial",
+    feature = "io-ethercat"
+))]
 pub use device_signal_read::{DeviceSignalReadConfig, DeviceSignalReadNode};
 #[cfg(feature = "io-http")]
 pub use http_client::{HttpClientNode, HttpClientNodeConfig};
@@ -225,8 +247,14 @@ impl Plugin for IoPlugin {
             },
         );
 
-        // ADR-0024 Phase 1：设备信号读取节点。
-        #[cfg(feature = "io-modbus")]
+        // ADR-0024 Phase 1/3：设备信号读取节点。
+        #[cfg(any(
+            feature = "io-modbus",
+            feature = "io-can",
+            feature = "io-mqtt",
+            feature = "io-serial",
+            feature = "io-ethercat"
+        ))]
         registry.register_with_capabilities(
             "deviceSignalRead",
             NodeCapabilities::DEVICE_IO,
@@ -304,8 +332,13 @@ impl Plugin for IoPlugin {
             Ok(Arc::new(CanReadNode::new(def.id().to_owned(), config, cm)))
         });
 
-        // ADR-0024 Phase 2：设备事件触发节点。
-        #[cfg(any(feature = "io-mqtt", feature = "io-can"))]
+        // ADR-0024 Phase 2/3：设备事件触发节点。
+        #[cfg(any(
+            feature = "io-mqtt",
+            feature = "io-can",
+            feature = "io-modbus",
+            feature = "io-serial"
+        ))]
         registry.register_with_capabilities(
             "deviceEventTrigger",
             NodeCapabilities::TRIGGER | NodeCapabilities::DEVICE_IO,

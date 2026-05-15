@@ -1,7 +1,8 @@
-//! 设备信号读取节点（ADR-0024 Phase 1）。
+//! 设备信号读取节点（ADR-0024 Phase 1/3）。
 //!
-//! 按 `SignalSourceSnapshot` 从设备读取原始数据，经 `DataType` 解码、
-//! `scale` 缩放后输出语义化值。Phase 1 仅实现 `Register`（Modbus TCP）源。
+//! 按 [`SignalSourceSnapshot`](crate::signal_decode::SignalSourceSnapshot) 从设备读取原始数据，
+//! 经 [`DataTypeSnapshot`](crate::signal_decode::DataTypeSnapshot) 解码、`scale` 缩放后输出语义化值。
+//! 支持 `Register` / `CanFrame` / `Topic` / `SerialCommand` / `EthercatPdo` 五种信号源。
 //!
 //! 生命周期模型：poll 语义——exec 触发 + data 缓存（对标 `modbusRead`）。
 //! 无 `on_deploy`/`on_undeploy`。
@@ -17,8 +18,12 @@ use nazh_core::{EngineError, NodeExecution, NodeTrait, PinDefinition, PinType, i
 
 use crate::signal_decode::{
     ByteOrderSnapshot, DataTypeSnapshot, SignalSourceSnapshot, apply_scale_with_engine,
-    compile_scale, create_scale_engine,
+    compile_scale, create_scale_engine, decode_topic_payload, extract_pdo_bytes,
 };
+
+fn default_poll_timeout_ms() -> u64 {
+    2000
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceSignalReadConfig {
@@ -34,6 +39,9 @@ pub struct DeviceSignalReadConfig {
     pub unit: Option<String>,
     #[serde(default)]
     pub simulation: bool,
+    /// 同步源读取超时（毫秒），默认 2000。
+    #[serde(default = "default_poll_timeout_ms")]
+    pub poll_timeout_ms: u64,
 }
 
 /// 设备信号读取节点。
@@ -41,11 +49,12 @@ pub struct DeviceSignalReadNode {
     id: String,
     config: DeviceSignalReadConfig,
     connection_manager: SharedConnectionManager,
-    /// 预编译 Rhai AST（scale 为空时为 None）。
     scale_ast: Option<rhai::AST>,
-    /// Rhai Engine 复用实例。
     engine: rhai::Engine,
 }
+
+/// Modbus Register 参数提取结果。
+type RegisterParams = (String, u16, u8, u16, DataTypeSnapshot, Option<u8>);
 
 impl DeviceSignalReadNode {
     /// 创建节点。编译 scale 表达式，无效时 fail-fast。
@@ -86,8 +95,111 @@ impl DeviceSignalReadNode {
                 }
                 DataTypeSnapshot::String => Value::String("simulated".to_owned()),
             },
-            _ => Value::Number(serde_json::Number::from(42)),
+            SignalSourceSnapshot::CanFrame { .. }
+            | SignalSourceSnapshot::Topic { .. }
+            | SignalSourceSnapshot::SerialCommand { .. }
+            | SignalSourceSnapshot::EthercatPdo { .. } => {
+                serde_json::Number::from_f64(42.5).map_or(Value::Null, Value::Number)
+            }
         }
+    }
+
+    /// 按信号源类型分发读取并解码。
+    async fn read_and_decode(
+        &self,
+        trace_id: Uuid,
+        guard: &mut Option<connections::ConnectionGuard>,
+    ) -> Result<(Value, bool), EngineError> {
+        if guard.is_none() {
+            return Ok((self.simulate_value(), true));
+        }
+        // 提前 clone metadata，避免 guard 的不可变借用与可变借用冲突。
+        let metadata = guard
+            .as_ref()
+            .map(|g| g.lease().metadata.clone())
+            .unwrap_or_default();
+        match &self.config.source {
+            SignalSourceSnapshot::Register { .. } => {
+                self.read_register(trace_id, &metadata, guard).await
+            }
+            #[cfg(feature = "io-can")]
+            SignalSourceSnapshot::CanFrame { .. } => self.read_can_frame(trace_id, guard).await,
+            #[cfg(feature = "io-mqtt")]
+            SignalSourceSnapshot::Topic { .. } => self.read_topic(trace_id, &metadata, guard).await,
+            #[cfg(feature = "io-ethercat")]
+            SignalSourceSnapshot::EthercatPdo { .. } => {
+                self.read_ethercat_pdo(trace_id, guard).await
+            }
+            #[cfg(feature = "io-serial")]
+            SignalSourceSnapshot::SerialCommand { .. } => {
+                self.read_serial_command(trace_id, &metadata, guard).await
+            }
+            #[allow(unreachable_patterns)]
+            _ => Err(EngineError::node_config(
+                self.id.clone(),
+                format!("当前构建不支持 {} 源", self.config.source.type_tag()),
+            )),
+        }
+    }
+
+    /// Modbus Register 源读取。
+    async fn read_register(
+        &self,
+        trace_id: Uuid,
+        metadata: &Value,
+        guard: &mut Option<connections::ConnectionGuard>,
+    ) -> Result<(Value, bool), EngineError> {
+        let (host, port, unit_id, register, data_type, bit) =
+            self.extract_register_params(metadata)?;
+        let quantity = data_type.modbus_register_count();
+        let raw_bytes = self
+            .read_register_raw(trace_id, &host, port, unit_id, register, quantity)
+            .await?;
+        let val = crate::signal_decode::decode_raw_bytes(
+            &raw_bytes,
+            data_type,
+            ByteOrderSnapshot::BigEndian,
+            bit,
+        )
+        .map_err(|e| {
+            EngineError::stage_execution(self.id.clone(), trace_id, format!("信号解码失败: {e}"))
+        })?;
+        if let Some(g) = guard.as_mut() {
+            g.mark_success();
+        }
+        Ok((val, false))
+    }
+
+    fn extract_register_params(&self, metadata: &Value) -> Result<RegisterParams, EngineError> {
+        let (register, data_type, bit) = match &self.config.source {
+            SignalSourceSnapshot::Register {
+                register,
+                data_type,
+                bit,
+            } => (*register, *data_type, *bit),
+            _ => unreachable!(),
+        };
+        let host = metadata
+            .get("host")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned();
+        let port = metadata
+            .get("port")
+            .and_then(Value::as_u64)
+            .and_then(|p| u16::try_from(p).ok())
+            .ok_or_else(|| {
+                EngineError::node_config(
+                    self.id.clone(),
+                    "Modbus 连接元数据缺少有效的 host 或 port".to_owned(),
+                )
+            })?;
+        let unit_id = metadata
+            .get("unit")
+            .and_then(Value::as_u64)
+            .and_then(|u| u8::try_from(u).ok())
+            .unwrap_or(1);
+        Ok((host, port, unit_id, register, data_type, bit))
     }
 
     /// 读取 Modbus 寄存器原始字并转为字节切片。
@@ -142,79 +254,354 @@ impl DeviceSignalReadNode {
                 )
             })?;
 
-        // 将 u16 字数组转为大端字节序列（Modbus 标准字节序）。
         let bytes: Vec<u8> = words.iter().flat_map(|w| w.to_be_bytes()).collect();
         Ok(bytes)
     }
 
-    /// 按信号源类型读取原始数据并解码。
-    async fn read_and_decode(
+    #[cfg(feature = "io-can")]
+    async fn read_can_frame(
         &self,
         trace_id: Uuid,
         guard: &mut Option<connections::ConnectionGuard>,
     ) -> Result<(Value, bool), EngineError> {
-        if let Some(guard_ref) = guard {
-            let metadata_value = &guard_ref.lease().metadata;
+        use crate::can::session::CanBusRuntime;
 
+        let (can_id, is_extended, byte_offset, byte_length, data_type, byte_order) =
             match &self.config.source {
-                SignalSourceSnapshot::Register {
-                    register,
+                SignalSourceSnapshot::CanFrame {
+                    can_id,
+                    is_extended,
+                    byte_offset,
+                    byte_length,
                     data_type,
-                    bit,
-                } => {
-                    let host = metadata_value
-                        .get("host")
-                        .and_then(Value::as_str)
-                        .unwrap_or_default();
-                    let port = metadata_value
-                        .get("port")
-                        .and_then(Value::as_u64)
-                        .and_then(|p| u16::try_from(p).ok())
-                        .ok_or_else(|| {
-                            EngineError::node_config(
-                                self.id.clone(),
-                                "Modbus 连接元数据缺少有效的 host 或 port".to_owned(),
-                            )
-                        })?;
-                    let unit_id = metadata_value
-                        .get("unit")
-                        .and_then(Value::as_u64)
-                        .and_then(|u| u8::try_from(u).ok())
-                        .unwrap_or(1);
+                    byte_order,
+                    ..
+                } => (
+                    *can_id,
+                    *is_extended,
+                    *byte_offset,
+                    *byte_length,
+                    *data_type,
+                    *byte_order,
+                ),
+                _ => unreachable!(),
+            };
 
-                    let quantity = data_type.modbus_register_count();
-                    let raw_bytes = self
-                        .read_register_raw(trace_id, host, port, unit_id, *register, quantity)
-                        .await?;
+        let conn_id = self.config.connection_id.as_deref().unwrap_or_default();
+        let runtime = CanBusRuntime::new(self.connection_manager.clone(), conn_id.to_owned());
+        let session = runtime
+            .ensure_session(&self.id, |_| Ok(()))
+            .await
+            .map_err(|e| EngineError::stage_execution(self.id.clone(), trace_id, e.to_string()))?;
 
-                    let val = crate::signal_decode::decode_raw_bytes(
-                        &raw_bytes,
-                        *data_type,
-                        ByteOrderSnapshot::BigEndian,
-                        *bit,
-                    )
-                    .map_err(|e| {
-                        EngineError::stage_execution(
-                            self.id.clone(),
-                            trace_id,
-                            format!("信号解码失败: {e}"),
-                        )
-                    })?;
+        let timeout = std::time::Duration::from_millis(self.config.poll_timeout_ms);
+        let bus = session
+            .bus_handle(&self.id)
+            .await
+            .map_err(|e| EngineError::stage_execution(self.id.clone(), trace_id, e.to_string()))?;
 
-                    if let Some(g) = guard.as_mut() {
-                        g.mark_success();
-                    }
-
-                    Ok((val, false))
+        let frame = loop {
+            match bus.recv(timeout).await {
+                Ok(Some(f)) if f.id == can_id && f.is_extended == is_extended => break f,
+                Ok(Some(_)) => {}
+                Ok(None) => {
+                    return Err(EngineError::stage_execution(
+                        self.id.clone(),
+                        trace_id,
+                        "CAN 接收超时".to_owned(),
+                    ));
                 }
-                _ => Err(EngineError::node_config(
-                    self.id.clone(),
-                    "Phase 1 仅支持 Register 源".to_owned(),
-                )),
+                Err(error) => {
+                    runtime.shutdown().await;
+                    return Err(EngineError::stage_execution(
+                        self.id.clone(),
+                        trace_id,
+                        format!("CAN 接收错误: {error}"),
+                    ));
+                }
             }
-        } else {
-            Ok((self.simulate_value(), true))
+        };
+
+        let start = usize::from(byte_offset);
+        let end = start + usize::from(byte_length);
+        if end > frame.data.len() {
+            return Err(EngineError::stage_execution(
+                self.id.clone(),
+                trace_id,
+                format!(
+                    "CAN 帧 payload 越界: offset={start}, length={}, frame_len={}",
+                    usize::from(byte_length),
+                    frame.data.len()
+                ),
+            ));
         }
+
+        let raw = &frame.data[start..end];
+        let val = crate::signal_decode::decode_raw_bytes(raw, data_type, byte_order, None)
+            .map_err(|e| {
+                EngineError::stage_execution(
+                    self.id.clone(),
+                    trace_id,
+                    format!("CAN 帧解码失败: {e}"),
+                )
+            })?;
+
+        if let Some(g) = guard.as_mut() {
+            g.mark_success();
+        }
+        Ok((val, false))
+    }
+
+    #[cfg(feature = "io-mqtt")]
+    async fn read_topic(
+        &self,
+        trace_id: Uuid,
+        metadata: &Value,
+        guard: &mut Option<connections::ConnectionGuard>,
+    ) -> Result<(Value, bool), EngineError> {
+        let topic = match &self.config.source {
+            SignalSourceSnapshot::Topic { topic } => topic.clone(),
+            _ => unreachable!(),
+        };
+
+        let host = metadata
+            .get("host")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let port = metadata
+            .get("port")
+            .and_then(Value::as_u64)
+            .and_then(|p| u16::try_from(p).ok())
+            .unwrap_or(1883);
+
+        if host.is_empty() {
+            return Err(EngineError::node_config(
+                self.id.clone(),
+                "MQTT 连接元数据缺少 host".to_owned(),
+            ));
+        }
+
+        let client_id = format!("nazh-dsr-{}", self.id.chars().take(12).collect::<String>());
+        let mut mqttoptions = rumqttc::MqttOptions::new(client_id, host, port);
+        mqttoptions.set_keep_alive(std::time::Duration::from_secs(5));
+
+        let (_client, mut eventloop) = rumqttc::AsyncClient::new(mqttoptions, 10);
+
+        // 等 ConnAck（5s 超时）。
+        let connected = loop {
+            let event = tokio::time::timeout(std::time::Duration::from_secs(5), eventloop.poll())
+                .await
+                .map_err(|_| {
+                    EngineError::stage_execution(
+                        self.id.clone(),
+                        trace_id,
+                        "MQTT 连接超时（5 秒）".to_owned(),
+                    )
+                })?;
+            match event {
+                Ok(rumqttc::Event::Incoming(rumqttc::Packet::ConnAck(ack))) => {
+                    break ack.code == rumqttc::ConnectReturnCode::Success;
+                }
+                Ok(rumqttc::Event::Incoming(rumqttc::Packet::Disconnect)) | Err(_) => {
+                    break false;
+                }
+                Ok(_) => {}
+            }
+        };
+
+        if !connected {
+            return Err(EngineError::stage_execution(
+                self.id.clone(),
+                trace_id,
+                format!("MQTT {host}:{port} 连接失败"),
+            ));
+        }
+
+        // 等待一条 Publish 消息（poll_timeout_ms 超时）。
+        let timeout = std::time::Duration::from_millis(self.config.poll_timeout_ms);
+        let message_result: Result<Vec<u8>, EngineError> = async {
+            let result = tokio::time::timeout(timeout, async {
+                loop {
+                    match eventloop.poll().await {
+                        Ok(rumqttc::Event::Incoming(rumqttc::Packet::Publish(msg))) => {
+                            if msg.topic == topic {
+                                return Ok::<Vec<u8>, String>(msg.payload.to_vec());
+                            }
+                        }
+                        Ok(_) => {}
+                        Err(error) => return Err(format!("MQTT 事件循环错误: {error}")),
+                    }
+                }
+            })
+            .await
+            .map_err(|_| {
+                EngineError::stage_execution(
+                    self.id.clone(),
+                    trace_id,
+                    format!("MQTT Topic `{topic}` 等待消息超时"),
+                )
+            })?;
+
+            result.map_err(|e: String| EngineError::stage_execution(self.id.clone(), trace_id, e))
+        }
+        .await;
+        let message = message_result?;
+
+        let val = decode_topic_payload(&message, &self.config.signal_id);
+
+        if let Some(g) = guard.as_mut() {
+            g.mark_success();
+        }
+        Ok((val, false))
+    }
+
+    #[cfg(feature = "io-ethercat")]
+    async fn read_ethercat_pdo(
+        &self,
+        trace_id: Uuid,
+        guard: &mut Option<connections::ConnectionGuard>,
+    ) -> Result<(Value, bool), EngineError> {
+        use crate::ethercat::session::EthercatRuntime;
+
+        let (slave_address, byte_offset, byte_len) = match &self.config.source {
+            SignalSourceSnapshot::EthercatPdo {
+                slave_address,
+                pdo_index,
+                entry_index,
+                sub_index: _,
+                bit_len,
+            } => {
+                let slave = slave_address.unwrap_or(1);
+                let offset = usize::from(*pdo_index) * 2 + usize::from(*entry_index);
+                let len = usize::from(*bit_len).div_ceil(8);
+                (slave, offset, len)
+            }
+            _ => unreachable!(),
+        };
+
+        let conn_id = self.config.connection_id.as_deref().unwrap_or_default();
+        let runtime = EthercatRuntime::new(self.connection_manager.clone(), conn_id.to_owned());
+        let session = runtime
+            .ensure_session(&self.id)
+            .await
+            .map_err(|e| EngineError::stage_execution(self.id.clone(), trace_id, e.to_string()))?;
+
+        let inputs: Vec<u8> = {
+            let guard_inner = session.bus(&self.id).await.map_err(|e| {
+                EngineError::stage_execution(self.id.clone(), trace_id, e.to_string())
+            })?;
+            let bus = guard_inner.as_ref().ok_or_else(|| {
+                EngineError::stage_execution(
+                    self.id.clone(),
+                    trace_id,
+                    "EtherCAT 总线会话已释放".to_owned(),
+                )
+            })?;
+            bus.read_inputs(slave_address).await.map_err(|error| {
+                EngineError::stage_execution(
+                    self.id.clone(),
+                    trace_id,
+                    format!("EtherCAT PDO 读取失败: {error}"),
+                )
+            })?
+        };
+
+        let raw = extract_pdo_bytes(&inputs, byte_offset, byte_len).map_err(|e| {
+            EngineError::stage_execution(
+                self.id.clone(),
+                trace_id,
+                format!("EtherCAT PDO 字节提取失败: {e}"),
+            )
+        })?;
+
+        // EtherCAT PDO 数据默认为小端（EtherCAT 标准）。
+        let val = crate::signal_decode::decode_raw_bytes(
+            raw,
+            DataTypeSnapshot::U16,
+            ByteOrderSnapshot::LittleEndian,
+            None,
+        )
+        .map_err(|e| {
+            EngineError::stage_execution(
+                self.id.clone(),
+                trace_id,
+                format!("EtherCAT PDO 解码失败: {e}"),
+            )
+        })?;
+
+        if let Some(g) = guard.as_mut() {
+            g.mark_success();
+        }
+        Ok((val, false))
+    }
+
+    #[cfg(feature = "io-serial")]
+    async fn read_serial_command(
+        &self,
+        trace_id: Uuid,
+        metadata: &Value,
+        guard: &mut Option<connections::ConnectionGuard>,
+    ) -> Result<(Value, bool), EngineError> {
+        let command = match &self.config.source {
+            SignalSourceSnapshot::SerialCommand { command } => command.clone(),
+            _ => unreachable!(),
+        };
+
+        let port_path = metadata
+            .get("port_path")
+            .or_else(|| metadata.get("port"))
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned();
+        let baud_rate = metadata
+            .get("baud_rate")
+            .and_then(Value::as_u64)
+            .and_then(|b| u32::try_from(b).ok())
+            .unwrap_or(9600);
+
+        if port_path.is_empty() {
+            return Err(EngineError::node_config(
+                self.id.clone(),
+                "串口连接元数据缺少 port_path".to_owned(),
+            ));
+        }
+
+        let timeout_ms = self.config.poll_timeout_ms;
+        let delimiter = metadata
+            .get("delimiter")
+            .and_then(Value::as_str)
+            .unwrap_or("\n")
+            .to_owned();
+        let node_id = self.id.clone();
+
+        let raw_bytes = tokio::task::spawn_blocking(move || {
+            serial_read_command(
+                &node_id, &port_path, baud_rate, &command, &delimiter, timeout_ms,
+            )
+        })
+        .await
+        .map_err(|e| {
+            EngineError::stage_execution(self.id.clone(), trace_id, format!("串口任务失败: {e}"))
+        })??;
+
+        let val = crate::signal_decode::decode_raw_bytes(
+            &raw_bytes,
+            DataTypeSnapshot::Float32,
+            ByteOrderSnapshot::BigEndian,
+            None,
+        )
+        .map_err(|e| {
+            EngineError::stage_execution(
+                self.id.clone(),
+                trace_id,
+                format!("串口数据解码失败: {e}"),
+            )
+        })?;
+
+        if let Some(g) = guard.as_mut() {
+            g.mark_success();
+        }
+        Ok((val, false))
     }
 
     /// 构造输出 payload。
@@ -253,16 +640,17 @@ impl DeviceSignalReadNode {
         );
 
         if let Some(guard_ref) = guard {
-            let mut modbus_meta = Map::from_iter([
+            let source_key = self.config.source.type_tag();
+            let mut source_meta = Map::from_iter([
                 ("simulated".to_owned(), json!(false)),
                 ("sampled_at".to_owned(), json!(Utc::now().to_rfc3339())),
             ]);
             let (key, value) = connection_metadata(&self.id, guard_ref.lease())?;
-            modbus_meta.insert(key, value);
-            metadata_map.insert("modbus".to_owned(), Value::Object(modbus_meta));
+            source_meta.insert(key, value);
+            metadata_map.insert(source_key.to_owned(), Value::Object(source_meta));
         } else if simulated {
             metadata_map.insert(
-                "modbus".to_owned(),
+                self.config.source.type_tag().to_owned(),
                 json!({
                     "simulated": true,
                     "sampled_at": Utc::now().to_rfc3339(),
@@ -272,6 +660,89 @@ impl DeviceSignalReadNode {
 
         Ok(metadata_map)
     }
+}
+
+/// 串口发送命令并读取分隔帧响应。
+#[cfg(feature = "io-serial")]
+fn serial_read_command(
+    node_id: &str,
+    port_path: &str,
+    baud_rate: u32,
+    command: &str,
+    delimiter: &str,
+    timeout_ms: u64,
+) -> Result<Vec<u8>, EngineError> {
+    let timeout = std::time::Duration::from_millis(timeout_ms);
+    let mut port = serialport::new(port_path, baud_rate.max(1))
+        .timeout(timeout)
+        .open()
+        .map_err(|error| {
+            EngineError::stage_execution(
+                node_id.to_owned(),
+                Uuid::nil(),
+                format!("串口打开失败 ({port_path}): {error}"),
+            )
+        })?;
+
+    // 发送命令。
+    port.write_all(command.as_bytes()).map_err(|error| {
+        EngineError::stage_execution(
+            node_id.to_owned(),
+            Uuid::nil(),
+            format!("串口写入失败: {error}"),
+        )
+    })?;
+
+    // 读取直到分隔符或超时。
+    let delim_bytes: Vec<u8> = if delimiter == "\\n" {
+        vec![b'\n']
+    } else if delimiter == "\\r\\n" {
+        vec![b'\r', b'\n']
+    } else {
+        delimiter.as_bytes().to_vec()
+    };
+
+    let mut buffer = Vec::with_capacity(256);
+    let start = std::time::Instant::now();
+    let mut single = [0u8; 1];
+
+    loop {
+        if start.elapsed() > timeout {
+            // 超时但已收到部分数据——返回已有缓冲。
+            break;
+        }
+        match port.read(&mut single) {
+            Ok(0) => {}
+            Ok(n) => {
+                buffer.extend_from_slice(&single[..n]);
+                if !delim_bytes.is_empty() && buffer.len() >= delim_bytes.len() {
+                    let tail = &buffer[buffer.len() - delim_bytes.len()..];
+                    if tail == delim_bytes.as_slice() {
+                        buffer.truncate(buffer.len() - delim_bytes.len());
+                        break;
+                    }
+                }
+            }
+            Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => break,
+            Err(error) => {
+                return Err(EngineError::stage_execution(
+                    node_id.to_owned(),
+                    Uuid::nil(),
+                    format!("串口读取失败: {error}"),
+                ));
+            }
+        }
+    }
+
+    if buffer.is_empty() {
+        return Err(EngineError::stage_execution(
+            node_id.to_owned(),
+            Uuid::nil(),
+            "串口未收到响应数据".to_owned(),
+        ));
+    }
+
+    Ok(buffer)
 }
 
 #[async_trait]
@@ -345,6 +816,23 @@ mod tests {
         }
     }
 
+    fn can_frame_source() -> SignalSourceSnapshot {
+        SignalSourceSnapshot::CanFrame {
+            can_id: 0x100,
+            is_extended: false,
+            byte_offset: 0,
+            byte_length: 4,
+            data_type: DataTypeSnapshot::Float32,
+            byte_order: ByteOrderSnapshot::BigEndian,
+        }
+    }
+
+    fn topic_source() -> SignalSourceSnapshot {
+        SignalSourceSnapshot::Topic {
+            topic: "factory/press/pressure".to_owned(),
+        }
+    }
+
     fn make_config() -> DeviceSignalReadConfig {
         DeviceSignalReadConfig {
             connection_id: None,
@@ -354,6 +842,7 @@ mod tests {
             scale: None,
             unit: Some("MPa".to_owned()),
             simulation: true,
+            poll_timeout_ms: 2000,
         }
     }
 
@@ -424,6 +913,30 @@ mod tests {
         let metadata = output.metadata.as_ref().unwrap();
         assert_eq!(metadata["device_signal"]["simulated"], Value::Bool(true));
         assert_eq!(metadata["device_signal"]["source_type"], "register");
+    }
+
+    #[tokio::test]
+    async fn simulation_can_frame_源返回模拟值() {
+        let config = DeviceSignalReadConfig {
+            source: can_frame_source(),
+            ..make_config()
+        };
+        let node = DeviceSignalReadNode::new("dsr-1", config, shared_connection_manager()).unwrap();
+        let execution = node.transform(Uuid::new_v4(), Value::Null).await.unwrap();
+        let metadata = execution.outputs[0].metadata.as_ref().unwrap();
+        assert_eq!(metadata["device_signal"]["source_type"], "can_frame");
+    }
+
+    #[tokio::test]
+    async fn simulation_topic_源返回模拟值() {
+        let config = DeviceSignalReadConfig {
+            source: topic_source(),
+            ..make_config()
+        };
+        let node = DeviceSignalReadNode::new("dsr-1", config, shared_connection_manager()).unwrap();
+        let execution = node.transform(Uuid::new_v4(), Value::Null).await.unwrap();
+        let metadata = execution.outputs[0].metadata.as_ref().unwrap();
+        assert_eq!(metadata["device_signal"]["source_type"], "topic");
     }
 
     #[test]

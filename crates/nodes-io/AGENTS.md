@@ -2,7 +2,7 @@
 
 > **Ring**: Ring 1
 > **对外 crate 名**: `nodes-io`
-> **职责**: 所有协议 I/O 节点（16 个） + payload 模板渲染
+> **职责**: 所有协议 I/O 节点（18 个） + payload 模板渲染
 >
 > 根 `AGENTS.md` 的约束对本 crate 同样适用。
 
@@ -28,6 +28,8 @@
 | `debugConsole` | — | 格式化 payload 打印到控制台 |
 | `capabilityCall` | DSL 适配 | Workflow DSL 编译出的设备能力调用快照，运行时通过连接资源执行 Modbus/MQTT/Serial/CAN 动作 |
 | `humanLoop` | 人机协同 | 人工审批 / 表单确认节点 |
+| `deviceSignalRead` | 设备信号 | 按 `SignalSourceSnapshot` 轮询读取设备信号，经 `DataType` 解码 + `scale` Rhai 求值后输出语义值（ADR-0024） |
+| `deviceEventTrigger` | 设备信号 | 监听 MQTT/CAN/Modbus/Serial 事件源，背景循环解码后标准化输出（ADR-0024） |
 
 **模板引擎** (`template` 模块)：给 `httpClient` / `barkPush` 等节点用，支持 `{{ payload.field }}` /
 `{{ now }}` 等占位符、JSON path 数组索引、超长截断。
@@ -65,11 +67,18 @@ crates/nodes-io/src/
 ├── capability_call/
 │   ├── executor.rs   # capabilityCall 协议执行入口
 │   └── protocol.rs   # capabilityCall 协议参数解析 helper
+├── device_signal_read.rs  # deviceSignalRead 节点（ADR-0024）：按 SignalSourceSnapshot 轮询读取
+├── device_event_trigger/
+│   ├── mod.rs        # deviceEventTrigger 节点（ADR-0024）：编排协议监听循环
+│   ├── mqtt_loop.rs  # MQTT 主题订阅事件循环
+│   ├── modbus_loop.rs # Modbus 定时轮询事件循环
+│   └── serial_loop.rs # 串口帧监听事件循环
+├── signal_decode.rs  # 共享信号解码模块：DataType/ByteOrder/bit/scale
 ├── human_loop/
 └── debug_console.rs
 ```
 
-Plugin 注册入口：`IoPlugin::register(&mut NodeRegistry)`，在 `lib.rs` 集中声明 16 个节点类型的工厂 + 能力标签。
+Plugin 注册入口：`IoPlugin::register(&mut NodeRegistry)`，在 `lib.rs` 集中声明 18 个节点类型的工厂 + 能力标签。
 
 ## 内部约定
 
@@ -93,6 +102,8 @@ Plugin 注册入口：`IoPlugin::register(&mut NodeRegistry)`，在 `lib.rs` 集
 | `debugConsole` | `empty()` | 副作用是 stdout，可忽略 |
 | `capabilityCall` | `DEVICE_IO` | 设备能力调用适配器 |
 | `humanLoop` | `BRANCHING` | approve / reject 分支 |
+| `deviceSignalRead` | `DEVICE_IO` | 设备信号轮询读取（ADR-0024） |
+| `deviceEventTrigger` | `TRIGGER \| DEVICE_IO` | 设备事件监听（ADR-0024） |
 
 这张表由 `src/registry.rs::标准注册表节点能力标签与_adr_0011_契约一致` 单测守住。
 
@@ -199,7 +210,7 @@ EtherCAT 主站初始化失败: EtherCAT TX/RX 任务已终止（接口 `<iface>
 ### 元数据约定（ADR-0008）
 
 所有节点通过 `NodeExecution::with_metadata()` 返回执行元数据，键名非下划线：
-`"timer"`、`"http"`、`"modbus"`、`"serial"`、`"can"`、`"ethercat"`、`"sql_writer"`、`"debug_console"`、`"connection"`、`"bark"`、`"mqtt"`、`"capability_call"`。payload 只保留 `_loop` / `_error` 等路由上下文。
+`"timer"`、`"http"`、`"modbus"`、`"serial"`、`"can"`、`"ethercat"`、`"sql_writer"`、`"debug_console"`、`"connection"`、`"bark"`、`"mqtt"`、`"capability_call"`、`"device_signal"`。payload 只保留 `_loop` / `_error` 等路由上下文。
 
 ### Pin 声明（ADR-0010 Phase 3）
 
@@ -218,6 +229,8 @@ EtherCAT 主站初始化失败: EtherCAT TX/RX 任务已终止（接口 `<iface>
 | `ethercatPdoWrite` | — | `Json` (required) | `Json` | 输入 `{ data: [u8] }`，输出 `{ slave, data, bytesWritten }` 写入快照 |
 | `ethercatStatus` | — | `Any` | `Json` | 输出 `{ slaves, channelInfo }` |
 | `timer` / `serialTrigger` / `native` / `barkPush` / `debugConsole` / `template` | — | `Any` | `Any` | 触发器 / 透传 / 格式化类节点保留默认 |
+| `deviceSignalRead` | — | `Any` | `out`: `Json` (Exec) + `latest`: `Json` (Data) | 与 `modbusRead` 相同的 out/latest 双引脚模式（ADR-0014） |
+| `deviceEventTrigger` | — | `Any` | `Any` | 事件监听节点，`on_deploy` 背景循环 emit |
 
 **修改 pin 声明时必须同步：**
 - 节点 `input_pins(&self)` / `output_pins(&self)` 实现
@@ -302,3 +315,4 @@ cargo test -p nazh-engine --test workflow   # 集成测试
 - **ADR-0009** 生命周期钩子（已实施）—— `TimerNode` / `SerialTriggerNode` / `MqttClientNode` (subscribe 模式) 在 `on_deploy` 中自持触发器后台任务，撤销时通过 `LifecycleGuard::shutdown` 回收。emit 走 `NodeHandle::emit`，不经过壳层 `dispatch_router` 的 trigger lane，因此 backpressure / DLQ / retry / metrics 等防御能力不生效——引擎级背压补回见 ADR-0014 / ADR-0016
 - **ADR-0018** 按协议 feature 门控 — **已实施**（2026-04-26）。详见上"Feature 门控"小节
 - **ADR-0010 Phase 3** Pin 声明系统 — **已实施**（2026-04-26）。详见上"Pin 声明（ADR-0010 Phase 3）"小节。前端可视化（Phase 2）独立 plan 启动后跟进
+- **ADR-0024** 设备信号读取与事件触发节点 — **Phase 1+2+3 已实施**（2026-05-16）。`deviceSignalRead`（全协议轮询读取）+ `deviceEventTrigger`（MQTT/CAN/Modbus/Serial 事件监听）+ `signal_decode.rs` 共享解码模块。复用现有 `io-*` feature 门控，无新增 feature

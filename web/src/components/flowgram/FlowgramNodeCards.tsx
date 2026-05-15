@@ -179,7 +179,11 @@ export function FlowgramNodeCard(props: FlowgramNodeMaterialProps) {
                         ? `${rawData?.config?.table ?? 'workflow_logs'} → ${rawData?.config?.database_path ?? './nazh-local.sqlite3'}`
                         : nodeType === 'debugConsole'
                       ? props.debugOutput ?? rawData?.config?.label ?? 'Console output'
-                      : nodeType === 'subgraphInput'
+                      : nodeType === 'deviceSignalRead'
+                        ? `${(rawData?.config as Record<string, unknown>)?.signal_id ?? 'signal'} · ${(rawData?.config as Record<string, unknown>)?.source ?? 'register'}`
+                        : nodeType === 'deviceEventTrigger'
+                          ? `${((rawData?.config as Record<string, unknown>)?.signals as unknown[])?.length ?? 0} 信号监听`
+                          : nodeType === 'subgraphInput'
                         ? '输入桥接'
                         : nodeType === 'subgraphOutput'
                           ? '输出桥接'

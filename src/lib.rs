@@ -59,7 +59,12 @@ pub use nodes_io::{
 pub use nodes_io::SignalSourceSnapshot;
 pub use nodes_io::signal_decode;
 
-#[cfg(any(feature = "io-mqtt", feature = "io-can"))]
+#[cfg(any(
+    feature = "io-mqtt",
+    feature = "io-can",
+    feature = "io-modbus",
+    feature = "io-serial"
+))]
 pub use nodes_io::{DeviceEventTriggerConfig, DeviceEventTriggerNode, SignalListenerSnapshot};
 
 pub use nodes_pure::{C2fNode, LookupNode, LookupNodeConfig, MinutesSinceNode, PurePlugin};
@@ -68,12 +73,18 @@ pub use nodes_pure::{C2fNode, LookupNode, LookupNodeConfig, MinutesSinceNode, Pu
 pub use nodes_io::{BarkPushNode, BarkPushNodeConfig};
 #[cfg(feature = "io-can")]
 pub use nodes_io::{CanReadNode, CanReadNodeConfig, CanWriteNode, CanWriteNodeConfig};
-#[cfg(feature = "io-modbus")]
-pub use nodes_io::{
-    DeviceSignalReadConfig, DeviceSignalReadNode, ModbusReadNode, ModbusReadNodeConfig,
-};
+#[cfg(any(
+    feature = "io-modbus",
+    feature = "io-can",
+    feature = "io-mqtt",
+    feature = "io-serial",
+    feature = "io-ethercat"
+))]
+pub use nodes_io::{DeviceSignalReadConfig, DeviceSignalReadNode};
 #[cfg(feature = "io-http")]
 pub use nodes_io::{HttpClientNode, HttpClientNodeConfig};
+#[cfg(feature = "io-modbus")]
+pub use nodes_io::{ModbusReadNode, ModbusReadNodeConfig};
 #[cfg(feature = "io-mqtt")]
 pub use nodes_io::{MqttClientNode, MqttClientNodeConfig, MqttMode};
 #[cfg(feature = "io-serial")]

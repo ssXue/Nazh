@@ -3,13 +3,11 @@
 //! 被 `on_deploy` 通过 orchestrator task spawn。对每个 `Topic` signal
 //! 执行 subscribe，收到消息后匹配 topic → 解码 payload → scale 求值 → emit。
 
-use serde_json::Value;
-
 use connections::SharedConnectionManager;
 use nazh_core::{CancellationToken, NodeHandle, sleep_or_cancel};
 
-use super::{CompiledSignal, DeviceEventTriggerNode, SignalListenerSnapshot};
-use crate::signal_decode::{SignalSourceSnapshot, apply_scale_with_engine};
+use super::{CompiledSignal, DeviceEventTriggerNode};
+use crate::signal_decode::{SignalSourceSnapshot, apply_scale_with_engine, decode_topic_payload};
 
 /// MQTT 事件监听主循环。
 ///
@@ -236,7 +234,7 @@ async fn process_mqtt_message(
     }
 
     for cs in matched {
-        let value = decode_mqtt_payload(payload, &cs.listener);
+        let value = decode_topic_payload(payload, &cs.listener.signal_id);
 
         let scaled = apply_scale_with_engine(value, &cs.scale_ast, &cs.engine);
         let value = match scaled {
@@ -260,52 +258,6 @@ async fn process_mqtt_message(
             tracing::warn!(node_id, ?error, "MQTT 事件监听 emit 失败");
         }
     }
-}
-
-/// 解码 MQTT payload 字节为 JSON Value。
-///
-/// Topic 信号通常为纯数值载荷。若 payload 可解析为 JSON 数字则直接使用；
-/// 否则尝试按 UTF-8 字符串解码；最后回退到原始字节十六进制表示。
-fn decode_mqtt_payload(payload: &[u8], listener: &SignalListenerSnapshot) -> Value {
-    // 优先尝试 JSON 解析。
-    if let Ok(parsed) = serde_json::from_slice::<Value>(payload) {
-        match parsed {
-            v @ (Value::Number(_) | Value::Bool(_)) => return v,
-            Value::String(s) => {
-                // 尝试把字符串内容再解析为数值（如 "42.5"）。
-                if let Some(n) = serde_json::Number::from_f64(s.parse::<f64>().unwrap_or(f64::NAN))
-                {
-                    return Value::Number(n);
-                }
-                return Value::String(s);
-            }
-            other => return other,
-        }
-    }
-
-    // 回退：UTF-8 字符串。
-    if let Ok(s) = std::str::from_utf8(payload) {
-        if let Some(n) = serde_json::Number::from_f64(s.parse::<f64>().unwrap_or(f64::NAN)) {
-            return Value::Number(n);
-        }
-        return Value::String(s.to_owned());
-    }
-
-    // Topic 源无 data_type 信息，回退到十六进制。
-    let hex: String =
-        payload
-            .iter()
-            .fold(String::with_capacity(payload.len() * 2), |mut acc, b| {
-                use std::fmt::Write;
-                let _ = write!(acc, "{b:02X}");
-                acc
-            });
-    tracing::warn!(
-        signal_id = %listener.signal_id,
-        hex,
-        "MQTT payload 无法解码，使用十六进制回退"
-    );
-    Value::String(hex)
 }
 
 /// 按**字符**截断节点 ID 用作 MQTT `client_id` 后缀。

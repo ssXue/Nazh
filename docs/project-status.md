@@ -1,4 +1,4 @@
-# Project Status（2026-05-09）
+# Project Status（2026-05-16）
 
 从 `AGENTS.md` 拆出的项目状态追踪。本文件随 ADR 落地、技术债偿还、路线图推进而更新。
 
@@ -11,7 +11,7 @@
 - **已解冻**：架构审阅 Phase A/B/C/D/E 全部完成（2026-04-30）；原 ARCHITECTURE FREEZE 段已删除。ADR-0016 仍有 deferred items，但不再阻塞常规 PR 流程。
 - **P1/P2 技术债批量偿还**（2026-05-03，commit 2e428a2）：变量事件独立通道（`WorkflowVariableEvent`）+ `NodeOutput.metadata` 改 `Option<Map>` + Rhai `default_max_operations` 统一 + `workflow.rs` 拆为 `workflow_deploy/dispatch/undeploy` 三模块 + FlowgramCanvas 988 行 / ConnectionStudio 1372 行 + core/connections/ai crate AGENTS.md 同步 + 17 IPC 类型迁入 `tauri-bindings`。详见下文"Immediate known tech debt"。
 
-## Architecture / ADR status（updated 2026-05-09）
+## Architecture / ADR status（updated 2026-05-16）
 
 - ADR-0008 (metadata separation) — **accepted / landed**
 - ADR-0017 (IPC + ts-rs 迁出 Ring 0) — **已实施**（2026-04-24，见 `crates/tauri-bindings/`）
@@ -27,6 +27,7 @@
 - ADR-0016（边级可观测性）— **已实施**（2026-05-13）。`EdgeTransmitSummary` 类型 + Runner `EdgeWindow` 100ms 定时窗口累计器 + `BackpressureDetected` 背压检测（队列深度 ≥80% 容量时发射，每窗口限频一次）+ ts-rs 导出 + 前端解析 + 边热力图 CSS（`flowgram-line--heat-{1-4}` 渐变着色 + `flowgram-line--backpressure` 红色闪烁）。`payload_bytes`/`received_at`/`queue_depth` 精确统计仍为未来可选项。
 - ADR-0020 — **已实施**（2026-05-01：`src/graph/` 拆分为 `crates/graph/`）。见 `docs/adr/0020-graph-编排层长期归属.md`。
 - ADR-0022 (工作流变量持久化) — **已实施**（2026-05-03，`crates/store/` Ring 1 SQLite crate + 壳层持久化钩子 + 部署时恢复）
+- ADR-0024 (设备信号读取与事件触发节点) — **已实施 Phase 1+2+3**（Phase 1: 2026-05-15，`deviceSignalRead` 节点 + `signal_decode.rs` 共享解码模块；Phase 2: 2026-05-15，`deviceEventTrigger` 事件监听节点（MQTT + CAN）；Phase 3: 2026-05-16，全协议覆盖——`deviceSignalRead` 支持 CanFrame/Topic/EthercatPdo/SerialCommand，`deviceEventTrigger` 支持 Modbus 定时轮询和 Serial 帧监听；前端节点库卡片就位。注册表合约测试更新至 29 种节点）
 - RFC-0004 Phase 3 (Workflow DSL 编译器) — **已实施**（2026-05-03，`crates/dsl-compiler/` 编译器 + `stateMachine` + `capabilityCall` 节点类型 + 一致性测试 + 集成测试；2026-05-09 `capabilityCall` 已接入 `connection_id` 继承与 Modbus/MQTT/Serial/CAN 执行入口，`script` implementation 未接入执行器时 fail-fast）
 - RFC-0004 资产落盘与 AI 编辑挂接 — **已实施**（2026-05-05，Device / Capability 仅以工程工作路径 `dsl/devices` / `dsl/capabilities` YAML 文件持久化；SQLite 资产表逻辑已移除；新增 `load_ai_asset_context` IPC；画布内 AI 编辑读取已审查资产并可生成 `capabilityCall`）
 
@@ -34,7 +35,7 @@
 
 - **Architecture review 派生 P1/P2**（2026-04-29，2026-05-09 复核）：~~变量控制事件从 `ExecutionEvent` 拆出~~（已偿还：`WorkflowVariableEvent` 独立枚举 + 独立通道，B1-R0-01/B1-R0-05）；~~`src/graph/` 触发 ADR-0020 重评~~（已偿还，2026-05-01 拆为 `crates/graph/`）；~~Rhai `max_operations` 增加统一 clamp~~（已偿还：`scripting::default_max_operations()` 统一，D-01）；~~`NodeOutput.metadata` 显式三值语义~~（已偿还：`Map` → `Option<Map>`，B1-R0-02）；~~前端大文件拆分~~（已偿还：FlowgramCanvas 2025→988 行 / ConnectionStudio 1372 行，C-02）；~~`workflow.rs` 单文件过大~~（已偿还：拆为 `workflow_deploy/dispatch/undeploy` 三模块，C-01）；~~runtime / dead-letter / scoped event 等 IPC 类型迁入 `tauri-bindings`~~（已偿还，壳层改用生成类型）。**剩余**：B4-IPC-06 `copilot://stream/{id}` payload 生成类型、以及 `src-tauri/src/runtime.rs` 二次拆分等持续治理项。~~ADR-0016 deferred items~~（已偿还：2026-05-13 BackpressureDetected 发射 + 定时窗口 + 前端热力图）。
 - **Crates 审阅修复收口**（2026-05-09）：除 CR-P3-09 作为持续治理项不做无目标大重构外，其余 crates 审阅问题已完成代码修复与验证；stale AI 生成物目录已删除并由 `crates/ai/AGENTS.md` 固化 root `web/src/generated/` 的唯一真值源。大文件拆分的后续跟踪见 `docs/plans/2026-05-09-crates-large-file-split-plan.md`。
-- **设备/连接节点边界收口**（2026-05-05，2026-05-09 部分收口，2026-05-13 完成阶段 1+2）：评审结论见 `docs/specs/2026-05-05-node-architecture-boundary-review.md`。当前连接资源层方向正确；`capabilityCall` 已成为 DSL 高级动作入口并接入真实协议执行；前端节点库新增"设备能力"分组并把 capabilityCall 列为业务编排首选，`serialTrigger` / `modbusRead` / `canRead` / `canWrite` / `mqttClient` 文案降级为调试/适配器，capabilityCall 连接绑定 UI 补齐，AI copilot system prompt 同步调整；阶段 1 完成 `canRead` / `canWrite` 引入显式 `simulation` 开关 + 默认 fail-fast + `on_deploy` 双层防御，对齐 `modbusRead` 标杆，工业现场漏配时不再静默给出假数据。EtherCAT 三件套维持原状。设备信号读取/事件入口（`deviceSignalRead` / `deviceEventTrigger`）仍待阶段 3 ADR。
+- **设备/连接节点边界收口**（2026-05-05，2026-05-09 部分收口，2026-05-13 完成阶段 1+2）：评审结论见 `docs/specs/2026-05-05-node-architecture-boundary-review.md`。当前连接资源层方向正确；`capabilityCall` 已成为 DSL 高级动作入口并接入真实协议执行；前端节点库新增"设备能力"分组并把 capabilityCall 列为业务编排首选，`serialTrigger` / `modbusRead` / `canRead` / `canWrite` / `mqttClient` 文案降级为调试/适配器，capabilityCall 连接绑定 UI 补齐，AI copilot system prompt 同步调整；阶段 1 完成 `canRead` / `canWrite` 引入显式 `simulation` 开关 + 默认 fail-fast + `on_deploy` 双层防御，对齐 `modbusRead` 标杆，工业现场漏配时不再静默给出假数据。EtherCAT 三件套维持原状。设备信号读取/事件入口（`deviceSignalRead` / `deviceEventTrigger`）已由 ADR-0024 实施完成（2026-05-16），支持全协议覆盖。
 - ~~**ADR-0016 deferred items**（2026-04-30）~~ **已偿还**（2026-05-13）。`BackpressureDetected` 发射逻辑 + 100ms 定时窗口 flush + 前端边热力图已实施。`payload_bytes`/`received_at`/`queue_depth` 精确统计仍为未来可选项。
 - ~~**ADR-0013 子图实施 deployment 断链**（2026-04-28 发现）~~ **已偿还（2026-04-28）**。merge 68ab709 解决冲突时丢失的 ADR-0013 改动重写恢复——`flattenSubgraphs` + Rust `mod passthrough` 注册 + `FlowgramCanvas` 容器/桥接渲染 + 设置面板全部到位，三件套全绿。loop 容器恢复已并入当前 `main`。
 - ~~MQTT subscriber / Timer / Serial root lifecycle is owned by the Tauri shell.~~ **已偿还（2026-04-26，ADR-0009 已实施）**。三类触发器节点现自持 `on_deploy` + `LifecycleGuard`；壳层不再监督触发器任务。**语义变化**：触发器节点走 `NodeHandle::emit` 而非 `dispatch_router` 的 trigger lane，失去 backpressure / DLQ / retry / metrics 防御能力，等 ADR-0014 / ADR-0016 引擎级背压能力补回。
@@ -48,7 +49,7 @@
 - `crates/nodes-flow/src/state_machine.rs` — `stateMachine` 节点（动态 output pins + Rhai 条件评估 + `NodeDispatch::Route`）
 - `crates/nodes-io/src/capability_call.rs` — `capabilityCall` 节点（编译期快照 + 模板解析 + `connection_id` 继承 + Modbus/MQTT/Serial/CAN 协议执行；未接入执行器的 `script` implementation fail-fast）
 - 4 个一致性测试（`WorkflowGraph::from_json()` 守护 schema 漂移）+ 集成测试
-- 标准注册表当前节点总数 27（Flow 8 + IO 16 + Pure 3）；RFC-0004 Phase 3 新增 `stateMachine` / `capabilityCall`，其后又陆续合入 `humanLoop`（HITL 审批）+ EtherCAT 三件套（`ethercatPdoRead` / `ethercatPdoWrite` / `ethercatStatus`，2026-05-06），注册表合约测试随之更新
+- 标准注册表当前节点总数 27（Flow 8 + IO 16 + Pure 3）；RFC-0004 Phase 3 新增 `stateMachine` / `capabilityCall`，其后又陆续合入 `humanLoop`（HITL 审批）+ EtherCAT 三件套（`ethercatPdoRead` / `ethercatPdoWrite` / `ethercatStatus`，2026-05-06）+ ADR-0024 双节点（`deviceSignalRead` / `deviceEventTrigger`，2026-05-15/16），注册表合约测试随之更新至 29 种
 
 ## RFC-0004 Phase 4
 
@@ -101,6 +102,7 @@
 > 8. ✅ **ADR-0014** Pin 求值语义二分 — **Phase 1 + Phase 2 + Phase 3 + Phase 3b + Phase 4 + Phase 5 已实施**（2026-04-30）。Phase 5：capability 着色 + PinKind prompt + watch channel + PureMemo trace 清理。Phase 6 EventBus 已完成修订。
 > 9. ✅ **ADR-0015** 反应式数据引脚 — **Phase 1+2+3 已实施**（2026-04-30）。全部完成。
 > 9b. ✅ **ADR-0016** 边级可观测性 — **已实施**（2026-05-13）。`EdgeTransmitSummary` + `BackpressureDetected` 已发射；100ms 定时窗口 flush；前端边热力图 UI。
+> 9c. ✅ **ADR-0024** 设备信号读取与事件触发节点 — **Phase 1+2+3 已实施**（2026-05-16）。`deviceSignalRead`（全协议轮询读取）+ `deviceEventTrigger`（MQTT/CAN/Modbus/Serial 事件监听）+ `signal_decode.rs` 共享解码模块。
 > 10. 真实协议驱动扩展（OPC-UA、Kafka 消费者等）
 > 11. AI 能力扩展（embeddings、vision，未来 ADR）
 

@@ -18,7 +18,7 @@
 mod backends;
 mod pdo_read;
 mod pdo_write;
-mod session;
+pub(crate) mod session;
 mod status;
 
 pub use self::pdo_read::{EthercatPdoReadConfig, EthercatPdoReadNode};
