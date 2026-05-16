@@ -16,7 +16,7 @@ use crate::signal_decode::{
 };
 
 /// 串口帧事件监听主循环。
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 pub(super) async fn run_serial_listen_loop(
     node_id: &str,
     connection_id: &str,
@@ -41,7 +41,20 @@ pub(super) async fn run_serial_listen_loop(
         };
 
         let metadata = guard.lease().metadata.clone();
-        let (port_path, baud_rate, delimiter) = parse_serial_metadata(&metadata);
+        let (port_path, baud_rate, delimiter) = match parse_serial_metadata(&metadata) {
+            Ok(config) => config,
+            Err(reason) => {
+                guard.mark_failure(&reason);
+                let retry_ms = connection_manager
+                    .record_connect_failure(connection_id, &reason)
+                    .await
+                    .unwrap_or(800);
+                drop(guard);
+                tracing::warn!(node_id, %reason, retry_ms);
+                sleep_or_cancel(token, std::time::Duration::from_millis(retry_ms)).await;
+                continue;
+            }
+        };
 
         if port_path.is_empty() {
             let reason = "串口连接元数据缺少 port_path".to_owned();
@@ -145,28 +158,28 @@ fn parse_delimiter(delimiter: &str) -> Vec<u8> {
 }
 
 /// 从连接元数据提取串口参数。
-///
-/// `baud_rate` 缺失时使用 9600，`delimiter` 缺失时使用 `\n`——两者为串口通信领域常用默认值，
-/// 属于协议常量而非运行时配置 fallback。`port_path` 缺失时返回空字符串，
-/// 上游 `validate_connection_definition` 已校验该字段为必填。
-fn parse_serial_metadata(metadata: &serde_json::Value) -> (String, u32, String) {
+fn parse_serial_metadata(metadata: &serde_json::Value) -> Result<(String, u32, String), String> {
     let port_path = metadata
         .get("port_path")
         .or_else(|| metadata.get("port"))
         .and_then(serde_json::Value::as_str)
-        .unwrap_or_default()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "串口连接元数据缺少 port_path".to_owned())?
         .to_owned();
     let baud_rate = metadata
         .get("baud_rate")
         .and_then(serde_json::Value::as_u64)
         .and_then(|b| u32::try_from(b).ok())
-        .unwrap_or(9600);
+        .filter(|value| *value > 0)
+        .ok_or_else(|| "串口连接元数据缺少有效的 baud_rate".to_owned())?;
     let delimiter = metadata
         .get("delimiter")
         .and_then(serde_json::Value::as_str)
-        .unwrap_or("\n")
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "串口连接元数据缺少 delimiter".to_owned())?
         .to_owned();
-    (port_path, baud_rate, delimiter)
+    Ok((port_path, baud_rate, delimiter))
 }
 
 /// 同步串口读循环（运行在 `spawn_blocking` 中）。

@@ -75,7 +75,7 @@ crates/
   ai/                # Ring 1 — 壳层 AI 配置模型（provider 管理、密钥、生成参数）；HTTP 调用已前移到前端（RFC-0005）
   graph/             # Ring 1 — DAG 工作流编排：解析、校验、拓扑排序、部署与执行（ADR-0020）
   tauri-bindings/    # IPC — Tauri 命令请求/响应类型 + ts-rs 导出汇总（ADR-0017）
-  store/              # Ring 1 — SQLite 持久化：变量 / 历史 / 全局变量（ADR-0022）
+  store/              # Ring 1 — SQLite 持久化：变量 / 历史 / 全局变量 / 可观测性索引 / 部署审计（ADR-0022，RFC-0003 Phase 2/3 子集）
   dsl-core/           # Ring 1 — 三段式 DSL 类型定义与 YAML 解析：Device / Capability / Workflow（RFC-0004）
   dsl-compiler/       # Ring 1 — Workflow DSL 编译器：WorkflowSpec → WorkflowGraph JSON（RFC-0004 Phase 3）
 src/                 # Root facade crate `nazh-engine` — re-export + `standard_registry()`

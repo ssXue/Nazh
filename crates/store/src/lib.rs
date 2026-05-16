@@ -5,18 +5,22 @@
 //! 和基础类型，不依赖 `nazh-core`。
 
 mod copilot;
+mod deployment_audit;
 mod error;
 mod global_variables;
 mod handle;
 mod history;
 pub(crate) mod migrations;
+mod observability;
 mod variables;
 
 pub use copilot::{CopilotConversation, CopilotMessage};
+pub use deployment_audit::DeploymentAuditRecord;
 pub use error::StoreError;
 pub use global_variables::StoredGlobalVariable;
 pub use handle::StoreHandle;
 pub use history::HistoryEntry;
+pub use observability::StoredObservabilityRecord;
 pub use variables::StoredVariable;
 
 use rusqlite::Connection;

@@ -98,7 +98,7 @@ async fn poll_all_signals(
         };
 
         let quantity = data_type.modbus_register_count();
-        let unit_id = extract_unit_id(&cs.listener.source, &metadata);
+        let unit_id = extract_unit_id(&metadata)?;
 
         match read_register_once(host, port, unit_id, register, quantity).await {
             Ok(raw_bytes) => {
@@ -167,14 +167,13 @@ async fn poll_all_signals(
 }
 
 /// 从 connection metadata 提取 Modbus 单元 ID。
-///
-/// 缺失时返回 1（Modbus 协议标准默认 unit ID），属于协议常量而非运行时 fallback。
-fn extract_unit_id(_source: &SignalSourceSnapshot, metadata: &serde_json::Value) -> u8 {
+fn extract_unit_id(metadata: &serde_json::Value) -> Result<u8, String> {
     metadata
         .get("unit")
         .and_then(serde_json::Value::as_u64)
         .and_then(|u| u8::try_from(u).ok())
-        .unwrap_or(1)
+        .filter(|unit| *unit > 0)
+        .ok_or_else(|| "Modbus 连接元数据缺少有效的 unit".to_owned())
 }
 
 /// 单次 Modbus TCP 寄存器读取。

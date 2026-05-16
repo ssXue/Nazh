@@ -72,6 +72,45 @@ const MIGRATIONS: &[(&str, &str)] = &[
         ALTER TABLE copilot_messages ADD COLUMN thinking TEXT;
         ",
     ),
+    (
+        "007",
+        "
+        CREATE TABLE IF NOT EXISTS observability_records (
+            id          TEXT PRIMARY KEY,
+            record_kind TEXT NOT NULL,
+            category    TEXT NOT NULL,
+            timestamp   TEXT NOT NULL,
+            trace_id    TEXT,
+            search_text TEXT NOT NULL,
+            payload     TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_observability_records_time
+            ON observability_records(timestamp);
+        CREATE INDEX IF NOT EXISTS idx_observability_records_trace
+            ON observability_records(trace_id, timestamp);
+        CREATE INDEX IF NOT EXISTS idx_observability_records_kind
+            ON observability_records(record_kind, category, timestamp);
+
+        CREATE TABLE IF NOT EXISTS deployment_audit (
+            id               TEXT PRIMARY KEY,
+            workflow_id      TEXT NOT NULL,
+            action           TEXT NOT NULL,
+            level            TEXT NOT NULL,
+            timestamp        TEXT NOT NULL,
+            project_id       TEXT,
+            project_name     TEXT,
+            environment_id   TEXT,
+            environment_name TEXT,
+            message          TEXT NOT NULL,
+            detail           TEXT,
+            data             TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_deployment_audit_workflow_time
+            ON deployment_audit(workflow_id, timestamp);
+        CREATE INDEX IF NOT EXISTS idx_deployment_audit_time
+            ON deployment_audit(timestamp);
+        ",
+    ),
 ];
 
 /// 检查 `schema_version` 表，执行尚未应用的 migrations。

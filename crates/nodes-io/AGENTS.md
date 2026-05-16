@@ -112,7 +112,8 @@ Plugin 注册入口：`IoPlugin::register(&mut NodeRegistry)`，在 `lib.rs` 集
 1. **所有硬件/网络 I/O 都借用连接**。要么走 `ConnectionManager::acquire(id)`，要么显式声明为"无连接工具节点"（`timer` / `debugConsole` / 无 config 的 `native`）。
 2. **连接 id 可从 `WorkflowNodeDefinition` 顶层字段继承**。辅助函数 `inherit_connection_id(&mut config.connection_id, def)` 实现这个 fallback；新节点添加连接支持时沿用这个模式。
 3. **`capabilityCall` 是高级设备动作入口**。它必须保存/继承 `connection_id`，按 `CapabilityImplSnapshot` 执行底层协议 helper，并同时输出 `"capability_call"` 与底层协议 metadata。缺少连接、连接类型不匹配、模板值无法编码或 `script` implementation 未接入真实执行器时必须 fail-fast，不能返回意图成功。
-4. **Drop 自动归还**：`ConnectionGuard` 离开作用域时归还，不要手写 `drop(guard)` 或 `release`。必要时 `guard.mark_success()` 通知连接池健康反馈。
+4. **`deviceEventTrigger` 部署期协议校验**：单个节点只允许监听一种协议；MQTT / CAN / Modbus / Serial signal 需要分别绑定匹配类型的连接，并在 `on_deploy` 前校验现场必填字段。MQTT 要求 `host` / `port` / 非空 topic；Modbus 要求 `host` / `port` / `unit`；Serial 要求 `port_path` / `baud_rate` / `delimiter`；CAN 要求 `interface` / `channel` / `baud_rate` / `bitrate`。不要在后台循环里用协议默认值静默补现场配置。
+5. **Drop 自动归还**：`ConnectionGuard` 离开作用域时归还，不要手写 `drop(guard)` 或 `release`。必要时 `guard.mark_success()` 通知连接池健康反馈。
 
 ### CAN/SLCAN 连接级共享会话
 

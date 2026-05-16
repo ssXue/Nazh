@@ -59,6 +59,8 @@
 
 **严重度：中高**
 
+> **处置（2026-05-16）**：批量连接定义路径已复用连接定义校验；`deviceEventTrigger` 已追加部署期协议校验，单节点只允许一种监听协议，并按 MQTT / Modbus / Serial / CAN 校验连接类型与现场必填字段。Modbus unit 与 Serial baud/delimiter 不再由后台循环静默默认。
+
 `ConnectionManager::register_connection()` 会调用 `validate_connection_definition()`，但批量路径 `upsert_connections()` / `replace_connections()` 不做同等校验：
 
 - `crates/connections/src/manager/mod.rs:49`

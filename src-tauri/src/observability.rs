@@ -10,6 +10,7 @@ use chrono::{DateTime, Utc};
 use nazh_engine::{ExecutionEvent, WorkflowContext};
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
+use store::StoreHandle;
 use tauri_bindings::{
     AlertDeliveryRecord, ObservabilityContextInput, ObservabilityEntry, ObservabilityQueryResult,
     ObservabilityTraceSummary,
@@ -37,11 +38,11 @@ struct ObservabilityRuntimeState {
     active_spans: HashMap<String, DateTime<Utc>>,
 }
 
-#[derive(Debug)]
 pub struct ObservabilityStore {
     root_dir: PathBuf,
     session: ObservabilitySession,
     state: Mutex<ObservabilityRuntimeState>,
+    store: Option<StoreHandle>,
 }
 
 struct ObservabilityEntryDraft {
@@ -106,6 +107,7 @@ impl ObservabilityStore {
     pub async fn new(
         workspace_dir: PathBuf,
         context: ObservabilityContextInput,
+        store: Option<StoreHandle>,
     ) -> Result<SharedObservabilityStore, String> {
         let root_dir = workspace_dir.join(OBSERVABILITY_DIR);
         tokio::task::spawn_blocking({
@@ -125,6 +127,7 @@ impl ObservabilityStore {
                 environment_name: context.environment_name,
             },
             state: Mutex::new(ObservabilityRuntimeState::default()),
+            store,
         }))
     }
 
@@ -182,6 +185,7 @@ impl ObservabilityStore {
 
                 if let Some(alert) = pending_alert {
                     let _ = append_jsonl(self.root_dir.join(ALERTS_FILE), &alert).await;
+                    self.persist_alert(&alert).await;
                 }
 
                 let draft = ObservabilityEntryDraft::execution(
@@ -197,6 +201,7 @@ impl ObservabilityStore {
                 .with_duration_ms(duration_ms);
                 let entry = self.build_entry(draft);
                 append_jsonl(self.root_dir.join(EVENTS_FILE), &entry).await?;
+                self.persist_entry("event", &entry).await;
                 return Ok(entry);
             }
             ExecutionEvent::Failed {
@@ -283,6 +288,7 @@ impl ObservabilityStore {
 
         let entry = self.build_entry(draft);
         append_jsonl(self.root_dir.join(EVENTS_FILE), &entry).await?;
+        self.persist_entry("event", &entry).await;
         Ok(entry)
     }
 
@@ -302,6 +308,7 @@ impl ObservabilityStore {
             event_kind: None,
         });
         append_jsonl(self.root_dir.join(EVENTS_FILE), &result_entry).await?;
+        self.persist_entry("event", &result_entry).await;
 
         Ok(())
     }
@@ -328,7 +335,9 @@ impl ObservabilityStore {
             timestamp: Utc::now(),
             event_kind: None,
         });
-        append_jsonl(self.root_dir.join(AUDIT_FILE), &entry).await
+        append_jsonl(self.root_dir.join(AUDIT_FILE), &entry).await?;
+        self.persist_entry("audit", &entry).await;
+        Ok(())
     }
 
     fn build_entry(&self, draft: ObservabilityEntryDraft) -> ObservabilityEntry {
@@ -351,16 +360,73 @@ impl ObservabilityStore {
             event_kind: draft.event_kind,
         }
     }
+
+    async fn persist_entry(&self, record_kind: &str, entry: &ObservabilityEntry) {
+        let Some(store) = &self.store else {
+            return;
+        };
+        let payload = match serde_json::to_value(entry) {
+            Ok(payload) => payload,
+            Err(error) => {
+                tracing::warn!(?error, "序列化可观测条目入库 payload 失败");
+                return;
+            }
+        };
+        let search_text = entry_search_text(entry);
+        if let Err(error) = store
+            .insert_observability_record(
+                &entry.id,
+                record_kind,
+                &entry.category,
+                &entry.timestamp,
+                entry.trace_id.as_deref(),
+                &search_text,
+                &payload,
+            )
+            .await
+        {
+            tracing::warn!(?error, entry_id = %entry.id, "可观测条目入库失败");
+        }
+    }
+
+    async fn persist_alert(&self, alert: &AlertDeliveryRecord) {
+        let Some(store) = &self.store else {
+            return;
+        };
+        let payload = match serde_json::to_value(alert) {
+            Ok(payload) => payload,
+            Err(error) => {
+                tracing::warn!(?error, "序列化告警记录入库 payload 失败");
+                return;
+            }
+        };
+        let search_text = alert_search_text(alert);
+        if let Err(error) = store
+            .insert_observability_record(
+                &alert.id,
+                "alert",
+                "alert",
+                &alert.timestamp,
+                Some(&alert.trace_id),
+                &search_text,
+                &payload,
+            )
+            .await
+        {
+            tracing::warn!(?error, alert_id = %alert.id, "告警记录入库失败");
+        }
+    }
 }
 
 pub async fn query_observability(
     workspace_dir: PathBuf,
+    store: Option<StoreHandle>,
     trace_id: Option<String>,
     search: Option<String>,
     limit: usize,
 ) -> Result<ObservabilityQueryResult, String> {
     let root_dir = workspace_dir.join(OBSERVABILITY_DIR);
-    if !root_dir.exists() {
+    if !root_dir.exists() && store.is_none() {
         return Ok(ObservabilityQueryResult {
             entries: Vec::new(),
             traces: Vec::new(),
@@ -376,6 +442,23 @@ pub async fn query_observability(
         .map(|value| value.trim().to_ascii_lowercase())
         .filter(|value| !value.is_empty());
     let limit = limit.clamp(20, 600);
+
+    if let Some(store) = store {
+        match query_observability_from_store(
+            &store,
+            trace_filter.as_deref(),
+            search_filter.as_deref(),
+            limit,
+        )
+        .await
+        {
+            Ok(result) if has_observability_rows(&result) => return Ok(result),
+            Ok(_) => {}
+            Err(error) => {
+                tracing::warn!(?error, "SQLite 可观测性查询失败，回退 JSONL");
+            }
+        }
+    }
 
     let mut events = read_jsonl::<ObservabilityEntry>(&root_dir.join(EVENTS_FILE)).await?;
     let mut audits = read_jsonl::<ObservabilityEntry>(&root_dir.join(AUDIT_FILE)).await?;
@@ -430,6 +513,14 @@ pub async fn clear_observability(workspace_dir: PathBuf) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+pub async fn clear_observability_store(store: Option<StoreHandle>) {
+    if let Some(store) = store
+        && let Err(error) = store.clear_observability_records().await
+    {
+        tracing::warn!(?error, "清空 SQLite 可观测性记录失败");
+    }
 }
 
 #[derive(Default)]
@@ -599,6 +690,100 @@ fn alert_to_entry(alert: &AlertDeliveryRecord) -> ObservabilityEntry {
         })),
         event_kind: None,
     }
+}
+
+async fn query_observability_from_store(
+    store: &StoreHandle,
+    trace_filter: Option<&str>,
+    search_filter: Option<&str>,
+    limit: usize,
+) -> Result<ObservabilityQueryResult, String> {
+    let records = store
+        .query_observability_records(trace_filter, search_filter, limit)
+        .await
+        .map_err(|error| error.to_string())?;
+
+    let mut events = Vec::new();
+    let mut audits = Vec::new();
+    let mut alerts = Vec::new();
+
+    for record in records {
+        match record.record_kind.as_str() {
+            "alert" => {
+                let alert = serde_json::from_value::<AlertDeliveryRecord>(record.payload)
+                    .map_err(|error| format!("解析 SQLite 告警记录失败: {error}"))?;
+                alerts.push(alert);
+            }
+            "audit" => {
+                let entry = serde_json::from_value::<ObservabilityEntry>(record.payload)
+                    .map_err(|error| format!("解析 SQLite 审计记录失败: {error}"))?;
+                audits.push(entry);
+            }
+            _ => {
+                let entry = serde_json::from_value::<ObservabilityEntry>(record.payload)
+                    .map_err(|error| format!("解析 SQLite 观测记录失败: {error}"))?;
+                events.push(entry);
+            }
+        }
+    }
+
+    let mut merged = events.clone();
+    merged.extend(audits.clone());
+    merged.extend(alerts.iter().map(alert_to_entry));
+    merged.sort_by(|left, right| {
+        right
+            .timestamp
+            .cmp(&left.timestamp)
+            .then_with(|| right.id.cmp(&left.id))
+    });
+    merged.truncate(limit);
+
+    audits.sort_by(|left, right| right.timestamp.cmp(&left.timestamp));
+    audits.truncate(limit.min(120));
+    alerts.sort_by(|left, right| right.timestamp.cmp(&left.timestamp));
+    alerts.truncate(limit.min(120));
+
+    let traces = build_trace_summaries(&events, &alerts, trace_filter, limit);
+
+    Ok(ObservabilityQueryResult {
+        entries: merged,
+        traces,
+        alerts,
+        audits,
+    })
+}
+
+fn has_observability_rows(result: &ObservabilityQueryResult) -> bool {
+    !result.entries.is_empty()
+        || !result.traces.is_empty()
+        || !result.alerts.is_empty()
+        || !result.audits.is_empty()
+}
+
+fn entry_search_text(entry: &ObservabilityEntry) -> String {
+    format!(
+        "{} {} {} {} {} {} {} {}",
+        entry.level,
+        entry.category,
+        entry.source,
+        entry.message,
+        entry.detail.as_deref().unwrap_or_default(),
+        entry.trace_id.as_deref().unwrap_or_default(),
+        entry.node_id.as_deref().unwrap_or_default(),
+        entry.project_name.as_deref().unwrap_or_default(),
+    )
+}
+
+fn alert_search_text(alert: &AlertDeliveryRecord) -> String {
+    format!(
+        "{} {} {} {} {} {}",
+        alert.node_id,
+        alert.url,
+        alert.method,
+        alert.status,
+        alert.project_name,
+        alert.environment_name
+    )
 }
 
 fn build_alert_delivery(
@@ -821,9 +1006,11 @@ fn build_record_id(prefix: &str, timestamp: &DateTime<Utc>) -> String {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used)]
 mod tests {
-    use super::{ObservabilityContextInput, ObservabilityStore, span_key};
+    use super::{ObservabilityContextInput, ObservabilityStore, query_observability, span_key};
     use nazh_engine::{CompletedExecutionEvent, ExecutionEvent};
+    use store::{Store, StoreHandle};
     use uuid::Uuid;
 
     fn test_context() -> ObservabilityContextInput {
@@ -841,7 +1028,8 @@ mod tests {
     async fn completed_事件会清理_active_span() {
         let workspace =
             std::env::temp_dir().join(format!("nazh-observability-test-{}", Uuid::new_v4()));
-        let Ok(store) = ObservabilityStore::new(workspace.clone(), test_context()).await else {
+        let Ok(store) = ObservabilityStore::new(workspace.clone(), test_context(), None).await
+        else {
             panic!("观测存储应可创建");
         };
         let trace_id = Uuid::new_v4();
@@ -872,6 +1060,45 @@ mod tests {
             let runtime_state = store.state.lock().await;
             assert!(!runtime_state.active_spans.contains_key(&span_key));
         }
+
+        let _ = std::fs::remove_dir_all(workspace);
+    }
+
+    #[tokio::test]
+    async fn query_observability_优先读取_store_记录() {
+        let workspace =
+            std::env::temp_dir().join(format!("nazh-observability-test-{}", Uuid::new_v4()));
+        let handle = StoreHandle::new(Store::open_unpersisted().expect("内存 Store 应可打开"));
+        let Ok(store) =
+            ObservabilityStore::new(workspace.clone(), test_context(), Some(handle.clone())).await
+        else {
+            panic!("观测存储应可创建");
+        };
+
+        store
+            .record_audit(
+                "info",
+                "workflow",
+                "部署完成",
+                Some("workflow_id=wf-store".to_owned()),
+                Some("trace-store".to_owned()),
+                None,
+            )
+            .await
+            .expect("审计记录应可写入");
+
+        let result = query_observability(
+            workspace.clone(),
+            Some(handle),
+            Some("trace-store".to_owned()),
+            Some("部署".to_owned()),
+            20,
+        )
+        .await
+        .expect("Store 查询应成功");
+
+        assert_eq!(result.audits.len(), 1);
+        assert_eq!(result.audits[0].message, "部署完成");
 
         let _ = std::fs::remove_dir_all(workspace);
     }

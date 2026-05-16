@@ -1,8 +1,62 @@
 use serde_json::json;
+use store::DeploymentAuditRecord;
 use tauri::{AppHandle, Emitter, State};
 use tauri_bindings::UndeployResponse;
 
 use crate::state::DesktopState;
+
+async fn record_undeploy_audit(
+    state: &DesktopState,
+    workflow: Option<&crate::runtime::RuntimeWorkflowMetadata>,
+    workflow_id: &str,
+    response: &UndeployResponse,
+    remaining_workflow_count: usize,
+) {
+    let Ok(store) = state.store_handle() else {
+        return;
+    };
+    let now = chrono::Utc::now();
+    let record = DeploymentAuditRecord {
+        id: format!(
+            "deployment-audit-{}-{}",
+            now.timestamp_millis(),
+            now.timestamp_subsec_nanos()
+        ),
+        workflow_id: workflow_id.to_owned(),
+        action: if response.had_workflow {
+            "undeploy_success".to_owned()
+        } else {
+            "undeploy_missed".to_owned()
+        },
+        level: if response.had_workflow {
+            "warn".to_owned()
+        } else {
+            "info".to_owned()
+        },
+        timestamp: now.to_rfc3339(),
+        project_id: workflow.and_then(|metadata| metadata.project_id.clone()),
+        project_name: workflow.and_then(|metadata| metadata.project_name.clone()),
+        environment_id: workflow.and_then(|metadata| metadata.environment_id.clone()),
+        environment_name: workflow.and_then(|metadata| metadata.environment_name.clone()),
+        message: if response.had_workflow {
+            "运行已停止".to_owned()
+        } else {
+            "停止请求未命中已部署工作流".to_owned()
+        },
+        detail: Some(format!(
+            "workflow_id={} · 已中止 {} 个根触发任务",
+            workflow_id, response.aborted_timer_count
+        )),
+        data: Some(json!({
+            "workflow_id": workflow_id,
+            "aborted_timer_count": response.aborted_timer_count,
+            "remaining_workflow_count": remaining_workflow_count,
+        })),
+    };
+    if let Err(error) = store.insert_deployment_audit(record).await {
+        tracing::warn!(?error, workflow_id, "停止运行审计写入失败");
+    }
+}
 
 /// 按 ID 停止并移除已部署工作流（供 Tauri IPC 和 copilot 工具共用）。
 pub(crate) async fn undeploy_workflow_by_id(
@@ -13,13 +67,14 @@ pub(crate) async fn undeploy_workflow_by_id(
     tracing::info!(workflow_id = ?target_workflow_id, "收到停止运行请求");
 
     let active_before = state.active_workflow_id.lock().await.clone();
-    let (existing_workflow, removed_observability) = {
+    let (existing_workflow, removed_observability, removed_metadata) = {
         let mut workflows = state.workflows.lock().await;
         let removed = workflows.remove(target_workflow_id);
         let observability = removed
             .as_ref()
             .and_then(|workflow| workflow.observability.clone());
-        (removed, observability)
+        let metadata = removed.as_ref().map(|workflow| workflow.metadata.clone());
+        (removed, observability, metadata)
     };
 
     let response = if let Some(mut workflow) = existing_workflow {
@@ -39,6 +94,14 @@ pub(crate) async fn undeploy_workflow_by_id(
     };
 
     let remaining_workflow_count = state.workflows.lock().await.len();
+    record_undeploy_audit(
+        state,
+        removed_metadata.as_ref(),
+        target_workflow_id,
+        &response,
+        remaining_workflow_count,
+    )
+    .await;
     if remaining_workflow_count == 0 {
         state
             .connection_manager

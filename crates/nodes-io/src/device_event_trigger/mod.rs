@@ -74,6 +74,101 @@ pub struct DeviceEventTriggerNode {
     connection_manager: SharedConnectionManager,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ListenerProtocol {
+    Mqtt,
+    Can,
+    Modbus,
+    Serial,
+}
+
+#[derive(Debug)]
+struct ListenerConnectionPlan {
+    mqtt_endpoint: Option<(String, u16)>,
+}
+
+fn normalize_connection_kind(kind: &str) -> String {
+    kind.trim().to_ascii_lowercase()
+}
+
+fn ensure_connection_kind(
+    connection_id: &str,
+    actual: &str,
+    allowed: &[&str],
+) -> Result<(), EngineError> {
+    let actual = normalize_connection_kind(actual);
+    if allowed.iter().any(|kind| *kind == actual) {
+        return Ok(());
+    }
+    Err(EngineError::ConnectionInvalidConfiguration {
+        connection_id: connection_id.to_owned(),
+        reason: format!(
+            "deviceEventTrigger 监听协议与连接类型不匹配，当前 type=`{actual}`，期望: {}",
+            allowed.join(", ")
+        ),
+    })
+}
+
+fn required_str(
+    connection_id: &str,
+    metadata: &Value,
+    key: &str,
+    label: &str,
+) -> Result<String, EngineError> {
+    metadata
+        .get(key)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+        .ok_or_else(|| EngineError::ConnectionInvalidConfiguration {
+            connection_id: connection_id.to_owned(),
+            reason: format!("{label} 连接需要配置 {key}"),
+        })
+}
+
+fn required_u64(
+    connection_id: &str,
+    metadata: &Value,
+    key: &str,
+    label: &str,
+) -> Result<u64, EngineError> {
+    metadata
+        .get(key)
+        .and_then(Value::as_u64)
+        .filter(|value| *value > 0)
+        .ok_or_else(|| EngineError::ConnectionInvalidConfiguration {
+            connection_id: connection_id.to_owned(),
+            reason: format!("{label} 连接需要配置有效的 {key}"),
+        })
+}
+
+fn required_u16(
+    connection_id: &str,
+    metadata: &Value,
+    key: &str,
+    label: &str,
+) -> Result<u16, EngineError> {
+    let value = required_u64(connection_id, metadata, key, label)?;
+    u16::try_from(value).map_err(|_| EngineError::ConnectionInvalidConfiguration {
+        connection_id: connection_id.to_owned(),
+        reason: format!("{label} 连接 {key} 必须在 1-65535 之间"),
+    })
+}
+
+fn required_u8(
+    connection_id: &str,
+    metadata: &Value,
+    key: &str,
+    label: &str,
+) -> Result<u8, EngineError> {
+    let value = required_u64(connection_id, metadata, key, label)?;
+    u8::try_from(value).map_err(|_| EngineError::ConnectionInvalidConfiguration {
+        connection_id: connection_id.to_owned(),
+        reason: format!("{label} 连接 {key} 必须在 1-255 之间"),
+    })
+}
+
 impl DeviceEventTriggerNode {
     pub fn new(
         id: impl Into<String>,
@@ -132,31 +227,105 @@ impl DeviceEventTriggerNode {
         )])
     }
 
-    /// 校验 `connection_id` 并获取连接 host/port。
-    ///
-    /// host 缺失或为空字符串时返回错误——空 host 永远不是有效配置。
-    /// port 缺失时使用 1883（MQTT 协议标准端口），属于协议常量而非运行时 fallback。
-    async fn resolve_connection(&self, connection_id: &str) -> Result<(String, u16), EngineError> {
+    /// 校验监听协议与连接定义，并提取后台循环需要的连接参数。
+    async fn validate_listener_connection(
+        &self,
+        connection_id: &str,
+        protocols: &[ListenerProtocol],
+    ) -> Result<ListenerConnectionPlan, EngineError> {
+        if protocols.len() != 1 {
+            return Err(EngineError::node_config(
+                self.id.clone(),
+                "deviceEventTrigger 单个节点只能监听一种协议；请按 MQTT/CAN/Modbus/Serial 拆分节点"
+                    .to_owned(),
+            ));
+        }
+
         let mut guard = self.connection_manager.acquire(connection_id).await?;
-        let metadata = guard.lease().metadata.clone();
+        let lease = guard.lease().clone();
         guard.mark_success();
-        let host = metadata
-            .get("host")
-            .and_then(Value::as_str)
-            .filter(|s| !s.is_empty())
-            .ok_or_else(|| EngineError::ConnectionInvalidConfiguration {
-                connection_id: connection_id.to_owned(),
-                reason: "MQTT host 缺失或为空".to_owned(),
-            })?
-            .to_owned();
-        // 1883 是 MQTT 协议标准端口；上游 validate_connection_definition 已校验必填字段，
-        // 此处 unwrap_or 仅作为防御性回退。
-        let port = metadata
-            .get("port")
-            .and_then(Value::as_u64)
-            .and_then(|p| u16::try_from(p).ok())
-            .unwrap_or(1883);
-        Ok((host, port))
+
+        match protocols[0] {
+            ListenerProtocol::Mqtt => {
+                ensure_connection_kind(connection_id, &lease.kind, &["mqtt"])?;
+                let host = required_str(connection_id, &lease.metadata, "host", "MQTT")?;
+                let port = required_u16(connection_id, &lease.metadata, "port", "MQTT")?;
+                for sig in &self.config.signals {
+                    if let SignalSourceSnapshot::Topic { topic } = &sig.source
+                        && topic.trim().is_empty()
+                    {
+                        return Err(EngineError::node_config(
+                            self.id.clone(),
+                            format!("signal `{}` MQTT topic 不能为空", sig.signal_id),
+                        ));
+                    }
+                }
+                Ok(ListenerConnectionPlan {
+                    mqtt_endpoint: Some((host, port)),
+                })
+            }
+            ListenerProtocol::Can => {
+                ensure_connection_kind(connection_id, &lease.kind, &["can", "can-slcan", "slcan"])?;
+                required_str(connection_id, &lease.metadata, "interface", "CAN")?;
+                required_str(connection_id, &lease.metadata, "channel", "CAN")?;
+                required_u64(connection_id, &lease.metadata, "baud_rate", "CAN")?;
+                required_u64(connection_id, &lease.metadata, "bitrate", "CAN")?;
+                Ok(ListenerConnectionPlan {
+                    mqtt_endpoint: None,
+                })
+            }
+            ListenerProtocol::Modbus => {
+                ensure_connection_kind(connection_id, &lease.kind, &["modbus", "modbus_tcp"])?;
+                required_str(connection_id, &lease.metadata, "host", "Modbus")?;
+                required_u16(connection_id, &lease.metadata, "port", "Modbus")?;
+                required_u8(connection_id, &lease.metadata, "unit", "Modbus")?;
+                Ok(ListenerConnectionPlan {
+                    mqtt_endpoint: None,
+                })
+            }
+            ListenerProtocol::Serial => {
+                ensure_connection_kind(
+                    connection_id,
+                    &lease.kind,
+                    &[
+                        "serial",
+                        "serialport",
+                        "serial_port",
+                        "uart",
+                        "rs232",
+                        "rs485",
+                    ],
+                )?;
+                required_str(connection_id, &lease.metadata, "port_path", "串口")?;
+                required_u64(connection_id, &lease.metadata, "baud_rate", "串口")?;
+                required_str(connection_id, &lease.metadata, "delimiter", "串口")?;
+                Ok(ListenerConnectionPlan {
+                    mqtt_endpoint: None,
+                })
+            }
+        }
+    }
+
+    fn active_protocols(
+        mqtt_signals: &[CompiledSignal],
+        can_signals: &[CompiledSignal],
+        modbus_signals: &[CompiledSignal],
+        serial_signals: &[CompiledSignal],
+    ) -> Vec<ListenerProtocol> {
+        let mut protocols = Vec::new();
+        if !mqtt_signals.is_empty() {
+            protocols.push(ListenerProtocol::Mqtt);
+        }
+        if !can_signals.is_empty() {
+            protocols.push(ListenerProtocol::Can);
+        }
+        if !modbus_signals.is_empty() {
+            protocols.push(ListenerProtocol::Modbus);
+        }
+        if !serial_signals.is_empty() {
+            protocols.push(ListenerProtocol::Serial);
+        }
+        protocols
     }
 
     /// 按 source 过滤后为匹配的 signal 预编译 scale AST。
@@ -267,7 +436,18 @@ impl NodeTrait for DeviceEventTriggerNode {
             ));
         }
 
-        let (host, port) = self.resolve_connection(&connection_id).await?;
+        let protocols = Self::active_protocols(
+            &mqtt_signals,
+            &can_signals,
+            &modbus_signals,
+            &serial_signals,
+        );
+        let connection_plan = self
+            .validate_listener_connection(&connection_id, &protocols)
+            .await?;
+        let (host, port) = connection_plan
+            .mqtt_endpoint
+            .unwrap_or_else(|| (String::new(), 0));
 
         let join = spawn_orchestrator(
             &self.id,
@@ -421,7 +601,7 @@ fn spawn_orchestrator(
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
-    use connections::shared_connection_manager;
+    use connections::{ConnectionDefinition, shared_connection_manager};
     use nazh_core::{NodeCapabilities, PinKind};
 
     fn topic_signal() -> SignalListenerSnapshot {
@@ -447,6 +627,14 @@ mod tests {
 
     fn make_node() -> DeviceEventTriggerNode {
         DeviceEventTriggerNode::new("det-1", make_config(), shared_connection_manager()).unwrap()
+    }
+
+    fn connection(id: &str, kind: &str, metadata: Value) -> ConnectionDefinition {
+        ConnectionDefinition {
+            id: id.to_owned(),
+            kind: kind.to_owned(),
+            metadata,
+        }
     }
 
     #[test]
@@ -520,5 +708,52 @@ mod tests {
         assert_eq!(val["signal_id"], "pressure");
         let back: SignalListenerSnapshot = serde_json::from_value(val).unwrap();
         assert_eq!(back.signal_id, "pressure");
+    }
+
+    #[tokio::test]
+    async fn mqtt_listener_部署期要求显式_port() {
+        let manager = shared_connection_manager();
+        manager
+            .register_connection(connection(
+                "mqtt-1",
+                "mqtt",
+                json!({"host": "127.0.0.1", "topic": "factory/#"}),
+            ))
+            .await
+            .unwrap();
+        let node = DeviceEventTriggerNode::new(
+            "det-1",
+            DeviceEventTriggerConfig {
+                connection_id: Some("mqtt-1".to_owned()),
+                simulation: false,
+                ..make_config()
+            },
+            manager,
+        )
+        .unwrap();
+
+        let err = node
+            .validate_listener_connection("mqtt-1", &[ListenerProtocol::Mqtt])
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            EngineError::ConnectionInvalidConfiguration { .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn 混合协议_signal_部署期拒绝() {
+        let manager = shared_connection_manager();
+        let node = DeviceEventTriggerNode::new("det-1", make_config(), manager).unwrap();
+
+        let err = node
+            .validate_listener_connection(
+                "unused",
+                &[ListenerProtocol::Mqtt, ListenerProtocol::Serial],
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(err, EngineError::NodeConfig { .. }));
     }
 }

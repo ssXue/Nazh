@@ -9,6 +9,7 @@ use nazh_engine::{
     deploy_workflow_and_restore_variables as deploy_workflow_graph,
 };
 use serde_json::{Value, json};
+use store::DeploymentAuditRecord;
 use tauri::{AppHandle, Emitter, State};
 use tauri_bindings::{
     DeployResponse, ObservabilityContextInput, WorkflowRuntimePolicy, WorkflowRuntimePolicyInput,
@@ -25,6 +26,42 @@ use crate::{
 
 const MAX_IPC_INPUT_BYTES: usize = 10 * 1024 * 1024;
 const SQL_WRITER_DEFAULT_DATABASE_PATH: &str = "./nazh-local.sqlite3";
+
+async fn record_deployment_audit(
+    state: &DesktopState,
+    metadata: &RuntimeWorkflowMetadata,
+    action: &str,
+    level: &str,
+    message: &str,
+    detail: Option<String>,
+    data: Option<Value>,
+) {
+    let Ok(store) = state.store_handle() else {
+        return;
+    };
+    let now = chrono::Utc::now();
+    let record = DeploymentAuditRecord {
+        id: format!(
+            "deployment-audit-{}-{}",
+            now.timestamp_millis(),
+            now.timestamp_subsec_nanos()
+        ),
+        workflow_id: metadata.workflow_id.clone(),
+        action: action.to_owned(),
+        level: level.to_owned(),
+        timestamp: now.to_rfc3339(),
+        project_id: metadata.project_id.clone(),
+        project_name: metadata.project_name.clone(),
+        environment_id: metadata.environment_id.clone(),
+        environment_name: metadata.environment_name.clone(),
+        message: message.to_owned(),
+        detail,
+        data,
+    };
+    if let Err(error) = store.insert_deployment_audit(record).await {
+        tracing::warn!(?error, workflow_id = %metadata.workflow_id, action, "部署审计写入失败");
+    }
+}
 
 async fn load_persisted_variable_overrides(
     state: &DesktopState,
@@ -84,6 +121,19 @@ pub(crate) async fn deploy_workflow_from_json(
         environment_name: None,
         deployed_at,
     };
+    record_deployment_audit(
+        state,
+        &metadata,
+        "deploy_requested",
+        "info",
+        "收到部署请求",
+        None,
+        Some(json!({
+            "workflow_id": workflow_id.clone(),
+            "source": "json",
+        })),
+    )
+    .await;
 
     let node_count = graph.nodes.len();
     let edge_count = graph.edges.len();
@@ -93,7 +143,7 @@ pub(crate) async fn deploy_workflow_from_json(
         .with_resource(WorkflowId(Arc::new(workflow_id.clone())));
     let variable_overrides = load_persisted_variable_overrides(state, &workflow_id).await;
 
-    let deployment = deploy_workflow_graph(
+    let deployment = match deploy_workflow_graph(
         graph,
         state.connection_manager.clone(),
         registry,
@@ -102,7 +152,22 @@ pub(crate) async fn deploy_workflow_from_json(
         variable_overrides,
     )
     .await
-    .map_err(|e| stringify_error(&e))?;
+    {
+        Ok(deployment) => deployment,
+        Err(error) => {
+            record_deployment_audit(
+                state,
+                &metadata,
+                "deploy_failed",
+                "error",
+                "部署失败",
+                Some(error.to_string()),
+                None,
+            )
+            .await;
+            return Err(stringify_error(&error));
+        }
+    };
 
     let nazh_engine::WorkflowDeploymentParts {
         ingress,
@@ -191,6 +256,21 @@ pub(crate) async fn deploy_workflow_from_json(
     };
 
     let _ = app.emit("workflow://deployed", deploy_payload.clone());
+    record_deployment_audit(
+        state,
+        &metadata,
+        "deploy_success",
+        "success",
+        "部署完成",
+        Some(format!("节点 {node_count} / 连线 {edge_count}")),
+        Some(json!({
+            "node_count": node_count,
+            "edge_count": edge_count,
+            "root_nodes": deploy_payload.root_nodes.clone(),
+            "replaced_existing": replaced_existing,
+        })),
+    )
+    .await;
     Ok(deploy_payload)
 }
 
@@ -239,23 +319,53 @@ pub(crate) async fn deploy_workflow(
             .map(|context| context.environment_name.clone()),
         deployed_at: deployed_at.clone(),
     };
+    let connection_definitions_supplied = connection_definitions.is_some();
     if let Some(definitions) = connection_definitions {
-        if state.workflows.lock().await.is_empty() {
+        let connection_result = if state.workflows.lock().await.is_empty() {
             state
                 .connection_manager
                 .replace_connections(definitions)
                 .await
-                .map_err(|e| format!("连接定义校验失败: {e}"))?;
         } else {
             state
                 .connection_manager
                 .upsert_connections(definitions)
                 .await
-                .map_err(|e| format!("连接定义校验失败: {e}"))?;
+        };
+        if let Err(error) = connection_result {
+            let message = format!("连接定义校验失败: {error}");
+            record_deployment_audit(
+                &state,
+                &metadata,
+                "deploy_rejected",
+                "error",
+                "部署前连接定义校验失败",
+                Some(message.clone()),
+                None,
+            )
+            .await;
+            return Err(message);
         }
     }
+    let store_handle = state.store_handle().ok();
+    record_deployment_audit(
+        &state,
+        &metadata,
+        "deploy_requested",
+        "info",
+        "收到部署请求",
+        None,
+        Some(json!({
+            "workflow_id": workflow_id.clone(),
+            "project_name": metadata.project_name.clone(),
+            "environment_name": metadata.environment_name.clone(),
+            "connection_definitions_supplied": connection_definitions_supplied,
+        })),
+    )
+    .await;
     let observability_store = if let Some(context) = observability_context.clone() {
-        let store = ObservabilityStore::new(workspace_dir.clone(), context).await?;
+        let store =
+            ObservabilityStore::new(workspace_dir.clone(), context, store_handle.clone()).await?;
         let _ = store
             .record_audit(
                 "info",
@@ -293,6 +403,16 @@ pub(crate) async fn deploy_workflow(
     {
         Ok(deployment) => deployment,
         Err(error) => {
+            record_deployment_audit(
+                &state,
+                &metadata,
+                "deploy_failed",
+                "error",
+                "部署失败",
+                Some(error.to_string()),
+                None,
+            )
+            .await;
             if let Some(store) = &observability_store {
                 let _ = store
                     .record_audit(
@@ -423,6 +543,24 @@ pub(crate) async fn deploy_workflow(
             )
             .await;
     }
+    record_deployment_audit(
+        &state,
+        &metadata,
+        "deploy_success",
+        "success",
+        "部署完成",
+        Some(format!(
+            "workflow_id={workflow_id} · 节点 {node_count} / 连线 {edge_count}"
+        )),
+        Some(json!({
+            "workflow_id": workflow_id.clone(),
+            "node_count": node_count,
+            "edge_count": edge_count,
+            "root_nodes": deploy_payload.root_nodes.clone(),
+            "replaced_existing": replaced_existing,
+        })),
+    )
+    .await;
     let _ = app.emit("workflow://deployed", deploy_payload.clone());
     Ok(deploy_payload)
 }
