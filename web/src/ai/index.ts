@@ -1,7 +1,7 @@
 /// AI 前端基础设施入口。
 ///
 /// 所有 AI HTTP 调用从前端直接发起，Rust 引擎不再持有 HTTP 客户端。
-/// API key 通过 IPC 按需从 Rust 加密存储读取。
+/// API key 通过 IPC 按需从 Rust 本地配置读取。
 
 export { loadApiKey } from './api-key';
 export { createLanguageModel } from './providers';

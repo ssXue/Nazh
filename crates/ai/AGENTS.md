@@ -27,14 +27,14 @@ crates/ai/src/
 ```
 
 关键 API：
-- `AiConfigFile::to_view()` / `AiConfigFile::merge_update()` / `AiConfigFile::normalize()`
+- `AiConfigFile::to_view()` / `AiConfigFile::merge_update()` / `AiConfigFile::normalize()` / `AiConfigFile::api_key_for_provider()`
 - `AiProviderSecretRecord::find_by_id()` / `find_active_by_id()`
 
 ts-rs 导出：`AiAgentSettings` / `AiConfigView` / `AiConfigUpdate` / `AiProviderView` / `AiProviderUpsert` / `AiProviderDraft` / `AiSecretInput` / `AiTestResult`（由 `ts-export` feature 门控）。
 
 ## 内部约定
 
-1. **密钥管理三层分离**：`AiProviderSecretRecord`（磁盘，含 api_key）→ `AiProviderView`（前端只读，仅 `has_api_key` bool）→ `AiSecretInput`（前端写入指令：Keep / Clear / Set）。前端永远不接触已保存的明文密钥。
+1. **密钥管理三层分离**：`AiProviderSecretRecord`（磁盘，含本机明文 `api_key`）→ `AiProviderView`（前端只读，仅 `has_api_key` bool）→ `AiSecretInput`（前端写入指令：Keep / Clear / Set）。除 `load_ai_api_key` 按需读取外，前端永远不接触已保存的明文密钥。
 2. **`extra_headers` 只能保存非敏感 header**：`Authorization`、`Proxy-Authorization`、`X-Api-Key` 等敏感 header 不得通过 `extra_headers` 成为密钥旁路。
 3. **`AiConfigFile::normalize()` 保证任意时刻最多一个 enabled provider**。
 4. **不绑定具体模型**：`AiGenerationParams` 允许任何字符串作为 temperature / max_tokens 等参数。

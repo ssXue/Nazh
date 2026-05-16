@@ -10,7 +10,7 @@ Nazh is an industrial-edge workflow orchestration engine with AI as a first-clas
 
 Stack: **Rust engine (Cargo workspace, 15 packages) + Tauri v2 desktop shell + React 19 / FlowGram.AI canvas**.
 
-Everything runs in one process — no HTTP/gRPC server, no external broker. AI features (copilot chat, script generation, device extraction, thinking-mode completions) are called directly from the frontend via Vercel AI SDK (`ai` v6) against user-configured OpenAI-compatible providers; API keys are read on-demand via `load_ai_api_key` IPC from local config storage（RFC-0005；当前为明文本地配置，尚未接入 OS keychain）. Rust side only retains AI configuration management and copilot tool dispatch.
+Everything runs in one process — no HTTP/gRPC server, no external broker. AI features (copilot chat, script generation, device extraction, thinking-mode completions) are called directly from the frontend via Vercel AI SDK (`ai` v6) against user-configured OpenAI-compatible providers; API keys are read on-demand via `load_ai_api_key` IPC from local config storage（RFC-0005；当前策略是本机明文配置 + 最小传播面，不接入 OS keychain / 自建加密 vault）. Rust side only retains AI configuration management and copilot tool dispatch.
 
 ## Build & Dev Commands
 
@@ -175,7 +175,7 @@ These principles guide day-to-day decisions. When in doubt, reach for the princi
 5. **RAII for resources.** Connections, lifecycle guards, and future resource holders use Drop-based cleanup, never explicit `close()` / `release()` call pairs. Examples: `ConnectionGuard`（连接借出）、`LifecycleGuard`（节点后台任务，ADR-0009）。
 6. **Plugin-first node registration.** Adding a node means implementing `NodeTrait` in a Ring 1 crate and registering via `Plugin::register(&mut NodeRegistry)`. Do not hardcode node types in the engine or facade. `standard_registry()` in `src/lib.rs` loads the baseline set (`FlowPlugin`, `IoPlugin`, `PurePlugin`) — other plugins can be added to compose custom deployments.
 7. **Fast fail, loud logs.** Deploy-time validation (DAG, types, configs) is cheap and should happen before any node runs. Runtime failures emit `ExecutionEvent::Failed` with `trace_id`, `stage`, and structured error via `tracing::error!`. Silent drops are bugs.
-8. **AI 调用前移到前端（RFC-0005）.** 所有 AI HTTP 调用（copilot chat、设备提取、provider 连接测试）由前端通过 Vercel AI SDK 直接发起，Rust 不持有 HTTP 客户端。API key 经 IPC 按需从本地配置读取（当前为明文本地存储）。Rust 侧仅保留 AI 配置管理和 copilot 工具分发。
+8. **AI 调用前移到前端（RFC-0005）.** 所有 AI HTTP 调用（copilot chat、设备提取、provider 连接测试）由前端通过 Vercel AI SDK 直接发起，Rust 不持有 HTTP 客户端。API key 经 IPC 按需从本地配置读取；当前安全边界是本机明文配置 + 最小传播面：`load_ai_config` 不返回明文 key，`load_ai_api_key` 是唯一读取完整 key 的 IPC，保存时尽量把 `app_local_data_dir()/ai-config.json` 权限收敛到当前用户读写，禁止把 key 写入工程文件、DSL YAML、导出文件、日志、observability 或 copilot conversation。Rust 侧仅保留 AI 配置管理和 copilot 工具分发。
 
 ## Collaboration Conventions
 

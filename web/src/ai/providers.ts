@@ -22,7 +22,7 @@ export interface CreateModelOptions {
 
 /// 创建 AI SDK LanguageModel 实例。
 ///
-/// 按需从 Rust 加密存储读取 API key，不缓存到全局。
+/// 按需从 Rust 本地配置读取 API key，不缓存到全局。
 /// 调用方应在每次 AI 调用时重新创建 model 实例。
 export async function createLanguageModel(
   options: CreateModelOptions,

@@ -92,6 +92,21 @@ impl AiConfigFile {
         self.active_provider_id =
             normalize_active_provider_id(self.active_provider_id.clone(), &mut self.providers);
     }
+
+    /// 读取指定 provider 的明文密钥。
+    ///
+    /// 这是后端唯一允许导出已保存 API key 的模型入口；调用方仍需只在
+    /// `load_ai_api_key` 这类按需 IPC 中短暂使用返回值。
+    pub fn api_key_for_provider(&self, provider_id: &str) -> Result<&str, AiError> {
+        let provider = AiProviderSecretRecord::find_active_by_id(&self.providers, provider_id)?;
+        let api_key = provider.api_key.trim();
+        if api_key.is_empty() {
+            return Err(AiError::InvalidConfig(format!(
+                "AI 提供商 `{provider_id}` 未配置 API key"
+            )));
+        }
+        Ok(api_key)
+    }
 }
 
 fn normalize_active_provider_id(

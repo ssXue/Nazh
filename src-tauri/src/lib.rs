@@ -251,6 +251,7 @@ pub fn run() {
                     && let Ok(text) = tokio::fs::read_to_string(&path).await
                     && let Ok(mut file_config) = serde_json::from_str::<AiConfigFile>(&text)
                 {
+                    commands::ai::tighten_ai_config_file_permissions(&path).await;
                     file_config.normalize();
                     let mut config = ai_config_arc.write().await;
                     *config = file_config;

@@ -1,3 +1,8 @@
+use std::path::Path;
+
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+
 use ai::{AiConfigUpdate, AiConfigView};
 use tauri::{AppHandle, State};
 use tokio::fs;
@@ -54,13 +59,25 @@ pub(crate) async fn load_ai_api_key(
     state: State<'_, DesktopState>,
 ) -> Result<String, String> {
     let config = state.ai_config.read().await;
-    let provider = config
-        .providers
-        .iter()
-        .find(|p| p.id == provider_id)
-        .ok_or_else(|| format!("AI 提供商 `{provider_id}` 不存在"))?;
-    Ok(provider.api_key.clone())
+    Ok(config
+        .api_key_for_provider(&provider_id)
+        .map_err(|error| error.to_string())?
+        .to_owned())
 }
+
+#[cfg(unix)]
+pub(crate) async fn tighten_ai_config_file_permissions(path: &Path) {
+    let permissions = std::fs::Permissions::from_mode(0o600);
+    if let Err(error) = fs::set_permissions(path, permissions).await {
+        tracing::warn!(
+            path = %path.display(),
+            "收紧 AI 配置文件权限失败，继续使用现有文件权限: {error}"
+        );
+    }
+}
+
+#[cfg(not(unix))]
+pub(crate) async fn tighten_ai_config_file_permissions(_path: &Path) {}
 
 #[tauri::command]
 pub(crate) async fn save_ai_config(
@@ -83,9 +100,11 @@ pub(crate) async fn save_ai_config(
     fs::write(&tmp_path, &text)
         .await
         .map_err(|error| format!("写入 AI 配置临时文件失败: {error}"))?;
+    tighten_ai_config_file_permissions(&tmp_path).await;
     fs::rename(&tmp_path, &path)
         .await
         .map_err(|error| format!("原子重命名 AI 配置文件失败: {error}"))?;
+    tighten_ai_config_file_permissions(&path).await;
 
     Ok(config.to_view())
 }

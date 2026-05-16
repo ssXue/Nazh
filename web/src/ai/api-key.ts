@@ -1,11 +1,11 @@
 /// API Key 安全读取层。
 ///
-/// 通过 IPC 按需从 Rust 加密存储读取 provider 的 API key。
+/// 通过 IPC 按需从 Rust 本地配置读取 provider 的 API key。
 /// 读取后立即用于构造 provider 实例，不缓存在全局变量或 store。
 
 import { invoke } from '@tauri-apps/api/core';
 
-const DEBUG_API_KEY = true;
+const DEBUG_API_KEY = false;
 
 function apiKeyLog(...args: unknown[]) {
   if (DEBUG_API_KEY) console.log('[ai/api-key]', ...args);

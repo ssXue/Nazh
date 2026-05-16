@@ -280,3 +280,34 @@ fn to_view_does_not_return_sensitive_extra_headers_from_legacy_config() {
         Some(&"req-1".to_owned())
     );
 }
+
+#[test]
+fn api_key_for_provider_requires_enabled_provider_with_saved_key() {
+    let mut disabled = sample_provider_record("disabled", "sk-disabled");
+    disabled.enabled = false;
+    let file = AiConfigFile {
+        version: 1,
+        providers: vec![
+            sample_provider_record("ready", " sk-ready "),
+            sample_provider_record("empty", " "),
+            disabled,
+        ],
+        active_provider_id: Some("ready".to_owned()),
+        copilot_params: AiGenerationParams::default(),
+        agent_settings: AiAgentSettings::default(),
+    };
+
+    assert_eq!(file.api_key_for_provider("ready").ok(), Some("sk-ready"));
+    assert!(matches!(
+        file.api_key_for_provider("empty"),
+        Err(AiError::InvalidConfig(_))
+    ));
+    assert!(matches!(
+        file.api_key_for_provider("disabled"),
+        Err(AiError::ProviderDisabled(_))
+    ));
+    assert!(matches!(
+        file.api_key_for_provider("missing"),
+        Err(AiError::ProviderNotFound(_))
+    ));
+}

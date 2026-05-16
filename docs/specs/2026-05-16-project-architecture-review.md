@@ -31,7 +31,9 @@
 
 **严重度：高**
 
-根 `AGENTS.md` 声明 API key 从 Rust encrypted storage 读取：
+> **处置（2026-05-16）**：已选择“本机明文配置 + 最小传播面”作为当前安全边界，不接入 OS keychain / 自建加密 vault。根 `AGENTS.md`、`docs/project-status.md` 与 RFC-0005 已同步；代码侧保留 `load_ai_config` 脱敏视图、`load_ai_api_key` 按需读取，并补充配置文件权限收敛与集中校验。
+
+原根 `AGENTS.md` 声明 API key 从 Rust encrypted storage 读取：
 
 - `AGENTS.md:13`
 
