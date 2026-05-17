@@ -60,6 +60,13 @@ $RECYCLE.BIN/
 *.csr
 *.der
 
+# Local database
+*.sqlite3
+*.db
+
+# AI config (contains API keys)
+ai-config.json
+
 # Logs
 *.log
 logs/
