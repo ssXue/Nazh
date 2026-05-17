@@ -254,10 +254,7 @@ export function DeviceImportDrawer({
     const deviceType = stripYamlQuotes(typeMatch?.[1]) ?? 'unknown';
     const name = stripYamlQuotes(modelMatch?.[1]) ?? deviceId.replace(/_/g, ' ');
 
-    console.log('[DeviceImport] 开始保存:', { label, deviceId, deviceType, name, yamlLen: yaml.length, capCount: caps.length });
-
     await saveAsset(deviceId, name, deviceType, yaml);
-    console.log('[DeviceImport] 设备保存成功:', deviceId);
 
     let savedCaps = 0;
     for (const capYaml of caps) {
@@ -268,8 +265,8 @@ export function DeviceImportDrawer({
         const desc = stripYamlQuotes(descMatch?.[1]) ?? capId;
         await saveCapability(capId, deviceId, desc, desc, capYaml);
         savedCaps += 1;
-      } catch (capErr) {
-        console.warn('[DeviceImport] 单个能力保存失败（不阻塞）:', capErr);
+      } catch (_capErr) {
+        // 单个能力保存失败不阻塞整体流程
       }
     }
 
@@ -277,7 +274,6 @@ export function DeviceImportDrawer({
       ? `${label}：设备 ${deviceId} + ${savedCaps}/${caps.length} 个能力已保存`
       : `${label}：设备 ${deviceId} 已保存`;
     onStatusMessage(msg);
-    console.log('[DeviceImport] 保存流程完成:', { deviceId, savedCaps });
     return deviceId;
   }, [saveAsset, saveCapability, onStatusMessage]);
 
@@ -308,7 +304,6 @@ export function DeviceImportDrawer({
     errorMessage: string,
     label: string,
   ): Promise<string> => {
-    console.log('[DeviceImport] AI 自校正开始, 错误:', errorMessage);
     setPhase('calling-ai');
     onStatusMessage(`${label}：保存验证失败，AI 正在自动修正...`);
 
@@ -324,12 +319,7 @@ export function DeviceImportDrawer({
       { yaml: failedYaml, error: errorMessage },
     );
 
-    console.log('[DeviceImport] AI 校正输出完成, 长度:', rawJson.length);
     const corrected = parseAiStreamJson(rawJson);
-    console.log('[DeviceImport] AI 校正解析完成:', {
-      yamlLen: corrected.yaml.length,
-      capCount: corrected.caps.length,
-    });
 
     setExtractedYaml(corrected.yaml);
     setStreamingText('');
@@ -345,7 +335,6 @@ export function DeviceImportDrawer({
     setExtractError(null);
     setExtractedYaml('');
     setProposal(null);
-    console.log('[DeviceImport] 文本抽取开始, 输入长度:', importText.length);
 
     let yaml = '';
     let caps: string[] = [];
@@ -354,25 +343,18 @@ export function DeviceImportDrawer({
     try {
       setPhase('calling-ai');
       const result = await extractProposal(importText);
-      console.log('[DeviceImport] 文本抽取完成:', {
-        deviceCount: result.deviceYamls.length,
-        capCount: result.capabilityYamls.length,
-        uncertaintyCount: result.uncertainties.length,
-        warningCount: result.warnings.length,
-      });
       setPhase('parsing-result');
       yaml = result.deviceYamls[0] ?? '';
       caps = result.capabilityYamls;
       setProposal(result);
       setExtractedYaml(yaml);
-    } catch (error) {
-      console.warn('[DeviceImport] 文本 Proposal 抽取失败, 尝试基础模式:', error);
+    } catch (_proposalError) {
+      // Proposal 模式失败，回退到基础模式
       try {
         setPhase('calling-ai');
         yaml = await extractFromText(importText);
         setPhase('parsing-result');
         setExtractedYaml(yaml);
-        console.log('[DeviceImport] 基础模式抽取完成, yaml 长度:', yaml.length);
       } catch (fallbackError) {
         console.error('[DeviceImport] 基础模式也失败:', fallbackError);
         setExtractError(`抽取失败: ${fallbackError}`);
@@ -410,7 +392,6 @@ export function DeviceImportDrawer({
     setStreamingText('');
     setThinkingText('');
     setProposal(null);
-    console.log('[DeviceImport] PDF 抽取开始');
 
     let yaml = '';
     let caps: string[] = [];
@@ -419,7 +400,6 @@ export function DeviceImportDrawer({
       // 阶段 1：提取文本
       setPhase('extracting-text');
       const text = await extractTextFromPdf(b64);
-      console.log('[DeviceImport] PDF 文本提取完成, 长度:', text.length);
 
       // 阶段 2：流式 AI 结构化抽取
       setPhase('calling-ai');
@@ -432,14 +412,12 @@ export function DeviceImportDrawer({
           flushSync(() => setThinkingText(thinking));
         },
       );
-      console.log('[DeviceImport] AI 流式输出完成, 原始长度:', rawJson.length, '前 200 字符:', rawJson.slice(0, 200));
 
       // 解析 AI 输出
       setPhase('parsing-result');
       const parsed = parseAiStreamJson(rawJson);
       yaml = parsed.yaml;
       caps = parsed.caps;
-      console.log('[DeviceImport] AI 输出解析完成:', { yamlLen: yaml.length, capCount: caps.length });
       setExtractedYaml(yaml);
     } catch (error) {
       console.error('[DeviceImport] PDF 抽取失败:', error);
@@ -477,15 +455,9 @@ export function DeviceImportDrawer({
     setExtractError(null);
     setExtractedYaml('');
     setProposal(null);
-    console.log('[DeviceImport] ESI 导入开始, XML 长度:', esiXml.length);
     try {
       setPhase('parsing-result');
       const result = await importEthercatEsi(esiXml);
-      console.log('[DeviceImport] ESI 解析完成:', {
-        deviceCount: result.deviceYamls.length,
-        capCount: result.capabilityYamls.length,
-        warningCount: result.warnings.length,
-      });
 
       // ESI/ENI 导入结果确定性，直接保存到磁盘
       for (const yaml of result.deviceYamls) {
