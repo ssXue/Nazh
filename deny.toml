@@ -13,6 +13,10 @@ allow = [
     "CDLA-Permissive-2.0",
 ]
 
+# 工作区 crate 使用 MIT + Commons Clause（禁止商用出售），不发布到 crates.io。
+# Commons Clause 非 SPDX 标准标识符，标记为 private 跳过 license 审计。
+private = { ignore = true }
+
 [bans]
 multiple-versions = "warn"
 wildcards = "allow"

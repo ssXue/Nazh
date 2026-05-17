@@ -7,7 +7,7 @@ resolver = "2"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.94"
-license = "MIT WITH Commons-Clause"
+license = "MIT"
 authors = ["ssXue", "Niu Zhihong"]
 repository = "https://github.com/ssXue/Nazh"
 
