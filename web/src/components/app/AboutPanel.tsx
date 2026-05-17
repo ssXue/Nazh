@@ -1,9 +1,15 @@
+import { useEffect, useState } from 'react';
+import { getVersion } from '@tauri-apps/api/app';
 import nazhLogo from '../../assets/nazh-logo.svg';
 import { Particles } from '../animations/Particles';
 
-const ABOUT_VERSION = 'Version 1.0.0';
-
 export function AboutPanel() {
+  const [version, setVersion] = useState<string>('');
+
+  useEffect(() => {
+    getVersion().then(v => setVersion(v)).catch(() => {});
+  }, []);
+
   return (
     <div className="about-screen">
         <Particles
@@ -22,7 +28,7 @@ export function AboutPanel() {
 
         <div className="about-screen__center">
           <img className="about-screen__logo" src={nazhLogo} alt="Nazh logo" />
-          <span className="about-screen__version">{ABOUT_VERSION}</span>
+          {version && <span className="about-screen__version">Version {version}</span>}
         </div>
     </div>
   );

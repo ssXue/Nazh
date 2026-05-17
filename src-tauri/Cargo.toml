@@ -44,7 +44,7 @@ nazh-dsl-core.workspace = true
 scripting.workspace = true
 dsl-compiler.workspace = true
 serde_yaml.workspace = true
-window-vibrancy = "0.7.1"
+window-vibrancy = "0.6"
 # PDF 文本提取（设备说明书录入）
 pdf-extract = "0.10.0"
 sha2.workspace = true
