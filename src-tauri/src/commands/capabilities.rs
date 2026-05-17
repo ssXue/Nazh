@@ -11,7 +11,7 @@ use crate::asset_files::{
     load_capability_asset_version_yaml, next_capability_asset_version,
     read_capability_asset_sources, write_capability_asset_sources, write_capability_asset_yaml,
 };
-use crate::commands::devices::load_device_asset;
+use crate::commands::devices::assets::load_device_asset;
 
 // ---- IPC 响应类型 ----
 

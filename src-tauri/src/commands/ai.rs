@@ -9,7 +9,7 @@ use tokio::fs;
 
 use crate::commands::{
     capabilities::{list_capabilities, load_capability},
-    devices::{list_device_assets, load_device_asset},
+    devices::assets::{list_device_assets, load_device_asset},
 };
 use crate::state::DesktopState;
 

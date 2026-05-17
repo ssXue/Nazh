@@ -1,107 +1,25 @@
-use std::{
-    collections::{HashMap, HashSet},
-    fs::{self, OpenOptions},
-    io::Write,
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+//! `ObservabilityStore` 核心实现与查询。
 
-use chrono::{DateTime, Utc};
+use std::{collections::HashMap, collections::HashSet, path::PathBuf, sync::Arc};
+
+use chrono::Utc;
 use nazh_engine::{ExecutionEvent, WorkflowContext};
-use serde::{Serialize, de::DeserializeOwned};
-use serde_json::{Value, json};
+use serde_json::Value;
 use store::StoreHandle;
 use tauri_bindings::{
     AlertDeliveryRecord, ObservabilityContextInput, ObservabilityEntry, ObservabilityQueryResult,
     ObservabilityTraceSummary,
 };
 use tokio::sync::Mutex;
-use uuid::Uuid;
 
-const OBSERVABILITY_DIR: &str = "observability";
-const EVENTS_FILE: &str = "events.jsonl";
-const AUDIT_FILE: &str = "audit.jsonl";
-const ALERTS_FILE: &str = "alerts.jsonl";
-
-pub type SharedObservabilityStore = Arc<ObservabilityStore>;
-
-#[derive(Debug, Clone)]
-struct ObservabilitySession {
-    project_id: String,
-    project_name: String,
-    environment_id: String,
-    environment_name: String,
-}
-
-#[derive(Debug, Default)]
-struct ObservabilityRuntimeState {
-    active_spans: HashMap<String, DateTime<Utc>>,
-}
-
-pub struct ObservabilityStore {
-    root_dir: PathBuf,
-    session: ObservabilitySession,
-    state: Mutex<ObservabilityRuntimeState>,
-    store: Option<StoreHandle>,
-}
-
-struct ObservabilityEntryDraft {
-    level: String,
-    category: String,
-    source: String,
-    message: String,
-    detail: Option<String>,
-    trace_id: Option<String>,
-    node_id: Option<String>,
-    duration_ms: Option<u64>,
-    data: Option<Value>,
-    timestamp: DateTime<Utc>,
-    event_kind: Option<String>,
-}
-
-fn elapsed_ms_since(now: DateTime<Utc>, started_at: DateTime<Utc>) -> u64 {
-    (now - started_at).num_milliseconds().max(0).cast_unsigned()
-}
-
-impl ObservabilityEntryDraft {
-    fn execution(
-        level: &str,
-        kind: &str,
-        source: String,
-        message: String,
-        trace_id: String,
-        timestamp: DateTime<Utc>,
-    ) -> Self {
-        Self {
-            level: level.to_owned(),
-            category: "execution".to_owned(),
-            source,
-            message,
-            detail: None,
-            trace_id: Some(trace_id),
-            node_id: None,
-            duration_ms: None,
-            data: None,
-            timestamp,
-            event_kind: Some(kind.to_owned()),
-        }
-    }
-
-    fn with_detail(mut self, detail: Option<String>) -> Self {
-        self.detail = detail;
-        self
-    }
-
-    fn with_node_id(mut self, node_id: Option<String>) -> Self {
-        self.node_id = node_id;
-        self
-    }
-
-    fn with_duration_ms(mut self, duration_ms: Option<u64>) -> Self {
-        self.duration_ms = duration_ms;
-        self
-    }
-}
+use super::alerting::{alert_to_entry, build_alert_delivery, matches_alert};
+use super::jsonl::{append_jsonl, read_jsonl};
+use super::types::{
+    ALERTS_FILE, AUDIT_FILE, EVENTS_FILE, OBSERVABILITY_DIR, ObservabilityEntryDraft,
+    ObservabilityRuntimeState, ObservabilitySession, ObservabilityStore, SharedObservabilityStore,
+    build_record_id, elapsed_ms_since, entry_search_text, max_timestamp, min_timestamp, span_key,
+    summarize_payload,
+};
 
 impl ObservabilityStore {
     pub async fn new(
@@ -112,7 +30,7 @@ impl ObservabilityStore {
         let root_dir = workspace_dir.join(OBSERVABILITY_DIR);
         tokio::task::spawn_blocking({
             let root_dir = root_dir.clone();
-            move || fs::create_dir_all(&root_dir)
+            move || std::fs::create_dir_all(&root_dir)
         })
         .await
         .map_err(|error| format!("创建观测目录失败: {error}"))?
@@ -400,7 +318,7 @@ impl ObservabilityStore {
                 return;
             }
         };
-        let search_text = alert_search_text(alert);
+        let search_text = super::alerting::alert_search_text(alert);
         if let Err(error) = store
             .insert_observability_record(
                 &alert.id,
@@ -417,6 +335,8 @@ impl ObservabilityStore {
         }
     }
 }
+
+// ---- 查询与清理 ----
 
 pub async fn query_observability(
     workspace_dir: PathBuf,
@@ -522,6 +442,106 @@ pub async fn clear_observability_store(store: Option<StoreHandle>) {
         tracing::warn!(?error, "清空 SQLite 可观测性记录失败");
     }
 }
+
+// ---- 查询内部辅助 ----
+
+async fn query_observability_from_store(
+    store: &StoreHandle,
+    trace_filter: Option<&str>,
+    search_filter: Option<&str>,
+    limit: usize,
+) -> Result<ObservabilityQueryResult, String> {
+    let records = store
+        .query_observability_records(trace_filter, search_filter, limit)
+        .await
+        .map_err(|error| error.to_string())?;
+
+    let mut events = Vec::new();
+    let mut audits = Vec::new();
+    let mut alerts = Vec::new();
+
+    for record in records {
+        match record.record_kind.as_str() {
+            "alert" => {
+                let alert = serde_json::from_value::<AlertDeliveryRecord>(record.payload)
+                    .map_err(|error| format!("解析 SQLite 告警记录失败: {error}"))?;
+                alerts.push(alert);
+            }
+            "audit" => {
+                let entry = serde_json::from_value::<ObservabilityEntry>(record.payload)
+                    .map_err(|error| format!("解析 SQLite 审计记录失败: {error}"))?;
+                audits.push(entry);
+            }
+            _ => {
+                let entry = serde_json::from_value::<ObservabilityEntry>(record.payload)
+                    .map_err(|error| format!("解析 SQLite 观测记录失败: {error}"))?;
+                events.push(entry);
+            }
+        }
+    }
+
+    let mut merged = events.clone();
+    merged.extend(audits.clone());
+    merged.extend(alerts.iter().map(alert_to_entry));
+    merged.sort_by(|left, right| {
+        right
+            .timestamp
+            .cmp(&left.timestamp)
+            .then_with(|| right.id.cmp(&left.id))
+    });
+    merged.truncate(limit);
+
+    audits.sort_by(|left, right| right.timestamp.cmp(&left.timestamp));
+    audits.truncate(limit.min(120));
+    alerts.sort_by(|left, right| right.timestamp.cmp(&left.timestamp));
+    alerts.truncate(limit.min(120));
+
+    let traces = build_trace_summaries(&events, &alerts, trace_filter, limit);
+
+    Ok(ObservabilityQueryResult {
+        entries: merged,
+        traces,
+        alerts,
+        audits,
+    })
+}
+
+fn has_observability_rows(result: &ObservabilityQueryResult) -> bool {
+    !result.entries.is_empty()
+        || !result.traces.is_empty()
+        || !result.alerts.is_empty()
+        || !result.audits.is_empty()
+}
+
+fn matches_entry(
+    entry: &ObservabilityEntry,
+    trace_filter: Option<&str>,
+    search_filter: Option<&str>,
+) -> bool {
+    if trace_filter.is_some_and(|filter| entry.trace_id.as_deref() != Some(filter)) {
+        return false;
+    }
+
+    if let Some(search_filter) = search_filter {
+        let haystack = format!(
+            "{} {} {} {} {} {}",
+            entry.source,
+            entry.message,
+            entry.detail.as_deref().unwrap_or_default(),
+            entry.trace_id.as_deref().unwrap_or_default(),
+            entry.node_id.as_deref().unwrap_or_default(),
+            entry.project_name.as_deref().unwrap_or_default(),
+        )
+        .to_ascii_lowercase();
+        if !haystack.contains(search_filter) {
+            return false;
+        }
+    }
+
+    true
+}
+
+// ---- Trace 摘要 ----
 
 #[derive(Default)]
 struct TraceAccumulator {
@@ -648,458 +668,4 @@ fn build_trace_summaries(
     });
     result.truncate(limit.min(80));
     result
-}
-
-fn alert_to_entry(alert: &AlertDeliveryRecord) -> ObservabilityEntry {
-    ObservabilityEntry {
-        id: alert.id.clone(),
-        timestamp: alert.timestamp.clone(),
-        level: if alert.success {
-            "success".to_owned()
-        } else {
-            "error".to_owned()
-        },
-        category: "alert".to_owned(),
-        source: alert.node_id.clone(),
-        message: if alert.success {
-            "告警投递成功".to_owned()
-        } else {
-            "告警投递失败".to_owned()
-        },
-        detail: Some(format!(
-            "{} {} -> {} ({})",
-            alert.method, alert.url, alert.status, alert.environment_name
-        )),
-        trace_id: Some(alert.trace_id.clone()),
-        node_id: Some(alert.node_id.clone()),
-        duration_ms: None,
-        project_id: Some(alert.project_id.clone()),
-        project_name: Some(alert.project_name.clone()),
-        environment_id: Some(alert.environment_id.clone()),
-        environment_name: Some(alert.environment_name.clone()),
-        data: Some(json!({
-            "url": alert.url,
-            "method": alert.method,
-            "status": alert.status,
-            "success": alert.success,
-            "webhook_kind": alert.webhook_kind,
-            "body_mode": alert.body_mode,
-            "request_timeout_ms": alert.request_timeout_ms,
-            "requested_at": alert.requested_at,
-            "request_body_preview": alert.request_body_preview,
-        })),
-        event_kind: None,
-    }
-}
-
-async fn query_observability_from_store(
-    store: &StoreHandle,
-    trace_filter: Option<&str>,
-    search_filter: Option<&str>,
-    limit: usize,
-) -> Result<ObservabilityQueryResult, String> {
-    let records = store
-        .query_observability_records(trace_filter, search_filter, limit)
-        .await
-        .map_err(|error| error.to_string())?;
-
-    let mut events = Vec::new();
-    let mut audits = Vec::new();
-    let mut alerts = Vec::new();
-
-    for record in records {
-        match record.record_kind.as_str() {
-            "alert" => {
-                let alert = serde_json::from_value::<AlertDeliveryRecord>(record.payload)
-                    .map_err(|error| format!("解析 SQLite 告警记录失败: {error}"))?;
-                alerts.push(alert);
-            }
-            "audit" => {
-                let entry = serde_json::from_value::<ObservabilityEntry>(record.payload)
-                    .map_err(|error| format!("解析 SQLite 审计记录失败: {error}"))?;
-                audits.push(entry);
-            }
-            _ => {
-                let entry = serde_json::from_value::<ObservabilityEntry>(record.payload)
-                    .map_err(|error| format!("解析 SQLite 观测记录失败: {error}"))?;
-                events.push(entry);
-            }
-        }
-    }
-
-    let mut merged = events.clone();
-    merged.extend(audits.clone());
-    merged.extend(alerts.iter().map(alert_to_entry));
-    merged.sort_by(|left, right| {
-        right
-            .timestamp
-            .cmp(&left.timestamp)
-            .then_with(|| right.id.cmp(&left.id))
-    });
-    merged.truncate(limit);
-
-    audits.sort_by(|left, right| right.timestamp.cmp(&left.timestamp));
-    audits.truncate(limit.min(120));
-    alerts.sort_by(|left, right| right.timestamp.cmp(&left.timestamp));
-    alerts.truncate(limit.min(120));
-
-    let traces = build_trace_summaries(&events, &alerts, trace_filter, limit);
-
-    Ok(ObservabilityQueryResult {
-        entries: merged,
-        traces,
-        alerts,
-        audits,
-    })
-}
-
-fn has_observability_rows(result: &ObservabilityQueryResult) -> bool {
-    !result.entries.is_empty()
-        || !result.traces.is_empty()
-        || !result.alerts.is_empty()
-        || !result.audits.is_empty()
-}
-
-fn entry_search_text(entry: &ObservabilityEntry) -> String {
-    format!(
-        "{} {} {} {} {} {} {} {}",
-        entry.level,
-        entry.category,
-        entry.source,
-        entry.message,
-        entry.detail.as_deref().unwrap_or_default(),
-        entry.trace_id.as_deref().unwrap_or_default(),
-        entry.node_id.as_deref().unwrap_or_default(),
-        entry.project_name.as_deref().unwrap_or_default(),
-    )
-}
-
-fn alert_search_text(alert: &AlertDeliveryRecord) -> String {
-    format!(
-        "{} {} {} {} {} {}",
-        alert.node_id,
-        alert.url,
-        alert.method,
-        alert.status,
-        alert.project_name,
-        alert.environment_name
-    )
-}
-
-fn build_alert_delivery(
-    session: &ObservabilitySession,
-    _stage: &str,
-    trace_id: Uuid,
-    http_meta: &serde_json::Map<String, Value>,
-    timestamp: DateTime<Utc>,
-) -> Option<AlertDeliveryRecord> {
-    let node_id = http_meta.get("node_id")?.as_str()?.to_owned();
-    let url = http_meta.get("url")?.as_str()?.to_owned();
-    let method = http_meta
-        .get("method")
-        .and_then(Value::as_str)
-        .unwrap_or("POST")
-        .to_owned();
-    let status = http_meta
-        .get("status")
-        .and_then(Value::as_u64)
-        .and_then(|value| u16::try_from(value).ok())?;
-
-    Some(AlertDeliveryRecord {
-        id: build_record_id("alert", &timestamp),
-        timestamp: timestamp.to_rfc3339(),
-        trace_id: trace_id.to_string(),
-        node_id,
-        project_id: session.project_id.clone(),
-        project_name: session.project_name.clone(),
-        environment_id: session.environment_id.clone(),
-        environment_name: session.environment_name.clone(),
-        url,
-        method,
-        status,
-        success: status < 400,
-        webhook_kind: http_meta
-            .get("webhook_kind")
-            .and_then(Value::as_str)
-            .map(str::to_owned),
-        body_mode: http_meta
-            .get("body_mode")
-            .and_then(Value::as_str)
-            .map(str::to_owned),
-        request_timeout_ms: http_meta.get("request_timeout_ms").and_then(Value::as_u64),
-        requested_at: http_meta
-            .get("requested_at")
-            .and_then(Value::as_str)
-            .map(str::to_owned),
-        request_body_preview: http_meta
-            .get("request_body_preview")
-            .and_then(Value::as_str)
-            .map(str::to_owned),
-    })
-}
-
-fn summarize_payload(payload: &Value) -> Value {
-    match payload {
-        Value::Object(map) => {
-            let mut summary = serde_json::Map::new();
-            for (key, value) in map.iter().take(8) {
-                summary.insert(key.clone(), truncate_value(value, 220));
-            }
-            Value::Object(summary)
-        }
-        other => truncate_value(other, 220),
-    }
-}
-
-fn truncate_value(value: &Value, max_text_len: usize) -> Value {
-    match value {
-        Value::String(text) => {
-            if text.chars().count() <= max_text_len {
-                Value::String(text.clone())
-            } else {
-                Value::String(text.chars().take(max_text_len).collect::<String>())
-            }
-        }
-        Value::Array(items) => Value::Array(
-            items
-                .iter()
-                .take(12)
-                .map(|item| truncate_value(item, max_text_len))
-                .collect(),
-        ),
-        Value::Object(map) => {
-            let mut next = serde_json::Map::new();
-            for (key, nested) in map.iter().take(12) {
-                next.insert(key.clone(), truncate_value(nested, max_text_len));
-            }
-            Value::Object(next)
-        }
-        other => other.clone(),
-    }
-}
-
-fn matches_entry(
-    entry: &ObservabilityEntry,
-    trace_filter: Option<&str>,
-    search_filter: Option<&str>,
-) -> bool {
-    if trace_filter.is_some_and(|filter| entry.trace_id.as_deref() != Some(filter)) {
-        return false;
-    }
-
-    if let Some(search_filter) = search_filter {
-        let haystack = format!(
-            "{} {} {} {} {} {}",
-            entry.source,
-            entry.message,
-            entry.detail.as_deref().unwrap_or_default(),
-            entry.trace_id.as_deref().unwrap_or_default(),
-            entry.node_id.as_deref().unwrap_or_default(),
-            entry.project_name.as_deref().unwrap_or_default(),
-        )
-        .to_ascii_lowercase();
-        if !haystack.contains(search_filter) {
-            return false;
-        }
-    }
-
-    true
-}
-
-fn matches_alert(
-    record: &AlertDeliveryRecord,
-    trace_filter: Option<&str>,
-    search_filter: Option<&str>,
-) -> bool {
-    if trace_filter.is_some_and(|filter| record.trace_id != filter) {
-        return false;
-    }
-
-    if let Some(search_filter) = search_filter {
-        let haystack = format!(
-            "{} {} {} {} {}",
-            record.node_id, record.url, record.method, record.project_name, record.environment_name
-        )
-        .to_ascii_lowercase();
-        if !haystack.contains(search_filter) {
-            return false;
-        }
-    }
-
-    true
-}
-
-fn min_timestamp(current: Option<String>, next: Option<String>) -> Option<String> {
-    match (current, next) {
-        (Some(left), Some(right)) => Some(if left <= right { left } else { right }),
-        (Some(left), None) => Some(left),
-        (None, Some(right)) => Some(right),
-        (None, None) => None,
-    }
-}
-
-fn max_timestamp(current: Option<String>, next: Option<String>) -> Option<String> {
-    match (current, next) {
-        (Some(left), Some(right)) => Some(if left >= right { left } else { right }),
-        (Some(left), None) => Some(left),
-        (None, Some(right)) => Some(right),
-        (None, None) => None,
-    }
-}
-
-async fn read_jsonl<T>(path: &Path) -> Result<Vec<T>, String>
-where
-    T: DeserializeOwned,
-{
-    if !path.exists() {
-        return Ok(Vec::new());
-    }
-
-    let text = tokio::fs::read_to_string(path)
-        .await
-        .map_err(|error| format!("读取观测文件失败: {error}"))?;
-
-    let mut items = Vec::new();
-    for line in text.lines().filter(|line| !line.trim().is_empty()) {
-        if let Ok(item) = serde_json::from_str::<T>(line) {
-            items.push(item);
-        }
-    }
-
-    Ok(items)
-}
-
-async fn append_jsonl<T>(path: PathBuf, record: &T) -> Result<(), String>
-where
-    T: Serialize + Send + Sync,
-{
-    let line =
-        serde_json::to_string(record).map_err(|error| format!("序列化观测记录失败: {error}"))?;
-
-    tokio::task::spawn_blocking(move || -> Result<(), String> {
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).map_err(|error| format!("创建观测目录失败: {error}"))?;
-        }
-
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&path)
-            .map_err(|error| format!("打开观测文件失败: {error}"))?;
-        writeln!(file, "{line}").map_err(|error| format!("写入观测文件失败: {error}"))?;
-        Ok(())
-    })
-    .await
-    .map_err(|error| format!("写入观测记录任务失败: {error}"))?
-}
-
-fn span_key(trace_id: impl std::fmt::Display, stage: &str) -> String {
-    format!("{trace_id}:{stage}")
-}
-
-fn build_record_id(prefix: &str, timestamp: &DateTime<Utc>) -> String {
-    format!(
-        "{prefix}-{}-{}",
-        timestamp.timestamp_millis(),
-        timestamp.timestamp_subsec_nanos()
-    )
-}
-
-#[cfg(test)]
-#[allow(clippy::expect_used)]
-mod tests {
-    use super::{ObservabilityContextInput, ObservabilityStore, query_observability, span_key};
-    use nazh_engine::{CompletedExecutionEvent, ExecutionEvent};
-    use store::{Store, StoreHandle};
-    use uuid::Uuid;
-
-    fn test_context() -> ObservabilityContextInput {
-        ObservabilityContextInput {
-            workspace_path: String::new(),
-            project_id: "project-test".to_owned(),
-            project_name: "测试项目".to_owned(),
-            environment_id: "env-test".to_owned(),
-            environment_name: "测试环境".to_owned(),
-            deployment_source: "test".to_owned(),
-        }
-    }
-
-    #[tokio::test]
-    async fn completed_事件会清理_active_span() {
-        let workspace =
-            std::env::temp_dir().join(format!("nazh-observability-test-{}", Uuid::new_v4()));
-        let Ok(store) = ObservabilityStore::new(workspace.clone(), test_context(), None).await
-        else {
-            panic!("观测存储应可创建");
-        };
-        let trace_id = Uuid::new_v4();
-        let node_stage = "node_a";
-        let span_key = span_key(trace_id, node_stage);
-
-        let started = ExecutionEvent::Started {
-            stage: node_stage.to_owned(),
-            trace_id,
-        };
-        let Ok(_) = store.record_execution_event(&started).await else {
-            panic!("started 事件应可记录");
-        };
-        {
-            let runtime_state = store.state.lock().await;
-            assert!(runtime_state.active_spans.contains_key(&span_key));
-        }
-
-        let completed = ExecutionEvent::Completed(CompletedExecutionEvent {
-            stage: node_stage.to_owned(),
-            trace_id,
-            metadata: None,
-        });
-        let Ok(_) = store.record_execution_event(&completed).await else {
-            panic!("completed 事件应可记录");
-        };
-        {
-            let runtime_state = store.state.lock().await;
-            assert!(!runtime_state.active_spans.contains_key(&span_key));
-        }
-
-        let _ = std::fs::remove_dir_all(workspace);
-    }
-
-    #[tokio::test]
-    async fn query_observability_优先读取_store_记录() {
-        let workspace =
-            std::env::temp_dir().join(format!("nazh-observability-test-{}", Uuid::new_v4()));
-        let handle = StoreHandle::new(Store::open_unpersisted().expect("内存 Store 应可打开"));
-        let Ok(store) =
-            ObservabilityStore::new(workspace.clone(), test_context(), Some(handle.clone())).await
-        else {
-            panic!("观测存储应可创建");
-        };
-
-        store
-            .record_audit(
-                "info",
-                "workflow",
-                "部署完成",
-                Some("workflow_id=wf-store".to_owned()),
-                Some("trace-store".to_owned()),
-                None,
-            )
-            .await
-            .expect("审计记录应可写入");
-
-        let result = query_observability(
-            workspace.clone(),
-            Some(handle),
-            Some("trace-store".to_owned()),
-            Some("部署".to_owned()),
-            20,
-        )
-        .await
-        .expect("Store 查询应成功");
-
-        assert_eq!(result.audits.len(), 1);
-        assert_eq!(result.audits[0].message, "部署完成");
-
-        let _ = std::fs::remove_dir_all(workspace);
-    }
 }

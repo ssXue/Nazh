@@ -83,7 +83,7 @@ async fn tool_list_connections(_call: &AiToolCall, ctx: &CopilotToolCtx) -> Resu
 }
 
 async fn tool_search_devices(call: &AiToolCall, ctx: &CopilotToolCtx) -> Result<String, String> {
-    use crate::commands::devices::list_device_assets;
+    use crate::commands::devices::assets::list_device_assets;
 
     let args = parse_args(call)?;
     let keyword = args["keyword"].as_str().unwrap_or("").to_lowercase();
@@ -179,7 +179,7 @@ fn tool_query_workflow_status(_call: &AiToolCall, ctx: &CopilotToolCtx) -> Resul
 
 async fn tool_read_asset_yaml(call: &AiToolCall, ctx: &CopilotToolCtx) -> Result<String, String> {
     use crate::commands::capabilities::load_capability;
-    use crate::commands::devices::load_device_asset;
+    use crate::commands::devices::assets::load_device_asset;
 
     let args = parse_args(call)?;
     let asset_type = args["asset_type"].as_str().ok_or("缺少 asset_type 参数")?;

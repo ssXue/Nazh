@@ -42,14 +42,22 @@ fn extract_commands_from_handler(src: &str) -> Vec<String> {
 /// 且函数可能是 async 或同步的。
 fn extract_command_functions(commands_dir: &PathBuf) -> Vec<String> {
     let mut functions = Vec::new();
-    let entries = fs::read_dir(commands_dir).unwrap_or_else(|e| {
-        panic!("无法读取 commands 目录: {e}");
+    collect_command_functions_recursive(commands_dir, &mut functions);
+    functions.sort();
+    functions
+}
+
+fn collect_command_functions_recursive(dir: &PathBuf, functions: &mut Vec<String>) {
+    let entries = fs::read_dir(dir).unwrap_or_else(|e| {
+        panic!("无法读取 commands 目录 {}: {e}", dir.display());
     });
 
     for entry in entries {
         let entry = entry.expect("目录条目读取失败");
         let path = entry.path();
-        if path.extension().is_some_and(|ext| ext == "rs") {
+        if path.is_dir() {
+            collect_command_functions_recursive(&path, functions);
+        } else if path.extension().is_some_and(|ext| ext == "rs") {
             let content = fs::read_to_string(&path)
                 .unwrap_or_else(|e| panic!("无法读取 {}: {e}", path.display()));
             let mut saw_command_attr = false;
@@ -79,9 +87,6 @@ fn extract_command_functions(commands_dir: &PathBuf) -> Vec<String> {
             }
         }
     }
-
-    functions.sort();
-    functions
 }
 
 fn src_tauri_lib_rs() -> PathBuf {
@@ -158,25 +163,25 @@ const EXPECTED_COMMANDS: &[&str] = &[
     "human_loop::respond_human_loop",
     "human_loop::list_pending_approvals",
     // devices (21)
-    "devices::list_device_assets",
-    "devices::load_device_asset",
-    "devices::save_device_asset",
-    "devices::delete_device_asset",
-    "devices::list_asset_versions",
-    "devices::load_asset_version",
-    "devices::list_device_snapshots",
-    "devices::create_device_snapshot",
-    "devices::rollback_device_snapshot",
-    "devices::delete_device_snapshot",
-    "devices::patch_device_field",
-    "devices::bind_device_connection",
-    "devices::add_device_signal",
-    "devices::remove_device_signal",
-    "devices::add_device_alarm",
-    "devices::remove_device_alarm",
-    "devices::generate_pin_schema",
-    "devices::save_device_asset_sources",
-    "devices::load_device_asset_sources",
+    "devices::assets::list_device_assets",
+    "devices::assets::load_device_asset",
+    "devices::assets::save_device_asset",
+    "devices::assets::delete_device_asset",
+    "devices::versions::list_asset_versions",
+    "devices::versions::load_asset_version",
+    "devices::snapshots::list_device_snapshots",
+    "devices::snapshots::create_device_snapshot",
+    "devices::snapshots::rollback_device_snapshot",
+    "devices::snapshots::delete_device_snapshot",
+    "devices::fields::patch_device_field",
+    "devices::fields::bind_device_connection",
+    "devices::fields::add_device_signal",
+    "devices::fields::remove_device_signal",
+    "devices::fields::add_device_alarm",
+    "devices::fields::remove_device_alarm",
+    "devices::fields::generate_pin_schema",
+    "devices::fields::save_device_asset_sources",
+    "devices::fields::load_device_asset_sources",
     "devices::extract_text_from_pdf",
     "devices::import_ethercat_esi",
     // capabilities (9)
