@@ -125,7 +125,7 @@ IPC boundary types are defined once in Rust and auto-generated to TypeScript via
 
 ### Tauri IPC Surface (`src-tauri/src/lib.rs` + `src-tauri/src/commands/`)
 
-Workflow commands are split across `workflow_deploy.rs` / `workflow_dispatch.rs` / `workflow_undeploy.rs` (since 2026-05-03, was single `workflow.rs`). Other command domains remain in their respective files (`ai.rs`, `catalog.rs`, `connections.rs`, `variables.rs`, `devices.rs`, etc.).
+Workflow commands are split across `workflow_deploy.rs` / `workflow_dispatch.rs` / `workflow_undeploy.rs` (since 2026-05-03, was single `workflow.rs`). Other command domains remain in their respective files (`ai.rs`, `catalog.rs`, `connections.rs`, `variables.rs`, `devices/`, etc.).
 
 81 commands covering:
 - workflow lifecycle/runtime: `deploy_workflow`, `dispatch_payload`, `undeploy_workflow`, `list_runtime_workflows`, `set_active_runtime_workflow`, `list_dead_letters`

@@ -28,7 +28,7 @@
 - ADR-0020 — **已实施**（2026-05-01：`src/graph/` 拆分为 `crates/graph/`）。见 `docs/adr/0020-graph-编排层长期归属.md`。
 - ADR-0022 (工作流变量持久化) — **已实施**（2026-05-03，`crates/store/` Ring 1 SQLite crate + 壳层持久化钩子 + 部署时恢复）
 - ADR-0024 (设备信号读取与事件触发节点) — **已实施 Phase 1+2+3**（Phase 1: 2026-05-15，`deviceSignalRead` 节点 + `signal_decode.rs` 共享解码模块；Phase 2: 2026-05-15，`deviceEventTrigger` 事件监听节点（MQTT + CAN）；Phase 3: 2026-05-16，全协议覆盖——`deviceSignalRead` 支持 CanFrame/Topic/EthercatPdo/SerialCommand，`deviceEventTrigger` 支持 Modbus 定时轮询和 Serial 帧监听；前端节点库卡片就位。注册表合约测试更新至 29 种节点）
-- RFC-0003 Phase 2 / Phase 3 子集 — **已实施**（2026-05-16）：`observability_records` SQLite 索引表接入 `observability.rs`，事件/审计/告警双写 Store + JSONL，`query_observability` 优先查 Store、失败/空结果回退 JSONL；新增 `deployment_audit` 表并写入 deploy / undeploy 生命周期动作。批量 writer、变量变更审计、部署 ast_hash 版本管理与审计查询 IPC 仍待后续。
+- RFC-0003 Phase 2 / Phase 3 子集 — **已实施**（2026-05-16）：`observability_records` SQLite 索引表接入 `observability/` 模块，事件/审计/告警双写 Store + JSONL，`query_observability` 优先查 Store、失败/空结果回退 JSONL；新增 `deployment_audit` 表并写入 deploy / undeploy 生命周期动作。批量 writer、变量变更审计、部署 ast_hash 版本管理与审计查询 IPC 仍待后续。
 - RFC-0004 Phase 3 (Workflow DSL 编译器) — **已实施**（2026-05-03，`crates/dsl-compiler/` 编译器 + `stateMachine` + `capabilityCall` 节点类型 + 一致性测试 + 集成测试；2026-05-09 `capabilityCall` 已接入 `connection_id` 继承与 Modbus/MQTT/Serial/CAN 执行入口，`script` implementation 未接入执行器时 fail-fast）
 - RFC-0004 资产落盘与 AI 编辑挂接 — **已实施**（2026-05-05，Device / Capability 仅以工程工作路径 `dsl/devices` / `dsl/capabilities` YAML 文件持久化；SQLite 资产表逻辑已移除；新增 `load_ai_asset_context` IPC；画布内 AI 编辑读取已审查资产并可生成 `capabilityCall`）
 
