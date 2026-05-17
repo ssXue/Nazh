@@ -1,3 +1,14 @@
+//! 具名连接资源池的 RAII 管理器。
+//!
+//! [`ConnectionManager`] 维护连接名到 [`ConnectionRecord`] 的映射，
+//! 通过 [`acquire`](ConnectionManager::acquire) 排他借出连接，
+//! 返回的 [`ConnectionGuard`] 在 Drop 时自动释放——任何退出路径（含 panic）
+//! 都不会泄漏连接资源。
+//!
+//! 子模块：
+//! - [`health_ops`] — 健康检查与熔断状态转换
+//! - [`session`] — 连接级共享会话缓存（CAN/EtherCAT 总线复用）
+
 use std::{
     any::Any,
     collections::{HashMap, VecDeque},
