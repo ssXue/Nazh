@@ -111,6 +111,15 @@ const MIGRATIONS: &[(&str, &str)] = &[
             ON deployment_audit(timestamp);
         ",
     ),
+    (
+        "008",
+        "
+        CREATE TABLE IF NOT EXISTS ai_config (
+            key   TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+        ",
+    ),
 ];
 
 /// 检查 `schema_version` 表，执行尚未应用的 migrations。

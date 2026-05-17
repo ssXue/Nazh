@@ -1,8 +1,8 @@
 //! Store 的 async 调用边界。
 
 use crate::{
-    CopilotConversation, CopilotMessage, DeploymentAuditRecord, HistoryEntry, Store, StoreError,
-    StoredGlobalVariable, StoredObservabilityRecord, StoredVariable,
+    BatchWriter, CopilotConversation, CopilotMessage, DeploymentAuditRecord, HistoryEntry, Store,
+    StoreError, StoredGlobalVariable, StoredObservabilityRecord, StoredVariable,
 };
 use std::sync::Arc;
 
@@ -340,6 +340,68 @@ impl StoreHandle {
     ) -> Result<Vec<DeploymentAuditRecord>, StoreError> {
         let workflow_id = workflow_id.to_owned();
         self.run_blocking(move |store| store.list_deployment_audit(&workflow_id, limit))
+            .await
+    }
+
+    /// 创建可观测性记录的批量写入器。
+    ///
+    /// 后台 task 按 `flush_capacity` 条或 `flush_interval_ms` 毫秒批量写入。
+    /// 返回的 [`BatchWriter`] 生命周期应与 [`ObservabilityStore`](super::ObservabilityStore) 一致。
+    pub fn observability_batch_writer(
+        &self,
+        flush_capacity: usize,
+        flush_interval_ms: u64,
+    ) -> BatchWriter<ObservabilityBatchItem> {
+        let store = Arc::clone(&self.store);
+        BatchWriter::new(
+            1024,
+            flush_capacity,
+            flush_interval_ms,
+            store,
+            |store: &Store, batch: Vec<ObservabilityBatchItem>| {
+                let rows: Vec<_> = batch
+                    .into_iter()
+                    .map(|item: ObservabilityBatchItem| {
+                        (
+                            item.id,
+                            item.record_kind,
+                            item.category,
+                            item.timestamp,
+                            item.trace_id,
+                            item.search_text,
+                            item.payload,
+                        )
+                    })
+                    .collect();
+                store.insert_observability_record_batch(&rows)
+            },
+        )
+    }
+}
+
+/// 批量写入器的可观测性记录条目。
+#[derive(Debug)]
+pub struct ObservabilityBatchItem {
+    pub id: String,
+    pub record_kind: String,
+    pub category: String,
+    pub timestamp: String,
+    pub trace_id: Option<String>,
+    pub search_text: String,
+    pub payload: serde_json::Value,
+}
+
+// -- AI 配置持久化 --
+
+impl StoreHandle {
+    /// 读取 AI 配置 JSON。
+    pub async fn load_ai_config(&self) -> Result<Option<String>, StoreError> {
+        self.run_blocking(Store::load_ai_config).await
+    }
+
+    /// 写入 AI 配置 JSON。
+    pub async fn save_ai_config(&self, json: String) -> Result<(), StoreError> {
+        self.run_blocking(move |store| store.save_ai_config(&json))
             .await
     }
 }

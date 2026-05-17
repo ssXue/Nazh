@@ -1,11 +1,5 @@
-use std::path::Path;
-
-#[cfg(unix)]
-use std::os::unix::fs::PermissionsExt;
-
 use ai::{AiConfigUpdate, AiConfigView};
 use tauri::{AppHandle, State};
-use tokio::fs;
 
 use crate::commands::{
     capabilities::{list_capabilities, load_capability},
@@ -65,46 +59,21 @@ pub(crate) async fn load_ai_api_key(
         .to_owned())
 }
 
-#[cfg(unix)]
-pub(crate) async fn tighten_ai_config_file_permissions(path: &Path) {
-    let permissions = std::fs::Permissions::from_mode(0o600);
-    if let Err(error) = fs::set_permissions(path, permissions).await {
-        tracing::warn!(
-            path = %path.display(),
-            "收紧 AI 配置文件权限失败，继续使用现有文件权限: {error}"
-        );
-    }
-}
-
-#[cfg(not(unix))]
-pub(crate) async fn tighten_ai_config_file_permissions(_path: &Path) {}
-
 #[tauri::command]
 pub(crate) async fn save_ai_config(
-    app: AppHandle,
     state: State<'_, DesktopState>,
     update: AiConfigUpdate,
 ) -> Result<AiConfigView, String> {
-    let path = DesktopState::ai_config_file_path(&app)?;
-    let dir = path.parent().ok_or("无法确定 AI 配置文件目录")?;
-    fs::create_dir_all(dir)
-        .await
-        .map_err(|error| format!("创建 AI 配置目录失败: {error}"))?;
-
+    let store = state.store_handle()?;
     let mut config = state.ai_config.write().await;
     config.merge_update(update);
 
-    let tmp_path = path.with_extension("json.tmp");
     let text = serde_json::to_string_pretty(&*config)
         .map_err(|error| format!("序列化 AI 配置失败: {error}"))?;
-    fs::write(&tmp_path, &text)
+    store
+        .save_ai_config(text)
         .await
-        .map_err(|error| format!("写入 AI 配置临时文件失败: {error}"))?;
-    tighten_ai_config_file_permissions(&tmp_path).await;
-    fs::rename(&tmp_path, &path)
-        .await
-        .map_err(|error| format!("原子重命名 AI 配置文件失败: {error}"))?;
-    tighten_ai_config_file_permissions(&path).await;
+        .map_err(|error| format!("保存 AI 配置到 Store 失败: {error}"))?;
 
     Ok(config.to_view())
 }

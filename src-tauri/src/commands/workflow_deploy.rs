@@ -376,21 +376,19 @@ pub(crate) async fn deploy_workflow(
     )
     .await;
     let observability_store = if let Some(context) = observability_context.clone() {
-        let store = ObservabilityStore::new(context, store_handle.clone());
-        let _ = store
-            .record_audit(
-                "info",
-                "workflow",
-                "收到部署请求",
-                Some(format!("workflow_id={workflow_id}")),
-                None,
-                Some(json!({
-                    "workflow_id": workflow_id.clone(),
-                    "project_name": metadata.project_name.clone(),
-                    "environment_name": metadata.environment_name.clone(),
-                })),
-            )
-            .await;
+        let store = ObservabilityStore::new(context, store_handle.as_ref());
+        store.record_audit(
+            "info",
+            "workflow",
+            "收到部署请求",
+            Some(format!("workflow_id={workflow_id}")),
+            None,
+            Some(json!({
+                "workflow_id": workflow_id.clone(),
+                "project_name": metadata.project_name.clone(),
+                "environment_name": metadata.environment_name.clone(),
+            })),
+        );
         Some(store)
     } else {
         None
@@ -425,16 +423,14 @@ pub(crate) async fn deploy_workflow(
             )
             .await;
             if let Some(store) = &observability_store {
-                let _ = store
-                    .record_audit(
-                        "error",
-                        "workflow",
-                        "部署失败",
-                        Some(error.to_string()),
-                        None,
-                        None,
-                    )
-                    .await;
+                store.record_audit(
+                    "error",
+                    "workflow",
+                    "部署失败",
+                    Some(error.to_string()),
+                    None,
+                    None,
+                );
             }
             return Err(stringify_error(&error));
         }
@@ -526,33 +522,31 @@ pub(crate) async fn deploy_workflow(
         replaced_existing: Some(replaced_existing),
     };
     if let Some(store) = &observability_store {
-        let _ = store
-            .record_audit(
-                "success",
-                "workflow",
-                "部署完成",
-                Some(format!(
-                    "workflow_id={workflow_id} · 节点 {node_count} / 连线 {edge_count}"
-                )),
-                None,
-                Some(json!({
-                    "workflow_id": workflow_id.clone(),
-                    "node_count": node_count,
-                    "edge_count": edge_count,
-                    "root_nodes": deploy_payload.root_nodes.clone(),
-                    "replaced_existing": replaced_existing,
-                    "runtime_policy": {
-                        "manual_queue_capacity": policy.manual_queue_capacity,
-                        "trigger_queue_capacity": policy.trigger_queue_capacity,
-                        "manual_backpressure_strategy": policy.manual_backpressure_strategy,
-                        "trigger_backpressure_strategy": policy.trigger_backpressure_strategy,
-                        "max_retry_attempts": policy.max_retry_attempts,
-                        "initial_retry_backoff_ms": policy.initial_retry_backoff_ms,
-                        "max_retry_backoff_ms": policy.max_retry_backoff_ms,
-                    }
-                })),
-            )
-            .await;
+        store.record_audit(
+            "success",
+            "workflow",
+            "部署完成",
+            Some(format!(
+                "workflow_id={workflow_id} · 节点 {node_count} / 连线 {edge_count}"
+            )),
+            None,
+            Some(json!({
+                "workflow_id": workflow_id.clone(),
+                "node_count": node_count,
+                "edge_count": edge_count,
+                "root_nodes": deploy_payload.root_nodes.clone(),
+                "replaced_existing": replaced_existing,
+                "runtime_policy": {
+                    "manual_queue_capacity": policy.manual_queue_capacity,
+                    "trigger_queue_capacity": policy.trigger_queue_capacity,
+                    "manual_backpressure_strategy": policy.manual_backpressure_strategy,
+                    "trigger_backpressure_strategy": policy.trigger_backpressure_strategy,
+                    "max_retry_attempts": policy.max_retry_attempts,
+                    "initial_retry_backoff_ms": policy.initial_retry_backoff_ms,
+                    "max_retry_backoff_ms": policy.max_retry_backoff_ms,
+                }
+            })),
+        );
     }
     record_deployment_audit(
         &state,

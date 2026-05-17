@@ -67,19 +67,19 @@ mod tests {
     #[tokio::test]
     async fn query_observability_从_store_读取记录() {
         let handle = StoreHandle::new(Store::open_unpersisted().expect("内存 Store 应可打开"));
-        let store = ObservabilityStore::new(test_context(), Some(handle.clone()));
+        let store = ObservabilityStore::new(test_context(), Some(&handle));
 
-        store
-            .record_audit(
-                "info",
-                "workflow",
-                "部署完成",
-                Some("workflow_id=wf-store".to_owned()),
-                Some("trace-store".to_owned()),
-                None,
-            )
-            .await
-            .expect("审计记录应可写入");
+        store.record_audit(
+            "info",
+            "workflow",
+            "部署完成",
+            Some("workflow_id=wf-store".to_owned()),
+            Some("trace-store".to_owned()),
+            None,
+        );
+
+        // 给 batch writer 一点时间 flush
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
 
         let result = query_observability(
             Some(handle),

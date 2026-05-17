@@ -142,16 +142,14 @@ impl DeadLetterSink {
         append_json_line_async(self.file_path.clone(), record.clone()).await?;
 
         if let Some(store) = observability {
-            let _ = store
-                .record_audit(
-                    "error",
-                    "runtime",
-                    "消息进入死信队列",
-                    Some(reason),
-                    Some(envelope.ctx.trace_id.to_string()),
-                    Some(serde_json::to_value(record).unwrap_or(Value::Null)),
-                )
-                .await;
+            store.record_audit(
+                "error",
+                "runtime",
+                "消息进入死信队列",
+                Some(reason),
+                Some(envelope.ctx.trace_id.to_string()),
+                Some(serde_json::to_value(record).unwrap_or(Value::Null)),
+            );
         }
 
         Ok(())

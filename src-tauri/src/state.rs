@@ -3,7 +3,7 @@ use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use ai::AiConfigFile;
 use nazh_engine::{ConnectionDefinition, shared_connection_manager};
 use store::{Store, StoreHandle};
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 use tokio::{
     fs,
     sync::{Mutex, RwLock},
@@ -70,14 +70,6 @@ impl DesktopState {
         let workspace_dir =
             resolve_project_workspace_dir(app, workspace_path).map(|(dir, _)| dir)?;
         Ok(workspace_dir.join("deployment-session.json"))
-    }
-
-    pub(crate) fn ai_config_file_path(app: &AppHandle) -> Result<PathBuf, String> {
-        let data_dir = app
-            .path()
-            .app_local_data_dir()
-            .map_err(|error| format!("无法解析应用数据目录: {error}"))?;
-        Ok(data_dir.join("ai-config.json"))
     }
 
     pub(crate) async fn load_connections_from_disk(

@@ -4,6 +4,8 @@
 //! 未来的 edge-daemon。Ring 0 保持纯净——本 crate 只消费 [`serde_json::Value`]
 //! 和基础类型，不依赖 `nazh-core`。
 
+mod batch;
+mod config;
 mod copilot;
 mod deployment_audit;
 mod error;
@@ -14,17 +16,21 @@ pub(crate) mod migrations;
 mod observability;
 mod variables;
 
+pub use batch::BatchWriter;
 pub use copilot::{CopilotConversation, CopilotMessage};
 pub use deployment_audit::DeploymentAuditRecord;
 pub use error::StoreError;
 pub use global_variables::StoredGlobalVariable;
-pub use handle::StoreHandle;
+pub use handle::{ObservabilityBatchItem, StoreHandle};
 pub use history::HistoryEntry;
 pub use observability::StoredObservabilityRecord;
 pub use variables::StoredVariable;
 
 use rusqlite::Connection;
 use std::path::Path;
+
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 
 /// 本地存储引擎。
 ///
@@ -43,7 +49,16 @@ impl Store {
     /// - `StoreError::Rusqlite` — migration 执行失败。
     pub fn open(path: &Path) -> Result<Self, StoreError> {
         let db = Connection::open(path)?;
-        Self::from_connection(db)
+        let store = Self::from_connection(db)?;
+        // SQLite 文件含 AI API 密钥等敏感数据，收紧权限为仅当前用户读写
+        #[cfg(unix)]
+        {
+            let permissions = std::fs::Permissions::from_mode(0o600);
+            if let Err(error) = std::fs::set_permissions(path, permissions) {
+                tracing::warn!(path = %path.display(), "收紧 SQLite 文件权限失败: {error}");
+            }
+        }
+        Ok(store)
     }
 
     /// 仅用于测试：打开内存数据库。

@@ -125,30 +125,28 @@ pub(crate) async fn undeploy_workflow_by_id(
     }
 
     if let Some(store) = removed_observability {
-        let _ = store
-            .record_audit(
-                if response.had_workflow {
-                    "warn"
-                } else {
-                    "info"
-                },
-                "workflow",
-                if response.had_workflow {
-                    "运行已停止"
-                } else {
-                    "停止请求未命中已部署工作流"
-                },
-                Some(format!(
-                    "workflow_id={} · 已中止 {} 个根触发任务",
-                    target_workflow_id, response.aborted_timer_count
-                )),
-                None,
-                Some(json!({
-                    "workflow_id": target_workflow_id,
-                    "remaining_workflow_count": remaining_workflow_count,
-                })),
-            )
-            .await;
+        store.record_audit(
+            if response.had_workflow {
+                "warn"
+            } else {
+                "info"
+            },
+            "workflow",
+            if response.had_workflow {
+                "运行已停止"
+            } else {
+                "停止请求未命中已部署工作流"
+            },
+            Some(format!(
+                "workflow_id={} · 已中止 {} 个根触发任务",
+                target_workflow_id, response.aborted_timer_count
+            )),
+            None,
+            Some(json!({
+                "workflow_id": target_workflow_id,
+                "remaining_workflow_count": remaining_workflow_count,
+            })),
+        );
     }
 
     if active_before.as_deref() == Some(target_workflow_id) {

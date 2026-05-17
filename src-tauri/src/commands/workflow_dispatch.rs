@@ -31,37 +31,33 @@ pub(crate) async fn dispatch_payload(
     tracing::info!(workflow_id = %target_workflow_id, trace_id = %trace_id, "收到测试载荷提交请求");
     if let Err(error) = dispatch_router.submit_manual(ctx, "manual-dispatch").await {
         if let Some(store) = &observability_store {
-            let _ = store
-                .record_audit(
-                    "error",
-                    "dispatch",
-                    "提交测试载荷失败",
-                    Some(error.clone()),
-                    Some(trace_id.clone()),
-                    Some(json!({
-                        "workflow_id": target_workflow_id,
-                    })),
-                )
-                .await;
+            store.record_audit(
+                "error",
+                "dispatch",
+                "提交测试载荷失败",
+                Some(error.clone()),
+                Some(trace_id.clone()),
+                Some(json!({
+                    "workflow_id": target_workflow_id,
+                })),
+            );
         }
         return Err(error);
     }
 
     if let Some(store) = &observability_store {
-        let _ = store
-            .record_audit(
-                "info",
-                "dispatch",
-                "已提交测试载荷",
-                Some(format!(
-                    "workflow_id={target_workflow_id} · trace_id={trace_id}"
-                )),
-                Some(trace_id.clone()),
-                Some(json!({
-                    "workflow_id": target_workflow_id,
-                })),
-            )
-            .await;
+        store.record_audit(
+            "info",
+            "dispatch",
+            "已提交测试载荷",
+            Some(format!(
+                "workflow_id={target_workflow_id} · trace_id={trace_id}"
+            )),
+            Some(trace_id.clone()),
+            Some(json!({
+                "workflow_id": target_workflow_id,
+            })),
+        );
     }
     Ok(DispatchResponse {
         trace_id,

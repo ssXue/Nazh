@@ -5,7 +5,7 @@ use std::{collections::HashMap, collections::HashSet, sync::Arc};
 use chrono::Utc;
 use nazh_engine::{ExecutionEvent, WorkflowContext};
 use serde_json::Value;
-use store::StoreHandle;
+use store::{ObservabilityBatchItem, StoreHandle};
 use tauri_bindings::{
     AlertDeliveryRecord, ObservabilityContextInput, ObservabilityEntry, ObservabilityQueryResult,
     ObservabilityTraceSummary,
@@ -22,8 +22,9 @@ use super::types::{
 impl ObservabilityStore {
     pub fn new(
         context: ObservabilityContextInput,
-        store: Option<StoreHandle>,
+        store_handle: Option<&StoreHandle>,
     ) -> SharedObservabilityStore {
+        let batch_writer = store_handle.map(|s| s.observability_batch_writer(100, 100));
         Arc::new(Self {
             session: ObservabilitySession {
                 project_id: context.project_id,
@@ -32,7 +33,7 @@ impl ObservabilityStore {
                 environment_name: context.environment_name,
             },
             state: Mutex::new(ObservabilityRuntimeState::default()),
-            store,
+            batch_writer,
         })
     }
 
@@ -89,7 +90,7 @@ impl ObservabilityStore {
                 drop(runtime_state);
 
                 if let Some(alert) = pending_alert {
-                    self.persist_alert(&alert).await;
+                    self.persist_alert(&alert);
                 }
 
                 let draft = ObservabilityEntryDraft::execution(
@@ -104,7 +105,7 @@ impl ObservabilityStore {
                 .with_node_id(Some(node_stage.clone()))
                 .with_duration_ms(duration_ms);
                 let entry = self.build_entry(draft);
-                self.persist_entry("event", &entry).await;
+                self.persist_entry("event", &entry);
                 return Ok(entry);
             }
             ExecutionEvent::Failed {
@@ -190,11 +191,11 @@ impl ObservabilityStore {
         drop(runtime_state);
 
         let entry = self.build_entry(draft);
-        self.persist_entry("event", &entry).await;
+        self.persist_entry("event", &entry);
         Ok(entry)
     }
 
-    pub async fn record_result(&self, result: &WorkflowContext) -> Result<(), String> {
+    pub fn record_result(&self, result: &WorkflowContext) {
         let now = Utc::now();
         let result_entry = self.build_entry(ObservabilityEntryDraft {
             level: "success".to_owned(),
@@ -209,12 +210,10 @@ impl ObservabilityStore {
             timestamp: now,
             event_kind: None,
         });
-        self.persist_entry("event", &result_entry).await;
-
-        Ok(())
+        self.persist_entry("event", &result_entry);
     }
 
-    pub async fn record_audit(
+    pub fn record_audit(
         &self,
         level: &str,
         source: &str,
@@ -222,7 +221,7 @@ impl ObservabilityStore {
         detail: Option<String>,
         trace_id: Option<String>,
         data: Option<Value>,
-    ) -> Result<(), String> {
+    ) {
         let entry = self.build_entry(ObservabilityEntryDraft {
             level: level.to_owned(),
             category: "audit".to_owned(),
@@ -236,8 +235,7 @@ impl ObservabilityStore {
             timestamp: Utc::now(),
             event_kind: None,
         });
-        self.persist_entry("audit", &entry).await;
-        Ok(())
+        self.persist_entry("audit", &entry);
     }
 
     fn build_entry(&self, draft: ObservabilityEntryDraft) -> ObservabilityEntry {
@@ -261,8 +259,8 @@ impl ObservabilityStore {
         }
     }
 
-    async fn persist_entry(&self, record_kind: &str, entry: &ObservabilityEntry) {
-        let Some(store) = &self.store else {
+    fn persist_entry(&self, record_kind: &str, entry: &ObservabilityEntry) {
+        let Some(batch_writer) = &self.batch_writer else {
             return;
         };
         let payload = match serde_json::to_value(entry) {
@@ -273,24 +271,19 @@ impl ObservabilityStore {
             }
         };
         let search_text = entry_search_text(entry);
-        if let Err(error) = store
-            .insert_observability_record(
-                &entry.id,
-                record_kind,
-                &entry.category,
-                &entry.timestamp,
-                entry.trace_id.as_deref(),
-                &search_text,
-                &payload,
-            )
-            .await
-        {
-            tracing::warn!(?error, entry_id = %entry.id, "可观测条目入库失败");
-        }
+        batch_writer.enqueue(ObservabilityBatchItem {
+            id: entry.id.clone(),
+            record_kind: record_kind.to_owned(),
+            category: entry.category.clone(),
+            timestamp: entry.timestamp.clone(),
+            trace_id: entry.trace_id.clone(),
+            search_text,
+            payload,
+        });
     }
 
-    async fn persist_alert(&self, alert: &AlertDeliveryRecord) {
-        let Some(store) = &self.store else {
+    fn persist_alert(&self, alert: &AlertDeliveryRecord) {
+        let Some(batch_writer) = &self.batch_writer else {
             return;
         };
         let payload = match serde_json::to_value(alert) {
@@ -301,20 +294,15 @@ impl ObservabilityStore {
             }
         };
         let search_text = super::alerting::alert_search_text(alert);
-        if let Err(error) = store
-            .insert_observability_record(
-                &alert.id,
-                "alert",
-                "alert",
-                &alert.timestamp,
-                Some(&alert.trace_id),
-                &search_text,
-                &payload,
-            )
-            .await
-        {
-            tracing::warn!(?error, alert_id = %alert.id, "告警记录入库失败");
-        }
+        batch_writer.enqueue(ObservabilityBatchItem {
+            id: alert.id.clone(),
+            record_kind: "alert".to_owned(),
+            category: "alert".to_owned(),
+            timestamp: alert.timestamp.clone(),
+            trace_id: Some(alert.trace_id.clone()),
+            search_text,
+            payload,
+        });
     }
 }
 

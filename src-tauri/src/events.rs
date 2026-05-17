@@ -194,7 +194,7 @@ pub(crate) fn spawn_result_forwarder(
                 (*payload).clone(),
             );
             if let Some(store) = &observability {
-                let _ = store.record_result(&result).await;
+                store.record_result(&result);
             }
             let _ = app.emit(
                 "workflow://result",

@@ -245,16 +245,20 @@ pub fn run() {
                     DesktopState::load_connections_from_disk(&app_handle, manager, None).await;
                 }
             });
-            tauri::async_runtime::spawn(async move {
-                if let Ok(path) = DesktopState::ai_config_file_path(&app_handle)
-                    && path.exists()
-                    && let Ok(text) = tokio::fs::read_to_string(&path).await
-                    && let Ok(mut file_config) = serde_json::from_str::<AiConfigFile>(&text)
-                {
-                    commands::ai::tighten_ai_config_file_permissions(&path).await;
-                    file_config.normalize();
-                    let mut config = ai_config_arc.write().await;
-                    *config = file_config;
+            tauri::async_runtime::spawn({
+                let state: State<'_, DesktopState> = app.state();
+                let store_handle = state.store_handle().ok();
+                async move {
+                    // AI 配置从 Store 加载
+                    if let Some(store_handle) = store_handle
+                        && let Ok(Some(text)) = store_handle.load_ai_config().await
+                        && let Ok(mut store_config) =
+                            serde_json::from_str::<AiConfigFile>(&text)
+                    {
+                        store_config.normalize();
+                        let mut config = ai_config_arc.write().await;
+                        *config = store_config;
+                    }
                 }
             });
             Ok(())

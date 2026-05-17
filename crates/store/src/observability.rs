@@ -3,6 +3,17 @@
 use crate::{Store, StoreError};
 use rusqlite::params;
 
+/// 批量写入的一行数据元组。
+pub(crate) type ObservabilityBatchRow = (
+    String,
+    String,
+    String,
+    String,
+    Option<String>,
+    String,
+    serde_json::Value,
+);
+
 /// 存入 `SQLite` 的可观测性记录。
 #[derive(Debug, Clone)]
 pub struct StoredObservabilityRecord {
@@ -104,6 +115,37 @@ impl Store {
         }
 
         Ok(records)
+    }
+
+    /// 批量写入可观测性记录。在单个事务中 INSERT，失败时整批回滚。
+    pub fn insert_observability_record_batch(
+        &self,
+        records: &[ObservabilityBatchRow],
+    ) -> Result<(), StoreError> {
+        if records.is_empty() {
+            return Ok(());
+        }
+        let db = self.db();
+        let tx = db.unchecked_transaction()?;
+        for (id, record_kind, category, timestamp, trace_id, search_text, payload) in records {
+            let payload_json = serde_json::to_string(payload)?;
+            tx.execute(
+                "INSERT OR REPLACE INTO observability_records
+                    (id, record_kind, category, timestamp, trace_id, search_text, payload)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![
+                    id,
+                    record_kind,
+                    category,
+                    timestamp,
+                    trace_id,
+                    search_text,
+                    payload_json
+                ],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
     }
 
     /// 清空可观测性索引。

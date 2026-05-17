@@ -99,16 +99,14 @@ pub(crate) async fn set_active_runtime_workflow(
     if let Some(workflow) = state.workflows.lock().await.get(workflow_id)
         && let Some(store) = &workflow.observability
     {
-        let _ = store
-            .record_audit(
-                "info",
-                "runtime",
-                "已切换当前工作流",
-                Some(format!("workflow_id={workflow_id}")),
-                None,
-                None,
-            )
-            .await;
+        store.record_audit(
+            "info",
+            "runtime",
+            "已切换当前工作流",
+            Some(format!("workflow_id={workflow_id}")),
+            None,
+            None,
+        );
     }
 
     let _ = app.emit("workflow://runtime-focus", summary.clone());

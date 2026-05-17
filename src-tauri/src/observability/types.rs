@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use serde_json::Value;
-use store::StoreHandle;
+use store::{BatchWriter, ObservabilityBatchItem};
 use tokio::sync::Mutex;
 
 pub type SharedObservabilityStore = Arc<ObservabilityStore>;
@@ -26,7 +26,7 @@ pub(crate) struct ObservabilityRuntimeState {
 pub struct ObservabilityStore {
     pub(crate) session: ObservabilitySession,
     pub(crate) state: Mutex<ObservabilityRuntimeState>,
-    pub(crate) store: Option<StoreHandle>,
+    pub(crate) batch_writer: Option<BatchWriter<ObservabilityBatchItem>>,
 }
 
 pub(crate) struct ObservabilityEntryDraft {
