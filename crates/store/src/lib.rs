@@ -60,6 +60,12 @@ impl Store {
                 tracing::warn!(path = %path.display(), "收紧 SQLite 文件权限失败: {error}");
             }
         }
+        // Windows 上 SQLite 文件权限由 NTFS 继承控制。
+        // 未来可通过 Windows ACL (SetNamedSecurityInfo) 进一步收紧。
+        #[cfg(target_os = "windows")]
+        {
+            tracing::debug!(path = %path.display(), "Windows 平台跳过 SQLite 文件权限收紧（依赖 NTFS 继承）");
+        }
         Ok(store)
     }
 

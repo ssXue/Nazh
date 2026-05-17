@@ -37,6 +37,7 @@ import {
   metadataNumber,
   metadataRecord,
   metadataString,
+  platformDefaultPortPath,
 } from './connection-studio-utils';
 import type { ConnectionTemplate } from './connection-studio-utils';
 
@@ -249,10 +250,24 @@ export function ConnectionStudio({
   }
 
   function handleAddConnection(template: ConnectionTemplate) {
+    // 模板中可能包含 Unix 串口路径占位，替换为当前平台的默认值
+    const defaultPortPath = platformDefaultPortPath();
+    const rawMeta = template.definition.metadata;
+    const metadata: Record<string, JsonValue> =
+      rawMeta && typeof rawMeta === 'object' && !Array.isArray(rawMeta)
+        ? { ...rawMeta }
+        : {};
+    if (typeof metadata.port_path === 'string' && metadata.port_path.startsWith('/dev/')) {
+      metadata.port_path = defaultPortPath;
+    }
+    if (typeof metadata.channel === 'string' && metadata.channel.startsWith('/dev/')) {
+      metadata.channel = defaultPortPath;
+    }
+
     const nextConnection: ConnectionDefinition = {
       ...template.definition,
       id: buildNextConnectionId(template.idPrefix),
-      metadata: template.definition.metadata ?? {},
+      metadata,
     };
 
     saveConnections([...connections, nextConnection], `已新增 ${template.label} 连接`);

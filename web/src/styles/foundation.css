@@ -194,6 +194,12 @@ html.is-tauri-runtime {
   --window-safe-top: 42px;
 }
 
+/* Windows 使用标准系统标题栏，内容区域不需要安全区域 */
+html.is-platform-windows {
+  --window-safe-top: 0px;
+  --window-radius: 0;
+}
+
 html,
 body,
 #root {

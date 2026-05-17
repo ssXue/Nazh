@@ -96,6 +96,30 @@ export function installDesktopShellGuards(): () => void {
   document.documentElement.classList.add('is-tauri-runtime');
   document.body.classList.add('is-tauri-runtime');
 
+  // 同步初始猜测平台（避免 Rust 事件到达前的闪烁）
+  if (typeof navigator !== 'undefined') {
+    const initialPlatform = navigator.platform?.startsWith('Win')
+      ? 'windows'
+      : navigator.platform?.startsWith('Mac')
+        ? 'macos'
+        : 'linux';
+    document.documentElement.classList.add(`is-platform-${initialPlatform}`);
+  }
+
+  // 异步精确校正（Rust 编译期 cfg! 结果）
+  let unlistenPlatform: (() => void) | null = null;
+  import('@tauri-apps/api/event')
+    .then(({ listen }) =>
+      listen<string>('shell://platform', (event) => {
+        const root = document.documentElement;
+        root.classList.remove('is-platform-macos', 'is-platform-windows', 'is-platform-linux');
+        root.classList.add(`is-platform-${event.payload}`);
+      }),
+    )
+    .then((unlisten) => {
+      unlistenPlatform = unlisten;
+    });
+
   const preventContextMenu = (event: MouseEvent) => {
     event.preventDefault();
   };
@@ -108,6 +132,11 @@ export function installDesktopShellGuards(): () => void {
     }
   };
   const handleWindowDragMouseDown = (event: MouseEvent) => {
+    // Windows 标准标题栏自带拖拽，不需要前端模拟
+    if (document.documentElement.classList.contains('is-platform-windows')) {
+      return;
+    }
+
     const target = event.target;
     if (!(target instanceof Element)) {
       return;
@@ -147,7 +176,13 @@ export function installDesktopShellGuards(): () => void {
     document.removeEventListener('gestureend', preventGestureZoom);
     document.removeEventListener('mousedown', handleWindowDragMouseDown);
     window.removeEventListener('wheel', preventWheelZoom);
-    document.documentElement.classList.remove('is-tauri-runtime');
+    unlistenPlatform?.();
+    document.documentElement.classList.remove(
+      'is-tauri-runtime',
+      'is-platform-macos',
+      'is-platform-windows',
+      'is-platform-linux',
+    );
     document.body.classList.remove('is-tauri-runtime');
   };
 }

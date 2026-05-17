@@ -11,7 +11,7 @@ import {
   BAUD_RATE_OPTIONS,
   CAN_BITRATE_OPTIONS,
   DEFAULT_CONNECTION_GOVERNANCE,
-  DEFAULT_PORT_PATH,
+  platformDefaultPortPath,
   governanceNumber,
   isBarkConnectionType,
   isCanConnectionType,
@@ -38,22 +38,6 @@ export interface ConnectionFormProps {
   isAdvancedOpen: boolean;
   setIsAdvancedOpen: (value: boolean) => void;
   callbacks: ConnectionFormCallbacks;
-}
-
-// ---------------------------------------------------------------------------
-// 平台默认串口路径辅助
-// ---------------------------------------------------------------------------
-
-function platformDefaultPortPath(): string {
-  if (typeof navigator === 'undefined') {
-    return '/dev/ttyUSB0';
-  }
-  const platformKey = navigator.platform.startsWith('Win')
-    ? 'win32'
-    : navigator.platform.startsWith('Mac')
-      ? 'darwin'
-      : 'linux';
-  return DEFAULT_PORT_PATH[platformKey] ?? '/dev/ttyUSB0';
 }
 
 // ---------------------------------------------------------------------------

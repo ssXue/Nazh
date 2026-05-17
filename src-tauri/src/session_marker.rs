@@ -1,7 +1,7 @@
 //! 会话守护：通过全局 panic 捕获 + 启动标记检测应用异常退出。
 //!
 //! 启动时安装 panic hook，若发生 panic 则写入崩溃报告（含调用栈）。
-//! 同时写入启动标记作为兜底，检测 SIGKILL / 断电等非 panic 异常终止。
+//! 同时写入启动标记作为兜底，检测被外部终止（任务管理器 / 断电 / 强制退出）等非 panic 异常。
 //! 正常退出时清理标记；下次启动时检查残留文件判断上次退出方式。
 
 use std::backtrace::Backtrace;
@@ -20,7 +20,7 @@ const CRASH_FILE: &str = ".session.crash";
 pub(crate) enum SessionAnomaly {
     /// 上次会话因 panic 崩溃。
     Panicked(CrashReport),
-    /// 上次会话被外部终止（SIGKILL / 断电 / 强制退出等）。
+    /// 上次会话被外部终止（任务管理器 / 断电 / 强制退出等）。
     KilledExternally { pid: u32, started_at_ms: u64 },
 }
 
@@ -85,7 +85,7 @@ fn detect_anomaly(data_dir: &Path) -> Option<SessionAnomaly> {
         return Some(SessionAnomaly::Panicked(report));
     }
 
-    // 其次检查残留标记（非 panic 异常：SIGKILL / 断电 / 强制退出）
+    // 其次检查残留标记（非 panic 异常：被外部终止 / 断电 / 强制退出）
     if let Ok(content) = std::fs::read_to_string(&marker_path)
         && let Ok(marker) = serde_json::from_str::<SessionMarker>(&content)
         && marker.pid != std::process::id()

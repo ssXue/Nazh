@@ -19,7 +19,7 @@ mod workspace;
 use ai::AiConfigFile;
 use state::DesktopState;
 use store::{Store, StoreHandle};
-use tauri::{Manager, State};
+use tauri::{Emitter, Manager, State};
 #[cfg(target_os = "windows")]
 use window_vibrancy::apply_blur;
 #[cfg(target_os = "macos")]
@@ -208,7 +208,7 @@ pub fn run() {
                         tracing::warn!(
                             prev_pid = pid,
                             prev_start = %prev_start,
-                            "检测到上次会话被外部终止（SIGKILL / 断电等），PID {} 启动于 {}",
+                            "检测到上次会话被外部终止（任务管理器 / 断电等），PID {} 启动于 {}",
                             pid,
                             prev_start,
                         );
@@ -218,6 +218,16 @@ pub fn run() {
             }
 
             if let Some(window) = app.get_webview_window("main") {
+                // 向前端通报运行平台（编译期 cfg! 零运行时开销）
+                let platform = if cfg!(target_os = "macos") {
+                    "macos"
+                } else if cfg!(target_os = "windows") {
+                    "windows"
+                } else {
+                    "linux"
+                };
+                let _ = app.emit("shell://platform", platform);
+
                 apply_window_glass(&window);
 
                 // 注册窗口关闭事件：标记正常退出

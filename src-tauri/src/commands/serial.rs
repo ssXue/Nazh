@@ -27,15 +27,22 @@ fn classify_serial_port(path: &str) -> String {
     let path_lower = path.to_lowercase();
     if path_lower.contains("bluetooth") || path_lower.contains("bt-") {
         "bluetooth".to_string()
-    } else if path_lower.contains("/dev/cu.")
-        || path_lower.contains("/dev/tty.")
-        || path_lower.contains("/dev/ttyusb")
-        || path_lower.contains("/dev/ttyacm")
-        || path_lower.contains("/dev/ttyama")
-    {
+    } else if is_usb_serial_port(&path_lower) {
         "usb-serial".to_string()
     } else {
         "builtin".to_string()
+    }
+}
+
+fn is_usb_serial_port(path_lower: &str) -> bool {
+    if cfg!(target_os = "windows") {
+        path_lower.starts_with("com")
+    } else {
+        path_lower.contains("/dev/cu.")
+            || path_lower.contains("/dev/tty.")
+            || path_lower.contains("/dev/ttyusb")
+            || path_lower.contains("/dev/ttyacm")
+            || path_lower.contains("/dev/ttyama")
     }
 }
 

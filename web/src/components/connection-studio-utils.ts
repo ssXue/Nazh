@@ -209,6 +209,19 @@ export const DEFAULT_PORT_PATH: Record<string, string> = {
   win32: 'COM3',
 };
 
+/** 根据当前平台返回默认串口路径 */
+export function platformDefaultPortPath(): string {
+  if (typeof navigator === 'undefined') {
+    return '/dev/ttyUSB0';
+  }
+  const platformKey = navigator.platform.startsWith('Win')
+    ? 'win32'
+    : navigator.platform.startsWith('Mac')
+      ? 'darwin'
+      : 'linux';
+  return DEFAULT_PORT_PATH[platformKey] ?? '/dev/ttyUSB0';
+}
+
 // ---------------------------------------------------------------------------
 // 元数据辅助函数
 // ---------------------------------------------------------------------------

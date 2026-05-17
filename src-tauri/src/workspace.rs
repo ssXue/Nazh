@@ -24,6 +24,31 @@ fn is_safe_workspace_path(path: &std::path::Path) -> Result<(), String> {
             return Err(format!("工作路径不允许指向系统目录: {prefix}"));
         }
     }
+
+    // Windows 系统目录检测
+    #[cfg(target_os = "windows")]
+    {
+        let path_upper = path_str.to_uppercase();
+        let win_forbidden = [
+            "C:\\WINDOWS",
+            "C:\\PROGRAM FILES",
+            "C:\\PROGRAM FILES (X86)",
+            "C:\\PROGRAMDATA",
+            "C:\\USERS\\DEFAULT",
+            "C:\\USERS\\ALL USERS",
+            "C:\\SYSTEM",
+            "C:\\RECOVERY",
+        ];
+        for prefix in &win_forbidden {
+            if path_upper.starts_with(prefix) {
+                return Err(format!(
+                    "工作路径不允许指向系统目录: {}",
+                    &path_str[..prefix.len()]
+                ));
+            }
+        }
+    }
+
     Ok(())
 }
 
@@ -52,12 +77,15 @@ pub(crate) fn resolve_project_workspace_dir(
 }
 
 fn expand_user_path(app: &AppHandle, raw_path: &str) -> Result<PathBuf, String> {
-    if raw_path == "~" || raw_path.starts_with("~/") {
+    if raw_path == "~" || raw_path.starts_with("~/") || raw_path.starts_with("~\\") {
         let home_dir = app
             .path()
             .home_dir()
             .map_err(|error| format!("无法解析用户目录: {error}"))?;
-        let suffix = raw_path.trim_start_matches('~').trim_start_matches('/');
+        let suffix = raw_path
+            .trim_start_matches('~')
+            .trim_start_matches('/')
+            .trim_start_matches('\\');
         return Ok(if suffix.is_empty() {
             home_dir
         } else {

@@ -1113,6 +1113,20 @@ html.is-tauri-runtime [data-window-drag-region] {
   cursor: default;
 }
 
+/* Windows 标准标题栏：不需要安全区域占位 */
+html.is-platform-windows .studio-nav-safe-region {
+  display: none !important;
+}
+
+html.is-platform-windows .window-safe-header {
+  min-height: 0;
+  padding-top: 0;
+}
+
+html.is-platform-windows .studio-frame:has(.studio-nav-sidebar.is-collapsed) .window-safe-header {
+  padding-left: 48px;
+}
+
 .studio-gate__copy p {
   margin: 0;
   color: var(--muted);
