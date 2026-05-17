@@ -97,7 +97,7 @@ export function ApprovalQueue() {
     let disposed = false;
     const cleanup = onWorkflowEvent((_payload: ScopedWorkflowEvent) => {
       // 任何节点状态变化都触发重新加载——简单但可靠
-      // TODO: 可优化为仅 humanLoop 节点事件触发
+      // TODO(@nazh-owner): 可优化为仅 humanLoop 节点事件触发——当前监听全部 workflow://node-status 事件
       if (!disposed) {
         void reloadPending();
       }
