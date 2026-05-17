@@ -1,171 +1,42 @@
+/**
+ * AI 配置面板——主组件。
+ *
+ * 管理全局状态（表单展开、编辑中提供商、Agent 参数），
+ * 通过 AiConfigPreview / AiProviderForm 子组件渲染 UI，
+ * 通过 ExpandTransition 统一切换覆盖层。
+ */
+
 import { useEffect, useMemo, useState } from 'react';
 
 import { SwitchBar } from '../flowgram/nodes/settings-shared';
-import { BorderGlow } from '../animations/BorderGlow';
 
 import type { AiConfigPanelProps } from './types';
-import type {
-  AiAgentSettings,
-  AiConfigUpdate,
-  AiProviderDraft,
-  AiProviderUpsert,
-  AiSecretInput,
-} from '../../types';
+import type { AiProviderDraft } from '../../types';
 import {
   EMPTY_PROVIDER_FORM,
   hasPendingProviderChanges,
-  resolveProviderApiKeyInput,
   resolveProviderApiKeyMode,
   toProviderFormState,
   type ProviderFormState,
 } from '../../lib/ai-config';
 import {
-  CheckCircleIcon,
-  DeleteActionIcon,
-  PencilIcon,
-  PlusIcon,
+  type AgentSettingsFormState,
+  type ProviderPreset,
+  EMPTY_AGENT_SETTINGS_FORM,
+  buildConfigUpdate,
+  buildProviderUpserts,
+  parseOptionalFiniteNumber,
+  parseOptionalPositiveInteger,
+  toAgentSettingsForm,
+} from './ai-config-utils';
+import {
   ResetIcon,
   SaveIcon,
-  SignalIcon,
-  SlidersIcon,
   XCloseIcon,
 } from './AppIcons';
+import { AiConfigPreview } from './AiConfigPreview';
+import { AiProviderForm } from './AiProviderForm';
 import { ExpandTransition } from './ExpandTransition';
-
-interface AgentSettingsFormState {
-  systemPrompt: string;
-  temperature: string;
-  maxTokens: string;
-  topP: string;
-  timeoutMs: string;
-  thinkingEnabled: boolean;
-  toolCallingEnabled: boolean;
-}
-
-const EMPTY_AGENT_SETTINGS_FORM: AgentSettingsFormState = {
-  systemPrompt: '',
-  temperature: '',
-  maxTokens: '',
-  topP: '',
-  timeoutMs: '',
-  thinkingEnabled: false,
-  toolCallingEnabled: false,
-};
-
-interface ProviderPreset {
-  label: string;
-  name: string;
-  baseUrl: string;
-  defaultModel: string;
-}
-
-const PROVIDER_PRESETS: ProviderPreset[] = [
-  { label: 'DeepSeek Flash', name: 'DeepSeek', baseUrl: 'https://api.deepseek.com', defaultModel: 'deepseek-v4-flash' },
-  { label: 'DeepSeek Pro', name: 'DeepSeek', baseUrl: 'https://api.deepseek.com', defaultModel: 'deepseek-v4-pro' },
-  { label: 'OpenAI', name: 'OpenAI', baseUrl: 'https://api.openai.com/v1', defaultModel: 'gpt-4o-mini' },
-  { label: 'Kimi Code', name: 'Kimi Code', baseUrl: 'https://api.kimi.com/coding/v1', defaultModel: 'kimi-for-coding' },
-  { label: '月之暗面', name: 'Moonshot', baseUrl: 'https://api.moonshot.cn/v1', defaultModel: 'moonshot-v1-8k' },
-  { label: '智谱', name: 'Zhipu', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', defaultModel: 'glm-4-flash' },
-  { label: '通义千问', name: 'Qwen', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', defaultModel: 'qwen-turbo' },
-  { label: '硅基流动', name: 'SiliconFlow', baseUrl: 'https://api.siliconflow.cn/v1', defaultModel: 'Qwen/Qwen2.5-7B-Instruct' },
-  { label: '阶跃星辰', name: 'StepFun', baseUrl: 'https://api.stepfun.com/v1', defaultModel: 'step-2-16k' },
-  { label: 'Ollama 本地', name: 'Ollama', baseUrl: 'http://localhost:11434/v1', defaultModel: 'qwen2.5:7b' },
-];
-
-function readNumberInput(value: number | bigint | undefined | null): string {
-  if (typeof value === 'bigint') {
-    return value.toString();
-  }
-
-  return typeof value === 'number' && Number.isFinite(value) ? String(value) : '';
-}
-
-function parseOptionalFiniteNumber(value: string): number | undefined {
-  const normalized = value.trim();
-  if (!normalized) {
-    return undefined;
-  }
-
-  const parsed = Number(normalized);
-  return Number.isFinite(parsed) ? parsed : undefined;
-}
-
-function parseOptionalPositiveInteger(value: string): number | undefined {
-  const normalized = value.trim();
-  if (!normalized) {
-    return undefined;
-  }
-
-  const parsed = Number(normalized);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return undefined;
-  }
-
-  return Math.round(parsed);
-}
-
-
-function buildProviderUpserts(
-  aiConfig: NonNullable<AiConfigPanelProps['aiConfig']>,
-  activeProviderId: string | null,
-): AiProviderUpsert[] {
-  const resolvedActiveProviderId =
-    activeProviderId ?? aiConfig.activeProviderId ?? aiConfig.providers[0]?.id ?? null;
-
-  return aiConfig.providers.map((provider) => ({
-    id: provider.id,
-    name: provider.name,
-    baseUrl: provider.baseUrl,
-    defaultModel: provider.defaultModel,
-    extraHeaders: provider.extraHeaders,
-    enabled: provider.id === resolvedActiveProviderId,
-    apiKey: { kind: 'keep' } as AiSecretInput,
-  }));
-}
-
-function buildConfigUpdate(
-  aiConfig: NonNullable<AiConfigPanelProps['aiConfig']>,
-  overrides?: {
-    activeProviderId?: string | null;
-    providers?: AiProviderUpsert[];
-    copilotParams?: NonNullable<AiConfigPanelProps['aiConfig']>['copilotParams'];
-    agentSettings?: AiAgentSettings;
-  },
-): AiConfigUpdate {
-  const resolvedActiveProviderId =
-    overrides?.activeProviderId ??
-    aiConfig.activeProviderId ??
-    aiConfig.providers[0]?.id ??
-    null;
-
-  return {
-    version: aiConfig.version,
-    providers:
-      overrides?.providers ??
-      buildProviderUpserts(aiConfig, resolvedActiveProviderId),
-    activeProviderId: resolvedActiveProviderId ?? undefined,
-    copilotParams: overrides?.copilotParams ?? aiConfig.copilotParams,
-    agentSettings: overrides?.agentSettings ?? aiConfig.agentSettings,
-  };
-}
-
-function toAgentSettingsForm(
-  aiConfig: NonNullable<AiConfigPanelProps['aiConfig']> | null,
-): AgentSettingsFormState {
-  if (!aiConfig) {
-    return EMPTY_AGENT_SETTINGS_FORM;
-  }
-
-  return {
-    systemPrompt: aiConfig.agentSettings.systemPrompt ?? '',
-    temperature: readNumberInput(aiConfig.copilotParams.temperature),
-    maxTokens: readNumberInput(aiConfig.copilotParams.maxTokens),
-    topP: readNumberInput(aiConfig.copilotParams.topP),
-    timeoutMs: readNumberInput(aiConfig.agentSettings.timeoutMs),
-    thinkingEnabled: aiConfig.agentSettings.thinkingEnabled,
-    toolCallingEnabled: aiConfig.agentSettings.toolCallingEnabled,
-  };
-}
 
 export function AiConfigPanel({
   isTauriRuntime,
@@ -177,19 +48,24 @@ export function AiConfigPanel({
   aiTestResult,
   aiTesting,
 }: AiConfigPanelProps) {
+  // ── Provider 表单状态 ──────────────────────────────────────────
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<ProviderFormState>(EMPTY_PROVIDER_FORM);
   const [editingProviderId, setEditingProviderId] = useState<string | null>(null);
   const [clearSavedApiKey, setClearSavedApiKey] = useState(false);
+
+  // ── Agent 参数对话框状态 ───────────────────────────────────────
   const [agentSettingsForm, setAgentSettingsForm] = useState<AgentSettingsFormState>(
     EMPTY_AGENT_SETTINGS_FORM,
   );
   const [showAgentDialog, setShowAgentDialog] = useState(false);
 
+  // aiConfig 变化时同步 Agent 表单
   useEffect(() => {
     setAgentSettingsForm(toAgentSettingsForm(aiConfig));
   }, [aiConfig]);
 
+  // ── 派生状态 ──────────────────────────────────────────────────
   const activeProvider = useMemo(() => {
     if (!aiConfig?.activeProviderId) {
       return null;
@@ -206,27 +82,7 @@ export function AiConfigPanel({
     return aiConfig.providers.find((provider) => provider.id === editingProviderId) ?? null;
   }, [aiConfig, editingProviderId]);
 
-  const isEditingProvider = editingProvider !== null;
-  const providerApiKeyMode = resolveProviderApiKeyMode(
-    form.apiKey,
-    editingProviderId,
-    clearSavedApiKey,
-  );
-
-  const isFormValid =
-    form.name.trim().length > 0 &&
-    form.baseUrl.trim().length > 0 &&
-    (isEditingProvider || form.apiKey.trim().length > 0) &&
-    form.defaultModel.trim().length > 0;
-  const canTestFormProvider =
-    isFormValid && (!isEditingProvider || providerApiKeyMode !== 'clear');
-  const hasPendingProviderEdits = hasPendingProviderChanges(
-    editingProvider,
-    form,
-    editingProviderId,
-    clearSavedApiKey,
-  );
-
+  // ── Agent 参数校验 ─────────────────────────────────────────────
   const isTemperatureValid =
     !agentSettingsForm.temperature.trim() ||
     parseOptionalFiniteNumber(agentSettingsForm.temperature) !== undefined;
@@ -249,18 +105,13 @@ export function AiConfigPanel({
     !!aiConfig &&
     JSON.stringify(toAgentSettingsForm(aiConfig)) !== JSON.stringify(agentSettingsForm);
 
+  // ── Provider 表单回调 ──────────────────────────────────────────
+
   function handleFormChange(field: keyof ProviderFormState, value: string) {
     if (field === 'apiKey') {
       setClearSavedApiKey(false);
     }
     setForm((prev) => ({ ...prev, [field]: value }));
-  }
-
-  function handleAgentSettingsChange(
-    field: keyof AgentSettingsFormState,
-    value: string,
-  ) {
-    setAgentSettingsForm((prev) => ({ ...prev, [field]: value }));
   }
 
   function handleSelectPreset(preset: ProviderPreset) {
@@ -270,45 +121,6 @@ export function AiConfigPanel({
       baseUrl: preset.baseUrl,
       defaultModel: preset.defaultModel,
     }));
-  }
-
-  function handleSubmitTest() {
-    const trimmedApiKey = form.apiKey.trim();
-    const draft: AiProviderDraft = {
-      id:
-        isEditingProvider && providerApiKeyMode === 'keep'
-          ? editingProvider.id
-          : undefined,
-      name: form.name.trim(),
-      baseUrl: form.baseUrl.trim(),
-      apiKey: trimmedApiKey || undefined,
-      defaultModel: form.defaultModel.trim(),
-      extraHeaders: {},
-      enabled: true,
-    };
-
-    void onAiProviderTest(draft);
-  }
-
-  function handleTestSavedProvider(providerId: string) {
-    if (!aiConfig) {
-      return;
-    }
-
-    const provider = aiConfig.providers.find((item) => item.id === providerId);
-    if (!provider) {
-      return;
-    }
-
-    void onAiProviderTest({
-      id: provider.id,
-      name: provider.name,
-      baseUrl: provider.baseUrl,
-      apiKey: undefined,
-      defaultModel: provider.defaultModel,
-      extraHeaders: provider.extraHeaders,
-      enabled: provider.enabled,
-    });
   }
 
   function handleStartAddProvider() {
@@ -334,39 +146,32 @@ export function AiConfigPanel({
     setShowForm(true);
   }
 
-  function handleConfirmAdd() {
-    if (!aiConfig) return;
-
-    const nextProviderId = editingProvider?.id ?? crypto.randomUUID();
-    const nextActiveProviderId =
-      aiConfig.activeProviderId ?? aiConfig.providers[0]?.id ?? nextProviderId;
-
-    const existingUpserts = buildProviderUpserts(aiConfig, nextActiveProviderId);
-    const nextProvider: AiProviderUpsert = {
-      id: nextProviderId,
-      name: form.name.trim(),
-      baseUrl: form.baseUrl.trim(),
-      defaultModel: form.defaultModel.trim(),
-      extraHeaders: editingProvider?.extraHeaders ?? {},
-      enabled: nextProviderId === nextActiveProviderId,
-      apiKey: resolveProviderApiKeyInput(form.apiKey, editingProviderId, clearSavedApiKey),
-    };
-    const nextProviders = isEditingProvider
-      ? existingUpserts.map((provider) =>
-          provider.id === nextProviderId ? nextProvider : provider,
-        )
-      : [...existingUpserts, nextProvider];
-
-    void onAiConfigSave(
-      buildConfigUpdate(aiConfig, {
-        activeProviderId: nextActiveProviderId,
-        providers: nextProviders,
-      }),
-    );
+  function handleResetForm() {
     setForm(EMPTY_PROVIDER_FORM);
     setEditingProviderId(null);
     setClearSavedApiKey(false);
     setShowForm(false);
+  }
+
+  function handleTestSavedProvider(providerId: string) {
+    if (!aiConfig) {
+      return;
+    }
+
+    const provider = aiConfig.providers.find((item) => item.id === providerId);
+    if (!provider) {
+      return;
+    }
+
+    void onAiProviderTest({
+      id: provider.id,
+      name: provider.name,
+      baseUrl: provider.baseUrl,
+      apiKey: undefined,
+      defaultModel: provider.defaultModel,
+      extraHeaders: provider.extraHeaders,
+      enabled: provider.enabled,
+    });
   }
 
   function handleSetGlobalProvider(providerId: string) {
@@ -379,6 +184,35 @@ export function AiConfigPanel({
         activeProviderId: providerId,
       }),
     );
+  }
+
+  function handleDeleteProvider(providerId: string) {
+    if (!aiConfig) return;
+
+    const remaining = aiConfig.providers.filter((p) => p.id !== providerId);
+    const nextActiveId: string | null =
+      aiConfig.activeProviderId === providerId
+        ? remaining[0]?.id ?? null
+        : aiConfig.activeProviderId ?? null;
+
+    void onAiConfigSave(
+      buildConfigUpdate(aiConfig, {
+        activeProviderId: nextActiveId,
+        providers: buildProviderUpserts(
+          { ...aiConfig, providers: remaining },
+          nextActiveId,
+        ),
+      }),
+    );
+  }
+
+  // ── Agent 参数回调 ─────────────────────────────────────────────
+
+  function handleAgentSettingsChange(
+    field: keyof AgentSettingsFormState,
+    value: string,
+  ) {
+    setAgentSettingsForm((prev) => ({ ...prev, [field]: value }));
   }
 
   function handleSaveAgentSettings() {
@@ -403,433 +237,11 @@ export function AiConfigPanel({
     );
   }
 
-  function handleResetForm() {
-    setForm(EMPTY_PROVIDER_FORM);
-    setEditingProviderId(null);
-    setClearSavedApiKey(false);
-    setShowForm(false);
-  }
-
-  function handleDeleteProvider(providerId: string) {
-    if (!aiConfig) return;
-
-    const remaining = aiConfig.providers.filter((p) => p.id !== providerId);
-    const nextActiveId: string | null =
-      aiConfig.activeProviderId === providerId
-        ? remaining[0]?.id ?? null
-        : aiConfig.activeProviderId ?? null;
-
-    void onAiConfigSave(
-      buildConfigUpdate(aiConfig, {
-        activeProviderId: nextActiveId,
-        providers: buildProviderUpserts(
-          { ...aiConfig, providers: remaining },
-          nextActiveId,
-        ),
-      }),
-    );
-  }
-
   function handleResetAgentSettings() {
     setAgentSettingsForm(toAgentSettingsForm(aiConfig));
   }
 
-  const baseView = (
-    <>
-      <div
-        className="panel__header panel__header--desktop window-safe-header"
-        data-window-drag-region
-      >
-        <div className="panel__header__heading">
-          <h2>AI 配置</h2>
-          {activeProvider && (
-            <span>
-              {activeProvider.name} · {activeProvider.defaultModel}
-            </span>
-          )}
-        </div>
-        <div className="panel__header-actions" data-no-window-drag>
-          <button
-            type="button"
-            className="ai-config-panel__action"
-            data-testid="ai-agent-settings"
-            onClick={() => setShowAgentDialog(true)}
-          >
-            <SlidersIcon />
-            <span>Agent 参数</span>
-          </button>
-          <button
-            type="button"
-            className="ai-config-panel__action"
-            data-testid="ai-provider-add"
-            onClick={handleStartAddProvider}
-          >
-            <PlusIcon />
-            <span>添加连接</span>
-          </button>
-        </div>
-      </div>
-
-      <div className="ai-config-panel__scroll">
-        <div className="settings-panel settings-panel--dense">
-        {!isTauriRuntime ? (
-          <section className="settings-group">
-            <div className="settings-group__header">
-              <h3>运行时限制</h3>
-            </div>
-            <article className="settings-row">
-              <span className="settings-row__label" style={{ color: 'var(--text-tertiary)' }}>
-                AI 配置仅在桌面端可用。
-              </span>
-            </article>
-          </section>
-        ) : aiConfigLoading ? (
-          <section className="settings-group">
-            <div className="settings-group__header">
-              <h3>加载中</h3>
-            </div>
-            <article className="settings-row">
-              <span className="settings-row__label">正在加载 AI 配置...</span>
-            </article>
-          </section>
-        ) : aiConfig ? (
-          <>
-            {aiConfigError ? (
-              <article className="ai-config-panel__notice ai-config-panel__notice--error">
-                <span style={{ color: 'var(--color-error)' }}>
-                  {aiConfigError}
-                </span>
-              </article>
-            ) : null}
-
-            {aiTestResult ? (
-              <article
-                className={
-                  aiTestResult.success
-                    ? 'ai-config-panel__notice ai-config-panel__notice--success'
-                    : 'ai-config-panel__notice ai-config-panel__notice--error'
-                }
-              >
-                <strong>连接测试</strong>
-                <span>
-                  {aiTestResult.message}
-                </span>
-              </article>
-            ) : null}
-
-            <div className="ai-config-panel__section">
-              {aiConfig.providers.length === 0 ? (
-                <p className="ai-config-panel__hint" data-testid="ai-provider-empty-state">尚未配置任何提供商。</p>
-              ) : (
-                <div className="ai-config-panel__card-list">
-                  {aiConfig.providers.map((provider) => {
-                    const isGlobalProvider = provider.id === activeProvider?.id;
-                    const card = (
-                      <article
-                        key={provider.id}
-                        className={`ai-provider-card${isGlobalProvider ? ' ai-provider-card--active' : ''}`}
-                        data-testid="ai-provider-card"
-                      >
-                        <div className="ai-provider-card__top">
-                          <strong className="ai-provider-card__name">{provider.name}</strong>
-                          <span className={`ai-provider-card__status${isGlobalProvider ? ' ai-provider-card__status--active' : ''}`}>
-                            <span className="ai-provider-card__status-dot" />
-                            {isGlobalProvider ? '生效中' : '待命'}
-                          </span>
-                        </div>
-                        <div className="ai-provider-card__detail">
-                          <span>{provider.baseUrl}</span>
-                          <span className="ai-provider-card__sep">·</span>
-                          <span>{provider.defaultModel}</span>
-                          <span className="ai-provider-card__sep">·</span>
-                          <span>{provider.hasApiKey ? 'Key 已配置' : 'Key 未配置'}</span>
-                        </div>
-                        <div className="ai-provider-card__actions">
-                          <button
-                            type="button"
-                            className="settings-inline-button"
-                            disabled={isGlobalProvider}
-                            onClick={() => handleSetGlobalProvider(provider.id)}
-                          >
-                            <CheckCircleIcon className="ai-btn-icon" />
-                            {isGlobalProvider ? '当前全局' : '设为全局'}
-                          </button>
-                          <button
-                            type="button"
-                            className="settings-inline-button settings-inline-button--ghost"
-                            disabled={aiTesting}
-                            onClick={() => handleTestSavedProvider(provider.id)}
-                          >
-                            <SignalIcon className="ai-btn-icon" />
-                            {aiTesting ? '测试中...' : '测试'}
-                          </button>
-                          <button
-                            type="button"
-                            className="settings-inline-button settings-inline-button--ghost"
-                            onClick={() => handleStartEditProvider(provider.id)}
-                          >
-                            <PencilIcon className="ai-btn-icon" />
-                            编辑
-                          </button>
-                          <button
-                            type="button"
-                            className="settings-inline-button settings-inline-button--ghost settings-inline-button--danger"
-                            onClick={() => handleDeleteProvider(provider.id)}
-                          >
-                            <DeleteActionIcon className="ai-btn-icon" />
-                          </button>
-                        </div>
-                      </article>
-                    );
-
-                    return isGlobalProvider ? (
-                      <BorderGlow
-                        key={provider.id}
-                        animated
-                        loop={false}
-                        colors={['#6e89d6', '#7eaa90', '#c29b6b']}
-                        borderRadius={12}
-                        glowColor="40 80 80"
-                        backgroundColor="linear-gradient(135deg, color-mix(in srgb, var(--accent-soft) 60%, var(--surface-muted)), var(--surface-muted))"
-                        className="ai-provider-card--glow-wrapper"
-                      >
-                        {card}
-                      </BorderGlow>
-                    ) : (
-                      <div key={provider.id} className="ai-provider-card--plain-wrapper">
-                        {card}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </>
-        ) : (
-          <section className="settings-group">
-            <div className="settings-group__header">
-              <h3>加载失败</h3>
-            </div>
-            <article className="settings-row">
-              <span className="settings-row__label">无法加载 AI 配置。</span>
-            </article>
-          </section>
-        )}
-        </div>
-      </div>
-    </>
-  );
-
-  const providerFormOverlay = (
-    <div className="ai-drawer" onClick={(e) => e.stopPropagation()}>
-            <div className="ai-drawer__header">
-              <h3>{isEditingProvider ? '编辑提供商' : '添加提供商'}</h3>
-              <button
-                type="button"
-                className="ai-drawer__close"
-                onClick={handleResetForm}
-              >
-                <XCloseIcon className="ai-btn-icon" />
-              </button>
-            </div>
-
-            <div className="ai-drawer__body">
-              <article className="ai-config-panel__notice">
-                <strong>
-                  {isEditingProvider ? `正在编辑：${editingProvider?.name}` : '正在新增提供商'}
-                </strong>
-                <span>
-                  {isEditingProvider
-                    ? '保存后会覆盖当前 provider 配置，现有全局启用状态会自动保留。'
-                    : '保存后会追加到提供商列表中。'}
-                </span>
-              </article>
-
-              <article className="settings-row settings-row--stacked">
-                <strong className="settings-row__label">快速选择厂商</strong>
-                <div className="settings-accent-inline" role="group" aria-label="预置厂商">
-                  {PROVIDER_PRESETS.map((preset) => {
-                    const isActive =
-                      form.name === preset.name &&
-                      form.baseUrl === preset.baseUrl &&
-                      form.defaultModel === preset.defaultModel;
-                    return (
-                      <button
-                        key={preset.label}
-                        type="button"
-                        className={
-                          isActive
-                            ? 'settings-accent-chip is-active'
-                            : 'settings-accent-chip'
-                        }
-                        data-testid="ai-provider-preset"
-                        onClick={() => handleSelectPreset(preset)}
-                      >
-                        <span>{preset.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </article>
-
-              <div className="ai-config-panel__field-grid">
-                <article className="settings-row settings-row--stacked">
-                  <label className="settings-row__label" htmlFor="ai-provider-name">
-                    提供商名称
-                  </label>
-                  <input
-                    id="ai-provider-name"
-                    className="settings-path-input"
-                    type="text"
-                    placeholder="例如：DeepSeek"
-                    value={form.name}
-                    onChange={(e) => handleFormChange('name', e.target.value)}
-                  />
-                </article>
-
-                <article className="settings-row settings-row--stacked">
-                  <label className="settings-row__label" htmlFor="ai-provider-url">
-                    API Base URL
-                  </label>
-                  <input
-                    id="ai-provider-url"
-                    className="settings-path-input"
-                    type="text"
-                    placeholder="例如：https://api.deepseek.com"
-                    value={form.baseUrl}
-                    onChange={(e) => handleFormChange('baseUrl', e.target.value)}
-                  />
-                </article>
-
-                <article className="settings-row settings-row--stacked">
-                  <label className="settings-row__label" htmlFor="ai-provider-model">
-                    默认模型
-                  </label>
-                  <input
-                    id="ai-provider-model"
-                    className="settings-path-input"
-                    type="text"
-                    placeholder="例如：deepseek-v4-flash"
-                    value={form.defaultModel}
-                    onChange={(e) => handleFormChange('defaultModel', e.target.value)}
-                  />
-                </article>
-
-                <article className="settings-row settings-row--stacked ai-config-panel__field--wide">
-                  <label className="settings-row__label" htmlFor="ai-provider-key">
-                    API Key
-                  </label>
-                  {isEditingProvider ? (
-                    <>
-                      <div className="settings-accent-inline" role="group" aria-label="API Key 处理方式">
-                        <button
-                          type="button"
-                          className={
-                            providerApiKeyMode === 'keep'
-                              ? 'settings-accent-chip is-active'
-                              : 'settings-accent-chip'
-                          }
-                          onClick={() => {
-                            setClearSavedApiKey(false);
-                            setForm((prev) => ({ ...prev, apiKey: '' }));
-                          }}
-                        >
-                          <span>保持现有 Key</span>
-                        </button>
-                        <button
-                          type="button"
-                          className={
-                            providerApiKeyMode === 'clear'
-                              ? 'settings-accent-chip is-active'
-                              : 'settings-accent-chip'
-                          }
-                          onClick={() => {
-                            setClearSavedApiKey(true);
-                            setForm((prev) => ({ ...prev, apiKey: '' }));
-                          }}
-                        >
-                          <span>清空已保存 Key</span>
-                        </button>
-                      </div>
-                      <span className="settings-row__value" style={{ color: 'var(--text-tertiary)' }}>
-                        {providerApiKeyMode === 'set'
-                          ? '检测到新的 API Key，保存后会覆盖当前密钥。'
-                          : providerApiKeyMode === 'clear'
-                            ? '当前将清空已保存 API Key。若要替换成新密钥，直接在下方输入即可。'
-                            : editingProvider?.hasApiKey
-                              ? '当前已保存 API Key。留空会保持不变，输入新值会覆盖。'
-                              : '当前未保存 API Key。可直接输入新的密钥。'}
-                      </span>
-                    </>
-                  ) : null}
-                  <input
-                    id="ai-provider-key"
-                    className="settings-path-input"
-                    type="password"
-                    placeholder={
-                      isEditingProvider ? '留空保持当前值，输入新值则覆盖' : 'sk-...'
-                    }
-                    value={form.apiKey}
-                    onChange={(e) => handleFormChange('apiKey', e.target.value)}
-                  />
-                </article>
-              </div>
-
-              <p className="ai-config-panel__hint">
-                {isEditingProvider
-                  ? '编辑现有 provider 时会保留其全局启用状态；如需切换默认 AI，请在上方"全局 AI"里选择。'
-                  : '如果当前已经有全局 AI，新 provider 会先作为待命配置保存；如需切换默认 AI，请在上方"全局 AI"里选择。'}
-              </p>
-            </div>
-
-            {aiTestResult ? (
-              <article
-                className={
-                  aiTestResult.success
-                    ? 'ai-config-panel__notice ai-config-panel__notice--success'
-                    : 'ai-config-panel__notice ai-config-panel__notice--error'
-                }
-              >
-                <strong>连接测试</strong>
-                <span>
-                  {aiTestResult.message}
-                </span>
-              </article>
-            ) : null}
-
-            <div className="ai-drawer__footer">
-              <div className="settings-path-actions">
-                <button
-                  type="button"
-                  className="settings-inline-button"
-                  disabled={!isFormValid || (isEditingProvider && !hasPendingProviderEdits)}
-                  data-testid="ai-provider-save"
-                  onClick={handleConfirmAdd}
-                >
-                  <SaveIcon className="ai-btn-icon" />
-                  {isEditingProvider ? '保存修改' : '确认添加'}
-                </button>
-                <button
-                  type="button"
-                  className="settings-inline-button"
-                  disabled={!canTestFormProvider || aiTesting}
-                  onClick={handleSubmitTest}
-                >
-                  <SignalIcon className="ai-btn-icon" />
-                  {aiTesting ? '测试中...' : '测试连接'}
-                </button>
-                <button
-                  type="button"
-                  className="settings-inline-button settings-inline-button--ghost"
-                  onClick={handleResetForm}
-                >
-                  <XCloseIcon className="ai-btn-icon" />
-                  取消
-                </button>
-              </div>
-            </div>
-    </div>
-  );
+  // ── Agent 参数对话框覆盖层 ─────────────────────────────────────
 
   const agentDialogOverlay = (
     <div className="ai-agent-dialog" onClick={(e) => e.stopPropagation()}>
@@ -992,12 +404,50 @@ export function AiConfigPanel({
     </div>
   );
 
+  // ── 渲染 ──────────────────────────────────────────────────────
+
+  // Provider 表单需要 aiConfig 非空才渲染
+  const providerFormOverlay = aiConfig ? (
+    <AiProviderForm
+      aiConfig={aiConfig}
+      editingProvider={editingProvider}
+      editingProviderId={editingProviderId}
+      form={form}
+      aiTesting={aiTesting}
+      aiTestResult={aiTestResult}
+      clearSavedApiKey={clearSavedApiKey}
+      onAiConfigSave={onAiConfigSave}
+      onAiProviderTest={onAiProviderTest}
+      onFormChange={handleFormChange}
+      onSelectPreset={handleSelectPreset}
+      onResetForm={handleResetForm}
+      onSetClearSavedApiKey={setClearSavedApiKey}
+      onSetForm={setForm}
+    />
+  ) : null;
+
   return (
     <div className="ai-config-panel">
       <ExpandTransition
         active={showForm || showAgentDialog}
         mode="centered"
-        base={baseView}
+        base={
+          <AiConfigPreview
+            isTauriRuntime={isTauriRuntime}
+            aiConfig={aiConfig}
+            aiConfigLoading={aiConfigLoading}
+            aiConfigError={aiConfigError}
+            aiTestResult={aiTestResult}
+            aiTesting={aiTesting}
+            activeProvider={activeProvider}
+            onSetGlobalProvider={handleSetGlobalProvider}
+            onTestSavedProvider={handleTestSavedProvider}
+            onStartEditProvider={handleStartEditProvider}
+            onDeleteProvider={handleDeleteProvider}
+            onOpenAgentDialog={() => setShowAgentDialog(true)}
+            onStartAddProvider={handleStartAddProvider}
+          />
+        }
         overlay={showForm ? providerFormOverlay : showAgentDialog ? agentDialogOverlay : null}
       />
     </div>
