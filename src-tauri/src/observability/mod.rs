@@ -1,14 +1,13 @@
-//! 可观测性存储：`JSONL` 文件 + `SQLite` 双写、告警投递、链路摘要。
+//! 可观测性存储：`SQLite` Store 持久化、告警投递、链路摘要。
 //!
 //! 提供 `ObservabilityStore` 供运行时记录节点执行事件，
-//! 以及 `query_observability` / `clear_observability` 供 IPC 命令调用。
+//! 以及 `query_observability` / `clear_observability_store` 供 IPC 命令调用。
 
 pub(crate) mod alerting;
-pub(crate) mod jsonl;
 pub(crate) mod store;
 pub(crate) mod types;
 
-pub(crate) use store::{clear_observability, clear_observability_store, query_observability};
+pub(crate) use store::{clear_observability_store, query_observability};
 pub(crate) use types::{ObservabilityStore, SharedObservabilityStore};
 
 #[cfg(test)]
@@ -34,12 +33,7 @@ mod tests {
 
     #[tokio::test]
     async fn completed_事件会清理_active_span() {
-        let workspace =
-            std::env::temp_dir().join(format!("nazh-observability-test-{}", Uuid::new_v4()));
-        let Ok(store) = ObservabilityStore::new(workspace.clone(), test_context(), None).await
-        else {
-            panic!("观测存储应可创建");
-        };
+        let store = ObservabilityStore::new(test_context(), None);
         let trace_id = Uuid::new_v4();
         let node_stage = "node_a";
         let sk = span_key(trace_id, node_stage);
@@ -68,20 +62,12 @@ mod tests {
             let runtime_state = store.state.lock().await;
             assert!(!runtime_state.active_spans.contains_key(&sk));
         }
-
-        let _ = std::fs::remove_dir_all(workspace);
     }
 
     #[tokio::test]
-    async fn query_observability_优先读取_store_记录() {
-        let workspace =
-            std::env::temp_dir().join(format!("nazh-observability-test-{}", Uuid::new_v4()));
+    async fn query_observability_从_store_读取记录() {
         let handle = StoreHandle::new(Store::open_unpersisted().expect("内存 Store 应可打开"));
-        let Ok(store) =
-            ObservabilityStore::new(workspace.clone(), test_context(), Some(handle.clone())).await
-        else {
-            panic!("观测存储应可创建");
-        };
+        let store = ObservabilityStore::new(test_context(), Some(handle.clone()));
 
         store
             .record_audit(
@@ -96,7 +82,6 @@ mod tests {
             .expect("审计记录应可写入");
 
         let result = query_observability(
-            workspace.clone(),
             Some(handle),
             Some("trace-store".to_owned()),
             Some("部署".to_owned()),
@@ -107,7 +92,5 @@ mod tests {
 
         assert_eq!(result.audits.len(), 1);
         assert_eq!(result.audits[0].message, "部署完成");
-
-        let _ = std::fs::remove_dir_all(workspace);
     }
 }

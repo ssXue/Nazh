@@ -376,8 +376,7 @@ pub(crate) async fn deploy_workflow(
     )
     .await;
     let observability_store = if let Some(context) = observability_context.clone() {
-        let store =
-            ObservabilityStore::new(workspace_dir.clone(), context, store_handle.clone()).await?;
+        let store = ObservabilityStore::new(context, store_handle.clone());
         let _ = store
             .record_audit(
                 "info",

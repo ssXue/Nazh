@@ -111,26 +111,3 @@ pub(crate) fn build_alert_delivery(
             .map(str::to_owned),
     })
 }
-
-pub(crate) fn matches_alert(
-    record: &AlertDeliveryRecord,
-    trace_filter: Option<&str>,
-    search_filter: Option<&str>,
-) -> bool {
-    if trace_filter.is_some_and(|filter| record.trace_id != filter) {
-        return false;
-    }
-
-    if let Some(search_filter) = search_filter {
-        let haystack = format!(
-            "{} {} {} {} {}",
-            record.node_id, record.url, record.method, record.project_name, record.environment_name
-        )
-        .to_ascii_lowercase();
-        if !haystack.contains(search_filter) {
-            return false;
-        }
-    }
-
-    true
-}

@@ -1,6 +1,6 @@
 //! `ObservabilityStore` 核心实现与查询。
 
-use std::{collections::HashMap, collections::HashSet, path::PathBuf, sync::Arc};
+use std::{collections::HashMap, collections::HashSet, sync::Arc};
 
 use chrono::Utc;
 use nazh_engine::{ExecutionEvent, WorkflowContext};
@@ -12,32 +12,19 @@ use tauri_bindings::{
 };
 use tokio::sync::Mutex;
 
-use super::alerting::{alert_to_entry, build_alert_delivery, matches_alert};
-use super::jsonl::{append_jsonl, read_jsonl};
+use super::alerting::{alert_to_entry, build_alert_delivery};
 use super::types::{
-    ALERTS_FILE, AUDIT_FILE, EVENTS_FILE, OBSERVABILITY_DIR, ObservabilityEntryDraft,
-    ObservabilityRuntimeState, ObservabilitySession, ObservabilityStore, SharedObservabilityStore,
-    build_record_id, elapsed_ms_since, entry_search_text, max_timestamp, min_timestamp, span_key,
-    summarize_payload,
+    ObservabilityEntryDraft, ObservabilityRuntimeState, ObservabilitySession, ObservabilityStore,
+    SharedObservabilityStore, build_record_id, elapsed_ms_since, entry_search_text, max_timestamp,
+    min_timestamp, span_key, summarize_payload,
 };
 
 impl ObservabilityStore {
-    pub async fn new(
-        workspace_dir: PathBuf,
+    pub fn new(
         context: ObservabilityContextInput,
         store: Option<StoreHandle>,
-    ) -> Result<SharedObservabilityStore, String> {
-        let root_dir = workspace_dir.join(OBSERVABILITY_DIR);
-        tokio::task::spawn_blocking({
-            let root_dir = root_dir.clone();
-            move || std::fs::create_dir_all(&root_dir)
-        })
-        .await
-        .map_err(|error| format!("创建观测目录失败: {error}"))?
-        .map_err(|error| format!("创建观测目录失败: {error}"))?;
-
-        Ok(Arc::new(Self {
-            root_dir,
+    ) -> SharedObservabilityStore {
+        Arc::new(Self {
             session: ObservabilitySession {
                 project_id: context.project_id,
                 project_name: context.project_name,
@@ -46,7 +33,7 @@ impl ObservabilityStore {
             },
             state: Mutex::new(ObservabilityRuntimeState::default()),
             store,
-        }))
+        })
     }
 
     #[allow(clippy::too_many_lines)]
@@ -102,7 +89,6 @@ impl ObservabilityStore {
                 drop(runtime_state);
 
                 if let Some(alert) = pending_alert {
-                    let _ = append_jsonl(self.root_dir.join(ALERTS_FILE), &alert).await;
                     self.persist_alert(&alert).await;
                 }
 
@@ -118,7 +104,6 @@ impl ObservabilityStore {
                 .with_node_id(Some(node_stage.clone()))
                 .with_duration_ms(duration_ms);
                 let entry = self.build_entry(draft);
-                append_jsonl(self.root_dir.join(EVENTS_FILE), &entry).await?;
                 self.persist_entry("event", &entry).await;
                 return Ok(entry);
             }
@@ -205,7 +190,6 @@ impl ObservabilityStore {
         drop(runtime_state);
 
         let entry = self.build_entry(draft);
-        append_jsonl(self.root_dir.join(EVENTS_FILE), &entry).await?;
         self.persist_entry("event", &entry).await;
         Ok(entry)
     }
@@ -225,7 +209,6 @@ impl ObservabilityStore {
             timestamp: now,
             event_kind: None,
         });
-        append_jsonl(self.root_dir.join(EVENTS_FILE), &result_entry).await?;
         self.persist_entry("event", &result_entry).await;
 
         Ok(())
@@ -253,7 +236,6 @@ impl ObservabilityStore {
             timestamp: Utc::now(),
             event_kind: None,
         });
-        append_jsonl(self.root_dir.join(AUDIT_FILE), &entry).await?;
         self.persist_entry("audit", &entry).await;
         Ok(())
     }
@@ -339,21 +321,19 @@ impl ObservabilityStore {
 // ---- 查询与清理 ----
 
 pub async fn query_observability(
-    workspace_dir: PathBuf,
     store: Option<StoreHandle>,
     trace_id: Option<String>,
     search: Option<String>,
     limit: usize,
 ) -> Result<ObservabilityQueryResult, String> {
-    let root_dir = workspace_dir.join(OBSERVABILITY_DIR);
-    if !root_dir.exists() && store.is_none() {
+    let Some(store) = store else {
         return Ok(ObservabilityQueryResult {
             entries: Vec::new(),
             traces: Vec::new(),
             alerts: Vec::new(),
             audits: Vec::new(),
         });
-    }
+    };
 
     let trace_filter = trace_id
         .map(|value| value.trim().to_owned())
@@ -363,76 +343,13 @@ pub async fn query_observability(
         .filter(|value| !value.is_empty());
     let limit = limit.clamp(20, 600);
 
-    if let Some(store) = store {
-        match query_observability_from_store(
-            &store,
-            trace_filter.as_deref(),
-            search_filter.as_deref(),
-            limit,
-        )
-        .await
-        {
-            Ok(result) if has_observability_rows(&result) => return Ok(result),
-            Ok(_) => {}
-            Err(error) => {
-                tracing::warn!(?error, "SQLite 可观测性查询失败，回退 JSONL");
-            }
-        }
-    }
-
-    let mut events = read_jsonl::<ObservabilityEntry>(&root_dir.join(EVENTS_FILE)).await?;
-    let mut audits = read_jsonl::<ObservabilityEntry>(&root_dir.join(AUDIT_FILE)).await?;
-    let mut alerts = read_jsonl::<AlertDeliveryRecord>(&root_dir.join(ALERTS_FILE)).await?;
-
-    events.retain(|entry| matches_entry(entry, trace_filter.as_deref(), search_filter.as_deref()));
-    audits.retain(|entry| matches_entry(entry, trace_filter.as_deref(), search_filter.as_deref()));
-    alerts
-        .retain(|record| matches_alert(record, trace_filter.as_deref(), search_filter.as_deref()));
-
-    let mut merged = events.clone();
-    merged.extend(audits.clone());
-    merged.extend(alerts.iter().map(alert_to_entry));
-    merged.sort_by(|left, right| {
-        right
-            .timestamp
-            .cmp(&left.timestamp)
-            .then_with(|| right.id.cmp(&left.id))
-    });
-    merged.truncate(limit);
-
-    audits.sort_by(|left, right| right.timestamp.cmp(&left.timestamp));
-    audits.truncate(limit.min(120));
-    alerts.sort_by(|left, right| right.timestamp.cmp(&left.timestamp));
-    alerts.truncate(limit.min(120));
-
-    let traces = build_trace_summaries(&events, &alerts, trace_filter.as_deref(), limit);
-
-    Ok(ObservabilityQueryResult {
-        entries: merged,
-        traces,
-        alerts,
-        audits,
-    })
-}
-
-/// 清空观测目录下的所有 JSONL 文件。
-pub async fn clear_observability(workspace_dir: PathBuf) -> Result<(), String> {
-    let root_dir = workspace_dir.join(OBSERVABILITY_DIR);
-    if !root_dir.exists() {
-        return Ok(());
-    }
-
-    let files = [EVENTS_FILE, AUDIT_FILE, ALERTS_FILE];
-    for file in files {
-        let path = root_dir.join(file);
-        if path.exists() {
-            tokio::fs::write(&path, "")
-                .await
-                .map_err(|error| format!("清空观测文件失败: {error}"))?;
-        }
-    }
-
-    Ok(())
+    query_observability_from_store(
+        &store,
+        trace_filter.as_deref(),
+        search_filter.as_deref(),
+        limit,
+    )
+    .await
 }
 
 pub async fn clear_observability_store(store: Option<StoreHandle>) {
@@ -504,41 +421,6 @@ async fn query_observability_from_store(
         alerts,
         audits,
     })
-}
-
-fn has_observability_rows(result: &ObservabilityQueryResult) -> bool {
-    !result.entries.is_empty()
-        || !result.traces.is_empty()
-        || !result.alerts.is_empty()
-        || !result.audits.is_empty()
-}
-
-fn matches_entry(
-    entry: &ObservabilityEntry,
-    trace_filter: Option<&str>,
-    search_filter: Option<&str>,
-) -> bool {
-    if trace_filter.is_some_and(|filter| entry.trace_id.as_deref() != Some(filter)) {
-        return false;
-    }
-
-    if let Some(search_filter) = search_filter {
-        let haystack = format!(
-            "{} {} {} {} {} {}",
-            entry.source,
-            entry.message,
-            entry.detail.as_deref().unwrap_or_default(),
-            entry.trace_id.as_deref().unwrap_or_default(),
-            entry.node_id.as_deref().unwrap_or_default(),
-            entry.project_name.as_deref().unwrap_or_default(),
-        )
-        .to_ascii_lowercase();
-        if !haystack.contains(search_filter) {
-            return false;
-        }
-    }
-
-    true
 }
 
 // ---- Trace 摘要 ----

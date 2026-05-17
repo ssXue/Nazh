@@ -1,18 +1,12 @@
 //! 可观测性类型定义与常量。
 
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 use store::StoreHandle;
 use tokio::sync::Mutex;
-
-pub(crate) const OBSERVABILITY_DIR: &str = "observability";
-pub(crate) const EVENTS_FILE: &str = "events.jsonl";
-pub(crate) const AUDIT_FILE: &str = "audit.jsonl";
-pub(crate) const ALERTS_FILE: &str = "alerts.jsonl";
 
 pub type SharedObservabilityStore = Arc<ObservabilityStore>;
 
@@ -30,7 +24,6 @@ pub(crate) struct ObservabilityRuntimeState {
 }
 
 pub struct ObservabilityStore {
-    pub(crate) root_dir: PathBuf,
     pub(crate) session: ObservabilitySession,
     pub(crate) state: Mutex<ObservabilityRuntimeState>,
     pub(crate) store: Option<StoreHandle>,
