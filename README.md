@@ -90,7 +90,7 @@ flowchart TB
     end
 
     subgraph Shell["Tauri v2 桌面壳 (nazh-desktop)"]
-        S1["82 IPC 命令 · 9 workflow/copilot 事件通道"]
+        S1["81 IPC 命令 · 9 workflow/copilot 事件通道"]
         S2["运行时调度 · 部署会话 · 工程库文件"]
         S3["AI Provider 配置 · 观测日志 · 工程库文件"]
     end
@@ -137,7 +137,9 @@ flowchart TB
 | **纯计算** | c2f | 摄氏转华氏（Data 引脚 pull 语义） |
 | | minutesSince | RFC3339 时间戳距今分钟数 |
 | | lookup | 查表纯函数节点 |
-| **I/O 操作** | modbusRead | Modbus TCP 寄存器读取 |
+| **I/O 操作** | deviceSignalRead | 设备信号轮询读取（Modbus/CAN/EtherCAT/Serial） |
+| | deviceEventTrigger | 设备事件监听触发（MQTT/CAN/Modbus/Serial） |
+| | modbusRead | Modbus TCP 寄存器读取 |
 | | httpClient | HTTP 请求 / Webhook |
 | | mqttClient | MQTT 消息发布 |
 | | canRead | 通过 SLCAN 接收 CAN 帧 |

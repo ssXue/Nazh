@@ -144,7 +144,7 @@ const EXPECTED_COMMANDS: &[&str] = &[
     "ai::load_ai_api_key",
     "ai::save_ai_config",
     "ai::load_ai_asset_context",
-    // copilot (8)
+    // copilot (7)
     "copilot::copilot_list_conversations",
     "copilot::copilot_create_conversation",
     "copilot::copilot_delete_conversation",
