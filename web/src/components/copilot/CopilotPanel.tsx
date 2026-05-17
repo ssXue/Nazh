@@ -495,6 +495,7 @@ export const CopilotPanel = forwardRef<CopilotPanelHandle, CopilotPanelProps>(
       <button
         type="button"
         className="copilot-panel copilot-panel--collapsed"
+        data-testid="copilot-collapsed"
         title="展开副驾驶"
         onClick={() => setCollapsed(false)}
       >
@@ -507,6 +508,7 @@ export const CopilotPanel = forwardRef<CopilotPanelHandle, CopilotPanelProps>(
     <section
       ref={panelRef}
       className="copilot-panel"
+      data-testid="copilot-panel"
       style={{ width: panelWidth }}
     >
       <div
@@ -514,14 +516,14 @@ export const CopilotPanel = forwardRef<CopilotPanelHandle, CopilotPanelProps>(
         onMouseDown={handleResizeStart}
       />
       <div className="copilot-panel__header">
-        <button type="button" className="copilot-btn-icon" title="历史会话" onClick={() => setHistoryOpen((prev) => !prev)}>&#9776;</button>
-        <button type="button" className="copilot-btn-icon" title="新建对话" onClick={handleNewConversation}>+</button>
-        <button type="button" className="copilot-btn-icon" title="收起面板" onClick={() => setCollapsed(true)}>&laquo;</button>
+        <button type="button" className="copilot-btn-icon" data-testid="copilot-toggle-history" title="历史会话" onClick={() => setHistoryOpen((prev) => !prev)}>&#9776;</button>
+        <button type="button" className="copilot-btn-icon" data-testid="copilot-new-conversation" title="新建对话" onClick={handleNewConversation}>+</button>
+        <button type="button" className="copilot-btn-icon" data-testid="copilot-collapse" title="收起面板" onClick={() => setCollapsed(true)}>&laquo;</button>
         {historyOpen && (
           <div className="copilot-history-backdrop" onClick={() => setHistoryOpen(false)} />
         )}
         {historyOpen && (
-          <div className="copilot-history-dropdown">
+          <div className="copilot-history-dropdown" data-testid="copilot-history-dropdown">
             {conversations.length === 0 ? (
               <div className="copilot-history-empty">暂无历史会话</div>
             ) : (

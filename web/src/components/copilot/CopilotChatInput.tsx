@@ -54,6 +54,7 @@ export function CopilotChatInput({ value, onChange, onSend, status, onCancel }: 
     >
       <textarea
         className="copilot-input__textarea"
+        data-testid="copilot-input"
         placeholder="输入消息… (Enter 发送，Shift+Enter 换行)"
         rows={1}
         value={value}
@@ -77,6 +78,7 @@ export function CopilotChatInput({ value, onChange, onSend, status, onCancel }: 
           <button
             type="button"
             className="copilot-input__send"
+            data-testid="copilot-send"
             disabled={!value.trim()}
             onClick={onSend}
             title="发送"

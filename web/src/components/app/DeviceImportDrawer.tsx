@@ -527,10 +527,10 @@ export function DeviceImportDrawer({
   }, [onClose]);
 
   return (
-    <div className="dm-drawer__panel" onClick={(e) => e.stopPropagation()}>
+    <div className="dm-drawer__panel" data-testid="device-import-drawer" onClick={(e) => e.stopPropagation()}>
         <div className="dm-drawer__header">
           <h2>从说明书导入设备</h2>
-          <button type="button" className="dm-drawer__close" onClick={handleClose}>
+          <button type="button" className="dm-drawer__close" data-testid="device-import-close" onClick={handleClose}>
             <XCloseIcon width={16} height={16} />
           </button>
         </div>

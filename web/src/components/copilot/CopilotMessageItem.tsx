@@ -50,7 +50,7 @@ export function CopilotMessageItem({
   const hasCanvasOps = canvasOps && canvasOps.length > 0;
 
   return (
-    <div className={`copilot-msg${isUser ? ' copilot-msg--user' : ' copilot-msg--assistant'}`}>
+    <div className={`copilot-msg${isUser ? ' copilot-msg--user' : ' copilot-msg--assistant'}`} data-testid="copilot-message">
       <div className="copilot-msg__bubble">
         {toolCalls && toolCalls.length > 0 && (
           <div className="copilot-msg__tools">

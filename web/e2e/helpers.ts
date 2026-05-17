@@ -30,6 +30,26 @@ export async function openFirstBoard(page: Page) {
 }
 
 /**
+ * 创建新看板并等待画布加载。
+ */
+export async function createBoardAndOpenCanvas(page: Page) {
+  await navigateToSection(page, 'boards');
+  await page.locator('[data-testid="board-create"]').click();
+  await expect(page.locator('[data-testid="deploy-button"]')).toBeVisible({ timeout: 10_000 });
+}
+
+/**
+ * 双击节点添加面板卡片插入节点，等待画布卡片出现。
+ */
+export async function insertNodeByDblClick(page: Page, nodeType: string, timeout = 10_000) {
+  const addCard = page.locator(`.flowgram-add-card--${nodeType}`).first();
+  await addCard.dispatchEvent('dblclick');
+  const canvasCard = page.locator(`.flowgram-card--${nodeType}`).first();
+  await expect(canvasCard).toBeVisible({ timeout });
+  return canvasCard;
+}
+
+/**
  * 部署当前工作流，等待已部署状态。
  */
 export async function deployWorkflow(page: Page) {

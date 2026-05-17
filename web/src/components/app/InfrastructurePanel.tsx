@@ -93,6 +93,7 @@ export function InfrastructurePanel({
           <button
             type="button"
             role="tab"
+            data-testid="infra-tab-devices"
             aria-selected={activeTab === 'devices'}
             className={`infra-tabs__item${activeTab === 'devices' ? ' is-active' : ''}`}
             onClick={() => handleTabChange('devices')}
@@ -102,6 +103,7 @@ export function InfrastructurePanel({
           <button
             type="button"
             role="tab"
+            data-testid="infra-tab-connections"
             aria-selected={activeTab === 'connections'}
             className={`infra-tabs__item${activeTab === 'connections' ? ' is-active' : ''}`}
             onClick={() => handleTabChange('connections')}
@@ -116,6 +118,7 @@ export function InfrastructurePanel({
           <button
             type="button"
             className="panel__action"
+            data-testid="infra-import-button"
             onClick={() => setImportDrawerOpen(true)}
           >
             接入设备

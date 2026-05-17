@@ -173,14 +173,14 @@ export function RuntimeVariablesPanel({ workflowId, onVariableCountChange }: Run
 
   if (!workflowId) {
     return (
-      <div className="runtime-variables-panel runtime-variables-panel--empty">
+      <div className="runtime-variables-panel runtime-variables-panel--empty" data-testid="runtime-variable-empty-state">
         未选中已部署的工作流
       </div>
     );
   }
 
   return (
-    <div className="runtime-variables-panel">
+    <div className="runtime-variables-panel" data-testid="runtime-variables-panel">
       {error && <div className="runtime-variables-panel__error">{error}</div>}
       {isLoading && entries.length === 0 ? (
         <div className="runtime-variables-panel runtime-variables-panel--loading">加载中…</div>

@@ -38,7 +38,7 @@ export function CopilotChatView({
 
   return (
     <div className="copilot-chat">
-      <div className="copilot-chat__messages" ref={listRef}>
+      <div className="copilot-chat__messages" data-testid="copilot-messages" ref={listRef}>
         {!hasConversation && (
           <div className="copilot-chat__welcome">
             <p>Nazh 副驾驶</p>

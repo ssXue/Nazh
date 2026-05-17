@@ -160,7 +160,7 @@ export function DeviceModelingPanel({
         >
           <div className="panel__header__heading">
             <h2>设备建模</h2>
-            <span>设备建模功能需要 Tauri 桌面运行时。</span>
+            <span data-testid="device-empty-state">设备建模功能需要 Tauri 桌面运行时。</span>
           </div>
         </div>
       </div>

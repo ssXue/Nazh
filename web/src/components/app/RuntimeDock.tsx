@@ -302,6 +302,7 @@ export function RuntimeDock({
   return (
     <section
       className={`runtime-dock ${isCollapsed ? 'is-collapsed' : ''}`}
+      data-testid="runtime-dock"
       aria-live="polite"
     >
       <div className="runtime-dock__tabs" role="tablist" aria-label="运行观测窗体">
@@ -315,6 +316,7 @@ export function RuntimeDock({
                 id={`runtime-dock-tab-${tab.id}`}
                 type="button"
                 role="tab"
+                data-testid={`runtime-dock-tab-${tab.id}`}
                 className={`runtime-dock__tab ${isActive ? 'is-active' : ''}`}
                 aria-selected={isActive}
                 aria-controls="runtime-dock-grid"
@@ -431,6 +433,7 @@ function VariablesPanelWithSubTabs({
           <button
             type="button"
             role="tab"
+            data-testid="variable-tab-workflow"
             className={`runtime-dock__sub-tab ${subTab === 'workflow' ? 'is-active' : ''}`}
             aria-selected={subTab === 'workflow'}
             onClick={() => setSubTab('workflow')}
@@ -440,6 +443,7 @@ function VariablesPanelWithSubTabs({
           <button
             type="button"
             role="tab"
+            data-testid="variable-tab-global"
             className={`runtime-dock__sub-tab ${subTab === 'global' ? 'is-active' : ''}`}
             aria-selected={subTab === 'global'}
             onClick={() => setSubTab('global')}
@@ -507,6 +511,7 @@ function DockPanelContent({
             <button
               type="button"
               className={`runtime-dock__panel-tool ${hasCopiedEventFeed ? 'is-active' : ''}`}
+              data-testid="runtime-dock-copy-events"
               onClick={onCopyEventFeed}
               disabled={!eventFeedText.trim()}
               aria-label={hasCopiedEventFeed ? '执行事件流已复制' : '复制执行事件流'}

@@ -78,7 +78,7 @@ export function GlobalVariablesPanel() {
   );
 
   return (
-    <div className="global-variables-panel">
+    <div className="global-variables-panel" data-testid="global-variables-panel">
       {error && <div className="global-variables-panel__error">{error}</div>}
       <div className="global-variables-panel__toolbar">
         <AddGlobalVariableForm onAdd={handleSet} />
@@ -195,7 +195,7 @@ function AddGlobalVariableForm({ onAdd }: AddGlobalVariableFormProps) {
 
   if (!isExpanded) {
     return (
-      <button type="button" className="global-variables-panel__add-btn" onClick={() => setIsExpanded(true)}>
+      <button type="button" className="global-variables-panel__add-btn" data-testid="global-variable-add-btn" onClick={() => setIsExpanded(true)}>
         + 添加全局变量
       </button>
     );
