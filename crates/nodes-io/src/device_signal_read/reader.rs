@@ -1,4 +1,4 @@
-//! 设备信号读取节点（ADR-0024 Phase 1/3）。
+//! 设备信号读取节点实现（ADR-0024 Phase 1/3）。
 //!
 //! 按 [`SignalSourceSnapshot`](crate::signal_decode::SignalSourceSnapshot) 从设备读取原始数据，
 //! 经 [`DataTypeSnapshot`](crate::signal_decode::DataTypeSnapshot) 解码、`scale` 缩放后输出语义化值。
@@ -7,9 +7,10 @@
 //! 生命周期模型：poll 语义——exec 触发 + data 缓存（对标 `modbusRead`）。
 //! 无 `on_deploy`/`on_undeploy`。
 
+use std::io::Write as IoWrite;
+
 use async_trait::async_trait;
 use chrono::Utc;
-use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use uuid::Uuid;
 
@@ -21,28 +22,7 @@ use crate::signal_decode::{
     compile_scale, create_scale_engine, decode_topic_payload, extract_pdo_bytes,
 };
 
-fn default_poll_timeout_ms() -> u64 {
-    2000
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DeviceSignalReadConfig {
-    #[serde(default)]
-    pub connection_id: Option<String>,
-    pub device_id: String,
-    pub signal_id: String,
-    pub source: SignalSourceSnapshot,
-    /// Rhai 缩放表达式（如 `"raw * 35 / 65535"`）。
-    #[serde(default)]
-    pub scale: Option<String>,
-    #[serde(default)]
-    pub unit: Option<String>,
-    #[serde(default)]
-    pub simulation: bool,
-    /// 同步源读取超时（毫秒），默认 2000。
-    #[serde(default = "default_poll_timeout_ms")]
-    pub poll_timeout_ms: u64,
-}
+use super::config::DeviceSignalReadConfig;
 
 /// 设备信号读取节点。
 pub struct DeviceSignalReadNode {
@@ -64,7 +44,7 @@ impl DeviceSignalReadNode {
         connection_manager: SharedConnectionManager,
     ) -> Result<Self, EngineError> {
         let id = id.into();
-        let scale_ast = compile_scale(&config.scale).map_err(|e| {
+        let scale_ast = compile_scale(config.scale.as_ref()).map_err(|e| {
             EngineError::node_config(id.clone(), format!("scale 表达式编译失败: {e}"))
         })?;
 
@@ -785,221 +765,14 @@ impl NodeTrait for DeviceSignalReadNode {
 
         let (decoded_value, simulated) = self.read_and_decode(trace_id, &mut guard).await?;
 
-        let value =
-            apply_scale_with_engine(decoded_value, &self.scale_ast, &self.engine).map_err(|e| {
-                EngineError::stage_execution(
-                    self.id.clone(),
-                    trace_id,
-                    format!("scale 求值失败: {e}"),
-                )
-            })?;
+        let value = apply_scale_with_engine(decoded_value, self.scale_ast.as_ref(), &self.engine)
+            .map_err(|e| {
+            EngineError::stage_execution(self.id.clone(), trace_id, format!("scale 求值失败: {e}"))
+        })?;
 
         let result = self.build_payload(payload, value);
         let metadata = self.build_metadata(simulated, guard.as_ref())?;
 
         Ok(NodeExecution::broadcast(result).with_metadata(Some(metadata)))
-    }
-}
-
-#[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
-mod tests {
-    use super::*;
-    use connections::shared_connection_manager;
-    use nazh_core::PinKind;
-
-    fn register_source() -> SignalSourceSnapshot {
-        SignalSourceSnapshot::Register {
-            register: 40001,
-            data_type: DataTypeSnapshot::Float32,
-            bit: None,
-        }
-    }
-
-    fn can_frame_source() -> SignalSourceSnapshot {
-        SignalSourceSnapshot::CanFrame {
-            can_id: 0x100,
-            is_extended: false,
-            byte_offset: 0,
-            byte_length: 4,
-            data_type: DataTypeSnapshot::Float32,
-            byte_order: ByteOrderSnapshot::BigEndian,
-        }
-    }
-
-    fn topic_source() -> SignalSourceSnapshot {
-        SignalSourceSnapshot::Topic {
-            topic: "factory/press/pressure".to_owned(),
-        }
-    }
-
-    fn make_config() -> DeviceSignalReadConfig {
-        DeviceSignalReadConfig {
-            connection_id: None,
-            device_id: "test_device".to_owned(),
-            signal_id: "pressure".to_owned(),
-            source: register_source(),
-            scale: None,
-            unit: Some("MPa".to_owned()),
-            simulation: true,
-            poll_timeout_ms: 2000,
-        }
-    }
-
-    fn make_node() -> DeviceSignalReadNode {
-        DeviceSignalReadNode::new("dsr-1", make_config(), shared_connection_manager()).unwrap()
-    }
-
-    #[test]
-    fn output_pins_声明_out_exec_与_latest_data() {
-        let node = make_node();
-        let pins = node.output_pins();
-        assert_eq!(pins.len(), 2, "deviceSignalRead 应声明两个输出端口");
-
-        let out_pin = pins.iter().find(|p| p.id == "out").expect("缺 out 引脚");
-        assert_eq!(out_pin.pin_type, PinType::Json);
-        assert_eq!(out_pin.kind, PinKind::Exec);
-
-        let latest_pin = pins
-            .iter()
-            .find(|p| p.id == "latest")
-            .expect("缺 latest 引脚");
-        assert_eq!(latest_pin.pin_type, PinType::Json);
-        assert_eq!(latest_pin.kind, PinKind::Data);
-        assert!(!latest_pin.required, "Data 拉取式引脚 required=false");
-    }
-
-    #[test]
-    fn input_pin_保留默认_any() {
-        let node = make_node();
-        let pins = node.input_pins();
-        assert_eq!(pins.len(), 1);
-        assert_eq!(pins[0].pin_type, PinType::Any);
-    }
-
-    #[tokio::test]
-    async fn 缺少连接且未显式模拟时拒绝运行() {
-        let config = DeviceSignalReadConfig {
-            simulation: false,
-            connection_id: None,
-            ..make_config()
-        };
-        let node = DeviceSignalReadNode::new("dsr-1", config, shared_connection_manager()).unwrap();
-
-        let err = node
-            .transform(Uuid::new_v4(), Value::Null)
-            .await
-            .unwrap_err();
-
-        assert!(
-            matches!(err, EngineError::NodeConfig { .. }),
-            "未配置连接或 simulation=true 时不应静默模拟: {err:?}"
-        );
-    }
-
-    #[tokio::test]
-    async fn simulation_模式返回语义化输出() {
-        let node = make_node();
-        let execution = node.transform(Uuid::new_v4(), Value::Null).await.unwrap();
-
-        let output = &execution.outputs[0];
-        let payload = &output.payload;
-        assert_eq!(payload["device_id"], "test_device");
-        assert_eq!(payload["signal_id"], "pressure");
-        assert!(payload.get("value").is_some());
-        assert_eq!(payload["unit"], "MPa");
-        assert!(payload.get("sampled_at").is_some());
-
-        let metadata = output.metadata.as_ref().unwrap();
-        assert_eq!(metadata["device_signal"]["simulated"], Value::Bool(true));
-        assert_eq!(metadata["device_signal"]["source_type"], "register");
-    }
-
-    #[tokio::test]
-    async fn simulation_can_frame_源返回模拟值() {
-        let config = DeviceSignalReadConfig {
-            source: can_frame_source(),
-            ..make_config()
-        };
-        let node = DeviceSignalReadNode::new("dsr-1", config, shared_connection_manager()).unwrap();
-        let execution = node.transform(Uuid::new_v4(), Value::Null).await.unwrap();
-        let metadata = execution.outputs[0].metadata.as_ref().unwrap();
-        assert_eq!(metadata["device_signal"]["source_type"], "can_frame");
-    }
-
-    #[tokio::test]
-    async fn simulation_topic_源返回模拟值() {
-        let config = DeviceSignalReadConfig {
-            source: topic_source(),
-            ..make_config()
-        };
-        let node = DeviceSignalReadNode::new("dsr-1", config, shared_connection_manager()).unwrap();
-        let execution = node.transform(Uuid::new_v4(), Value::Null).await.unwrap();
-        let metadata = execution.outputs[0].metadata.as_ref().unwrap();
-        assert_eq!(metadata["device_signal"]["source_type"], "topic");
-    }
-
-    #[test]
-    fn signal_source_snapshot_serde_round_trip() {
-        let source = register_source();
-        let json = serde_json::to_string(&source).unwrap();
-        let back: SignalSourceSnapshot = serde_json::from_str(&json).unwrap();
-
-        if let SignalSourceSnapshot::Register {
-            register,
-            data_type,
-            bit,
-        } = &back
-        {
-            assert_eq!(*register, 40001);
-            assert_eq!(*data_type, DataTypeSnapshot::Float32);
-            assert!(bit.is_none());
-        } else {
-            panic!("期望 Register 变体");
-        }
-    }
-
-    #[test]
-    fn signal_source_snapshot_json_format() {
-        let source = register_source();
-        let val = serde_json::to_value(&source).unwrap();
-        assert_eq!(val["type"], "register");
-        assert_eq!(val["register"], 40001);
-        assert_eq!(val["data_type"], "float32");
-    }
-
-    #[test]
-    fn 无效_scale_表达式_构造时失败() {
-        let config = DeviceSignalReadConfig {
-            scale: Some("raw * / 2".to_owned()),
-            ..make_config()
-        };
-        let result = DeviceSignalReadNode::new("dsr-1", config, shared_connection_manager());
-        assert!(result.is_err(), "无效 scale 表达式应在构造时失败");
-    }
-
-    #[test]
-    fn 有效_scale_表达式_构造成功() {
-        let config = DeviceSignalReadConfig {
-            scale: Some("raw * 35 / 65535".to_owned()),
-            ..make_config()
-        };
-        let result = DeviceSignalReadNode::new("dsr-1", config, shared_connection_manager());
-        assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn simulation_scale_求值正确() {
-        let config = DeviceSignalReadConfig {
-            scale: Some("raw * 2".to_owned()),
-            ..make_config()
-        };
-        let node = DeviceSignalReadNode::new("dsr-1", config, shared_connection_manager()).unwrap();
-        let execution = node.transform(Uuid::new_v4(), Value::Null).await.unwrap();
-
-        let payload = &execution.outputs[0].payload;
-        // simulate_value 对 Float32 返回 42.5, scale 后应为 85.0
-        let val = payload["value"].as_f64().unwrap();
-        assert!((val - 85.0).abs() < 0.01, "期望 85.0，得到 {val}");
     }
 }

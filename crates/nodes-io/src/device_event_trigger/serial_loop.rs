@@ -270,7 +270,7 @@ fn process_serial_frame(
             }
         };
 
-        let scaled = apply_scale_with_engine(value, &sig.scale_ast, engine);
+        let scaled = apply_scale_with_engine(value, sig.scale_ast.as_ref(), engine);
         let value = match scaled {
             Ok(v) => v,
             Err(error) => {

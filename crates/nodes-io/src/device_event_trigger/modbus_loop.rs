@@ -118,7 +118,7 @@ async fn poll_all_signals(
                     }
                 };
 
-                let scaled = apply_scale_with_engine(value, &cs.scale_ast, &cs.engine);
+                let scaled = apply_scale_with_engine(value, cs.scale_ast.as_ref(), &cs.engine);
                 let value = match scaled {
                     Ok(v) => v,
                     Err(error) => {

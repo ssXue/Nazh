@@ -236,7 +236,7 @@ async fn process_mqtt_message(
     for cs in matched {
         let value = decode_topic_payload(payload, &cs.listener.signal_id);
 
-        let scaled = apply_scale_with_engine(value, &cs.scale_ast, &cs.engine);
+        let scaled = apply_scale_with_engine(value, cs.scale_ast.as_ref(), &cs.engine);
         let value = match scaled {
             Ok(v) => v,
             Err(error) => {
