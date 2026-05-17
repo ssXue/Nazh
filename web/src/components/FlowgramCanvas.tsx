@@ -2,15 +2,10 @@ import {
   EditorRenderer,
   FreeLayoutEditorProvider,
   FlowNodeBaseType,
-  FlowNodeEntity,
-  WorkflowContentChangeType,
-  WorkflowLineEntity,
-  type WorkflowLinesManager,
+  type FlowNodeEntity,
   type WorkflowJSON as FlowgramWorkflowJSON,
-  type WorkflowContentChangeEvent,
   type FreeLayoutPluginContext,
 } from '@flowgram.ai/free-layout-editor';
-import { PanelManager } from '@flowgram.ai/panel-manager-plugin';
 import {
   forwardRef,
   useCallback,
@@ -23,17 +18,7 @@ import {
 
 import { FlowgramNodeAddPanel } from './flowgram/FlowgramNodeAddPanel';
 import { FlowgramContextMenu, type ContextMenuState } from './flowgram/FlowgramContextMenu';
-import type { ResolvedThemeMode, ThemeMode } from './app/types';
-import { FLOWGRAM_NODE_SETTINGS_PANEL_KEY } from './flowgram/FlowgramNodeSettingsPanel';
-import { usesDynamicPorts } from './flowgram/nodes/settings-shared';
-import {
-  getLogicNodeBranchDefinitions,
-  isKnownEditorNodeType,
-  normalizeNodeKind,
-  resolveNodeData,
-  type FlowgramConnectionDefaults,
-  type NodeSeed,
-} from './flowgram/flowgram-node-library';
+import type { FlowgramConnectionDefaults } from './flowgram/flowgram-node-library';
 import { handleFlowgramDragLineEnd } from './flowgram/flowgram-line-panel';
 import { useFlowgramEditorProps } from './flowgram/useFlowgramEditorProps';
 import {
@@ -41,28 +26,8 @@ import {
   toFlowgramWorkflowJson,
   toNazhWorkflowGraph,
 } from '../lib/flowgram';
-import { FlowDownloadFormat, FlowDownloadService } from '@flowgram.ai/export-plugin';
-import {
-  configToRecord,
-  invalidateNodePinSchema,
-  refreshNodePinSchema,
-} from '../lib/pin-schema-cache';
-import {
-  type ConnectionRejection,
-  checkConnection,
-  formatRejection,
-} from '../lib/pin-validator';
-import { hasTauriRuntime, saveFlowgramExportFile } from '../lib/tauri';
 import { refreshCapabilitiesCache } from '../lib/node-capabilities-cache';
-import { allocateNodeId } from '../lib/workflow-node-id';
-import type {
-  AiGenerationParams,
-  AiProviderView,
-  ConnectionDefinition,
-  WorkflowGraph,
-  WorkflowRuntimeState,
-  WorkflowWindowStatus,
-} from '../types';
+import type { WorkflowGraph } from '../types';
 
 // 从拆分模块导入
 import {
@@ -73,218 +38,36 @@ import {
   isMqttConnectionType,
   isHttpConnectionType,
   isBarkConnectionType,
-  buildFlowgramExportFileName,
   buildFlowgramGraphSignature,
   getCanvasWorkflowStatusLabel,
   describeFlowgramError,
 } from './flowgram/flowgram-canvas-utils';
-import {
-  type RuntimeNodeStatus,
-  type FlowgramNodeMaterialProps,
-  FlowgramContainerCard,
-  FlowgramNodeCard,
-} from './flowgram/FlowgramNodeCards';
 import { FlowgramToolbar } from './flowgram/FlowgramToolbar';
-import {
-  edgeHeatLevel,
-  findEdgeHeatEntry,
-  type EdgeHeatMap,
-} from '../hooks/use-edge-heatmap';
+import { useFlowgramCanvasOps } from './flowgram/useFlowgramCanvasOps';
+import { useFlowgramConnectionValidation } from './flowgram/useFlowgramConnectionValidation';
+import { useFlowgramContentSync } from './flowgram/useFlowgramContentSync';
+import { useFlowgramExport } from './flowgram/useFlowgramExport';
+import { useFlowgramRuntimeDecorations } from './flowgram/useFlowgramRuntimeDecorations';
+import { useFlowgramSelectionSync } from './flowgram/useFlowgramSelectionSync';
+import type {
+  FlowgramCanvasHandle,
+  FlowgramCanvasProps,
+} from './flowgram/FlowgramCanvas.types';
 
-export interface FlowgramCanvasResources {
-  connections: ConnectionDefinition[];
-  aiProviders: AiProviderView[];
-  activeAiProviderId: string | null;
-  copilotParams: AiGenerationParams;
-}
-
-export interface FlowgramCanvasRuntime {
-  runtimeState: WorkflowRuntimeState;
-  workflowStatus: WorkflowWindowStatus;
-  canTestRun?: boolean;
-  /** ADR-0016：获取边热力图快照。 */
-  getEdgeHeatmap?: () => EdgeHeatMap;
-  /** ADR-0016：注册热力图数据变更回调。 */
-  registerEdgeHeatUpdate?: (callback: (() => void) | null) => void;
-}
-
-export interface FlowgramCanvasAppearance {
-  accentHex: string;
-  themeMode: ResolvedThemeMode;
-  nodeCodeColor: string;
-}
-
-export interface FlowgramCanvasExportTarget {
-  workspacePath?: string;
-  workflowName?: string | null;
-}
-
-export interface FlowgramCanvasActions {
-  onRunRequested?: () => void;
-  onStopRequested?: () => void;
-  onTestRunRequested?: () => void;
-  onGraphChange: (nextAstText: string) => void;
-  onError?: (title: string, detail?: string | null) => void;
-  onStatusMessage?: (message: string) => void;
-}
-
-interface FlowgramCanvasProps {
-  graph: WorkflowGraph | null;
-  resources: FlowgramCanvasResources;
-  runtime: FlowgramCanvasRuntime;
-  appearance: FlowgramCanvasAppearance;
-  exportTarget?: FlowgramCanvasExportTarget;
-  actions: FlowgramCanvasActions;
-}
-
-export interface CanvasNodeOp {
-  id: string;
-  type: string;
-  label?: string;
-  config?: Record<string, unknown>;
-  connection_id?: string;
-}
-
-export interface CanvasEdgeOp {
-  from: string;
-  to: string;
-  source_port_id?: string;
-  target_port_id?: string;
-}
-
-export interface CanvasOps {
-  nodes: CanvasNodeOp[];
-  edges: CanvasEdgeOp[];
-}
-
-export interface FlowgramCanvasHandle {
-  isReady: () => boolean;
-  getCurrentWorkflowGraph: () => WorkflowGraph | null;
-  loadWorkflowGraph: (graph: WorkflowGraph) => void;
-  addCanvasOps: (ops: CanvasOps) => void;
-  autoLayout: () => void;
-  /** 当前选中节点的摘要信息，供 copilot 等外部消费者使用。 */
-  getSelectedNode: () => { id: string; type: string; label?: string } | null;
-  /** 修改已有节点的配置（浅合并）。 */
-  updateCanvasNode: (nodeId: string, patch: { label?: string; config?: Record<string, unknown>; connectionId?: string }) => boolean;
-  /** 删除节点及其所有连线。 */
-  deleteCanvasNode: (nodeId: string) => boolean;
-  /** 删除两节点间的第一条匹配连线。 */
-  deleteCanvasEdge: (from: string, to: string) => boolean;
-}
-
-interface InternalFlowExportImageService {
-  export: (options: { format: FlowDownloadFormat; watermarkSVG?: string }) => Promise<string | undefined>;
-}
-
-interface InternalFlowDownloadService {
-  download: (params: { format: FlowDownloadFormat }) => Promise<void>;
-  document: {
-    toJSON: () => unknown;
-  };
-  exportImageService: InternalFlowExportImageService;
-  options?: {
-    watermarkSVG?: string;
-  };
-  formatDataContent: (
-    json: unknown,
-    format: FlowDownloadFormat,
-  ) => Promise<{
-    content: string;
-    mimeType: string;
-  }>;
-  setDownloading: (value: boolean) => void;
-}
-
-interface FlowgramLineRuntimeSnapshot {
-  isWorkflowRuntimeMapped: boolean;
-  activeNodeIds: Set<string>;
-  completedNodeIds: Set<string>;
-  failedNodeIds: Set<string>;
-  outputNodeIds: Set<string>;
-  getEdgeHeatmap: (() => EdgeHeatMap) | null;
-}
-
-function isBusinessFlowNode(node: FlowNodeEntity | null): node is FlowNodeEntity {
-  if (!node || node.flowNodeType === FlowNodeBaseType.GROUP) {
-    return false;
-  }
-
-  const rawData = (node.getExtInfo() ?? {}) as {
-    nodeType?: string;
-  };
-  const explicitNodeType =
-    typeof rawData.nodeType === 'string' && rawData.nodeType.trim()
-      ? rawData.nodeType.trim()
-      : null;
-
-  return explicitNodeType !== null || isKnownEditorNodeType(node.flowNodeType);
-}
-
-/** 拒收一条连接时给用户的视觉 + 诊断反馈。
- *
- * `toPort.hasError = true` 让 FlowGram 默认 `isErrorPort` 渲染红色，
- * 1.5s 后自动复位。`canAddLine` 返回 false 后边其实不会真创建线，
- * 这里的红色仅作"刚才被拒"的瞬时反馈。 */
-function applyConnectionRejectionFeedback(
-  toPort: { hasError?: boolean },
-  rejection: ConnectionRejection,
-): void {
-  toPort.hasError = true;
-  window.setTimeout(() => {
-    toPort.hasError = false;
-  }, 1500);
-  console.warn(`[pin-validator] ${formatRejection(rejection)}`);
-}
-
-function getDefaultOutputPortId(node: FlowNodeEntity | null): string | undefined {
-  if (!node) {
-    return undefined;
-  }
-
-  const rawData = (node.getExtInfo() ?? {}) as {
-    nodeType?: string;
-    config?: unknown;
-  };
-  const nodeType = normalizeNodeKind(rawData.nodeType ?? node.flowNodeType);
-  return getLogicNodeBranchDefinitions(nodeType, rawData.config)[0]?.key;
-}
-
-function resolveLineRuntimeStatusFromSnapshot(
-  line: WorkflowLineEntity,
-  snapshot: FlowgramLineRuntimeSnapshot,
-): RuntimeNodeStatus {
-  if (!snapshot.isWorkflowRuntimeMapped) {
-    return 'idle';
-  }
-
-  const fromId = line.info.from || line.from?.id;
-  const toId = line.info.to || line.to?.id;
-  if (!fromId) {
-    return 'idle';
-  }
-
-  if ((toId && snapshot.failedNodeIds.has(toId)) || snapshot.failedNodeIds.has(fromId)) {
-    return 'failed';
-  }
-
-  if (snapshot.activeNodeIds.has(fromId) || (toId && snapshot.activeNodeIds.has(toId))) {
-    return 'running';
-  }
-
-  if ((toId && snapshot.outputNodeIds.has(toId)) || snapshot.outputNodeIds.has(fromId)) {
-    return 'output';
-  }
-
-  if ((toId && snapshot.completedNodeIds.has(toId)) || snapshot.completedNodeIds.has(fromId)) {
-    return 'completed';
-  }
-
-  return 'idle';
-}
-
-// FlowgramContainerCard / FlowgramNodeCard / FlowgramToolButton / FlowgramToolbar
-// 已拆分到 flowgram/FlowgramNodeCards.tsx 和 flowgram/FlowgramToolbar.tsx。
+// 公开类型继续从本入口转出，保持调用方导入路径不变。
+export type {
+  CanvasEdgeOp,
+  CanvasNodeOp,
+  CanvasNodePatch,
+  CanvasOps,
+  FlowgramCanvasActions,
+  FlowgramCanvasAppearance,
+  FlowgramCanvasExportTarget,
+  FlowgramCanvasHandle,
+  FlowgramCanvasProps,
+  FlowgramCanvasResources,
+  FlowgramCanvasRuntime,
+} from './flowgram/FlowgramCanvas.types';
 
 export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasProps>(function FlowgramCanvas({
   graph,
@@ -397,15 +180,6 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
     initialFlowgramDataRef.current = resolvedFlowgramData;
   }
 
-  const activeNodeIds = useMemo(() => new Set(runtimeState.activeNodeIds), [runtimeState.activeNodeIds]);
-  const completedNodeIds = useMemo(
-    () => new Set(runtimeState.completedNodeIds),
-    [runtimeState.completedNodeIds],
-  );
-  const failedNodeIds = useMemo(() => new Set(runtimeState.failedNodeIds), [runtimeState.failedNodeIds]);
-  const outputNodeIds = useMemo(() => new Set(runtimeState.outputNodeIds), [runtimeState.outputNodeIds]);
-  const isWorkflowRuntimeMapped =
-    workflowStatus === 'running' || workflowStatus === 'completed' || workflowStatus === 'failed';
   const isWorkflowActive =
     workflowStatus === 'deployed' ||
     workflowStatus === 'running' ||
@@ -434,187 +208,21 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
     workflowStatus,
     workflowStatusLabel,
   ]);
-  const lineRuntimeRef = useRef<FlowgramLineRuntimeSnapshot>({
-    isWorkflowRuntimeMapped: false,
-    activeNodeIds: new Set(),
-    completedNodeIds: new Set(),
-    failedNodeIds: new Set(),
-    outputNodeIds: new Set(),
-    getEdgeHeatmap: null,
+  const {
+    materials,
+    isFlowingLine,
+    isErrorLine,
+    setLineClassName,
+  } = useFlowgramRuntimeDecorations({
+    editorCtx,
+    runtimeState,
+    workflowStatus,
+    getEdgeHeatmap: runtime.getEdgeHeatmap,
+    registerEdgeHeatUpdate: runtime.registerEdgeHeatUpdate,
+    accentHex,
+    nodeCodeColor,
   });
-  lineRuntimeRef.current = {
-    isWorkflowRuntimeMapped,
-    activeNodeIds,
-    completedNodeIds,
-    failedNodeIds,
-    outputNodeIds,
-    getEdgeHeatmap: runtime.getEdgeHeatmap ?? null,
-  };
-
-  const resolveNodeRuntimeStatus = useCallback(
-    (nodeId: string): RuntimeNodeStatus => {
-      if (!isWorkflowRuntimeMapped) {
-        return 'idle';
-      }
-
-      if (failedNodeIds.has(nodeId)) {
-        return 'failed';
-      }
-
-      if (activeNodeIds.has(nodeId)) {
-        return 'running';
-      }
-
-      if (outputNodeIds.has(nodeId)) {
-        return 'output';
-      }
-
-      if (completedNodeIds.has(nodeId)) {
-        return 'completed';
-      }
-
-      return 'idle';
-    },
-    [activeNodeIds, completedNodeIds, failedNodeIds, isWorkflowRuntimeMapped, outputNodeIds],
-  );
-
-  const resolveLineRuntimeStatus = useCallback(
-    (line: WorkflowLineEntity): RuntimeNodeStatus => {
-      return resolveLineRuntimeStatusFromSnapshot(line, lineRuntimeRef.current);
-    },
-    [],
-  );
-
-  const isFlowingLine = useCallback(
-    (_ctx: FreeLayoutPluginContext, line: WorkflowLineEntity) =>
-      resolveLineRuntimeStatusFromSnapshot(line, lineRuntimeRef.current) === 'running',
-    [],
-  );
-
-  const isErrorLine = useCallback(
-    (_ctx: FreeLayoutPluginContext, fromPort: { node: FlowNodeEntity }, toPort?: { node: FlowNodeEntity }) =>
-      lineRuntimeRef.current.isWorkflowRuntimeMapped &&
-      Boolean(
-        (fromPort?.node?.id && lineRuntimeRef.current.failedNodeIds.has(fromPort.node.id)) ||
-          (toPort?.node?.id && lineRuntimeRef.current.failedNodeIds.has(toPort.node.id)),
-      ),
-    [],
-  );
-
-  const setLineClassName = useCallback(
-    (_ctx: FreeLayoutPluginContext, line: WorkflowLineEntity) => {
-      const snapshot = lineRuntimeRef.current;
-      const lineStatus = resolveLineRuntimeStatusFromSnapshot(line, snapshot);
-      const base = lineStatus === 'idle' ? 'flowgram-line' : `flowgram-line flowgram-line--${lineStatus}`;
-
-      // ADR-0016：边热力图叠加（运行态下根据传输统计着色）。
-      // getEdgeHeatmap 返回的是 ref（对象引用不变），闭包始终能读到最新数据。
-      // 热力图数据变更后由下方 useEffect 调用 linesManager.forceUpdate() 触发边重渲染。
-      if (snapshot.getEdgeHeatmap) {
-        const heatmap = snapshot.getEdgeHeatmap();
-        const fromId = line.info.from || line.from?.id;
-        const toId = line.info.to || line.to?.id;
-        if (fromId && toId && heatmap.size > 0) {
-          const entry = findEdgeHeatEntry(
-            heatmap,
-            fromId,
-            line.info.fromPort,
-            toId,
-            line.info.toPort,
-          );
-          if (entry?.backpressure) {
-            return `${base} flowgram-line--backpressure`;
-          }
-          if (entry && entry.transmitCount > 0) {
-            return `${base} flowgram-line--heat-${edgeHeatLevel(entry.transmitCount)}`;
-          }
-        }
-      }
-
-      return base;
-    },
-    [],
-  );
-
-  // ADR-0016：当 editorCtx 就绪时，注册热力图更新回调。
-  // 回调在 Tauri 事件循环中同步触发 linesManager.forceUpdate()，
-  // 不经过 React 渲染周期，确保边样式实时更新。
-  useEffect(() => {
-    if (!editorCtx || !runtime.registerEdgeHeatUpdate) {
-      return;
-    }
-    const forceUpdateLines = () => {
-      editorCtx.document.linesManager.forceUpdate();
-    };
-    runtime.registerEdgeHeatUpdate(forceUpdateLines);
-    return () => {
-      runtime.registerEdgeHeatUpdate?.(null);
-    };
-  }, [editorCtx, runtime.registerEdgeHeatUpdate]);
-
-  // 连接期 pin 类型校验：用户拖边瞬间被调用——pin schema 缓存命中且
-  // 类型不兼容时返回 false 拒收，否则放行（缓存未命中也放行，部署期
-  // pin_validator 作为 backstop 兜底）。
-  const canAddLine = useCallback(
-    (
-      _ctx: FreeLayoutPluginContext,
-      fromPort: { node: { id: string }; portID: string | number },
-      toPort: { node: { id: string }; portID: string | number; hasError?: boolean },
-      _lines: WorkflowLinesManager,
-      silent?: boolean,
-    ): boolean => {
-      const result = checkConnection(
-        fromPort.node.id,
-        fromPort.portID,
-        toPort.node.id,
-        toPort.portID,
-      );
-
-      if (!result.allow && result.rejection && !silent) {
-        applyConnectionRejectionFeedback(toPort, result.rejection);
-      }
-
-      return result.allow;
-    },
-    [],
-  );
-
-  const renderNodeCard = useCallback(
-    (props: FlowgramNodeMaterialProps) => {
-      const rawType = normalizeNodeKind(
-        ((props.node.getExtInfo() ?? {}) as { nodeType?: string }).nodeType ?? props.node.flowNodeType,
-      );
-      if (rawType === 'subgraph' || rawType === 'loop') {
-        return (
-          <FlowgramContainerCard
-            {...props}
-            runtimeStatus={resolveNodeRuntimeStatus(props.node.id)}
-            accentHex={accentHex}
-            nodeCodeColor={nodeCodeColor}
-          />
-        );
-      }
-      const debugOutput = rawType === 'debugConsole'
-        ? runtimeState.debugOutputs[props.node.id]
-        : undefined;
-      return (
-        <FlowgramNodeCard
-          {...props}
-          runtimeStatus={resolveNodeRuntimeStatus(props.node.id)}
-          debugOutput={debugOutput}
-          accentHex={accentHex}
-          nodeCodeColor={nodeCodeColor}
-        />
-      );
-    },
-    [accentHex, nodeCodeColor, resolveNodeRuntimeStatus, runtimeState.debugOutputs],
-  );
-  const materials = useMemo(
-    () => ({
-      renderDefaultNode: renderNodeCard,
-    }),
-    [renderNodeCard],
-  );
+  const canAddLine = useFlowgramConnectionValidation();
   const buildCurrentWorkflowGraph = useCallback(
     (ctx: FreeLayoutPluginContext) => {
       if (!latestGraphRef.current) {
@@ -646,63 +254,16 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
     [buildCurrentWorkflowGraph, onGraphChange, reportFlowgramError],
   );
 
-  const syncSelectionState = useCallback(
-    (ctx: FreeLayoutPluginContext | null) => {
-      try {
-        if (!ctx) {
-          selectedNodeRef.current = null;
-          setHasSelection(false);
-          return;
-        }
-
-        const selectionService = ctx.document.selectServices;
-        const selectedNodes = selectionService.selectedNodes;
-        const nextSelectedNode = selectedNodes.length === 1 ? selectedNodes[0] : null;
-        const nextBusinessNode = isBusinessFlowNode(nextSelectedNode) ? nextSelectedNode : null;
-        const hadPreviousSelection = Boolean(selectedNodeRef.current);
-
-        selectedNodeRef.current = nextBusinessNode;
-        setHasSelection(Boolean(nextBusinessNode));
-
-        // 从选中节点切换到无选中时（关闭设置面板），延迟同步图变更以避免渲染期 setState
-        if (hadPreviousSelection && !nextBusinessNode) {
-          setTimeout(() => emitCurrentGraphChange(ctx), 0);
-        }
-
-        const panelManager = (ctx as FreeLayoutPluginContext & {
-          get?: <T>(token: unknown) => T;
-        }).get?.<PanelManager>(PanelManager);
-
-        if (!panelManager) {
-          return;
-        }
-
-        if (ctx.playground.config.readonly) {
-          panelManager.close(FLOWGRAM_NODE_SETTINGS_PANEL_KEY);
-          return;
-        }
-
-        if (nextBusinessNode) {
-          panelManager.open(FLOWGRAM_NODE_SETTINGS_PANEL_KEY, 'right', {
-            props: {
-              nodeId: nextBusinessNode.id,
-              connections: connectionOptions,
-              aiProviders,
-              activeAiProviderId,
-              copilotParams,
-            },
-          });
-          return;
-        }
-
-        panelManager.close(FLOWGRAM_NODE_SETTINGS_PANEL_KEY);
-      } catch (error) {
-        reportFlowgramError('FlowGram 选择状态同步失败', error);
-        return;
-      }
-    },
-    [activeAiProviderId, aiProviders, connectionOptions, copilotParams, emitCurrentGraphChange, reportFlowgramError],
-  );
+  const syncSelectionState = useFlowgramSelectionSync({
+    selectedNodeRef,
+    setHasSelection,
+    connectionOptions,
+    aiProviders,
+    activeAiProviderId,
+    copilotParams,
+    emitCurrentGraphChange,
+    reportFlowgramError,
+  });
 
   const applyExternalFlowgramGraph = useCallback(
     (ctx: FreeLayoutPluginContext, nextGraph: FlowgramWorkflowJSON) => {
@@ -758,193 +319,23 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
     [applyExternalFlowgramGraph, editorCtx, reportFlowgramError],
   );
 
-  const addCanvasOps = useCallback(
-    (ops: CanvasOps) => {
-      if (!editorCtx || editorCtx.playground.config.readonly) return;
-
-      try {
-        applyingExternalGraphRef.current = true;
-        const createdIds = new Set<string>();
-
-        // 简易拓扑排序：按边关系确定层级
-        const depthMap = new Map<string, number>();
-        for (const node of ops.nodes) {
-          depthMap.set(node.id, 0);
-        }
-        for (const edge of ops.edges) {
-          const fromDepth = depthMap.get(edge.from) ?? 0;
-          const toDepth = depthMap.get(edge.to);
-          if (toDepth !== undefined) {
-            depthMap.set(edge.to, Math.max(toDepth, fromDepth + 1));
-          }
-        }
-
-        // 按 depth 分组，同一 depth 内纵向偏移
-        const byDepth = new Map<number, CanvasNodeOp[]>();
-        for (const node of ops.nodes) {
-          const d = depthMap.get(node.id) ?? 0;
-          let group = byDepth.get(d);
-          if (!group) {
-            group = [];
-            byDepth.set(d, group);
-          }
-          group.push(node);
-        }
-
-        // 确定起始位置：基于当前选中节点或画布中心
-        const anchorNode = selectedNodeRef.current;
-        const baseX = anchorNode?.getNodeMeta().position?.x ?? 200;
-        // Copilot 增量添加时优先沿用上次 Y 偏移，避免重叠
-        const baseY = lastCopilotYRef.current > 0
-          ? lastCopilotYRef.current
-          : (anchorNode?.getNodeMeta().position?.y ?? 300);
-
-        const idToEntity = new Map<string, FlowNodeEntity>();
-
-        const sortedDepths = [...byDepth.keys()].sort((a, b) => a - b);
-        for (const depth of sortedDepths) {
-          const group = byDepth.get(depth) ?? [];
-          for (let i = 0; i < group.length; i++) {
-            const op = group[i];
-            const x = baseX + depth * 320;
-            const y = baseY + i * 168;
-
-            const seed: NodeSeed = {
-              idPrefix: op.type,
-              kind: normalizeNodeKind(op.type),
-              label: op.label ?? '',
-              connectionId: op.connection_id ?? null,
-              timeoutMs: null,
-              config: (op.config ?? {}) as NodeSeed['config'],
-            };
-
-            const node = editorCtx.document.createWorkflowNodeByType(
-              seed.kind,
-              { x, y },
-              {
-                id: op.id,
-                type: seed.kind,
-                data: resolveNodeData(seed, op.id, connectionDefaults),
-              },
-            );
-
-            idToEntity.set(op.id, node);
-            createdIds.add(op.id);
-          }
-        }
-
-        // 创建边
-        for (const edge of ops.edges) {
-          editorCtx.document.linesManager.createLine({
-            from: edge.from,
-            to: edge.to,
-            ...(edge.source_port_id ? { fromPort: edge.source_port_id } : {}),
-            ...(edge.target_port_id ? { toPort: edge.target_port_id } : {}),
-          });
-        }
-
-        // Copilot 增量添加节点时追踪最大 Y，供下次偏移使用
-        if (ops.nodes.length > 0 && ops.edges.length === 0) {
-          lastCopilotYRef.current = baseY + ops.nodes.length * 168;
-        } else if (ops.nodes.length > 0) {
-          const maxDepth = Math.max(...sortedDepths);
-          const maxGroup = byDepth.get(maxDepth) ?? [];
-          lastCopilotYRef.current = baseY + maxGroup.length * 168;
-        }
-
-        syncSelectionState(editorCtx);
-
-        // 选中最后一个节点并滚动到视图
-        const lastNode = ops.nodes[ops.nodes.length - 1];
-        if (lastNode) {
-          const entity = idToEntity.get(lastNode.id);
-          if (entity) {
-            void editorCtx.document.selectServices.selectNodeAndScrollToView(entity, false);
-          }
-        }
-      } catch (error) {
-        reportFlowgramError('Copilot 画布节点添加失败', error);
-      } finally {
-        applyingExternalGraphRef.current = false;
-      }
-    },
-    [connectionDefaults, editorCtx, reportFlowgramError, syncSelectionState],
-  );
-
-  const handleAutoLayout = useCallback(() => {
-    if (editorCtx) {
-      void editorCtx.tools.autoLayout();
-    }
-  }, [editorCtx]);
-
-  const getSelectedNodeSummary = useCallback((): { id: string; type: string; label?: string } | null => {
-    const node = selectedNodeRef.current;
-    if (!node) return null;
-    const rawData = (node.getExtInfo() ?? {}) as { nodeType?: string; label?: string };
-    return {
-      id: node.id,
-      type: rawData.nodeType ?? String(node.flowNodeType),
-      label: rawData.label || undefined,
-    };
-  }, []);
-
-  /// Copilot 编辑工具：浅合并节点配置。
-  const updateCanvasNode = useCallback(
-    (nodeId: string, patch: { label?: string; config?: Record<string, unknown>; connectionId?: string }): boolean => {
-      if (!editorCtx) return false;
-      const node = editorCtx.document.getNode(nodeId);
-      if (!node || node.disposed || node.flowNodeType === FlowNodeBaseType.ROOT) return false;
-
-      const current = (node.getExtInfo() ?? {}) as Record<string, unknown>;
-      const currentConfig = (current.config as Record<string, unknown>) ?? {};
-
-      const nextExtInfo: Record<string, unknown> = {
-        ...current,
-        ...(patch.label !== undefined ? { label: patch.label } : {}),
-        ...(patch.config ? { config: { ...currentConfig, ...patch.config } } : {}),
-        ...(patch.connectionId !== undefined ? { connectionId: patch.connectionId || null } : {}),
-      };
-
-      node.updateExtInfo(nextExtInfo);
-
-      const nodeType = (nextExtInfo.nodeType as string) ?? String(node.flowNodeType);
-      if (usesDynamicPorts(nodeType)) {
-        window.requestAnimationFrame(() => { node.ports.updateDynamicPorts(); });
-      }
-      return true;
-    },
-    [editorCtx],
-  );
-
-  /// Copilot 删除工具：移除节点及其连线。
-  const deleteCanvasNode = useCallback(
-    (nodeId: string): boolean => {
-      if (!editorCtx) return false;
-      const node = editorCtx.document.getNode(nodeId);
-      if (!node || node.disposed || node.flowNodeType === FlowNodeBaseType.ROOT) return false;
-      node.dispose();
-      return true;
-    },
-    [editorCtx],
-  );
-
-  /// Copilot 删除工具：移除 from→to 的第一条匹配连线。
-  const deleteCanvasEdge = useCallback(
-    (from: string, to: string): boolean => {
-      if (!editorCtx) return false;
-      const lines = editorCtx.document.linesManager.getAllLines();
-      for (const line of lines) {
-        const lineFrom = line.info.from || (line.from as { id?: string } | undefined)?.id;
-        const lineTo = line.info.to || (line.to as { id?: string } | undefined)?.id;
-        if (lineFrom === from && lineTo === to) {
-          line.dispose();
-          return true;
-        }
-      }
-      return false;
-    },
-    [editorCtx],
-  );
+  const {
+    addCanvasOps,
+    autoLayout: handleAutoLayout,
+    getSelectedNode: getSelectedNodeSummary,
+    updateCanvasNode,
+    deleteCanvasNode,
+    deleteCanvasEdge,
+    insertNode: handleInsertNode,
+  } = useFlowgramCanvasOps({
+    editorCtx,
+    selectedNodeRef,
+    lastCopilotYRef,
+    applyingExternalGraphRef,
+    connectionDefaults,
+    syncSelectionState,
+    reportFlowgramError,
+  });
 
   useImperativeHandle(
     ref,
@@ -993,69 +384,13 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
     [editorCtx],
   );
 
-  const handleDownloadCurrentGraph = useCallback(
-    async (format: FlowDownloadFormat) => {
-      if (!editorCtx) {
-        return;
-      }
-
-      try {
-        const downloadService = (editorCtx as FreeLayoutPluginContext & {
-          get?: <T>(token: unknown) => T;
-        }).get?.<FlowDownloadService>(FlowDownloadService) as unknown as
-          | InternalFlowDownloadService
-          | undefined;
-        if (!downloadService) {
-          return;
-        }
-
-        if (hasTauriRuntime()) {
-          downloadService.setDownloading(true);
-
-          try {
-            const fileName = buildFlowgramExportFileName(workflowName, format);
-
-            if (format === FlowDownloadFormat.JSON) {
-              const json = downloadService.document.toJSON();
-              const { content } = await downloadService.formatDataContent(json, format);
-              const saved = await saveFlowgramExportFile(workspacePath ?? '', fileName, {
-                text: content,
-              });
-              onStatusMessage?.(`已导出到 ${saved.filePath}`);
-              return;
-            }
-
-            const imageUrl = await downloadService.exportImageService.export({
-              format,
-              watermarkSVG: downloadService.options?.watermarkSVG,
-            });
-            if (!imageUrl) {
-              throw new Error('未能生成导出内容。');
-            }
-
-            const response = await fetch(imageUrl);
-            if (!response.ok) {
-              throw new Error(`导出内容读取失败: ${response.status}`);
-            }
-
-            const buffer = await response.arrayBuffer();
-            const saved = await saveFlowgramExportFile(workspacePath ?? '', fileName, {
-              bytes: Array.from(new Uint8Array(buffer)),
-            });
-            onStatusMessage?.(`已导出到 ${saved.filePath}`);
-            return;
-          } finally {
-            downloadService.setDownloading(false);
-          }
-        }
-
-        await downloadService.download({ format });
-      } catch (error) {
-        reportFlowgramError('FlowGram 导出失败', error);
-      }
-    },
-    [editorCtx, onStatusMessage, reportFlowgramError, workflowName, workspacePath],
-  );
+  const handleDownloadCurrentGraph = useFlowgramExport({
+    editorCtx,
+    workflowName,
+    workspacePath,
+    onStatusMessage,
+    reportFlowgramError,
+  });
 
   const handleEditorRef = useCallback(
     (ctx: FreeLayoutPluginContext | null) => {
@@ -1143,129 +478,15 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
     applyExternalFlowgramGraph(editorCtx, nextFlowgramData);
   }, [applyExternalFlowgramGraph, editorCtx, flowgramDataSignature, graph]);
 
-  const handleContentChange = useCallback(
-    (ctx: FreeLayoutPluginContext, event: WorkflowContentChangeEvent) => {
-      try {
-        if (applyingExternalGraphRef.current) {
-          return;
-        }
-
-        if (event.type === WorkflowContentChangeType.META_CHANGE) {
-          return;
-        }
-
-        // 节点生命周期事件触发 pin schema 缓存维护。refresh / invalidate
-        // 都是 fire-and-forget——失败时缓存自动写 fallback Any/Any，部署期
-        // 校验作为 backstop 兜底。
-        if (
-          event.type === WorkflowContentChangeType.ADD_NODE ||
-          event.type === WorkflowContentChangeType.NODE_DATA_CHANGE
-        ) {
-          const entity = event.entity as { id?: string; getExtInfo?: () => unknown } | undefined;
-          if (entity?.id && entity.getExtInfo) {
-            const ext = (entity.getExtInfo() ?? {}) as {
-              nodeType?: string;
-              config?: unknown;
-            };
-            if (ext.nodeType) {
-              void refreshNodePinSchema(
-                entity.id,
-                ext.nodeType,
-                configToRecord(ext.config as never),
-              );
-            }
-          }
-        } else if (event.type === WorkflowContentChangeType.DELETE_NODE) {
-          const entity = event.entity as { id?: string } | undefined;
-          if (entity?.id) {
-            invalidateNodePinSchema(entity.id);
-          }
-        }
-
-        if (
-          event.type === WorkflowContentChangeType.DELETE_NODE ||
-          event.type === WorkflowContentChangeType.DELETE_LINE
-        ) {
-          ctx.playground.flush();
-        }
-
-        // 延迟状态更新，避免 FlowGram 在渲染期触发回调导致 setState 警告
-        setTimeout(() => {
-          setLastChange(event.type);
-          syncSelectionState(ctx);
-
-          if (!latestGraphRef.current) {
-            return;
-          }
-
-          if (syncTimerRef.current !== null) {
-            window.clearTimeout(syncTimerRef.current);
-            syncTimerRef.current = null;
-          }
-
-          syncTimerRef.current = window.setTimeout(() => {
-            emitCurrentGraphChange(ctx);
-          }, 120);
-        }, 0);
-      } catch (error) {
-        reportFlowgramError('FlowGram 内容同步失败', error);
-      }
-    },
-    [syncSelectionState, emitCurrentGraphChange, reportFlowgramError],
-  );
-
-  function buildInsertionPosition(anchorNode: FlowNodeEntity | null) {
-    if (!anchorNode) {
-      return undefined;
-    }
-
-    const anchorPosition = anchorNode.getNodeMeta().position;
-    if (!anchorPosition) {
-      return undefined;
-    }
-
-    const branchOffset = anchorNode.lines.outputNodes.length * 168;
-
-    return {
-      x: anchorPosition.x + 320,
-      y: anchorPosition.y + branchOffset,
-    };
-  }
-
-  async function handleInsertNode(seed: NodeSeed, mode: 'standalone' | 'downstream') {
-    if (!editorCtx || editorCtx.playground.config.readonly) {
-      return;
-    }
-
-    try {
-      const anchorNode = mode === 'downstream' ? selectedNodeRef.current : null;
-      const nextId = allocateNodeId();
-      const node = editorCtx.document.createWorkflowNodeByType(
-        seed.kind,
-        buildInsertionPosition(anchorNode),
-        {
-          id: nextId,
-          type: seed.kind,
-          data: resolveNodeData(seed, nextId, connectionDefaults),
-        },
-      );
-
-      if (anchorNode) {
-        const fromPort = getDefaultOutputPortId(anchorNode);
-        editorCtx.document.linesManager.createLine({
-          from: anchorNode.id,
-          to: node.id,
-          ...(fromPort ? { fromPort } : {}),
-        });
-      }
-
-      editorCtx.document.selectServices.selectNode(node);
-      await editorCtx.document.selectServices.selectNodeAndScrollToView(node, false);
-      syncSelectionState(editorCtx);
-    } catch (error) {
-      reportFlowgramError('FlowGram 节点插入失败', error);
-    }
-  }
+  const handleContentChange = useFlowgramContentSync({
+    applyingExternalGraphRef,
+    latestGraphRef,
+    syncTimerRef,
+    setLastChange,
+    syncSelectionState,
+    emitCurrentGraphChange,
+    reportFlowgramError,
+  });
 
   const editorProps = useFlowgramEditorProps({
     initialData: initialFlowgramDataRef.current ??
