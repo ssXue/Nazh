@@ -311,4 +311,4 @@ pub fn apply_scale(
 - 与 ADR-0021 的关系：本 ADR 是 ADR-0021 "DSL 编译产物进入画布" 在信号读取场景下的具体实现。`dsl-compiler` 在编译包含设备信号引用的 Workflow DSL 时，将 `SignalSpec` 烘焙为 `SignalSourceSnapshot` 并生成节点 config。
 - `SignalSourceSnapshot` 的 serde 格式应与 `dsl-core::SignalSource` 保持字段级兼容，conformance test 守护一致性。
 - Rhai 依赖已在 `crates/scripting` 中引入，`nodes-io` 可通过依赖 `scripting` crate 复用，不引入新依赖。
-- 节点边界评审阶段 3 的完整结论见 `docs/specs/2026-05-05-node-architecture-boundary-review.md`。
+- 节点边界评审阶段 3 的完整结论见根 `AGENTS.md` 设计原则 3（设备语义高于协议适配）及 `docs/project-status.md`「设备/连接节点边界收口」段。

@@ -25,8 +25,7 @@
 `stateMachine` 自带状态/迁移持久化逻辑，迁移条件评估走 Rhai 表达式但不复用 `ScriptNodeBase`。
 `subgraphInput` / `subgraphOutput` 复用 `PassthroughNode`，只透传 payload，不运行脚本。
 
-**`code` 节点的 AI 能力**：`code` 节点在 `AiGenerationParams` 配置下可调用 `ai_complete()`
-生成脚本内容，或把 AI 的回答作为 payload 的一部分——这是 Nazh "AI 作为一等公民"设计的入口之一。
+**`code` 节点的 AI 辅助**：画布内 AI 编辑（`AiWorkflowComposer`）可为 `code` 节点生成 Rhai 脚本内容（RFC-0005，AI 调用全部由前端发起）；运行时 `code` 节点本身不发起任何 AI 调用，只在 Rhai 沙箱中执行脚本。
 
 ## 对外暴露
 
@@ -82,17 +81,17 @@ Plugin 注册入口：`FlowPlugin::register(&mut NodeRegistry)`，在 `lib.rs:36
 
 1. **5 个脚本节点（`if` / `switch` / `loop` / `tryCatch` / `code`）嵌入 `ScriptNodeBase`**，`NodeTrait` 元数据（`id` / `kind`）用 `scripting::delegate_node_base!` 宏委托。`stateMachine` 自带状态/迁移逻辑，不复用 `ScriptNodeBase`，但 `transition.condition` 仍走受 `max_operations` 限制的 `rhai::Engine` 评估，构造期预编译 AST，运行期只执行对应 AST；`subgraphInput` / `subgraphOutput` 复用 `PassthroughNode`。**能力标签不走 trait**，而是在 `FlowPlugin::register` 时通过 `register_with_capabilities` 声明——详见 `crates/core/AGENTS.md` 的"为什么 `NodeTrait` 没有 `capabilities()` 方法"。
 2. **脚本执行遵循 `scripting` crate 的约定**（`max_operations`、payload 变量名、Scope 单次使用）。
-3. **不借用连接、不做 I/O**。`code` 节点可以通过 `ai_complete()` 发 AI 请求，但走的是 Ring 0 的 `nazh_core::ai::AiService` trait（具体实现由壳层注入）；本 crate 不直接用 `reqwest` / `rusqlite` / 其他协议，**也不依赖 `ai` crate**（ADR-0019）。
+3. **不借用连接、不做 I/O、不发起 AI 调用**。本 crate 不直接用 `reqwest` / `rusqlite` / 其他协议，**也不依赖 `ai` crate**（ADR-0019）。RFC-0005 实施后，AI 调用已全部前移到前端，Rust 侧不持有 AI HTTP 客户端。
 4. **分支端口名固定**：`if` 用 `"true"` / `"false"`，`tryCatch` 用 `"try"` / `"catch"`，`loop` 用 `"body"` / `"done"`，`switch` 用配置里声明的分支名加 `default_branch`，`stateMachine` 用 action port（`entry_actions` / `exit_actions` / `transition.action_port`）。改端口名是前端画布的 breaking change。
 5. **stateMachine 无 action transition 不广播**。状态转移成功但 exit / transition / entry action port 均为空时，节点返回叶子结果（`Route([])`）而不是 `Broadcast`，避免 graph runner 把消息推到同节点已有 action-port 下游。
 6. **子图桥接节点只服务部署后的扁平 DAG**。`subgraph` 容器本身不进入 Rust Runner；前端 `flattenSubgraphs()` 会把容器改写成 `<subgraph-id>/...` 前缀节点，并把外部边接到 `subgraphInput` / `subgraphOutput`。
 
 ## 依赖约束
 
-- 允许：`nazh-core`（含 `nazh_core::ai::AiService`）、`scripting`、`async-trait`、`rhai`、`serde` / `serde_json`
+- 允许：`nazh-core`（含 AI 共享类型 `AiGenerationParams` / `AiError` 等，无 HTTP 客户端）、`scripting`、`async-trait`、`rhai`、`serde` / `serde_json`
 - 禁止：`ai`（自 ADR-0019 起）、`connections`、`nodes-io`、任何协议 crate
 
-本 crate 是 Ring 1 但避免了所有协议依赖——全部 I/O 都被挡在 `nodes-io`。ADR-0019 实施后，连 `ai` 也不再依赖：`code` 节点的 `Arc<dyn AiService>` 来自 Ring 0 trait + 壳层注入。
+本 crate 是 Ring 1 但避免了所有协议依赖——全部 I/O 都被挡在 `nodes-io`。ADR-0019 实施后脱离 `ai` 依赖；RFC-0005 实施后 AI 调用前移到前端，本 crate 不再接触任何 AI 运行时类型。
 
 ## 修改本 crate 时
 

@@ -16,8 +16,8 @@ Data 输入拉取时即时求值（不进 Tokio task spawn 列表）。
 
 ## 内部约定
 
-- 节点必须无外部 IO：不发起网络/文件/设备访问、不读 `WorkflowVariables`、不调
-  `AiService`。若节点读取系统时钟（如 `minutesSince`），可以是 pure-form，
+- 节点必须无外部 IO：不发起网络/文件/设备访问、不读 `WorkflowVariables`、不
+  发起 AI 调用。若节点读取系统时钟（如 `minutesSince`），可以是 pure-form，
   但**不能**声明 `NodeCapabilities::PURE`。
 - 节点必须线程安全（`Send + Sync`）——递归 pull 求值在不同 task 上下文里
 - 错误返回 `EngineError::PayloadConversion { node_id, message }`，
