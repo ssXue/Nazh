@@ -2748,6 +2748,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "serialport",
+ "sha2",
  "store",
  "tauri",
  "tauri-bindings",

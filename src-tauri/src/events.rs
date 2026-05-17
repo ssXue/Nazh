@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use nazh_engine::{ContextRef, DataStore, ExecutionEvent, WorkflowContext, WorkflowVariableEvent};
 use serde::Serialize;
-use store::StoreHandle;
+use store::{DeploymentAuditRecord, StoreHandle};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::mpsc;
 
@@ -22,11 +22,44 @@ struct ScopedWorkflowResult {
     result: WorkflowContext,
 }
 
+/// 写入变量审计记录到 `deployment_audit` 表（RFC-0003 Phase 3）。
+async fn write_variable_audit(
+    store: &StoreHandle,
+    workflow_id: &str,
+    action: &str,
+    message: String,
+    detail: Option<String>,
+    data: serde_json::Value,
+) {
+    let now = chrono::Utc::now();
+    let record = DeploymentAuditRecord {
+        id: format!(
+            "var-audit-{}-{}",
+            now.timestamp_millis(),
+            now.timestamp_subsec_nanos()
+        ),
+        workflow_id: workflow_id.to_owned(),
+        action: action.to_owned(),
+        level: "info".to_owned(),
+        timestamp: now.to_rfc3339(),
+        project_id: None,
+        project_name: None,
+        environment_id: None,
+        environment_name: None,
+        message,
+        detail,
+        data: Some(data),
+    };
+    if let Err(error) = store.insert_deployment_audit(record).await {
+        tracing::debug!(?error, "变量审计记录写入失败");
+    }
+}
+
 /// 变量控制事件 drain 循环。
 ///
 /// 将 [`WorkflowVariableEvent`] 转发到 Tauri 前端事件通道
 /// `workflow://variable-changed` / `workflow://variable-deleted`，
-/// 同时持久化到 Store（ADR-0022）。
+/// 同时持久化到 Store（ADR-0022）+ 写入审计记录（RFC-0003 Phase 3）。
 pub(crate) fn spawn_variable_event_forwarder(
     app: AppHandle,
     _workflow_id: String,
@@ -79,11 +112,37 @@ pub(crate) fn spawn_variable_event_forwarder(
                     {
                         tracing::debug!(?error, "变量历史记录写入失败");
                     }
+                    write_variable_audit(
+                        &store,
+                        &payload.workflow_id,
+                        "variable_changed",
+                        format!("变量 {} 已变更", payload.name),
+                        payload
+                            .updated_by
+                            .clone()
+                            .or_else(|| "runtime".to_owned().into()),
+                        serde_json::json!({
+                            "variable_name": payload.name,
+                            "value": payload.value,
+                        }),
+                    )
+                    .await;
                 }
                 WorkflowVariableEvent::Deleted { workflow_id, name } => {
                     if let Err(error) = store.delete_variable(&workflow_id, &name).await {
                         tracing::debug!(?error, "变量持久化删除失败");
                     }
+                    write_variable_audit(
+                        &store,
+                        &workflow_id,
+                        "variable_deleted",
+                        format!("变量 {name} 已删除"),
+                        None,
+                        serde_json::json!({
+                            "variable_name": name,
+                        }),
+                    )
+                    .await;
                     let payload = tauri_bindings::VariableDeletedPayload { workflow_id, name };
                     if let Err(error) = app.emit("workflow://variable-deleted", payload) {
                         tracing::warn!(?error, "workflow://variable-deleted 事件转发失败");

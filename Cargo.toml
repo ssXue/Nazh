@@ -44,8 +44,8 @@ chrono = { version = "0.4", features = ["clock", "serde"] }
 dashmap = "6"
 ethercrab = { version = "0.7", default-features = false, features = ["std", "log"] }
 futures-util = "0.3"
-async-openai = { version = "0.38", default-features = false, features = ["rustls", "chat-completion", "byot", "responses", "middleware", "embedding"] }
 fastrand = "2"
+sha2 = "0.10"
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "json"] }
 rhai = { version = "1", features = ["serde", "sync"] }
 rusqlite = { version = "0.39", features = ["bundled"] }

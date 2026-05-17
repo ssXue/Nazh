@@ -127,14 +127,14 @@ IPC boundary types are defined once in Rust and auto-generated to TypeScript via
 
 Workflow commands are split across `workflow_deploy.rs` / `workflow_dispatch.rs` / `workflow_undeploy.rs` (since 2026-05-03, was single `workflow.rs`). Other command domains remain in their respective files (`ai.rs`, `catalog.rs`, `connections.rs`, `variables.rs`, `devices/`, etc.).
 
-81 commands covering:
+82 commands covering:
 - workflow lifecycle/runtime: `deploy_workflow`, `dispatch_payload`, `undeploy_workflow`, `list_runtime_workflows`, `set_active_runtime_workflow`, `list_dead_letters`
 - node / pin catalog: `list_node_types`, `describe_node_pins`
 - workflow variables: `snapshot_workflow_variables`, `set_workflow_variable`, `delete_workflow_variable`, `reset_workflow_variable`, `query_variable_history`, `set_global_variable`, `get_global_variable`, `list_global_variables`, `delete_global_variable`
 - connections: `list_connections`, `load_connection_definitions`, `save_connection_definitions`, `reset_connection_circuit_breaker`
 - device assets（RFC-0004 Phase 1）: `list_device_assets`, `load_device_asset`, `save_device_asset`, `delete_device_asset`, `list_asset_versions`, `load_asset_version`, `list_device_snapshots`, `create_device_snapshot`, `rollback_device_snapshot`, `delete_device_snapshot`, `patch_device_field`, `bind_device_connection`, `add_device_signal`, `remove_device_signal`, `add_device_alarm`, `remove_device_alarm`, `generate_pin_schema`, `save_device_asset_sources`, `load_device_asset_sources`, `extract_text_from_pdf`, `import_ethercat_esi`
 - capabilities（RFC-0004 Phase 2）: `list_capabilities`, `load_capability`, `save_capability`, `delete_capability`, `list_capability_versions`, `load_capability_version`, `generate_capabilities_from_device_cmd`, `save_capability_sources`, `load_capability_sources`
-- observability: `query_observability`, `clear_observability`
+- observability: `query_observability`, `clear_observability`, `query_deployment_audit`
 - deployment session files: `load_deployment_session_file`, `load_deployment_session_state_file`, `list_deployment_sessions_file`, `save_deployment_session_file`, `set_deployment_session_active_project_file`, `remove_deployment_session_file`, `clear_deployment_session_file`
 - serial: `list_serial_ports`, `test_serial_connection`
 - project library/export: `load_project_board_files`, `save_project_board_files`, `save_flowgram_export_file`

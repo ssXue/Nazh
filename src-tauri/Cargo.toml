@@ -47,6 +47,7 @@ serde_yaml.workspace = true
 window-vibrancy = "0.7.1"
 # PDF 文本提取（设备说明书录入）
 pdf-extract = "0.10.0"
+sha2.workspace = true
 base64 = "0.22"
 quick-xml = "0.39.3"
 # 系统原生对话框（文件夹选择等）

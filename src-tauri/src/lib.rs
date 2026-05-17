@@ -281,6 +281,7 @@ pub fn run() {
             commands::runtime::subscribe_reactive_pin,
             commands::observability::query_observability,
             commands::observability::clear_observability,
+            commands::observability::query_deployment_audit,
             commands::connections::load_connection_definitions,
             commands::connections::save_connection_definitions,
             commands::connections::reset_connection_circuit_breaker,

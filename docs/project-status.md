@@ -1,4 +1,4 @@
-# Project Status（2026-05-16）
+# Project Status（2026-05-17）
 
 从 `AGENTS.md` 拆出的项目状态追踪。本文件随 ADR 落地、技术债偿还、路线图推进而更新。
 
@@ -18,7 +18,7 @@
 - ADR-0011 (节点能力标签 `NodeCapabilities`) — **已实施**（2026-04-24，位图落在 `crates/core/src/node.rs`，前端常量表 `web/src/lib/node-capabilities.ts`）
 - ADR-0009 (节点生命周期钩子) — **已实施**（2026-04-26，`crates/core/src/lifecycle.rs` + Timer / Serial / MQTT 三类节点 `on_deploy` + `WorkflowDeployment::shutdown`；壳层 ~1000 行回收）
 - ADR-0010 (Pin 声明系统) — **已实施 Phase 1 + Phase 2 + Phase 3 + Phase 4 + Phase 4.1**（Phase 1: 2026-04-26，Ring 0 类型 + 部署期校验器 + `if`/`switch`/`loop`/`tryCatch` 四个分支节点声明具体输出 pin；Phase 3: 2026-04-26，`modbusRead` / `sqlWriter` / `httpClient` / `mqttClient` 四协议节点 input/output 收紧到 `Json`（mqttClient 按 mode 实例方法切换）+ 兼容矩阵合约 fixture `tests/fixtures/pin_compat_matrix.jsonc` 作为前后端共享真值源 + 反向兼容性集成测试；Phase 2: 2026-04-26，IPC `describe_node_pins` + `web/src/lib/{pin-compat,pin-schema-cache,pin-validator}.ts` + FlowGram `canAddLine` 钩子接入连接期校验 + branch ports 按 PinType 着色。Phase 4: 2026-04-27，pin tooltip + AI 脚本生成 prompt 携带 pin schema。Phase 4.1: 2026-05-13，httpClient / serialTrigger / mqttClient / capabilityCall 补齐 `useDynamicPort`，输出端口 PinType/PinKind 着色和 tooltip 与 modbusRead/canRead 对齐。`Custom` 类型 + row-formatter 节点仍 defer——触发条件（≥2 真实协议级类型隔离场景）2026-05-13 复评仍未满足。两层防御=UI 拦截+部署期 backstop）
-- ADR-0019 (AI 能力依赖反转) — **已实施**（2026-04-26，`AiService` trait + 请求/响应类型上移到 `crates/core/src/ai.rs`；`ai` crate 改为纯实现 + 配置型；`scripting` / `nodes-flow` 不再依赖 `ai`）
+- ADR-0019 (AI 能力依赖反转) — **已取代**（RFC-0005 将 AI HTTP 调用前移到前端，`AiService` trait 及其 HTTP 实现已移除，2026-05-17）
 - ADR-0018 (`nodes-io` 按协议 feature 门控) — **已实施**（2026-04-26，`io-sql/io-http/io-mqtt/io-modbus/io-serial/io-notify` + 元 feature `io-all`；facade 转传；`debug/native/timer/template` 永远启用）
 - ADR-0012 (工作流变量) — **已实施 Phase 1+2+3**（Phase 1: 2026-04-27 / Phase 2: 2026-04-27 / Phase 3: 2026-05-03。Phase 3 含 reset/delete/history IPC + 变量持久化 `crates/store/`（ADR-0022）+ 部署时恢复 + 历史曲线 + 全局变量 CRUD + 删除确认弹窗 + React Testing Library 组件测试）
 - ADR-0014（执行边与数据边分离 → 重命名为「引脚求值语义二分」）— **已实施 Phase 1 + Phase 2 + Phase 3 + Phase 3b + Phase 4 + Phase 5**（2026-04-30）。Phase 5：节点头部 capability 自动着色 + CSS 变量化 + AI prompt PinKind + watch channel 替代 Notify + PureMemo trace 清理。Phase 6 EventBus（RFC-0002）已完成修订（否决 broadcast，改为 try_send 修复）。ADR-0015 已实施。
@@ -28,13 +28,13 @@
 - ADR-0020 — **已实施**（2026-05-01：`src/graph/` 拆分为 `crates/graph/`）。见 `docs/adr/0020-graph-编排层长期归属.md`。
 - ADR-0022 (工作流变量持久化) — **已实施**（2026-05-03，`crates/store/` Ring 1 SQLite crate + 壳层持久化钩子 + 部署时恢复）
 - ADR-0024 (设备信号读取与事件触发节点) — **已实施 Phase 1+2+3**（Phase 1: 2026-05-15，`deviceSignalRead` 节点 + `signal_decode.rs` 共享解码模块；Phase 2: 2026-05-15，`deviceEventTrigger` 事件监听节点（MQTT + CAN）；Phase 3: 2026-05-16，全协议覆盖——`deviceSignalRead` 支持 CanFrame/Topic/EthercatPdo/SerialCommand，`deviceEventTrigger` 支持 Modbus 定时轮询和 Serial 帧监听；前端节点库卡片就位。注册表合约测试更新至 29 种节点）
-- RFC-0003 Phase 2 / Phase 3 子集 — **已实施**（2026-05-16）：`observability_records` SQLite 索引表接入 `observability/` 模块，事件/审计/告警双写 Store + JSONL，`query_observability` 优先查 Store、失败/空结果回退 JSONL；新增 `deployment_audit` 表并写入 deploy / undeploy 生命周期动作。批量 writer、变量变更审计、部署 ast_hash 版本管理与审计查询 IPC 仍待后续。
+- RFC-0003 Phase 2 / Phase 3 — **已实施**（2026-05-17）：`observability_records` SQLite 索引表接入 `observability/` 模块，事件/审计/告警双写 Store + JSONL，`query_observability` 优先查 Store、失败/空结果回退 JSONL；`deployment_audit` 表写入 deploy / undeploy 生命周期动作；变量变更 / 删除写入审计记录；部署 ast_hash 版本变更检测；新增 `query_deployment_audit` IPC（82 命令）。批量 writer 仍待后续。
 - RFC-0004 Phase 3 (Workflow DSL 编译器) — **已实施**（2026-05-03，`crates/dsl-compiler/` 编译器 + `stateMachine` + `capabilityCall` 节点类型 + 一致性测试 + 集成测试；2026-05-09 `capabilityCall` 已接入 `connection_id` 继承与 Modbus/MQTT/Serial/CAN 执行入口，`script` implementation 未接入执行器时 fail-fast）
 - RFC-0004 资产落盘与 AI 编辑挂接 — **已实施**（2026-05-05，Device / Capability 仅以工程工作路径 `dsl/devices` / `dsl/capabilities` YAML 文件持久化；SQLite 资产表逻辑已移除；新增 `load_ai_asset_context` IPC；画布内 AI 编辑读取已审查资产并可生成 `capabilityCall`）
 
 ## Immediate known tech debt
 
-- **IPC surface 契约测试**（2026-05-17）：`src-tauri/tests/ipc_surface_contract.rs` 已建立，从 `generate_handler!` 块提取实际注册命令并与硬编码预期列表比对（81 个），同时验证每个 handler 条目都有对应的 `#[tauri::command]` 函数。增删 IPC 命令时必须同步更新预期列表，否则测试失败。
+- **IPC surface 契约测试**（2026-05-17）：`src-tauri/tests/ipc_surface_contract.rs` 已建立，从 `generate_handler!` 块提取实际注册命令并与硬编码预期列表比对（82 个），同时验证每个 handler 条目都有对应的 `#[tauri::command]` 函数。增删 IPC 命令时必须同步更新预期列表，否则测试失败。
 - **[SECURITY] AI API key 明文收敛**（2026-05-16）：API key 仍以明文存储于 `app_local_data_dir()/ai-config.json`，但当前决策是不接入 OS keychain / 自建加密 vault，改为收敛传播面：`load_ai_config` 永不返回明文 key，`load_ai_api_key` 走集中校验后按需返回，保存/加载时尽量将配置文件权限收敛到当前用户读写，敏感 extra headers 不保存不回传，前端默认关闭 key 读取调试日志。后续若产品安全边界升级，再另开 ADR 评估密钥后端。
 - **Architecture review 派生 P1/P2**（2026-04-29，2026-05-09 复核）：~~变量控制事件从 `ExecutionEvent` 拆出~~（已偿还：`WorkflowVariableEvent` 独立枚举 + 独立通道，B1-R0-01/B1-R0-05）；~~`src/graph/` 触发 ADR-0020 重评~~（已偿还，2026-05-01 拆为 `crates/graph/`）；~~Rhai `max_operations` 增加统一 clamp~~（已偿还：`scripting::default_max_operations()` 统一，D-01）；~~`NodeOutput.metadata` 显式三值语义~~（已偿还：`Map` → `Option<Map>`，B1-R0-02）；~~前端大文件拆分~~（已偿还：FlowgramCanvas 2025→988 行 / ConnectionStudio 1372 行，C-02）；~~`workflow.rs` 单文件过大~~（已偿还：拆为 `workflow_deploy/dispatch/undeploy` 三模块，C-01）；~~runtime / dead-letter / scoped event 等 IPC 类型迁入 `tauri-bindings`~~（已偿还，壳层改用生成类型）。**剩余**：B4-IPC-06 `copilot://stream/{id}` payload 生成类型、以及 `src-tauri/src/runtime.rs` 二次拆分等持续治理项。~~ADR-0016 deferred items~~（已偿还：2026-05-13 BackpressureDetected 发射 + 定时窗口 + 前端热力图）。
 - **Crates 审阅修复收口**（2026-05-09）：除 CR-P3-09 作为持续治理项不做无目标大重构外，其余 crates 审阅问题已完成代码修复与验证；stale AI 生成物目录已删除并由 `crates/ai/AGENTS.md` 固化 root `web/src/generated/` 的唯一真值源。大文件拆分已完成，`crates/` 下已无超过 500 行的 Rust 源文件。

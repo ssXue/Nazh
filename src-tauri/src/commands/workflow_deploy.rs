@@ -26,6 +26,14 @@ use crate::{
 
 const MAX_IPC_INPUT_BYTES: usize = 10 * 1024 * 1024;
 
+/// 计算 AST 字符串的 SHA-256 哈希，用于部署版本变更检测（RFC-0003 Phase 3）。
+fn compute_ast_hash(ast: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(ast.as_bytes());
+    format!("{:x}", hasher.finalize())
+}
+
 async fn record_deployment_audit(
     state: &DesktopState,
     metadata: &RuntimeWorkflowMetadata,
@@ -112,6 +120,7 @@ pub(crate) async fn deploy_workflow_from_json(
     let workflow_id = derive_workflow_id(workflow_id.as_deref(), graph.name.as_deref(), None);
     let policy = WorkflowRuntimePolicy::default();
     let deployed_at = chrono::Utc::now().to_rfc3339();
+    let ast_hash = compute_ast_hash(ast);
     let metadata = RuntimeWorkflowMetadata {
         workflow_id: workflow_id.clone(),
         project_id: None,
@@ -130,6 +139,7 @@ pub(crate) async fn deploy_workflow_from_json(
         Some(json!({
             "workflow_id": workflow_id.clone(),
             "source": "json",
+            "ast_hash": ast_hash,
         })),
     )
     .await;
@@ -267,6 +277,7 @@ pub(crate) async fn deploy_workflow_from_json(
             "edge_count": edge_count,
             "root_nodes": deploy_payload.root_nodes.clone(),
             "replaced_existing": replaced_existing,
+            "ast_hash": ast_hash,
         })),
     )
     .await;
@@ -347,6 +358,7 @@ pub(crate) async fn deploy_workflow(
         }
     }
     let store_handle = state.store_handle().ok();
+    let ast_hash = compute_ast_hash(&ast);
     record_deployment_audit(
         &state,
         &metadata,
@@ -359,6 +371,7 @@ pub(crate) async fn deploy_workflow(
             "project_name": metadata.project_name.clone(),
             "environment_name": metadata.environment_name.clone(),
             "connection_definitions_supplied": connection_definitions_supplied,
+            "ast_hash": ast_hash,
         })),
     )
     .await;
@@ -557,6 +570,7 @@ pub(crate) async fn deploy_workflow(
             "edge_count": edge_count,
             "root_nodes": deploy_payload.root_nodes.clone(),
             "replaced_existing": replaced_existing,
+            "ast_hash": ast_hash,
         })),
     )
     .await;

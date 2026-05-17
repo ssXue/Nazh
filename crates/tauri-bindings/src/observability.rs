@@ -135,3 +135,42 @@ pub struct ObservabilityQueryResult {
     pub alerts: Vec<AlertDeliveryRecord>,
     pub audits: Vec<ObservabilityEntry>,
 }
+
+/// 部署审计记录（IPC 响应类型，RFC-0003 Phase 3）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct DeploymentAuditEntry {
+    pub id: String,
+    pub workflow_id: String,
+    pub action: String,
+    pub level: String,
+    pub timestamp: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub project_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub project_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub environment_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub environment_name: Option<String>,
+    pub message: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub detail: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub data: Option<serde_json::Value>,
+}
+
+/// `query_deployment_audit` IPC 命令的响应。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct DeploymentAuditQueryResult {
+    pub records: Vec<DeploymentAuditEntry>,
+}
