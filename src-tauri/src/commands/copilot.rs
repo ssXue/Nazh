@@ -169,18 +169,3 @@ pub(crate) async fn copilot_save_message(
         .map_err(|e| e.to_string())?;
     Ok(())
 }
-
-/// 返回 Copilot 工具定义列表（前端用于构造 AI 请求的 tools 参数）。
-#[tauri::command]
-pub(crate) fn copilot_get_tool_definitions() -> Vec<serde_json::Value> {
-    copilot_tools::all_copilot_tools()
-        .into_iter()
-        .map(|def| {
-            json!({
-                "name": def.name,
-                "description": def.description,
-                "parameters": def.parameters,
-            })
-        })
-        .collect()
-}

@@ -1,9 +1,10 @@
 //! AI 相关的共享类型定义。
 //!
-//! Ring 0 仅保留工具协议类型（`AiToolCall` / `AiToolDefinition` / `AiToolResult`）、
-//! 生成参数（`AiGenerationParams`）和错误枚举（`AiError`）。
+//! Ring 0 仅保留工具调用类型（`AiToolCall`）、生成参数（`AiGenerationParams`）和错误枚举（`AiError`）。
 //!
 //! AI HTTP 调用已全部前移到前端（RFC-0005），Rust 不再持有 HTTP 客户端。
+//! 工具定义（`AiToolDefinition`）和工具结果（`AiToolResult`）已删除——
+//! 前端通过 ai-sdk `tool()` 自行构建工具定义，查询工具通过 IPC 返回纯字符串。
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -47,17 +48,6 @@ pub enum AiError {
     EmbeddingNotSupported(String),
 }
 
-/// 发送给模型的工具定义（Chat Completions `tools` 数组元素）。
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
-#[serde(rename_all = "camelCase")]
-pub struct AiToolDefinition {
-    pub name: String,
-    pub description: String,
-    /// JSON Schema 描述工具参数结构。
-    pub parameters: serde_json::Value,
-}
-
 /// 模型返回的单次工具调用。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
@@ -69,19 +59,6 @@ pub struct AiToolCall {
     pub name: String,
     /// JSON 格式的调用参数。
     pub arguments: String,
-}
-
-/// 工具执行结果，回送到对话上下文。
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
-#[serde(rename_all = "camelCase")]
-pub struct AiToolResult {
-    /// 对应 `AiToolCall::id`。
-    pub tool_call_id: String,
-    /// 工具输出内容（JSON 字符串或纯文本）。
-    pub content: String,
-    /// 工具调用本身是否失败。
-    pub is_error: bool,
 }
 
 /// Copilot / 节点共享的生成参数。

@@ -2743,6 +2743,7 @@ dependencies = [
  "pdf-extract",
  "pnet_datalink",
  "quick-xml",
+ "scripting",
  "serde",
  "serde_json",
  "serde_yaml",

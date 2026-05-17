@@ -307,7 +307,6 @@ pub fn run() {
             commands::copilot::copilot_load_conversation,
             commands::copilot::copilot_dispatch_tool,
             commands::copilot::copilot_save_message,
-            commands::copilot::copilot_get_tool_definitions,
             commands::human_loop::respond_human_loop,
             commands::human_loop::list_pending_approvals,
             commands::devices::list_device_assets,

@@ -92,7 +92,7 @@ fn commands_dir() -> PathBuf {
 
 /// 预期 IPC 命令列表（按域分组）。
 ///
-/// 增删命令时必须同步更新此列表。总计 82 个。
+/// 增删命令时必须同步更新此列表。总计 81 个。
 const EXPECTED_COMMANDS: &[&str] = &[
     // workflow lifecycle (3)
     "workflow_deploy::deploy_workflow",
@@ -152,7 +152,6 @@ const EXPECTED_COMMANDS: &[&str] = &[
     "copilot::copilot_load_conversation",
     "copilot::copilot_dispatch_tool",
     "copilot::copilot_save_message",
-    "copilot::copilot_get_tool_definitions",
     // human loop (2)
     "human_loop::respond_human_loop",
     "human_loop::list_pending_approvals",

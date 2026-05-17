@@ -3,10 +3,7 @@ import type { WorkflowJSON as FlowgramWorkflowJSON } from '@flowgram.ai/free-lay
 // ── 从 Rust 引擎自动生成的 IPC 契约类型（ts-rs） ────────────
 
 export type {
-  AiCompletionResponse,
   AiGenerationParams,
-  AiMessage,
-  AiMessageRole,
   AiProviderDraft,
   AiProviderUpsert,
   AiProviderView,
@@ -14,7 +11,6 @@ export type {
   AiSecretInput,
   AiThinkingConfig,
   AiThinkingMode,
-  AiTokenUsage,
   ConnectionDefinition,
   DeployResponse,
   DescribeNodePinsRequest,
@@ -43,7 +39,6 @@ export type { WorkflowContext as WorkflowResult } from './generated';
 
 import type {
   AiAgentSettings as GeneratedAiAgentSettings,
-  AiCompletionRequest as GeneratedAiCompletionRequest,
   AiConfigUpdate as GeneratedAiConfigUpdate,
   AiConfigView as GeneratedAiConfigView,
   AiTestResult as GeneratedAiTestResult,
@@ -54,10 +49,6 @@ import type {
 } from './generated';
 
 export type AiAgentSettings = Omit<GeneratedAiAgentSettings, 'timeoutMs'> & {
-  timeoutMs?: number;
-};
-
-export type AiCompletionRequest = Omit<GeneratedAiCompletionRequest, 'timeoutMs'> & {
   timeoutMs?: number;
 };
 

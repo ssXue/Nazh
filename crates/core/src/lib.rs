@@ -23,7 +23,6 @@ pub mod variables;
 
 pub use ai::{
     AiError, AiGenerationParams, AiReasoningEffort, AiThinkingConfig, AiThinkingMode, AiToolCall,
-    AiToolDefinition, AiToolResult,
 };
 pub use cache::{CachedOutput, OutputCache};
 pub use context::{ContextRef, WorkflowContext};
@@ -61,7 +60,7 @@ pub use variables::{
 pub mod export_bindings {
     use super::{
         AiGenerationParams, AiReasoningEffort, AiThinkingConfig, AiThinkingMode, AiToolCall,
-        AiToolDefinition, AiToolResult, BackpressureDetected, BackpressurePolicy,
+        BackpressureDetected, BackpressurePolicy,
         CompletedExecutionEvent, EdgeTransmitSummary, ExecutionEvent, PinDefinition, PinDirection,
         PinKind, PinType, TypedVariableSnapshot, VariableDeclaration, WorkflowContext,
         WorkflowNodeDefinition,
@@ -87,9 +86,7 @@ pub mod export_bindings {
         AiThinkingConfig::export(&cfg)?;
         AiThinkingMode::export(&cfg)?;
         AiReasoningEffort::export(&cfg)?;
-        AiToolDefinition::export(&cfg)?;
         AiToolCall::export(&cfg)?;
-        AiToolResult::export(&cfg)?;
         TypedVariableSnapshot::export(&cfg)?;
         VariableDeclaration::export(&cfg)?;
         Ok(())

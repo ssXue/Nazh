@@ -27,7 +27,7 @@ mod registry;
 
 pub use nazh_core::{
     AiError, AiGenerationParams, AiReasoningEffort, AiThinkingConfig, AiThinkingMode, AiToolCall,
-    AiToolDefinition, AiToolResult, ArenaDataStore, CachedOutput, CancellationToken,
+    ArenaDataStore, CachedOutput, CancellationToken,
     CompletedExecutionEvent, ContextRef, DataId, DataStore, EmptyPolicy, EngineError,
     ExecutionEvent, LifecycleGuard, NodeCapabilities, NodeDispatch, NodeExecution, NodeHandle,
     NodeLifecycleContext, NodeOutput, NodeRegistry, NodeTrait, OutputCache, PinDefinition,

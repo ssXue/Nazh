@@ -75,9 +75,62 @@ mod nazh_script_helpers {
 def_package! {
     /// Nazh 脚本节点的默认辅助函数包。
     ///
-    /// 这里收口所有“默认可用”的通用函数，避免散落在各处通过
+    /// 这里收口所有"默认可用"的通用函数，避免散落在各处通过
     /// `register_fn` 临时注册，方便后续扩展、文档生成和 AI 提示词同步。
     pub NazhScriptPackage(module) {
         combine_with_exported_module!(module, "nazh-script-helpers", nazh_script_helpers);
     }
+}
+
+/// 生成 Rhai 脚本 API 参考文本，供 copilot `get_scripting_reference` 工具使用。
+///
+/// 输出与 copilot 系统提示词中的 Rhai 文档段落等价，但从此 crate 的实际注册函数
+/// 自动生成——新增/修改函数后只需更新此处的条目即可。
+pub fn generate_api_reference() -> String {
+    let max_ops = crate::default_max_operations();
+    format!(
+        r#"### Rhai 脚本 API（code 节点、if/switch/loop 条件脚本）
+脚本语言为 Rhai，运行在沙箱中（无 I/O、无网络、步数上限 {max_ops}）。脚本通过 `payload` 变量访问输入数据，修改后作为输出。
+
+#### 内置函数
+```
+rand(min, max)          // 闭区间随机整数，如 rand(1, 100)
+now_ms()                // 当前 Unix 时间戳（毫秒）
+is_blank(text)          // 判断字符串是否为空或纯空白
+from_json(json_str)     // JSON 字符串 → Rhai 值
+to_json(value)          // Rhai 值 → JSON 字符串
+```
+
+#### 工作流变量（需工作流定义中声明 variables）
+```
+vars.get("name")        // 读取变量，不存在则报错
+vars.set("name", value) // 写入变量（类型校验）
+vars.cas("name", old, new) // 比较交换，返回 bool
+```
+
+#### 脚本示例
+```rhai
+// 数据变换
+payload.temperature_c = (payload.temperature_f - 32) * 5 / 9;
+
+// 计数器（需声明 workflow variable "counter"）
+let c = vars.get("counter");
+vars.set("counter", c + 1);
+
+// JSON 处理
+let config = from_json(payload.config_json);
+config.enabled = true;
+payload.new_config = to_json(config);
+
+// 条件判断（if 节点）
+payload.temperature > 100
+```
+
+#### 重要约束
+- **不要使用** `global_get`、`global_set`、`get_state`、`set_state` 等函数——它们在 Nazh 中不存在。变量读写只能通过 `vars.get` / `vars.set`。
+- `vars` 仅在工作流声明了 variables 时可用，否则运行时报错。
+- 脚本不能执行 I/O 操作（HTTP、文件、串口等），这些由专门的 I/O 节点完成。
+- if/switch 节点的条件脚本必须返回 bool，loop 节点返回循环次数或数组。"#,
+        max_ops = max_ops,
+    )
 }

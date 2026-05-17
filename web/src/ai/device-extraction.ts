@@ -24,9 +24,8 @@ const PROPOSAL_SYSTEM_PROMPT = `你是一个工业设备建模专家。从用户
 - warnings 用于标记潜在安全问题或不一致
 - 只输出 JSON，不要解释`;
 
-function buildExtractionPrompt(text: string): string {
-  return `请从以下设备说明书中抽取设备信息，输出 YAML 格式的 DeviceSpec。
-
+/// DeviceSpec YAML 模板（buildExtractionPrompt / buildProposalPrompt 共用）。
+const DEVICE_SPEC_YAML_TEMPLATE = `\
 DeviceSpec 结构参考：
 \`\`\`yaml
 id: <设备唯一标识>
@@ -62,52 +61,10 @@ alarms:
 - source.type 为 register 时必须提供 register 和 data_type 字段
 - source.type 为 topic 时必须提供 topic 字段
 - source.type 为 serial_command 时必须提供 command 字段
-- 如果说明书中未明确指定协议，优先使用 register 类型
+- 如果说明书中未明确指定协议，优先使用 register 类型`;
 
-说明书文本：
----
-${text}
----`;
-}
-
-function buildProposalPrompt(text: string): string {
-  return `请从以下设备说明书中抽取设备信息和推断设备能力。
-
-DeviceSpec 结构参考：
-\`\`\`yaml
-id: <设备唯一标识>
-type: <设备类型>
-manufacturer: <厂商>
-model: <型号>
-signals:
-  - id: <信号 ID>
-    signal_type: <analog_input / analog_output / digital_input / digital_output>
-    unit: <单位>
-    range: [min, max]
-    source:  # 三种类型，必须提供对应字段
-      # register 类型（Modbus）：
-      type: register
-      register: <地址，整数>
-      data_type: <bool / u16 / i16 / u32 / i32 / float32 / float64 / string>
-      access: <read / write / read_write>
-      # topic 类型（MQTT）：
-      # type: topic
-      # topic: <MQTT 主题路径>
-      # serial_command 类型（串口）：
-      # type: serial_command
-      # command: <串口命令字符串>
-alarms:
-  - id: <告警 ID>
-    condition: <Rhai 表达式>
-    severity: <info / warning / critical>
-\`\`\`
-
-重要规则：
-- source.type 为 register 时必须提供 register 和 data_type 字段
-- source.type 为 topic 时必须提供 topic 字段
-- source.type 为 serial_command 时必须提供 command 字段
-- 如果说明书中未明确指定协议，优先使用 register 类型
-
+/// CapabilitySpec YAML 模板（buildProposalPrompt 专用）。
+const CAPABILITY_SPEC_YAML_TEMPLATE = `\
 CapabilitySpec 结构参考：
 \`\`\`yaml
 id: <能力 ID，格式 device.action>
@@ -130,7 +87,25 @@ implementation:
 safety:
   level: <high / medium / low>
   requires_approval: false
-\`\`\`
+\`\`\``;
+
+function buildExtractionPrompt(text: string): string {
+  return `请从以下设备说明书中抽取设备信息，输出 YAML 格式的 DeviceSpec。
+
+${DEVICE_SPEC_YAML_TEMPLATE}
+
+说明书文本：
+---
+${text}
+---`;
+}
+
+function buildProposalPrompt(text: string): string {
+  return `请从以下设备说明书中抽取设备信息和推断设备能力。
+
+${DEVICE_SPEC_YAML_TEMPLATE}
+
+${CAPABILITY_SPEC_YAML_TEMPLATE}
 
 说明书文本：
 ---

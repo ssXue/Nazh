@@ -18,7 +18,7 @@ use nazh_core::EngineError;
 
 mod package;
 
-pub use package::NazhScriptPackage;
+pub use package::{generate_api_reference, NazhScriptPackage};
 
 /// Rhai 脚本步数上限的默认值（50,000 步）。
 pub fn default_max_operations() -> u64 {

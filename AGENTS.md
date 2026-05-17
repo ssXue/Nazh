@@ -127,7 +127,7 @@ IPC boundary types are defined once in Rust and auto-generated to TypeScript via
 
 Workflow commands are split across `workflow_deploy.rs` / `workflow_dispatch.rs` / `workflow_undeploy.rs` (since 2026-05-03, was single `workflow.rs`). Other command domains remain in their respective files (`ai.rs`, `catalog.rs`, `connections.rs`, `variables.rs`, `devices.rs`, etc.).
 
-82 commands covering:
+81 commands covering:
 - workflow lifecycle/runtime: `deploy_workflow`, `dispatch_payload`, `undeploy_workflow`, `list_runtime_workflows`, `set_active_runtime_workflow`, `list_dead_letters`
 - node / pin catalog: `list_node_types`, `describe_node_pins`
 - workflow variables: `snapshot_workflow_variables`, `set_workflow_variable`, `delete_workflow_variable`, `reset_workflow_variable`, `query_variable_history`, `set_global_variable`, `get_global_variable`, `list_global_variables`, `delete_global_variable`
@@ -139,7 +139,7 @@ Workflow commands are split across `workflow_deploy.rs` / `workflow_dispatch.rs`
 - serial: `list_serial_ports`, `test_serial_connection`
 - project library/export: `load_project_board_files`, `save_project_board_files`, `save_flowgram_export_file`
 - AI config: `load_ai_config`, `save_ai_config`, `load_ai_api_key`, `load_ai_asset_context`
-- copilot 会话管理: `copilot_list_conversations`, `copilot_create_conversation`, `copilot_delete_conversation`, `copilot_rename_conversation`, `copilot_load_conversation`, `copilot_dispatch_tool`, `copilot_save_message`, `copilot_get_tool_definitions`
+- copilot 会话管理: `copilot_list_conversations`, `copilot_create_conversation`, `copilot_delete_conversation`, `copilot_rename_conversation`, `copilot_load_conversation`, `copilot_dispatch_tool`, `copilot_save_message`
 - humanLoop（HITL 审批节点）: `respond_human_loop`, `list_pending_approvals`
 - reactive: `subscribe_reactive_pin`（ADR-0015 Phase 2，OutputCache watch → Tauri 事件推送）
 - system: `restart_app`, `list_network_interfaces`
