@@ -27,7 +27,6 @@ docs/
   rfcs/
   specs/
   plans/
-  blueprints/
   templates/
 ```
 
