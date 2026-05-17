@@ -250,7 +250,7 @@ When `AGENTS.md` conflicts with any other doc (README / rustdoc / ADR / memory /
 | Add / remove a `NodeTrait` implementation | The owning crate's `AGENTS.md` node inventory table + `src/registry.rs` contract test + root `README.md` node catalog |
 | Change a node's `capabilities()` | The owning crate's `AGENTS.md` capability table + `src/registry.rs` contract test — both in the same PR (one without the other fails CI) |
 | Accept / implement / deprecate an ADR | The ADR's own status + `docs/adr/README.md` index row (do **not** update past ADRs with new implementation details — put those in the relevant crate `AGENTS.md`) |
-| Add a Tauri IPC command or event channel | Root `AGENTS.md` Tauri IPC surface + root `README.md` IPC tables + `crates/tauri-bindings/AGENTS.md` if it introduces new response types |
+| Add a Tauri IPC command or event channel | Root `AGENTS.md` Tauri IPC surface + root `README.md` IPC tables + `crates/tauri-bindings/AGENTS.md` if it introduces new response types + `src-tauri/tests/ipc_surface_contract.rs` 预期命令列表 |
 | Change any Critical Coding Constraint | Root `AGENTS.md` (this file) + signal explicitly in PR description |
 | Add / update third-party source, vendor asset, firmware, protocol definition, or local patch | `docs/conventions.md` third-party record + source/version/license/verification notes |
 | Complete a roadmap item in RFC-0002 | Update the RFC's "Implementation Progress" section |

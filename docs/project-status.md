@@ -34,6 +34,7 @@
 
 ## Immediate known tech debt
 
+- **IPC surface 契约测试**（2026-05-17）：`src-tauri/tests/ipc_surface_contract.rs` 已建立，从 `generate_handler!` 块提取实际注册命令并与硬编码预期列表比对（82 个），同时验证每个 handler 条目都有对应的 `#[tauri::command]` 函数。增删 IPC 命令时必须同步更新预期列表，否则测试失败。
 - **[SECURITY] AI API key 明文收敛**（2026-05-16）：API key 仍以明文存储于 `app_local_data_dir()/ai-config.json`，但当前决策是不接入 OS keychain / 自建加密 vault，改为收敛传播面：`load_ai_config` 永不返回明文 key，`load_ai_api_key` 走集中校验后按需返回，保存/加载时尽量将配置文件权限收敛到当前用户读写，敏感 extra headers 不保存不回传，前端默认关闭 key 读取调试日志。后续若产品安全边界升级，再另开 ADR 评估密钥后端。
 - **Architecture review 派生 P1/P2**（2026-04-29，2026-05-09 复核）：~~变量控制事件从 `ExecutionEvent` 拆出~~（已偿还：`WorkflowVariableEvent` 独立枚举 + 独立通道，B1-R0-01/B1-R0-05）；~~`src/graph/` 触发 ADR-0020 重评~~（已偿还，2026-05-01 拆为 `crates/graph/`）；~~Rhai `max_operations` 增加统一 clamp~~（已偿还：`scripting::default_max_operations()` 统一，D-01）；~~`NodeOutput.metadata` 显式三值语义~~（已偿还：`Map` → `Option<Map>`，B1-R0-02）；~~前端大文件拆分~~（已偿还：FlowgramCanvas 2025→988 行 / ConnectionStudio 1372 行，C-02）；~~`workflow.rs` 单文件过大~~（已偿还：拆为 `workflow_deploy/dispatch/undeploy` 三模块，C-01）；~~runtime / dead-letter / scoped event 等 IPC 类型迁入 `tauri-bindings`~~（已偿还，壳层改用生成类型）。**剩余**：B4-IPC-06 `copilot://stream/{id}` payload 生成类型、以及 `src-tauri/src/runtime.rs` 二次拆分等持续治理项。~~ADR-0016 deferred items~~（已偿还：2026-05-13 BackpressureDetected 发射 + 定时窗口 + 前端热力图）。
 - **Crates 审阅修复收口**（2026-05-09）：除 CR-P3-09 作为持续治理项不做无目标大重构外，其余 crates 审阅问题已完成代码修复与验证；stale AI 生成物目录已删除并由 `crates/ai/AGENTS.md` 固化 root `web/src/generated/` 的唯一真值源。大文件拆分的后续跟踪见 `docs/plans/2026-05-09-crates-large-file-split-plan.md`。
