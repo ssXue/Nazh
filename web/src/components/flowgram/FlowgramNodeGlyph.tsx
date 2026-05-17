@@ -48,7 +48,9 @@ export function normalizeFlowgramDisplayType(value: unknown): NazhNodeDisplayTyp
     value === 'c2f' ||
     value === 'minutesSince' ||
     value === 'lookup' ||
-    value === 'humanLoop'
+    value === 'humanLoop' ||
+    value === 'deviceSignalRead' ||
+    value === 'deviceEventTrigger'
   ) {
     return value;
   }
@@ -112,6 +114,10 @@ export function getFlowgramDisplayLabel(displayType: NazhNodeDisplayType): strin
       return 'Code';
     case 'native':
       return 'Native';
+    case 'deviceSignalRead':
+      return 'Dev RX';
+    case 'deviceEventTrigger':
+      return 'Dev EVT';
   }
 }
 
@@ -167,5 +173,8 @@ export function FlowgramNodeGlyph({
       return <NativeNodeIcon {...props} />;
     case 'humanLoop':
       return <IfNodeIcon {...props} />;
+    case 'deviceSignalRead':
+    case 'deviceEventTrigger':
+      return <NativeNodeIcon {...props} />;
   }
 }
