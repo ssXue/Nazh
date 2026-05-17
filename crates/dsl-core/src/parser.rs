@@ -4,6 +4,7 @@
 //! 和人类可读的错误上下文。
 
 use crate::capability::CapabilitySpec;
+use crate::connection::ConnectionSpec;
 use crate::device::DeviceSpec;
 use crate::error::DslError;
 use crate::workflow::WorkflowSpec;
@@ -42,6 +43,26 @@ pub fn parse_capability_yaml(yaml: &str) -> Result<CapabilitySpec, DslError> {
 /// YAML 解析失败或能力语义校验失败时返回 [`DslError`]。
 pub fn parse_capability_yaml_validated(yaml: &str) -> Result<CapabilitySpec, DslError> {
     let spec = parse_capability_yaml(yaml)?;
+    spec.validate()?;
+    Ok(spec)
+}
+
+/// 从 YAML 文本解析 [`ConnectionSpec`]。
+///
+/// # Errors
+///
+/// 同 [`parse_device_yaml`]。
+pub fn parse_connection_yaml(yaml: &str) -> Result<ConnectionSpec, DslError> {
+    serde_yaml::from_str(yaml).map_err(Into::into)
+}
+
+/// 从 YAML 文本解析并校验 [`ConnectionSpec`]。
+///
+/// # Errors
+///
+/// YAML 解析失败或连接语义校验失败时返回 [`DslError`]。
+pub fn parse_connection_yaml_validated(yaml: &str) -> Result<ConnectionSpec, DslError> {
+    let spec = parse_connection_yaml(yaml)?;
     spec.validate()?;
     Ok(spec)
 }
@@ -85,6 +106,11 @@ mod tests {
     }
 
     #[test]
+    fn parse_connection_yaml_空字符串_失败() {
+        assert!(parse_connection_yaml("").is_err());
+    }
+
+    #[test]
     fn parse_workflow_yaml_空字符串_失败() {
         assert!(parse_workflow_yaml("").is_err());
     }
@@ -118,6 +144,37 @@ safety:
         let spec = parse_capability_yaml(yaml).unwrap();
         let json = serde_json::to_string(&spec).unwrap();
         let from_json: CapabilitySpec = serde_json::from_str(&json).unwrap();
+        assert_eq!(spec, from_json);
+    }
+
+    #[test]
+    fn parse_connection_yaml_json_round_trip() {
+        let yaml = r#"
+id: test-serial
+protocol:
+  type: serial
+  port_path: /dev/ttyUSB0
+  baud_rate: 115200
+  data_bits: 8
+  parity: none
+  stop_bits: 1
+  flow_control: none
+governance:
+  connect_timeout_ms: 3000
+  operation_timeout_ms: 5000
+  heartbeat_interval_ms: 3000
+  heartbeat_timeout_ms: 12000
+  rate_limit_max_attempts: 8
+  rate_limit_window_ms: 10000
+  rate_limit_cooldown_ms: 4000
+  circuit_failure_threshold: 3
+  circuit_open_ms: 15000
+  reconnect_base_ms: 800
+  reconnect_max_ms: 8000
+"#;
+        let spec = parse_connection_yaml_validated(yaml).unwrap();
+        let json = serde_json::to_string(&spec).unwrap();
+        let from_json: ConnectionSpec = serde_json::from_str(&json).unwrap();
         assert_eq!(spec, from_json);
     }
 

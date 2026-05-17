@@ -71,9 +71,6 @@ pub fn export_all() -> Result<(), ts_rs::ExportError> {
     PersistedDeploymentSessionCollection::export(&cfg)?;
     PersistedDeploymentSessionState::export(&cfg)?;
 
-    // 连接类型（从 src-tauri 迁入）
-    ConnectionDefinitionsLoadResult::export(&cfg)?;
-
     trim_typescript_trailing_whitespace(cfg.out_dir())?;
     Ok(())
 }

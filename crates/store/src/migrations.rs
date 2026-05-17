@@ -120,6 +120,31 @@ const MIGRATIONS: &[(&str, &str)] = &[
         );
         ",
     ),
+    (
+        "009",
+        "
+        CREATE TABLE IF NOT EXISTS connection_secrets (
+            connection_id TEXT NOT NULL,
+            secret_key    TEXT NOT NULL,
+            value         TEXT NOT NULL,
+            updated_at    TEXT NOT NULL,
+            updated_by    TEXT,
+            PRIMARY KEY (connection_id, secret_key)
+        );
+
+        CREATE TABLE IF NOT EXISTS connection_local_overrides (
+            connection_id  TEXT NOT NULL,
+            environment_id TEXT NOT NULL,
+            key            TEXT NOT NULL,
+            value          TEXT NOT NULL,
+            updated_at     TEXT NOT NULL,
+            updated_by     TEXT,
+            PRIMARY KEY (connection_id, environment_id, key)
+        );
+        CREATE INDEX IF NOT EXISTS idx_connection_local_overrides_env
+            ON connection_local_overrides(environment_id, connection_id);
+        ",
+    ),
 ];
 
 /// 检查 `schema_version` 表，执行尚未应用的 migrations。
@@ -169,6 +194,22 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM variables", [], |row| row.get(0))
             .unwrap();
         assert_eq!(variables_count, 0);
+
+        let connection_secrets_count: i64 = db
+            .query_row("SELECT COUNT(*) FROM connection_secrets", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(connection_secrets_count, 0);
+
+        let connection_overrides_count: i64 = db
+            .query_row(
+                "SELECT COUNT(*) FROM connection_local_overrides",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(connection_overrides_count, 0);
     }
 
     #[test]

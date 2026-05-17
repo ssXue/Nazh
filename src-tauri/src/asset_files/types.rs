@@ -9,6 +9,7 @@ use chrono::{DateTime, Utc};
 use tokio::fs;
 
 pub(crate) const DSL_ASSETS_DIR: &str = "dsl";
+pub(crate) const CONNECTIONS_DIR: &str = "connections";
 pub(crate) const DEVICES_DIR: &str = "devices";
 pub(crate) const CAPABILITIES_DIR: &str = "capabilities";
 pub(crate) const VERSIONS_DIR: &str = "versions";

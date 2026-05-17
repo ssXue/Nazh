@@ -6,7 +6,7 @@ use tauri::AppHandle;
 use tokio::fs;
 
 use super::types::{
-    AssetFilePaths, CAPABILITIES_DIR, DEVICES_DIR, DSL_ASSETS_DIR, VERSIONS_DIR,
+    AssetFilePaths, CAPABILITIES_DIR, CONNECTIONS_DIR, DEVICES_DIR, DSL_ASSETS_DIR, VERSIONS_DIR,
     sanitize_asset_file_stem,
 };
 use crate::workspace::resolve_project_workspace_dir;
@@ -28,6 +28,23 @@ pub(crate) fn device_asset_file_paths(
     })
 }
 
+pub(crate) fn connection_asset_file_paths(
+    app: &AppHandle,
+    workspace_path: Option<&str>,
+    connection_id: &str,
+    version: i64,
+) -> Result<AssetFilePaths, String> {
+    let (workspace_dir, _) = resolve_project_workspace_dir(app, workspace_path)?;
+    let stem = sanitize_asset_file_stem(connection_id);
+    let dir = workspace_dir.join(DSL_ASSETS_DIR).join(CONNECTIONS_DIR);
+    Ok(AssetFilePaths {
+        latest: dir.join(format!("{stem}.connection.yaml")),
+        versioned: dir
+            .join(VERSIONS_DIR)
+            .join(format!("{stem}.v{version}.connection.yaml")),
+    })
+}
+
 pub(crate) fn capability_asset_file_paths(
     app: &AppHandle,
     workspace_path: Option<&str>,
@@ -43,6 +60,21 @@ pub(crate) fn capability_asset_file_paths(
             .join(VERSIONS_DIR)
             .join(format!("{stem}.v{version}.capability.yaml")),
     })
+}
+
+pub(crate) fn connection_asset_latest_path(
+    app: &AppHandle,
+    workspace_path: Option<&str>,
+    connection_id: &str,
+) -> Result<PathBuf, String> {
+    let (workspace_dir, _) = resolve_project_workspace_dir(app, workspace_path)?;
+    Ok(workspace_dir
+        .join(DSL_ASSETS_DIR)
+        .join(CONNECTIONS_DIR)
+        .join(format!(
+            "{}.connection.yaml",
+            sanitize_asset_file_stem(connection_id)
+        )))
 }
 
 pub(crate) fn device_asset_latest_path(
@@ -75,6 +107,18 @@ pub(crate) fn capability_asset_latest_path(
         )))
 }
 
+pub(crate) async fn write_connection_asset_yaml(
+    app: &AppHandle,
+    workspace_path: Option<&str>,
+    connection_id: &str,
+    version: i64,
+    yaml_text: &str,
+) -> Result<AssetFilePaths, String> {
+    let paths = connection_asset_file_paths(app, workspace_path, connection_id, version)?;
+    write_yaml_mirror(&paths, yaml_text).await?;
+    Ok(paths)
+}
+
 pub(crate) async fn write_device_asset_yaml(
     app: &AppHandle,
     workspace_path: Option<&str>,
@@ -99,6 +143,18 @@ pub(crate) async fn write_capability_asset_yaml(
     Ok(paths)
 }
 
+pub(crate) async fn list_connection_asset_yaml_files(
+    app: &AppHandle,
+    workspace_path: Option<&str>,
+) -> Result<Vec<PathBuf>, String> {
+    let (workspace_dir, _) = resolve_project_workspace_dir(app, workspace_path)?;
+    list_latest_yaml_files(
+        &workspace_dir.join(DSL_ASSETS_DIR).join(CONNECTIONS_DIR),
+        ".connection.yaml",
+    )
+    .await
+}
+
 pub(crate) async fn list_device_asset_yaml_files(
     app: &AppHandle,
     workspace_path: Option<&str>,
@@ -119,6 +175,20 @@ pub(crate) async fn list_capability_asset_yaml_files(
     list_latest_yaml_files(
         &workspace_dir.join(DSL_ASSETS_DIR).join(CAPABILITIES_DIR),
         ".capability.yaml",
+    )
+    .await
+}
+
+pub(crate) async fn delete_connection_asset_yaml(
+    app: &AppHandle,
+    workspace_path: Option<&str>,
+    connection_id: &str,
+) -> Result<(), String> {
+    let (workspace_dir, _) = resolve_project_workspace_dir(app, workspace_path)?;
+    delete_asset_yaml_files(
+        &workspace_dir.join(DSL_ASSETS_DIR).join(CONNECTIONS_DIR),
+        &sanitize_asset_file_stem(connection_id),
+        ".connection.yaml",
     )
     .await
 }

@@ -19,7 +19,6 @@ function buildState(
         environmentName: '生产',
         deployedAt,
         runtimeAstText: `{"name":"${projectId}"}`,
-        runtimeConnections: [],
       },
     ],
   };

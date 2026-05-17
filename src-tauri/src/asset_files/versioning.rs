@@ -6,7 +6,7 @@ use tauri::AppHandle;
 use tokio::fs;
 
 use super::types::{
-    AssetVersionFile, CAPABILITIES_DIR, DEVICES_DIR, DSL_ASSETS_DIR, VERSIONS_DIR,
+    AssetVersionFile, CAPABILITIES_DIR, CONNECTIONS_DIR, DEVICES_DIR, DSL_ASSETS_DIR, VERSIONS_DIR,
     file_modified_at, sanitize_asset_file_stem,
 };
 use crate::workspace::resolve_project_workspace_dir;
@@ -17,6 +17,21 @@ pub(crate) async fn next_device_asset_version(
     asset_id: &str,
 ) -> Result<i64, String> {
     next_asset_version(app, workspace_path, asset_id, DEVICES_DIR, ".device.yaml").await
+}
+
+pub(crate) async fn next_connection_asset_version(
+    app: &AppHandle,
+    workspace_path: Option<&str>,
+    connection_id: &str,
+) -> Result<i64, String> {
+    next_asset_version(
+        app,
+        workspace_path,
+        connection_id,
+        CONNECTIONS_DIR,
+        ".connection.yaml",
+    )
+    .await
 }
 
 pub(crate) async fn next_capability_asset_version(

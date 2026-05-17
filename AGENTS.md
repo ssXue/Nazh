@@ -76,7 +76,7 @@ crates/
   graph/             # Ring 1 — DAG 工作流编排：解析、校验、拓扑排序、部署与执行（ADR-0020）
   tauri-bindings/    # IPC — Tauri 命令请求/响应类型 + ts-rs 导出汇总（ADR-0017）
   store/              # Ring 1 — SQLite 持久化：变量 / 历史 / 全局变量 / 可观测性索引 / 部署审计（ADR-0022，RFC-0003 Phase 2/3 子集）
-  dsl-core/           # Ring 1 — 三段式 DSL 类型定义与 YAML 解析：Device / Capability / Workflow（RFC-0004）
+  dsl-core/           # Ring 1 — DSL 类型定义与 YAML 解析：Connection / Device / Capability / Workflow（RFC-0004 + ADR-0025）
   dsl-compiler/       # Ring 1 — Workflow DSL 编译器：WorkflowSpec → WorkflowGraph JSON（RFC-0004 Phase 3）
 src/                 # Root facade crate `nazh-engine` — re-export + `standard_registry()`
 src-tauri/           # Tauri shell binary `nazh-desktop`
@@ -127,11 +127,11 @@ IPC boundary types are defined once in Rust and auto-generated to TypeScript via
 
 Workflow commands are split across `workflow_deploy.rs` / `workflow_dispatch.rs` / `workflow_undeploy.rs` (since 2026-05-03, was single `workflow.rs`). Other command domains remain in their respective files (`ai.rs`, `catalog.rs`, `connections.rs`, `variables.rs`, `devices/`, etc.).
 
-82 commands covering:
+88 commands covering:
 - workflow lifecycle/runtime: `deploy_workflow`, `dispatch_payload`, `undeploy_workflow`, `list_runtime_workflows`, `set_active_runtime_workflow`, `list_dead_letters`
 - node / pin catalog: `list_node_types`, `describe_node_pins`
 - workflow variables: `snapshot_workflow_variables`, `set_workflow_variable`, `delete_workflow_variable`, `reset_workflow_variable`, `query_variable_history`, `set_global_variable`, `get_global_variable`, `list_global_variables`, `delete_global_variable`
-- connections: `list_connections`, `load_connection_definitions`, `save_connection_definitions`, `reset_connection_circuit_breaker`
+- connections: `list_connections`, `list_connection_assets`, `load_connection_asset`, `save_connection_asset`, `delete_connection_asset`, `save_connection_secret`, `delete_connection_secret`, `reset_connection_circuit_breaker`
 - device assets（RFC-0004 Phase 1）: `list_device_assets`, `load_device_asset`, `save_device_asset`, `delete_device_asset`, `list_asset_versions`, `load_asset_version`, `list_device_snapshots`, `create_device_snapshot`, `rollback_device_snapshot`, `delete_device_snapshot`, `patch_device_field`, `bind_device_connection`, `add_device_signal`, `remove_device_signal`, `add_device_alarm`, `remove_device_alarm`, `generate_pin_schema`, `save_device_asset_sources`, `load_device_asset_sources`, `extract_text_from_pdf`, `import_ethercat_esi`
 - capabilities（RFC-0004 Phase 2）: `list_capabilities`, `load_capability`, `save_capability`, `delete_capability`, `list_capability_versions`, `load_capability_version`, `generate_capabilities_from_device_cmd`, `save_capability_sources`, `load_capability_sources`
 - observability: `query_observability`, `clear_observability`, `query_deployment_audit`
@@ -144,7 +144,7 @@ Workflow commands are split across `workflow_deploy.rs` / `workflow_dispatch.rs`
 - reactive: `subscribe_reactive_pin`（ADR-0015 Phase 2，OutputCache watch → Tauri 事件推送）
 - system: `restart_app`, `list_network_interfaces`
 
-Device / Capability DSL assets are persisted only as reviewable YAML under the active workspace: `dsl/devices/*.device.yaml`, `dsl/devices/versions/*.device.yaml`, `dsl/devices/sources/*.sources.yaml`, `dsl/capabilities/*.capability.yaml`, `dsl/capabilities/versions/*.capability.yaml`, and `dsl/capabilities/sources/*.sources.yaml`. They are not stored in SQLite. The canvas AI edit path reads these reviewed YAML files via `load_ai_asset_context` before asking the model to modify a workflow.
+Connection / Device / Capability DSL assets are persisted only as reviewable YAML under the active workspace: `dsl/connections/*.connection.yaml`, `dsl/connections/versions/*.connection.yaml`, `dsl/devices/*.device.yaml`, `dsl/devices/versions/*.device.yaml`, `dsl/devices/sources/*.sources.yaml`, `dsl/capabilities/*.capability.yaml`, `dsl/capabilities/versions/*.capability.yaml`, and `dsl/capabilities/sources/*.sources.yaml`. Connection secrets and local environment overrides live in SQLite Store, not in YAML. The canvas AI edit path reads reviewed device/capability YAML files via `load_ai_asset_context` before asking the model to modify a workflow.
 
 Event channels: `workflow://node-status`, `workflow://result`, `workflow://deployed`, `workflow://undeployed`, `workflow://runtime-focus`, `workflow://variable-changed`, `workflow://variable-deleted`（ADR-0012 Phase 2/3，变量变更/删除广播；内部走独立 `WorkflowVariableEvent` 通道，不混入 `ExecutionEvent`——B1-R0-01/B1-R0-05，2026-05-03）, `workflow://reactive-update/{workflow_id}/{node_id}/{pin_id}`（ADR-0015 Phase 2，Reactive 引脚值变更推送） and dynamic `copilot://stream/{stream_id}`. Runtime result/status events are scoped payloads with `workflow_id`.
 

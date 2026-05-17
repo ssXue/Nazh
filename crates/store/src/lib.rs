@@ -6,6 +6,7 @@
 
 mod batch;
 mod config;
+mod connection_private;
 mod copilot;
 mod deployment_audit;
 mod error;
@@ -17,6 +18,7 @@ mod observability;
 mod variables;
 
 pub use batch::BatchWriter;
+pub use connection_private::{StoredConnectionLocalOverride, StoredConnectionSecret};
 pub use copilot::{CopilotConversation, CopilotMessage};
 pub use deployment_audit::DeploymentAuditRecord;
 pub use error::StoreError;

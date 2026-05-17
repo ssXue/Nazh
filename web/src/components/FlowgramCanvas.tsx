@@ -536,7 +536,7 @@ export const FlowgramCanvas = forwardRef<FlowgramCanvasHandle, FlowgramCanvasPro
                   onDownload={handleDownloadCurrentGraph}
                 />
                 <div className="flowgram-overlay">
-                  <span>{`工作流状态: ${workflowStatusLabel}`}</span>
+                  <span data-testid="workflow-status">{`工作流状态: ${workflowStatusLabel}`}</span>
                   <span>{lastChange ? `最近变更: ${lastChange}` : '未变更'}</span>
                   <span>{`${resolvedFlowgramData.nodes.length} nodes / ${resolvedFlowgramData.edges.length} edges`}</span>
                   <span>{runtimeContextLabel}</span>

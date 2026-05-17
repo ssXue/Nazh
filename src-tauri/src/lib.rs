@@ -5,6 +5,7 @@
 
 mod asset_files;
 mod commands;
+mod connection_resolver;
 mod ethercat_esi;
 mod events;
 mod observability;
@@ -235,16 +236,8 @@ pub fn run() {
 
             init_persistent_store(app);
 
-            let app_handle = app.handle().clone();
             let state: State<'_, DesktopState> = app.state();
-            let manager = state.connection_manager.clone();
             let ai_config_arc = state.ai_config.clone();
-            tauri::async_runtime::spawn({
-                let app_handle = app_handle.clone();
-                async move {
-                    DesktopState::load_connections_from_disk(&app_handle, manager, None).await;
-                }
-            });
             tauri::async_runtime::spawn({
                 let state: State<'_, DesktopState> = app.state();
                 let store_handle = state.store_handle().ok();
@@ -252,8 +245,7 @@ pub fn run() {
                     // AI 配置从 Store 加载
                     if let Some(store_handle) = store_handle
                         && let Ok(Some(text)) = store_handle.load_ai_config().await
-                        && let Ok(mut store_config) =
-                            serde_json::from_str::<AiConfigFile>(&text)
+                        && let Ok(mut store_config) = serde_json::from_str::<AiConfigFile>(&text)
                     {
                         store_config.normalize();
                         let mut config = ai_config_arc.write().await;
@@ -286,8 +278,12 @@ pub fn run() {
             commands::observability::query_observability,
             commands::observability::clear_observability,
             commands::observability::query_deployment_audit,
-            commands::connections::load_connection_definitions,
-            commands::connections::save_connection_definitions,
+            commands::connections::list_connection_assets,
+            commands::connections::load_connection_asset,
+            commands::connections::save_connection_asset,
+            commands::connections::delete_connection_asset,
+            commands::connections::save_connection_secret,
+            commands::connections::delete_connection_secret,
             commands::connections::reset_connection_circuit_breaker,
             commands::deployment_session::load_deployment_session_file,
             commands::deployment_session::load_deployment_session_state_file,

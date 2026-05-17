@@ -1,5 +1,3 @@
-import type { ConnectionDefinition } from '../types';
-
 export const DEPLOYMENT_SESSION_STORAGE_KEY = 'nazh.deployment-session';
 const DEPLOYMENT_SESSION_COLLECTION_VERSION = 3;
 
@@ -11,7 +9,6 @@ export interface PersistedDeploymentSession {
   environmentName: string;
   deployedAt: string;
   runtimeAstText: string;
-  runtimeConnections: ConnectionDefinition[];
 }
 
 interface PersistedDeploymentSessionCollection {
@@ -39,8 +36,7 @@ function isPersistedDeploymentSession(value: unknown): value is PersistedDeploym
     typeof record.environmentId === 'string' &&
     typeof record.environmentName === 'string' &&
     typeof record.deployedAt === 'string' &&
-    typeof record.runtimeAstText === 'string' &&
-    Array.isArray(record.runtimeConnections)
+    typeof record.runtimeAstText === 'string'
   );
 }
 

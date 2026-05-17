@@ -22,7 +22,6 @@ import { CopilotPanel } from './components/copilot/CopilotPanel';
 import { parseWorkflowGraph } from './lib/graph';
 import { formatWorkflowGraph } from './lib/flowgram';
 import {
-  applyEnvironmentToConnectionDefinitions,
   CURRENT_USER_NAME,
   formatRelativeTimestamp,
   getActiveEnvironment,
@@ -36,7 +35,7 @@ import {
   restartApp,
   undeployWorkflow,
 } from './lib/tauri';
-import type { ConnectionDefinition, DeployResponse, WorkflowResult, WorkflowNodeDefinition } from './types';
+import type { DeployResponse, WorkflowResult, WorkflowNodeDefinition } from './types';
 import { describeUnknownError } from './lib/workflow-events';
 import {
   deriveWorkflowStatus,
@@ -50,7 +49,6 @@ interface DeploymentSnapshot {
   environmentName: string;
   astText: string;
   runtimeAstText: string;
-  runtimeConnections: ConnectionDefinition[];
 }
 
 interface ConnectionUsageSummary {
@@ -231,7 +229,6 @@ function App() {
         snapshot: null,
         astText: null,
         runtimeAstText: null,
-        runtimeConnections: null,
         error: '请先从所有看板进入工程。',
       };
     }
@@ -241,7 +238,6 @@ function App() {
         snapshot: null,
         astText: null,
         runtimeAstText: null,
-        runtimeConnections: null,
         error: '连接资源仍在加载，请稍后再试。',
       };
     }
@@ -252,7 +248,6 @@ function App() {
         snapshot: null,
         astText: null,
         runtimeAstText: null,
-        runtimeConnections: null,
         error: draftSnapshot.error ?? '当前工作流快照无效。',
       };
     }
@@ -266,15 +261,10 @@ function App() {
         snapshot: null,
         astText: null,
         runtimeAstText: null,
-        runtimeConnections: null,
         error: '当前环境差异配置无法应用到工作流。',
       };
     }
 
-    const runtimeConnections = applyEnvironmentToConnectionDefinitions(
-      connectionLibrary.connections,
-      getActiveEnvironment(activeProject),
-    );
     const runtimeAstText = formatWorkflowGraph(
       applyGlobalAiConfigToWorkflowGraph(runtimeGraph, aiConfig),
     );
@@ -284,7 +274,6 @@ function App() {
         snapshot: null,
         astText: null,
         runtimeAstText: null,
-        runtimeConnections: null,
         error: nextGraphState.error ?? '环境覆盖后的工作流无法序列化。',
       };
     }
@@ -297,14 +286,12 @@ function App() {
       environmentName: activeEnvironment?.name ?? '默认环境',
       astText: draftSnapshot.astText,
       runtimeAstText,
-      runtimeConnections,
     };
 
     return {
       snapshot,
       astText: draftSnapshot.astText,
       runtimeAstText,
-      runtimeConnections,
       error: null,
     };
   }
@@ -350,8 +337,7 @@ function App() {
       nextDeploySnapshot.error ||
       !nextDeploySnapshot.snapshot ||
       !nextDeploySnapshot.astText ||
-      !nextDeploySnapshot.runtimeAstText ||
-      !nextDeploySnapshot.runtimeConnections
+      !nextDeploySnapshot.runtimeAstText
     ) {
       engine.appendAppError(
         'command',

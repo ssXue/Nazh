@@ -14,6 +14,7 @@ import type {
   DescribeNodePinsRequest,
   DescribeNodePinsResponse,
   DispatchResponse,
+  JsonValue,
   ListNodeTypesResponse,
   ObservabilityQueryResult,
   RuntimeWorkflowSummary,
@@ -47,9 +48,24 @@ export interface SavedWorkspaceFile {
   filePath: string;
 }
 
-export interface ConnectionDefinitionsLoadResult {
-  definitions: ConnectionDefinition[];
-  fileExists: boolean;
+export interface ConnectionAssetSummary {
+  id: string;
+  protocolType: string;
+  description?: string | null;
+  version: number;
+  updatedAt: string;
+}
+
+export interface ConnectionAssetDetail {
+  id: string;
+  protocolType: string;
+  description?: string | null;
+  version: number;
+  specJson: JsonValue;
+  specYaml: string;
+  yamlFilePath?: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface ScopedWorkflowEvent {
@@ -334,7 +350,6 @@ export async function watchCurrentWindowMaximized(
 
 export async function deployWorkflow(
   ast: string,
-  connectionDefinitions?: ConnectionDefinition[],
   observabilityContext?: {
     workspacePath: string;
     projectId: string;
@@ -350,7 +365,6 @@ export async function deployWorkflow(
 ): Promise<DeployResponse> {
   return invoke<DeployResponse>('deploy_workflow', {
     ast,
-    connectionDefinitions: connectionDefinitions ?? null,
     observabilityContext: observabilityContext
       ? {
           workspacePath: observabilityContext.workspacePath.trim(),
@@ -384,6 +398,65 @@ export async function undeployWorkflow(workflowId?: string | null): Promise<Unde
 
 export async function listConnections(): Promise<ConnectionRecord[]> {
   return invoke<ConnectionRecord[]>('list_connections');
+}
+
+export async function listConnectionAssets(
+  workspacePath: string,
+): Promise<ConnectionAssetSummary[]> {
+  return invoke<ConnectionAssetSummary[]>('list_connection_assets', {
+    workspacePath: workspacePath.trim() || null,
+  });
+}
+
+export async function loadConnectionAsset(
+  id: string,
+  workspacePath: string,
+): Promise<ConnectionAssetDetail | null> {
+  return invoke<ConnectionAssetDetail | null>('load_connection_asset', {
+    id,
+    workspacePath: workspacePath.trim() || null,
+  });
+}
+
+export async function saveConnectionAsset(
+  id: string,
+  specYaml: string,
+  workspacePath: string,
+): Promise<void> {
+  return invoke<void>('save_connection_asset', {
+    id,
+    specYaml,
+    workspacePath: workspacePath.trim() || null,
+  });
+}
+
+export async function deleteConnectionAsset(id: string, workspacePath: string): Promise<void> {
+  return invoke<void>('delete_connection_asset', {
+    id,
+    workspacePath: workspacePath.trim() || null,
+  });
+}
+
+export async function saveConnectionSecret(
+  connectionId: string,
+  secretKey: string,
+  value: string,
+): Promise<void> {
+  return invoke<void>('save_connection_secret', {
+    connectionId,
+    secretKey,
+    value,
+  });
+}
+
+export async function deleteConnectionSecret(
+  connectionId: string,
+  secretKey: string,
+): Promise<void> {
+  return invoke<void>('delete_connection_secret', {
+    connectionId,
+    secretKey,
+  });
 }
 
 export async function listNodeTypes(): Promise<ListNodeTypesResponse> {
@@ -451,24 +524,6 @@ export async function queryObservability(
 export async function clearObservability(workspacePath: string): Promise<void> {
   return invoke('clear_observability', {
     workspacePath: workspacePath.trim() || null,
-  });
-}
-
-export async function loadConnectionDefinitions(
-  workspacePath: string,
-): Promise<ConnectionDefinitionsLoadResult> {
-  return invoke<ConnectionDefinitionsLoadResult>('load_connection_definitions', {
-    workspacePath: workspacePath.trim() || null,
-  });
-}
-
-export async function saveConnectionDefinitions(
-  workspacePath: string,
-  definitions: ConnectionDefinition[],
-): Promise<void> {
-  return invoke<void>('save_connection_definitions', {
-    workspacePath: workspacePath.trim() || null,
-    definitions,
   });
 }
 

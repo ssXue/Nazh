@@ -24,15 +24,6 @@ function buildSession(): PersistedDeploymentSession {
     environmentName: '生产',
     deployedAt: '2026-04-11T09:30:00.000Z',
     runtimeAstText: '{"name":"demo"}',
-    runtimeConnections: [
-      {
-        id: 'http-main',
-        type: 'http',
-        metadata: {
-          base_url: 'https://example.com',
-        },
-      },
-    ],
   };
 }
 

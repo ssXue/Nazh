@@ -99,7 +99,7 @@ fn commands_dir() -> PathBuf {
 
 /// 预期 IPC 命令列表（按域分组）。
 ///
-/// 增删命令时必须同步更新此列表。总计 82 个。
+/// 增删命令时必须同步更新此列表。总计 86 个。
 const EXPECTED_COMMANDS: &[&str] = &[
     // workflow lifecycle (3)
     "workflow_deploy::deploy_workflow",
@@ -127,10 +127,14 @@ const EXPECTED_COMMANDS: &[&str] = &[
     "observability::query_observability",
     "observability::clear_observability",
     "observability::query_deployment_audit",
-    // connections (4)
+    // connections (8)
     "connections::list_connections",
-    "connections::load_connection_definitions",
-    "connections::save_connection_definitions",
+    "connections::list_connection_assets",
+    "connections::load_connection_asset",
+    "connections::save_connection_asset",
+    "connections::delete_connection_asset",
+    "connections::save_connection_secret",
+    "connections::delete_connection_secret",
     "connections::reset_connection_circuit_breaker",
     // deployment session (7)
     "deployment_session::load_deployment_session_file",

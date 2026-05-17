@@ -16,6 +16,7 @@ use tauri_bindings::{
 };
 
 use crate::{
+    connection_resolver::resolve_connection_definitions,
     observability::ObservabilityStore,
     registry::shared_node_registry,
     runtime::{DeadLetterSink, DesktopWorkflow, RuntimeWorkflowMetadata, create_dispatch_router},
@@ -103,6 +104,28 @@ async fn load_persisted_variable_overrides(
     }
 }
 
+async fn apply_connection_definitions(
+    state: &DesktopState,
+    definitions: Vec<ConnectionDefinition>,
+) -> Result<(), String> {
+    let connection_result = if state.workflows.lock().await.is_empty() {
+        state
+            .connection_manager
+            .replace_connections(definitions)
+            .await
+            .map(|_| ())
+    } else if definitions.is_empty() {
+        Ok(())
+    } else {
+        state
+            .connection_manager
+            .upsert_connections(definitions)
+            .await
+            .map(|_| ())
+    };
+    connection_result.map_err(|error| format!("连接定义校验失败: {error}"))
+}
+
 /// 从 JSON 字符串部署工作流（供 Tauri IPC 和 copilot 工具共用）。
 #[allow(dead_code, clippy::too_many_lines)]
 pub(crate) async fn deploy_workflow_from_json(
@@ -129,6 +152,11 @@ pub(crate) async fn deploy_workflow_from_json(
         environment_name: None,
         deployed_at,
     };
+    let store_handle = state.store_handle().ok();
+    let connection_definitions =
+        resolve_connection_definitions(app, None, None, store_handle.as_ref()).await?;
+    let connection_assets_resolved = connection_definitions.len();
+    apply_connection_definitions(state, connection_definitions).await?;
     record_deployment_audit(
         state,
         &metadata,
@@ -139,6 +167,7 @@ pub(crate) async fn deploy_workflow_from_json(
         Some(json!({
             "workflow_id": workflow_id.clone(),
             "source": "json",
+            "connection_assets_resolved": connection_assets_resolved,
             "ast_hash": ast_hash,
         })),
     )
@@ -290,7 +319,6 @@ pub(crate) async fn deploy_workflow(
     app: AppHandle,
     state: State<'_, DesktopState>,
     ast: String,
-    connection_definitions: Option<Vec<ConnectionDefinition>>,
     observability_context: Option<ObservabilityContextInput>,
     workflow_id: Option<String>,
     runtime_policy: Option<WorkflowRuntimePolicyInput>,
@@ -329,35 +357,46 @@ pub(crate) async fn deploy_workflow(
             .map(|context| context.environment_name.clone()),
         deployed_at: deployed_at.clone(),
     };
-    let connection_definitions_supplied = connection_definitions.is_some();
-    if let Some(definitions) = connection_definitions {
-        let connection_result = if state.workflows.lock().await.is_empty() {
-            state
-                .connection_manager
-                .replace_connections(definitions)
-                .await
-        } else {
-            state
-                .connection_manager
-                .upsert_connections(definitions)
-                .await
-        };
-        if let Err(error) = connection_result {
-            let message = format!("连接定义校验失败: {error}");
+    let store_handle = state.store_handle().ok();
+    let connection_definitions = match resolve_connection_definitions(
+        &app,
+        observability_context
+            .as_ref()
+            .map(|context| context.workspace_path.as_str()),
+        metadata.environment_id.as_deref(),
+        store_handle.as_ref(),
+    )
+    .await
+    {
+        Ok(definitions) => definitions,
+        Err(error) => {
             record_deployment_audit(
                 &state,
                 &metadata,
                 "deploy_rejected",
                 "error",
-                "部署前连接定义校验失败",
-                Some(message.clone()),
+                "部署前连接资产解析失败",
+                Some(error.clone()),
                 None,
             )
             .await;
-            return Err(message);
+            return Err(error);
         }
+    };
+    let connection_assets_resolved = connection_definitions.len();
+    if let Err(error) = apply_connection_definitions(&state, connection_definitions).await {
+        record_deployment_audit(
+            &state,
+            &metadata,
+            "deploy_rejected",
+            "error",
+            "部署前连接定义校验失败",
+            Some(error.clone()),
+            None,
+        )
+        .await;
+        return Err(error);
     }
-    let store_handle = state.store_handle().ok();
     let ast_hash = compute_ast_hash(&ast);
     record_deployment_audit(
         &state,
@@ -370,7 +409,7 @@ pub(crate) async fn deploy_workflow(
             "workflow_id": workflow_id.clone(),
             "project_name": metadata.project_name.clone(),
             "environment_name": metadata.environment_name.clone(),
-            "connection_definitions_supplied": connection_definitions_supplied,
+            "connection_assets_resolved": connection_assets_resolved,
             "ast_hash": ast_hash,
         })),
     )

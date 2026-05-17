@@ -2,13 +2,15 @@
 
 ## 定位
 
-SQLite 持久化层，实现 RFC-0003 Phase 1/2 与 Phase 3 部署审计子集。Device / Capability DSL 资产不再进入本 crate；Tauri 壳层直接以工程工作路径下的 YAML 文件作为唯一真值源。当前存储五类数据：
+SQLite 持久化层，实现 RFC-0003 Phase 1/2、Phase 3 部署审计子集与 ADR-0025 连接私有配置。Connection / Device / Capability DSL 工程资产不进入本 crate；Tauri 壳层直接以工程工作路径下的 YAML 文件作为唯一真值源。当前存储七类数据：
 
 - **工作流变量**：按 `workflow_id + key` 存储当前值与声明初值
 - **变量历史**：每次写入追加一条变更记录（时间序列）
 - **全局变量**：按 `namespace + key` 跨工作流共享
 - **可观测性索引**：`observability_records` 保存事件/审计/告警的查询索引 + 原始 JSON payload（唯一存储后端，JSONL 双写已移除）
 - **部署审计**：`deployment_audit` 记录 deploy / undeploy 生命周期动作
+- **连接密钥**：`connection_secrets` 保存 `ConnectionSpec.secrets` 引用到的本机密钥值
+- **连接本机覆盖**：`connection_local_overrides` 保存串口路径、网卡名等本机/环境差异
 Ring 1 crate，仅依赖 `rusqlite` / `serde` / `chrono` / `tracing`，不依赖 `nazh-core` 或任何其他 workspace crate。
 `tokio` 仅用于 `StoreHandle` 的 `spawn_blocking` async 边界，不进入 SQL/schema 逻辑。
 
@@ -50,6 +52,16 @@ pub fn load_global(namespace, key) -> Result<Option<StoredGlobalVariable>, Store
 pub fn list_globals(namespace?) -> Result<Vec<StoredGlobalVariable>, StoreError>;
 pub fn delete_global(namespace, key) -> Result<(), StoreError>;
 
+// connection_private.rs
+pub fn upsert_connection_secret(...) -> Result<(), StoreError>;
+pub fn load_connection_secret(connection_id, secret_key) -> Result<Option<StoredConnectionSecret>, StoreError>;
+pub fn list_connection_secrets(connection_id) -> Result<Vec<StoredConnectionSecret>, StoreError>;
+pub fn delete_connection_secret(connection_id, secret_key) -> Result<(), StoreError>;
+pub fn upsert_connection_local_override(...) -> Result<(), StoreError>;
+pub fn load_connection_local_override(connection_id, environment_id, key) -> Result<Option<StoredConnectionLocalOverride>, StoreError>;
+pub fn list_connection_local_overrides(connection_id, environment_id?) -> Result<Vec<StoredConnectionLocalOverride>, StoreError>;
+pub fn delete_connection_local_override(connection_id, environment_id, key) -> Result<(), StoreError>;
+
 // observability.rs
 pub fn insert_observability_record(...) -> Result<(), StoreError>;
 pub fn query_observability_records(...) -> Result<Vec<StoredObservabilityRecord>, StoreError>;
@@ -64,9 +76,9 @@ pub fn list_deployment_audit(workflow_id, limit) -> Result<Vec<DeploymentAuditRe
 ## 内部约定
 
 - **线程安全**：`Connection` 由 `std::sync::Mutex` 保护，`db()` 返回 `MutexGuard`。所有公开方法内部获取锁，调用方无需额外同步。async 调用方必须经 `StoreHandle`，不要在 async worker 上直接调用同步 CRUD。
-- **Migration**：内联 SQL，`001` 建变量表、变量历史表与全局变量表；`004/006` 建 copilot 对话与 thinking 字段；`007` 建可观测性索引与部署审计表。migration 在事务中执行；只有 `schema_version` 表不存在时才 bootstrap，其它 `rusqlite` 错误必须原样返回。后续新增 migration 在 `migrations.rs` 追加即可。
+- **Migration**：内联 SQL，`001` 建变量表、变量历史表与全局变量表；`004/006` 建 copilot 对话与 thinking 字段；`007` 建可观测性索引与部署审计表；`008` 建 AI 配置表；`009` 建连接密钥与本机覆盖表。migration 在事务中执行；只有 `schema_version` 表不存在时才 bootstrap，其它 `rusqlite` 错误必须原样返回。后续新增 migration 在 `migrations.rs` 追加即可。
 - **类型**：所有值以 `serde_json::Value` 存取，JSON TEXT 列。`var_type` / `updated_by` 纯字符串，不关联 Rust 枚举。
-- **资产边界**：不要把 Device / Capability DSL 表重新加回本 crate；设备/能力资产由 `src-tauri/src/asset_files.rs` 读写工作路径 YAML。
+- **资产边界**：不要把 Connection / Device / Capability DSL 工程资产表重新加回本 crate；资产由 `src-tauri/src/asset_files/` 读写工作路径 YAML。Store 只保存连接密钥、本机覆盖和运行态/审计类数据。
 - **`clippy::too_many_arguments`**：`upsert_variable` / `record_history` / `query_history_range` / `upsert_global` 已 `#[allow]`，参数为 persistence 必要字段，不宜封装为 struct（与 IPC 层类型解耦）。
 
 ## 修改本 crate 时

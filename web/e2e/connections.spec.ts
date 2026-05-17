@@ -1,6 +1,12 @@
 import { expect, test } from '@playwright/test';
 import { waitForAppReady, navigateToSection } from './helpers';
 
+async function openConnectionsTab(page: import('@playwright/test').Page) {
+  await waitForAppReady(page);
+  await navigateToSection(page, 'connections');
+  await page.locator('[data-testid="infra-tab-connections"]').click();
+}
+
 /**
  * 空连接列表显示空状态。
  *
@@ -8,8 +14,7 @@ import { waitForAppReady, navigateToSection } from './helpers';
  * 若为空状态，则验证提示文本包含"暂无连接"相关描述。
  */
 test('空连接列表显示空状态', async ({ page }) => {
-  await waitForAppReady(page);
-  await navigateToSection(page, 'connections');
+  await openConnectionsTab(page);
 
   const emptyState = page.locator('[data-testid="connection-empty-state"]');
   const connectionCards = page.locator('[data-testid="connection-card"]');
@@ -27,8 +32,7 @@ test('空连接列表显示空状态', async ({ page }) => {
  * 点击第一个连接模板按钮（Modbus TCP）后，验证连接卡片网格中出现新的连接卡片。
  */
 test('添加连接后卡片出现', async ({ page }) => {
-  await waitForAppReady(page);
-  await navigateToSection(page, 'connections');
+  await openConnectionsTab(page);
 
   await page.locator('[data-testid="connection-add"]').first().click();
 
@@ -43,8 +47,7 @@ test('添加连接后卡片出现', async ({ page }) => {
  * 依次点击 Modbus TCP 和串口设备模板按钮，验证网格中存在两张连接卡片。
  */
 test('添加多种类型连接', async ({ page }) => {
-  await waitForAppReady(page);
-  await navigateToSection(page, 'connections');
+  await openConnectionsTab(page);
 
   await page.locator('[data-testid="connection-add"]').first().click();
   await expect(page.locator('[data-testid="connection-card"]').first()).toBeVisible({
@@ -66,8 +69,7 @@ test('添加多种类型连接', async ({ page }) => {
  * 添加一个连接后，点击连接卡片上的设置按钮，验证右侧设置面板中出现删除按钮。
  */
 test('打开连接设置面板', async ({ page }) => {
-  await waitForAppReady(page);
-  await navigateToSection(page, 'connections');
+  await openConnectionsTab(page);
 
   await page.locator('[data-testid="connection-add"]').first().click();
   await expect(page.locator('[data-testid="connection-card"]').first()).toBeVisible({
@@ -77,7 +79,7 @@ test('打开连接设置面板', async ({ page }) => {
   await page.keyboard.press('Escape');
 
   const card = page.locator('[data-testid="connection-card"]').first();
-  await card.locator('.connection-card__settings').click({ force: true });
+  await card.click();
 
   await expect(page.locator('[data-testid="connection-delete"]')).toBeVisible({
     timeout: 5_000,

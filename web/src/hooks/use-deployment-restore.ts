@@ -27,7 +27,6 @@ import {
 import { describeUnknownError } from '../lib/workflow-events';
 import type {
   AppErrorRecord,
-  ConnectionDefinition,
   DeployResponse,
   RuntimeLogEntry,
 } from '../types';
@@ -38,7 +37,6 @@ interface DeploymentRunSnapshot {
   environmentId: string;
   environmentName: string;
   runtimeAstText: string;
-  runtimeConnections: ConnectionDefinition[];
 }
 
 interface UseDeploymentRestoreOptions {
@@ -114,7 +112,6 @@ export function useDeploymentRestore({
         environmentName: snapshot.environmentName,
         deployedAt: new Date().toISOString(),
         runtimeAstText: snapshot.runtimeAstText,
-        runtimeConnections: snapshot.runtimeConnections,
       };
       const activeProjectId = snapshot.projectId;
 
@@ -269,7 +266,6 @@ export function useDeploymentRestore({
       try {
         const response = await deployWorkflow(
           snapshot.runtimeAstText,
-          snapshot.runtimeConnections,
           {
             workspacePath,
             projectId: snapshot.projectId,
@@ -457,7 +453,6 @@ export function useDeploymentRestore({
             environmentId: session.environmentId,
             environmentName: session.environmentName,
             runtimeAstText: session.runtimeAstText,
-            runtimeConnections: session.runtimeConnections,
           },
           'restore',
         );

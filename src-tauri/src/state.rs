@@ -1,13 +1,10 @@
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use ai::AiConfigFile;
-use nazh_engine::{ConnectionDefinition, shared_connection_manager};
+use nazh_engine::shared_connection_manager;
 use store::{Store, StoreHandle};
 use tauri::AppHandle;
-use tokio::{
-    fs,
-    sync::{Mutex, RwLock},
-};
+use tokio::sync::{Mutex, RwLock};
 
 use crate::{runtime::DesktopWorkflow, workspace::resolve_project_workspace_dir};
 
@@ -54,15 +51,6 @@ impl DesktopState {
             .ok_or_else(|| "Store 未初始化".to_owned())
     }
 
-    pub(crate) fn connections_file_path(
-        app: &AppHandle,
-        workspace_path: Option<&str>,
-    ) -> Result<PathBuf, String> {
-        let workspace_dir =
-            resolve_project_workspace_dir(app, workspace_path).map(|(dir, _)| dir)?;
-        Ok(workspace_dir.join("connections.json"))
-    }
-
     pub(crate) fn deployment_session_file_path(
         app: &AppHandle,
         workspace_path: Option<&str>,
@@ -70,48 +58,6 @@ impl DesktopState {
         let workspace_dir =
             resolve_project_workspace_dir(app, workspace_path).map(|(dir, _)| dir)?;
         Ok(workspace_dir.join("deployment-session.json"))
-    }
-
-    pub(crate) async fn load_connections_from_disk(
-        app: &AppHandle,
-        manager: nazh_engine::SharedConnectionManager,
-        workspace_path: Option<&str>,
-    ) {
-        match Self::connections_file_path(app, workspace_path) {
-            Ok(path) => {
-                if path.exists() {
-                    if let Ok(text) = fs::read_to_string(&path).await {
-                        if let Ok(defs) =
-                            serde_json::from_str::<Vec<nazh_engine::ConnectionDefinition>>(&text)
-                        {
-                            if let Err(e) = manager.replace_connections(defs).await {
-                                tracing::warn!("启动期连接定义校验失败，跳过加载: {e}");
-                                let _ = manager
-                                    .replace_connections(Vec::<ConnectionDefinition>::new())
-                                    .await;
-                            }
-                        } else {
-                            let _ = manager
-                                .replace_connections(Vec::<ConnectionDefinition>::new())
-                                .await;
-                        }
-                    } else {
-                        let _ = manager
-                            .replace_connections(Vec::<ConnectionDefinition>::new())
-                            .await;
-                    }
-                } else {
-                    let _ = manager
-                        .replace_connections(Vec::<ConnectionDefinition>::new())
-                        .await;
-                }
-            }
-            Err(_) => {
-                let _ = manager
-                    .replace_connections(Vec::<ConnectionDefinition>::new())
-                    .await;
-            }
-        }
     }
 
     pub(crate) async fn resolve_workflow_id(

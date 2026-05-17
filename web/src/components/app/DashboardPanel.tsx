@@ -186,7 +186,7 @@ export function DashboardPanel({
             />
           </strong>
           <div className="dashboard-hero__status-row">
-            <span className={`dashboard-hero__status-badge is-${statusTone}`}>{statusLabel}</span>
+            <span className={`dashboard-hero__status-badge is-${statusTone}`} data-testid="workflow-status">{statusLabel}</span>
             {traceId && <span className="dashboard-hero__trace">Trace: {traceId.slice(0, 8)}…</span>}
           </div>
         </div>
