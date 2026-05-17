@@ -2,6 +2,8 @@
 //!
 //! 从 `generate_handler!` 块提取实际注册命令，与预期列表比对。
 //! 增删 IPC 命令时**必须**同步更新本文件的 `EXPECTED_COMMANDS` 列表。
+
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 //!
 //! 参考模式：`src/registry.rs` 节点注册表面契约测试。
 
@@ -256,7 +258,7 @@ fn every_command_in_handler_has_tauri_attribute() {
 
     let missing_handler: Vec<&String> = command_fns
         .iter()
-        .filter(|name| !handler_fn_names.iter().any(|h| *h == name.as_str()))
+        .filter(|name| !handler_fn_names.contains(&name.as_str()))
         .collect();
 
     assert!(

@@ -60,10 +60,9 @@ pub use variables::{
 pub mod export_bindings {
     use super::{
         AiGenerationParams, AiReasoningEffort, AiThinkingConfig, AiThinkingMode, AiToolCall,
-        BackpressureDetected, BackpressurePolicy,
-        CompletedExecutionEvent, EdgeTransmitSummary, ExecutionEvent, PinDefinition, PinDirection,
-        PinKind, PinType, TypedVariableSnapshot, VariableDeclaration, WorkflowContext,
-        WorkflowNodeDefinition,
+        BackpressureDetected, BackpressurePolicy, CompletedExecutionEvent, EdgeTransmitSummary,
+        ExecutionEvent, PinDefinition, PinDirection, PinKind, PinType, TypedVariableSnapshot,
+        VariableDeclaration, WorkflowContext, WorkflowNodeDefinition,
     };
     use ts_rs::{Config, ExportError, TS};
 

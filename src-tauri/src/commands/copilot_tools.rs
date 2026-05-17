@@ -6,10 +6,7 @@
 
 use std::sync::Arc;
 
-use nazh_engine::{
-    AiToolCall, SharedConnectionManager, WorkflowGraph,
-    WorkflowNodeDefinition,
-};
+use nazh_engine::{AiToolCall, SharedConnectionManager, WorkflowGraph, WorkflowNodeDefinition};
 use serde_json::json;
 use tauri::AppHandle;
 use tauri_bindings::list_node_types_response;
@@ -256,8 +253,8 @@ fn tool_validate_workflow(call: &AiToolCall) -> Result<String, String> {
     serde_json::to_string_pretty(&result).map_err(|e| format!("序列化失败: {e}"))
 }
 
-fn tool_get_scripting_reference(_call: &AiToolCall) -> Result<String, String> {
-    Ok(scripting::generate_api_reference())
+fn tool_get_scripting_reference(_call: &AiToolCall) -> String {
+    scripting::generate_api_reference()
 }
 
 /// 前端 copilot 查询工具调度入口。
@@ -297,7 +294,7 @@ pub async fn dispatch_query_tool(
         "query_workflow_status" => tool_query_workflow_status(&call, &ctx),
         "read_asset_yaml" => tool_read_asset_yaml(&call, &ctx).await,
         "validate_workflow" => tool_validate_workflow(&call),
-        "get_scripting_reference" => tool_get_scripting_reference(&call),
+        "get_scripting_reference" => Ok(tool_get_scripting_reference(&call)),
         _ => Err(format!("未知工具: {tool_name}")),
     }
 }
