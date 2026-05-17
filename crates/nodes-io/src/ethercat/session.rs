@@ -17,6 +17,7 @@ use super::backends::create_ethercat_bus;
 ///
 /// 内部用 `Mutex<Option<...>>` 包裹总线实例，支持多个节点并发访问，
 /// 并在 `cleanup` 时安全取出总线执行关闭。
+// 通过 ConnectionManager 泛型间接访问——编译期可见性检查不追踪跨 crate 泛型实例化
 #[allow(dead_code)]
 pub struct SharedEthercatSession {
     bus: Mutex<Option<Box<dyn EthercatBus>>>,
@@ -43,21 +44,25 @@ impl SharedEthercatSession {
         }
     }
 
+    // getter 供诊断面板使用
     #[allow(dead_code)]
     pub fn simulated(&self) -> bool {
         self.simulated
     }
 
+    // getter 供诊断面板使用
     #[allow(dead_code)]
     pub fn channel_info(&self) -> &str {
         &self.channel_info
     }
 
+    // getter 供诊断面板使用
     #[allow(dead_code)]
     pub fn connection_id(&self) -> &str {
         &self.connection_id
     }
 
+    // getter 供诊断面板使用
     #[allow(dead_code)]
     pub fn lease(&self) -> Option<&ConnectionLease> {
         self.lease.as_ref()
@@ -66,6 +71,8 @@ impl SharedEthercatSession {
     /// 同步关闭主站并释放硬件资源（后备方案，用于无法使用 async 的场景）。
     ///
     /// 正常反部署路径应使用 [`safe_cleanup`](Self::safe_cleanup) 执行 OP → SAFE-OP 过渡。
+    // 同步清理后备——正常路径走 safe_cleanup（async OP→SAFE-OP 过渡），
+    // Drop 等无法 await 的场景用此方法
     #[allow(dead_code)]
     pub fn cleanup(&self) {
         if let Ok(mut guard) = self.bus.try_lock()
@@ -145,6 +152,7 @@ impl EthercatRuntime {
         self.shutdown().await;
     }
 
+    // getter 供诊断面板使用
     #[allow(dead_code)]
     pub fn connection_id(&self) -> &str {
         &self.connection_id

@@ -18,6 +18,7 @@ use crate::can::{CanBus, CanBusConfig, CanError, create_can_bus};
 ///
 /// 内部用 `Mutex<Option<...>>` 包裹总线实例，支持多个节点并发访问，
 /// 并在 `cleanup` 时安全取出总线执行关闭。
+// 通过 ConnectionManager 泛型间接访问——编译期可见性检查不追踪跨 crate 泛型实例化
 #[allow(dead_code)]
 pub struct SharedCanBusSession {
     bus: Mutex<Option<Arc<dyn CanBus>>>,
@@ -54,6 +55,7 @@ impl SharedCanBusSession {
         &self.channel_info
     }
 
+    // getter 供诊断面板使用，当前热路径通过 Runtime 句柄间接访问
     #[allow(dead_code)]
     pub fn connection_id(&self) -> &str {
         &self.connection_id
@@ -125,6 +127,7 @@ impl CanBusRuntime {
             .await;
     }
 
+    // getter 供诊断面板使用，当前热路径通过 ensure_session 间接访问
     #[allow(dead_code)]
     pub fn connection_id(&self) -> &str {
         &self.connection_id

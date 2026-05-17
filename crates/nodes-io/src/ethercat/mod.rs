@@ -83,6 +83,7 @@ pub trait EthercatBus: Send + Sync {
 }
 
 /// EtherCAT 操作错误。
+// 完整错误枚举——当前 ethercrab 后端仅使用部分变体，其余供未来后端和调试用
 #[allow(dead_code)]
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum EthercatError {

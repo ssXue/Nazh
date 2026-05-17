@@ -68,6 +68,7 @@ pub struct CapabilityCallNode {
     id: String,
     config: CapabilityCallConfig,
     variables: Option<Arc<WorkflowVariables>>,
+    // 保留供后续协议节点执行时借出连接（Modbus/MQTT/Serial/CAN）
     #[allow(dead_code)]
     connection_manager: SharedConnectionManager,
 }

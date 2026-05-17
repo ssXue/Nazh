@@ -7,6 +7,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 /// 字节序。
+// 供信号解码（ADR-0024 deviceSignalRead）按字节序拆分信号，当前 extract_bytes 尚未使用
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -72,6 +73,7 @@ impl CanFrame {
     /// * `offset` — 数据段起始字节偏移（0-7）
     /// * `length` — 字节长度（1-8）
     /// * `byte_order` — 字节序
+    // 帧数据提取方法——供 deviceSignalRead 信号解码调用，当前仅 SLCAN 后端未直接使用
     #[allow(dead_code)]
     pub fn extract_bytes(&self, offset: u8, length: u8) -> Option<Vec<u8>> {
         let start = offset as usize;

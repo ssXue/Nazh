@@ -51,6 +51,7 @@ pub use self::backends::create_can_bus;
 pub use self::filter::CanFilter;
 pub use self::frame::CanFrame;
 
+// 完整 trait 接口——部分方法当前 SLCAN 后端未调用，但 SocketCAN / PCAN 后端将实现
 #[allow(dead_code)]
 /// CAN 总线抽象 trait —— 借鉴 python-can `BusABC`。
 ///
@@ -79,6 +80,7 @@ pub trait CanBus: Send + Sync {
 }
 
 /// CAN 总线状态。
+// 供 metadata / 诊断面板使用，当前节点不直接读取
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BusState {
@@ -91,6 +93,7 @@ pub enum BusState {
 }
 
 /// CAN 操作错误。
+// 完整错误枚举——当前 SLCAN 后端仅使用部分变体，其余供未来后端和调试用
 #[allow(dead_code)]
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum CanError {

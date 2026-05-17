@@ -32,6 +32,7 @@ impl CanFilter {
     }
 
     /// 创建扩展帧过滤器（29-bit ID）。
+    // 当前 CAN 节点配置仅生成标准帧过滤器，扩展帧支持待 Phase 2
     #[allow(dead_code)]
     pub fn extended(can_id: u32, can_mask: u32) -> Self {
         Self {
