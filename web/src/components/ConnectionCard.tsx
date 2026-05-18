@@ -46,7 +46,7 @@ function ConnectionCardItem({
   return (
     <SpotlightCard
       as="article"
-      className={`connection-card ${isActive ? 'is-active' : ''}`}
+      className={`asset-card connection-card ${isActive ? 'is-active' : ''}`}
       data-testid="connection-card"
       role="button"
       tabIndex={0}
@@ -61,7 +61,7 @@ function ConnectionCardItem({
       spotlightColor="rgba(74, 114, 201, 0.06)"
     >
       <div className="connection-card__main">
-        <div className="connection-card__icon">
+        <div className="asset-card__icon">
           <ConnectionIcon />
         </div>
         <div className="connection-card__identity">
@@ -69,19 +69,19 @@ function ConnectionCardItem({
           <span className="connection-card__brief">
             {connectionParameterBrief(connection)}
           </span>
-          <div className="connection-card__meta">
-            <span className="connection-card__tag">
+          <div className="asset-card__chips">
+            <span className="asset-card__chip">
               {connection.type || 'custom'}
             </span>
             <span
-              className={`connection-card__tag${boundDeviceCount > 0 ? ' connection-card__tag--accent' : ''}`}
+              className={`asset-card__chip${boundDeviceCount > 0 ? ' asset-card__chip--accent' : ''}`}
             >
               {boundDeviceCount > 0 ? `${boundDeviceCount} 设备` : '无设备绑定'}
             </span>
-            <span className="connection-card__tag">
+            <span className="asset-card__chip">
               {usage.nodeIds.length > 0 ? `${usage.nodeIds.length} 节点` : '未绑定节点'}
             </span>
-            <span className="connection-card__tag">
+            <span className="asset-card__chip">
               {usage.projectNames.length > 0
                 ? `${usage.projectNames.length} 工程`
                 : '全局可用'}
@@ -90,7 +90,7 @@ function ConnectionCardItem({
         </div>
       </div>
 
-      <div className="connection-card__footer">
+      <div className="asset-card__footer connection-card__footer">
         <span className={`connection-status is-${runtimeState.state}`}>
           <span className="connection-status__dot" />
           {runtimeState.label}

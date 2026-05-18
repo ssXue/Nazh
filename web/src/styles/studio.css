@@ -378,19 +378,7 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius-md);
   padding: 8px 8px 8px 10px;
-  background: var(--surface-muted);
-  box-shadow: var(--shadow-low);
-  transition:
-    box-shadow 200ms cubic-bezier(0.25, 0.1, 0.25, 1),
-    border-color 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
-}
-
-.studio-nav-user:hover {
-  border-color: color-mix(in srgb, var(--accent-border) 40%, var(--line-soft));
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06), var(--shadow-low);
 }
 
 .studio-nav-user__avatar {
@@ -1828,38 +1816,15 @@ html.is-platform-windows .studio-frame:has(.studio-nav-sidebar.is-collapsed) .wi
 }
 
 .board-card {
-  position: relative;
   display: flex;
   flex-direction: column;
   gap: 12px;
   min-height: 0;
-  padding: 13px 14px;
-  border: 1px solid var(--panel-border);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-  background:
-    radial-gradient(circle at top left, color-mix(in srgb, var(--accent-soft) 38%, transparent), transparent 44%),
-    linear-gradient(180deg, var(--surface-elevated), var(--panel-strong));
-  box-shadow: var(--shadow-low);
   text-align: left;
-  transition:
-    transform 180ms ease,
-    box-shadow 180ms ease,
-    border-color 180ms ease,
-    background 180ms ease;
 }
 
-.board-card:hover {
-  transform: translateY(-1px);
-  border-color: var(--accent-border);
-  background:
-    radial-gradient(circle at top left, color-mix(in srgb, var(--accent-soft) 48%, transparent), transparent 46%),
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--surface-elevated) 97%, var(--accent-soft) 3%),
-      color-mix(in srgb, var(--panel-strong) 99%, var(--accent-soft) 1%)
-    );
-  box-shadow: var(--shadow-medium);
+.board-card > .asset-card__footer {
+  margin-top: auto;
 }
 
 .board-card--entry {
@@ -1870,16 +1835,10 @@ html.is-platform-windows .studio-frame:has(.studio-nav-sidebar.is-collapsed) .wi
   outline: none;
   transform: translateY(-1px);
   border-color: var(--accent-border);
-  background:
-    radial-gradient(circle at top left, color-mix(in srgb, var(--accent-soft) 48%, transparent), transparent 46%),
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--surface-elevated) 97%, var(--accent-soft) 3%),
-      color-mix(in srgb, var(--panel-strong) 99%, var(--accent-soft) 1%)
-    );
-  box-shadow:
-    0 0 0 3px color-mix(in srgb, var(--accent-soft) 78%, transparent),
-    var(--shadow-medium);
+}
+
+.board-card--entry:focus-visible::before {
+  opacity: 1;
 }
 
 .board-card--create {
@@ -1887,76 +1846,23 @@ html.is-platform-windows .studio-frame:has(.studio-nav-sidebar.is-collapsed) .wi
   border-style: dashed;
   border-width: 1px;
   border-color: color-mix(in srgb, var(--accent-border) 58%, var(--line-soft) 42%);
-  background:
-    radial-gradient(circle at top left, color-mix(in srgb, var(--accent-soft-strong) 48%, transparent), transparent 44%),
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--surface-elevated) 96%, var(--accent-soft) 4%),
-      color-mix(in srgb, var(--panel-strong) 98%, var(--accent-soft) 2%)
-    );
 }
 
 .board-card--create:hover {
   border-color: var(--accent-border);
-  background:
-    radial-gradient(circle at top left, color-mix(in srgb, var(--accent-soft-strong) 56%, transparent), transparent 46%),
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--surface-elevated) 95%, var(--accent-soft) 5%),
-      color-mix(in srgb, var(--panel-strong) 98%, var(--accent-soft) 2%)
-    );
-  box-shadow: var(--shadow-medium);
+}
+
+.board-card--create:hover::before {
+  opacity: 1;
 }
 
 .board-card--create:focus-visible {
   outline: none;
   border-color: var(--accent-border);
-  background:
-    radial-gradient(circle at top left, color-mix(in srgb, var(--accent-soft-strong) 56%, transparent), transparent 46%),
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--surface-elevated) 95%, var(--accent-soft) 5%),
-      color-mix(in srgb, var(--panel-strong) 98%, var(--accent-soft) 2%)
-    );
-  box-shadow:
-    0 0 0 3px color-mix(in srgb, var(--accent-soft) 82%, transparent),
-    var(--shadow-medium);
 }
 
-.board-card__icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: var(--radius-sm);
-  color: var(--accent-ink);
-  background: linear-gradient(
-    135deg,
-    color-mix(in srgb, var(--accent-soft) 88%, var(--surface-elevated) 12%),
-    color-mix(in srgb, var(--accent-soft-strong) 72%, transparent)
-  );
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-border) 22%, transparent);
-}
-
-.board-card__icon svg {
-  width: 16px;
-  height: 16px;
-}
-
-.board-card__icon--create {
-  background: linear-gradient(
-    135deg,
-    color-mix(in srgb, var(--accent-soft) 80%, var(--surface-elevated) 20%),
-    color-mix(in srgb, var(--accent-soft-strong) 82%, transparent)
-  );
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-border) 34%, transparent);
-}
-
-.board-card__body {
-  display: grid;
-  gap: 6px;
-  flex: 1 1 auto;
+.board-card--create:focus-visible::before {
+  opacity: 1;
 }
 
 .board-card__name {
@@ -1977,83 +1883,15 @@ html.is-platform-windows .studio-frame:has(.studio-nav-sidebar.is-collapsed) .wi
   line-height: 1.5;
 }
 
-.board-card__footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: auto;
-  padding-top: 10px;
-  border-top: 1px solid color-mix(in srgb, var(--line-soft) 70%, transparent);
-}
-
-.board-card__meta {
-  color: var(--muted);
-  font-size: var(--font-caption);
-  line-height: 1.4;
-}
-
-.board-card__chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.board-card__chip {
-  min-height: 22px;
-  padding: 0 9px;
-  border-radius: var(--radius-pill);
-  border: 1px solid color-mix(in srgb, var(--line-soft) 72%, transparent);
-  background: color-mix(in srgb, var(--surface-muted) 94%, transparent);
-  color: var(--text-soft);
-  font-size: var(--font-caption);
-  line-height: 20px;
-}
-
 .board-card__chip--create {
-  border-color: color-mix(in srgb, var(--accent-border) 28%, transparent);
   background: color-mix(in srgb, var(--accent-soft) 24%, var(--surface-muted) 76%);
-  color: var(--text-soft);
+  color: var(--muted);
 }
 
 .board-card__migration {
   color: var(--warning-ink);
   font-size: var(--font-callout);
   line-height: 1.45;
-}
-
-.board-card__delete {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border: 0;
-  border-radius: var(--radius-none);
-  background: transparent;
-  color: var(--muted);
-  box-shadow: none;
-  transform: none;
-  opacity: 0.92;
-}
-
-.board-card__delete svg {
-  width: 15px;
-  height: 15px;
-}
-
-.board-card__delete:hover,
-.board-card__delete:focus-visible {
-  background: transparent;
-  color: var(--danger-ink);
-  box-shadow: none;
-  transform: none;
-  opacity: 1;
-}
-
-.board-card__delete:focus-visible {
-  outline: none;
 }
 
 .boards-panel__confirm-layer {

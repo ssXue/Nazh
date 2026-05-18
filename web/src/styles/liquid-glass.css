@@ -124,7 +124,6 @@ button:hover {
   display: block;
   height: 100%;
   min-height: 0;
-  border-radius: var(--radius-lg);
   overflow: hidden;
 }
 
@@ -273,11 +272,7 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
 }
 
 .studio-nav-user {
-  border-radius: var(--radius-xl);
-  background: rgba(255, 255, 255, 0.18);
-  transition:
-    box-shadow 200ms cubic-bezier(0.25, 0.1, 0.25, 1),
-    border-color 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
+  background: transparent;
 }
 
 .studio-nav-user__avatar {

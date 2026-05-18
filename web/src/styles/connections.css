@@ -157,48 +157,17 @@
 }
 
 .connection-grid {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(248px, 280px));
   gap: 10px;
-  align-items: start;
   align-content: start;
 }
 
 .connection-card {
-  position: relative;
   display: grid;
   gap: 14px;
-  flex: 0 0 min(100%, var(--connection-card-width));
-  width: min(100%, var(--connection-card-width));
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius-md);
-  padding: 12px;
-  background:
-    radial-gradient(circle at 18% 12%, var(--accent-soft), transparent 34%),
-    linear-gradient(180deg, var(--panel-strong), var(--panel));
-  box-shadow: none;
-  overflow: hidden;
   cursor: pointer;
-  transition:
-    border-color 180ms ease,
-    transform 180ms ease;
   z-index: var(--z-content);
-}
-
-.connection-card::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: linear-gradient(120deg, rgba(var(--accent-rgb) / 0.12), transparent 46%);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 180ms ease;
-}
-
-.connection-card:hover {
-  box-shadow: none;
-  transform: translateY(-1px);
 }
 
 .connection-card:hover::before,
@@ -221,7 +190,6 @@
   align-items: start;
 }
 
-.connection-card__icon,
 .connection-settings-panel__icon {
   display: grid;
   place-items: center;
@@ -231,9 +199,9 @@
   border-radius: var(--radius-md);
   background: var(--accent-soft);
   color: var(--accent-ink);
+  flex-shrink: 0;
 }
 
-.connection-card__icon svg,
 .connection-settings-panel__icon svg {
   width: 20px;
   height: 20px;
@@ -264,31 +232,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.connection-card__meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.connection-card__tag {
-  display: inline-flex;
-  align-items: center;
-  min-height: 22px;
-  padding: 0.16rem 0.48rem;
-  border-radius: var(--radius-pill);
-  border: 1px solid var(--line-soft);
-  background: var(--surface-muted);
-  color: var(--text-soft);
-  font-size: var(--font-subheadline);
-  line-height: 1;
-}
-
-.connection-card__tag--accent {
-  background: var(--accent-soft);
-  border-color: var(--accent-border);
-  color: var(--accent);
 }
 
 /* ---- 连接详情面板：绑定设备列表 ---- */
@@ -346,9 +289,6 @@
 
 .connection-card__footer {
   position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
   gap: 10px;
 }
 

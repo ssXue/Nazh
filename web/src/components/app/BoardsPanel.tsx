@@ -101,28 +101,30 @@ export function BoardsPanel({
       <div className="boards-panel__grid">
         <button
           type="button"
-          className="board-card board-card--create"
+          className="asset-card board-card board-card--create"
           data-testid="board-create"
           onClick={onCreateBoard}
         >
-          <div className="board-card__icon board-card__icon--create">
-            <PlusIcon />
+          <div className="asset-card__row">
+            <div className="asset-card__icon board-card__icon--create">
+              <PlusIcon />
+            </div>
+
+            <div className="asset-card__row-body">
+              <strong className="board-card__name">新建工程</strong>
+              <span className="board-card__desc">
+                从空白工作流开始，立即生成可保存、可快照、可回滚的新工程。
+              </span>
+            </div>
           </div>
 
-          <div className="board-card__body">
-            <strong className="board-card__name">新建工程</strong>
-            <span className="board-card__desc">
-              从空白工作流开始，立即生成可保存、可快照、可回滚的新工程。
-            </span>
+          <div className="asset-card__chips">
+            <span className="asset-card__chip board-card__chip--create">空白模板</span>
+            <span className="asset-card__chip board-card__chip--create">本地持久化</span>
           </div>
 
-          <div className="board-card__chips">
-            <span className="board-card__chip board-card__chip--create">空白模板</span>
-            <span className="board-card__chip board-card__chip--create">本地持久化</span>
-          </div>
-
-          <div className="board-card__footer">
-            <span className="board-card__meta">
+          <div className="asset-card__footer">
+            <span className="asset-card__meta">
               {boards.length === 0 ? '当前还没有工程' : '从这里开始新的工程'}
             </span>
           </div>
@@ -139,7 +141,7 @@ export function BoardsPanel({
           boards.map((board) => (
             <article
               key={board.id}
-              className="board-card board-card--entry"
+              className="asset-card board-card board-card--entry"
               data-testid="board-entry"
               role="button"
               tabIndex={0}
@@ -147,31 +149,33 @@ export function BoardsPanel({
               onClick={() => onOpenBoard(board)}
               onKeyDown={(event) => handleBoardKeyDown(event, board)}
             >
-              <div className="board-card__icon">
-                <CanvasIcon />
+              <div className="asset-card__row">
+                <div className="asset-card__icon">
+                  <CanvasIcon />
+                </div>
+
+                <div className="asset-card__row-body">
+                  <strong className="board-card__name">{board.name}</strong>
+                  <span className="board-card__desc">{board.description}</span>
+                </div>
               </div>
 
-              <div className="board-card__body">
-                <strong className="board-card__name">{board.name}</strong>
-                <span className="board-card__desc">{board.description}</span>
-              </div>
-
-              <div className="board-card__chips">
-                <span className="board-card__chip">{`${board.nodeCount} 节点`}</span>
-                <span className="board-card__chip">{`${board.snapshotCount} 版本`}</span>
-                <span className="board-card__chip">{`${board.environmentCount} 环境`}</span>
-                <span className="board-card__chip">{board.environmentName}</span>
+              <div className="asset-card__chips">
+                <span className="asset-card__chip">{`${board.nodeCount} 节点`}</span>
+                <span className="asset-card__chip">{`${board.snapshotCount} 版本`}</span>
+                <span className="asset-card__chip">{`${board.environmentCount} 环境`}</span>
+                <span className="asset-card__chip">{board.environmentName}</span>
               </div>
 
               {board.migrationNote ? (
                 <div className="board-card__migration">{board.migrationNote}</div>
               ) : null}
 
-              <div className="board-card__footer">
-                <span className="board-card__meta">{board.updatedAt}</span>
+              <div className="asset-card__footer">
+                <span className="asset-card__meta">{board.updatedAt}</span>
                 <button
                   type="button"
-                  className="board-card__delete"
+                  className="asset-card__delete"
                   aria-label={`删除工程 ${board.name}`}
                   title={`删除工程 ${board.name}`}
                   data-testid="board-delete"

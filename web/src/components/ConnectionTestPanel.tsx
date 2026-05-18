@@ -102,12 +102,12 @@ export function ConnectionTestPanel({
             {runtimeState.label}
           </span>
           {runtimeState.health?.lastLatencyMs ? (
-            <span className="connection-card__tag">
+            <span className="asset-card__chip">
               最近链路 {runtimeState.health.lastLatencyMs} ms
             </span>
           ) : null}
           {runtimeState.health?.consecutiveFailures ? (
-            <span className="connection-card__tag">
+            <span className="asset-card__chip">
               连续失败 {runtimeState.health.consecutiveFailures}
             </span>
           ) : null}
@@ -118,28 +118,28 @@ export function ConnectionTestPanel({
         </p>
 
         <div className="connection-health-panel__metrics">
-          <span className="connection-card__tag">
+          <span className="asset-card__chip">
             最近心跳 {formatHealthTimestamp(runtimeState.health?.lastHeartbeatAt) ?? '--'}
           </span>
-          <span className="connection-card__tag">
+          <span className="asset-card__chip">
             最近失败 {formatHealthTimestamp(runtimeState.health?.lastFailureAt) ?? '--'}
           </span>
-          <span className="connection-card__tag">
+          <span className="asset-card__chip">
             超时 {runtimeState.health?.timeoutCount ?? 0}
           </span>
-          <span className="connection-card__tag">
+          <span className="asset-card__chip">
             限流 {runtimeState.health?.rateLimitHits ?? 0}
           </span>
-          <span className="connection-card__tag">
+          <span className="asset-card__chip">
             重连 {runtimeState.health?.reconnectAttempts ?? 0}
           </span>
           {runtimeState.health?.nextRetryAt ? (
-            <span className="connection-card__tag">
+            <span className="asset-card__chip">
               下次重试 {formatHealthTimestamp(runtimeState.health.nextRetryAt)}
             </span>
           ) : null}
           {runtimeState.health?.circuitOpenUntil ? (
-            <span className="connection-card__tag">
+            <span className="asset-card__chip">
               熔断至 {formatHealthTimestamp(runtimeState.health.circuitOpenUntil)}
             </span>
           ) : null}
@@ -173,7 +173,7 @@ export function ConnectionTestPanel({
         <section className="connection-bound-devices" aria-label="绑定设备列表">
           <div className="connection-bound-devices__head">
             <strong>绑定设备</strong>
-            <span className="connection-card__tag">{boundDevices.length}</span>
+            <span className="asset-card__chip">{boundDevices.length}</span>
           </div>
           <ul className="connection-bound-devices__list">
             {boundDevices.map((device) => (

@@ -1,0 +1,135 @@
+/* ── 三卡片共享基础样式（看板 / 设备 / 连接） ── */
+
+/* ── 容器 ── */
+
+.asset-card {
+  position: relative;
+  height: 160px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  background:
+    radial-gradient(circle at 18% 12%, var(--accent-soft), transparent 34%),
+    linear-gradient(180deg, var(--panel-strong), var(--panel));
+  box-shadow: none;
+  overflow: hidden;
+  transition:
+    border-color 180ms ease,
+    transform 180ms ease;
+}
+
+.asset-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(120deg, rgba(var(--accent-rgb) / 0.12), transparent 46%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 180ms ease;
+}
+
+.asset-card:hover {
+  transform: translateY(-1px);
+}
+
+.asset-card:hover::before {
+  opacity: 1;
+}
+
+/* ── 图标 + 正文同行 ── */
+
+.asset-card__row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.asset-card__row-body {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ── 图标 ── */
+
+.asset-card__icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-md);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  flex-shrink: 0;
+}
+
+.asset-card__icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* ── 标签 ── */
+
+.asset-card__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.asset-card__chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--surface-muted);
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.asset-card__chip--accent {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* ── 底栏 ── */
+
+.asset-card__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.asset-card__meta {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+/* ── 删除按钮 ── */
+
+.asset-card__delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: #d44;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.asset-card__delete svg {
+  width: 15px;
+  height: 15px;
+}
+
+.asset-card__delete:hover,
+.asset-card__delete:focus-visible {
+  opacity: 0.7;
+}
+
+.asset-card__delete:focus-visible {
+  outline: none;
+}

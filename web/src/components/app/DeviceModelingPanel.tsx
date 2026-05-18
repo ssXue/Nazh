@@ -174,7 +174,7 @@ export function DeviceModelingPanel({
             <SpotlightCard
               as="article"
               key={asset.id}
-              className="dm-card"
+              className="asset-card dm-card"
               role="button"
               tabIndex={0}
               onClick={() => void handleOpenDetail(asset.id)}
@@ -186,11 +186,11 @@ export function DeviceModelingPanel({
               }}
               spotlightColor="rgba(74, 114, 201, 0.06)"
             >
-              <div className="dm-card-row">
-                <div className="board-card__icon">
+              <div className="asset-card__row">
+                <div className="asset-card__icon">
                   <DeviceIcon />
                 </div>
-                <div className="board-card__body">
+                <div className="asset-card__row-body">
                   <strong className="board-card__name" title={asset.name}>{asset.name}</strong>
                   <span className="board-card__desc">{asset.device_type}</span>
                 </div>
@@ -217,16 +217,16 @@ export function DeviceModelingPanel({
                 </select>
               </div>
 
-              <div className="board-card__chips">
-                <span className="board-card__chip">{asset.device_type}</span>
-                <span className="board-card__chip">{`${asset.version} 个快照`}</span>
+              <div className="asset-card__chips">
+                <span className="asset-card__chip">{asset.device_type}</span>
+                <span className="asset-card__chip">{`${asset.version} 个快照`}</span>
               </div>
 
-              <div className="board-card__footer">
-                <span className="board-card__meta">{formatRelativeTimestamp(asset.updated_at)}</span>
+              <div className="asset-card__footer">
+                <span className="asset-card__meta">{formatRelativeTimestamp(asset.updated_at)}</span>
                 <button
                   type="button"
-                  className="board-card__delete"
+                  className="asset-card__delete"
                   aria-label={`删除设备 ${asset.name}`}
                   title={`删除设备 ${asset.name}`}
                   onClick={(e) => {
