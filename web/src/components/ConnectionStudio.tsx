@@ -11,6 +11,7 @@
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 
@@ -44,7 +45,7 @@ import type { ConnectionTemplate } from './connection-studio-utils';
 // 从拆分子组件导入
 import { ConnectionCardGrid } from './ConnectionCard';
 import { ConnectionForm } from './ConnectionForm';
-import { ConnectionTestPanel } from './ConnectionTestPanel';
+import { ConnectionSettingsContext, ConnectionSettingsHeader } from './ConnectionTestPanel';
 import { DeleteActionIcon } from './app/AppIcons';
 
 import type { ConnectionStudioProps } from './connection-utils';
@@ -85,7 +86,6 @@ export function ConnectionStudio({
     );
   }, [connections]);
 
-  const [idDrafts, setIdDrafts] = useState<Record<string, string>>({});
   const [metadataDrafts, setMetadataDrafts] = useState<Record<string, string>>({});
   const [metadataErrors, setMetadataErrors] = useState<Record<string, string>>({});
   const [activeConnectionIndex, setActiveConnectionIndex] = useState<number | null>(null);
@@ -96,8 +96,24 @@ export function ConnectionStudio({
   const [isScanningInterfaces, setIsScanningInterfaces] = useState(false);
   const [testResult, setTestResult] = useState<TestSerialResult | null>(null);
   const [isTesting, setIsTesting] = useState(false);
-  const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
   const [isResettingCircuit, setIsResettingCircuit] = useState(false);
+  const settingsPanelRef = useRef<HTMLElement>(null);
+
+  // ---- 副作用：点击面板外部关闭 ----
+  useEffect(() => {
+    if (activeConnectionIndex === null) {
+      return;
+    }
+
+    function handleClickOutside(event: MouseEvent) {
+      if (settingsPanelRef.current && !settingsPanelRef.current.contains(event.target as Node)) {
+        setActiveConnectionIndex(null);
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [activeConnectionIndex]);
 
   // ---- 副作用：初始化草案 ----
   useEffect(() => {
@@ -105,11 +121,6 @@ export function ConnectionStudio({
       return;
     }
 
-    setIdDrafts(
-      Object.fromEntries(
-        connections.map((connection, index) => [connectionKey(index), connection.id]),
-      ),
-    );
     setMetadataDrafts(
       Object.fromEntries(
         connections.map((connection, index) => [
@@ -310,43 +321,6 @@ export function ConnectionStudio({
       }
       return current > index ? current - 1 : current;
     });
-  }
-
-  function handleTypeChange(index: number, value: string) {
-    const nextConnections = connections.map((connection, connectionIndex) =>
-      connectionIndex === index
-        ? {
-            ...connection,
-            type: value,
-          }
-        : connection,
-    );
-
-    saveConnections(nextConnections, '连接类型已更新。');
-  }
-
-  function commitConnectionId(index: number) {
-    const currentConnection = connections[index];
-    if (!currentConnection) {
-      return;
-    }
-
-    const draftKey = connectionKey(index);
-    const nextId = (idDrafts[draftKey] ?? currentConnection.id).trim();
-    if (nextId === currentConnection.id) {
-      return;
-    }
-
-    const nextConnections = connections.map((connection, connectionIndex) =>
-      connectionIndex === index
-        ? {
-            ...connection,
-            id: nextId,
-          }
-        : connection,
-    );
-
-    saveConnections(nextConnections, `连接 ID 已更新为 ${nextId || '空值'}。`);
   }
 
   function handleMetadataChange(index: number, value: string) {
@@ -600,95 +574,115 @@ export function ConnectionStudio({
           }
           overlay={activeConnection && activeConnectionIndex !== null ? (
             <section
+              ref={settingsPanelRef}
               className="connection-settings-panel"
               role="dialog"
               aria-modal="true"
               aria-label="连接资源设置"
             >
-              <ConnectionTestPanel
-                connection={activeConnection}
-                connectionIndex={activeConnectionIndex}
-                runtimeConnection={activeRuntimeConnection}
-                devicesByConnectionId={devicesByConnectionId}
-                onClose={() => setActiveConnectionIndex(null)}
-                healthCallbacks={{
-                  handleTestConnection,
-                  handleResetCircuitBreaker,
-                  isTesting,
-                  isResettingCircuit,
-                  testResult,
-                }}
-              />
+              <div className="connection-settings-panel__layout">
+                {/* 左列：header + 表单 */}
+                <div className="connection-settings-panel__left">
+                  <ConnectionSettingsHeader
+                    connection={activeConnection}
+                    connectionIndex={activeConnectionIndex}
+                    runtimeConnection={activeRuntimeConnection}
+                    devicesByConnectionId={devicesByConnectionId}
+                    onClose={() => setActiveConnectionIndex(null)}
+                    healthCallbacks={{
+                      handleTestConnection,
+                      handleResetCircuitBreaker,
+                      isTesting,
+                      isResettingCircuit,
+                      testResult,
+                    }}
+                  />
 
-              <ConnectionForm
-                connection={activeConnection}
-                connectionIndex={activeConnectionIndex}
-                draftKey={activeDraftKey}
-                idDrafts={idDrafts}
-                metadataDrafts={metadataDrafts}
-                isAdvancedOpen={isAdvancedOpen}
-                setIsAdvancedOpen={setIsAdvancedOpen}
-                callbacks={{
-                  setIdDrafts,
-                  commitConnectionId,
-                  handleTypeChange,
-                  handleMetadataFieldChange,
-                  handleGovernanceFieldChange,
-                  handleMetadataChange,
-                  handlePortPathChange,
-                  handleBaudRateChange,
-                  handleRefreshPorts,
-                  handleRefreshInterfaces,
-                  scannedPorts,
-                  isScanningPorts,
-                  scannedInterfaces,
-                  isScanningInterfaces,
-                }}
-              />
+                  <ConnectionForm
+                    connection={activeConnection}
+                    connectionIndex={activeConnectionIndex}
+                    draftKey={activeDraftKey}
+                    metadataDrafts={metadataDrafts}
+                    callbacks={{
+                      handleMetadataFieldChange,
+                      handleGovernanceFieldChange,
+                      handleMetadataChange,
+                      handlePortPathChange,
+                      handleBaudRateChange,
+                      handleRefreshPorts,
+                      handleRefreshInterfaces,
+                      scannedPorts,
+                      isScanningPorts,
+                      scannedInterfaces,
+                      isScanningInterfaces,
+                    }}
+                  />
+                </div>
 
-              {duplicateConnectionIds.has(activeConnection.id.trim()) ? (
-                <p className="connection-card__error">
-                  当前连接 ID 与其他连接重复，部署前建议修正为唯一值。
-                </p>
-              ) : null}
+                {/* 右列：健康 + 设备 + notes + 操作 */}
+                <aside className="connection-settings-panel__right">
+                  <ConnectionSettingsContext
+                    connection={activeConnection}
+                    connectionIndex={activeConnectionIndex}
+                    runtimeConnection={activeRuntimeConnection}
+                    devicesByConnectionId={devicesByConnectionId}
+                    onClose={() => setActiveConnectionIndex(null)}
+                    healthCallbacks={{
+                      handleTestConnection,
+                      handleResetCircuitBreaker,
+                      isTesting,
+                      isResettingCircuit,
+                      testResult,
+                    }}
+                  />
 
-              {activeMetadataError ? (
-                <p className="connection-card__error">
-                  Metadata JSON 暂未同步: {activeMetadataError}
-                </p>
-              ) : (
-                <p className="connection-card__hint">
-                  {activeUsage.nodeIds.length > 0
-                    ? `引用工程: ${activeUsage.projectNames.join(', ')} · 节点: ${activeUsage.nodeIds.join(', ')}`
-                    : '还没有节点通过 connection_id 绑定到这个连接。'}
-                </p>
-              )}
+                  <div className="flowgram-notes">
+                    {duplicateConnectionIds.has(activeConnection.id.trim()) ? (
+                      <article className="flowgram-note flowgram-note--danger">
+                        当前连接 ID 与其他连接重复，部署前建议修正为唯一值。
+                      </article>
+                    ) : null}
 
-              {isSerialConnectionType(activeConnection.type) && testResult !== null ? (
-                <p className={`serial-test-result ${testResult.ok ? 'is-ok' : 'is-error'}`}>
-                  {testResult.message}
-                </p>
-              ) : null}
+                    {activeMetadataError ? (
+                      <article className="flowgram-note flowgram-note--danger">
+                        Metadata JSON 暂未同步: {activeMetadataError}
+                      </article>
+                    ) : null}
 
-              <div className="connection-settings-panel__footer">
-                {isDeletePending ? (
-                  <button
-                    type="button"
-                    className="ghost"
-                    onClick={() => setPendingDeleteIndex(null)}
-                  >
-                    取消
-                  </button>
-                ) : null}
-                <button
-                  type="button"
-                  className={`ghost connection-card__delete ${isDeletePending ? 'is-pending' : ''}`}
-                  data-testid="connection-delete"
-                  onClick={() => handleRemoveConnection(activeConnectionIndex)}
-                >
-                  <DeleteActionIcon />
-                  {isDeletePending ? '确认删除' : '删除连接'}
-                </button>
+                    <article className={`flowgram-note flowgram-note--${activeUsage.nodeIds.length > 0 ? 'info' : 'warning'}`}>
+                      {activeUsage.nodeIds.length > 0
+                        ? `引用工程: ${activeUsage.projectNames.join(', ')} · 节点: ${activeUsage.nodeIds.join(', ')}`
+                        : '还没有节点通过 connection_id 绑定到这个连接。'}
+                    </article>
+
+                    {isSerialConnectionType(activeConnection.type) && testResult !== null ? (
+                      <article className={`flowgram-note flowgram-note--${testResult.ok ? 'info' : 'danger'}`}>
+                        {testResult.message}
+                      </article>
+                    ) : null}
+                  </div>
+
+                  <div className="connection-settings-panel__footer">
+                    {isDeletePending ? (
+                      <button
+                        type="button"
+                        className="ghost"
+                        onClick={() => setPendingDeleteIndex(null)}
+                      >
+                        取消
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      className={`ghost connection-card__delete ${isDeletePending ? 'is-pending' : ''}`}
+                      data-testid="connection-delete"
+                      onClick={() => handleRemoveConnection(activeConnectionIndex)}
+                    >
+                      <DeleteActionIcon />
+                      {isDeletePending ? '确认删除' : '删除连接'}
+                    </button>
+                  </div>
+                </aside>
               </div>
             </section>
           ) : <div />}

@@ -1,8 +1,9 @@
 /**
  * 连接编辑表单组件。
  *
- * 负责渲染连接 ID、协议类型、串口/CAN/EtherCAT/HTTP/Bark 参数、
+ * 渲染协议参数（串口/CAN/EtherCAT/HTTP/Bark）、
  * 连接健康治理字段以及 Metadata JSON 编辑器。
+ * 连接 ID 和协议类型已收归 header 只读展示，不在此表单中编辑。
  */
 
 import type { ConnectionDefinition, JsonValue } from '../types';
@@ -33,10 +34,7 @@ export interface ConnectionFormProps {
   connection: ConnectionDefinition;
   connectionIndex: number;
   draftKey: string;
-  idDrafts: Record<string, string>;
   metadataDrafts: Record<string, string>;
-  isAdvancedOpen: boolean;
-  setIsAdvancedOpen: (value: boolean) => void;
   callbacks: ConnectionFormCallbacks;
 }
 
@@ -48,16 +46,10 @@ export function ConnectionForm({
   connection,
   connectionIndex,
   draftKey,
-  idDrafts,
   metadataDrafts,
-  isAdvancedOpen,
-  setIsAdvancedOpen,
   callbacks,
 }: ConnectionFormProps) {
   const {
-    setIdDrafts,
-    commitConnectionId,
-    handleTypeChange,
     handleMetadataFieldChange,
     handleGovernanceFieldChange,
     handleMetadataChange,
@@ -73,41 +65,6 @@ export function ConnectionForm({
 
   return (
     <div className="connection-form connection-settings-panel__form">
-      {/* 连接 ID */}
-      <label>
-        <span>连接 ID</span>
-        <input
-          value={idDrafts[draftKey] ?? connection.id}
-          onChange={(event) =>
-            setIdDrafts((current) => ({
-              ...current,
-              [draftKey]: event.target.value,
-            }))
-          }
-          onBlur={() => commitConnectionId(connectionIndex)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') {
-              event.preventDefault();
-              commitConnectionId(connectionIndex);
-              event.currentTarget.blur();
-            }
-          }}
-          placeholder="例如 plc_main"
-        />
-      </label>
-
-      {/* 协议类型 */}
-      <label>
-        <span>协议类型</span>
-        <input
-          value={connection.type}
-          onChange={(event) =>
-            handleTypeChange(connectionIndex, event.target.value)
-          }
-          placeholder="例如 modbus / mqtt / http"
-        />
-      </label>
-
       {/* 串口参数 */}
       {isSerialConnectionType(connection.type) ? (
         <SerialFields
@@ -119,8 +76,6 @@ export function ConnectionForm({
           handleRefreshPorts={handleRefreshPorts}
           scannedPorts={scannedPorts}
           isScanningPorts={isScanningPorts}
-          isAdvancedOpen={isAdvancedOpen}
-          setIsAdvancedOpen={setIsAdvancedOpen}
         />
       ) : null}
 
@@ -166,30 +121,32 @@ export function ConnectionForm({
         />
       ) : null}
 
-      {/* 连接健康治理 */}
+      <hr className="flowgram-form__divider" />
+
+      {/* 连接健康治理（折叠） */}
       <GovernanceFields
         connection={connection}
         connectionIndex={connectionIndex}
         handleGovernanceFieldChange={handleGovernanceFieldChange}
       />
 
-      {/* Metadata JSON */}
-      <label className="connection-form__metadata">
-        <span>
-          {isSerialConnectionType(connection.type)
-            ? '高级 Metadata JSON'
-            : 'Metadata JSON'}
-        </span>
-        <textarea
-          value={
-            metadataDrafts[draftKey] ?? JSON.stringify(connection.metadata ?? {}, null, 2)
-          }
-          onChange={(event) =>
-            handleMetadataChange(connectionIndex, event.target.value)
-          }
-          spellCheck={false}
-        />
-      </label>
+      {/* Metadata JSON（折叠） */}
+      <details className="flowgram-advanced-section">
+        <summary className="flowgram-advanced-section__toggle">Metadata JSON</summary>
+        <div className="flowgram-advanced-section__body">
+          <label className="connection-form__metadata">
+            <textarea
+              value={
+                metadataDrafts[draftKey] ?? JSON.stringify(connection.metadata ?? {}, null, 2)
+              }
+              onChange={(event) =>
+                handleMetadataChange(connectionIndex, event.target.value)
+              }
+              spellCheck={false}
+            />
+          </label>
+        </div>
+      </details>
     </div>
   );
 }
@@ -207,8 +164,6 @@ interface SerialFieldsProps {
   handleRefreshPorts: () => void;
   scannedPorts: import('../lib/tauri').SerialPortInfo[];
   isScanningPorts: boolean;
-  isAdvancedOpen: boolean;
-  setIsAdvancedOpen: (value: boolean) => void;
 }
 
 function SerialFields({
@@ -220,8 +175,6 @@ function SerialFields({
   handleRefreshPorts,
   scannedPorts,
   isScanningPorts,
-  isAdvancedOpen,
-  setIsAdvancedOpen,
 }: SerialFieldsProps) {
   return (
     <>
@@ -343,18 +296,9 @@ function SerialFields({
         </select>
       </label>
 
-      <div className="serial-advanced-toggle">
-        <button
-          type="button"
-          className="ghost"
-          onClick={() => setIsAdvancedOpen(!isAdvancedOpen)}
-        >
-          {isAdvancedOpen ? '收起高级设置' : '高级设置'}
-        </button>
-      </div>
-
-      {isAdvancedOpen ? (
-        <>
+      <details className="flowgram-advanced-section">
+        <summary className="flowgram-advanced-section__toggle">高级串口设置</summary>
+        <div className="flowgram-advanced-section__body">
           <label>
             <span>帧分隔符</span>
             <input
@@ -427,8 +371,8 @@ function SerialFields({
               <option value="false">否</option>
             </select>
           </label>
-        </>
-      ) : null}
+        </div>
+      </details>
     </>
   );
 }
@@ -835,198 +779,197 @@ function GovernanceFields({
   handleGovernanceFieldChange,
 }: GovernanceFieldsProps) {
   return (
-    <>
-      <div className="connection-form__section connection-form__section--full">
-        <strong className="connection-form__section-title">连接健康治理</strong>
+    <details className="flowgram-advanced-section">
+      <summary className="flowgram-advanced-section__toggle">连接健康治理</summary>
+      <div className="flowgram-advanced-section__body">
+        <label>
+          <span>建连超时 ms</span>
+          <input
+            type="number"
+            value={governanceNumber(connection.metadata, 'connect_timeout_ms')}
+            onChange={(event) =>
+              handleGovernanceFieldChange(
+                connectionIndex,
+                'connect_timeout_ms',
+                parseMetadataNumber(
+                  event.target.value,
+                  DEFAULT_CONNECTION_GOVERNANCE.connect_timeout_ms,
+                ),
+              )
+            }
+          />
+        </label>
+        <label>
+          <span>操作超时 ms</span>
+          <input
+            type="number"
+            value={governanceNumber(connection.metadata, 'operation_timeout_ms')}
+            onChange={(event) =>
+              handleGovernanceFieldChange(
+                connectionIndex,
+                'operation_timeout_ms',
+                parseMetadataNumber(
+                  event.target.value,
+                  DEFAULT_CONNECTION_GOVERNANCE.operation_timeout_ms,
+                ),
+              )
+            }
+          />
+        </label>
+        <label>
+          <span>心跳间隔 ms</span>
+          <input
+            type="number"
+            value={governanceNumber(connection.metadata, 'heartbeat_interval_ms')}
+            onChange={(event) =>
+              handleGovernanceFieldChange(
+                connectionIndex,
+                'heartbeat_interval_ms',
+                parseMetadataNumber(
+                  event.target.value,
+                  DEFAULT_CONNECTION_GOVERNANCE.heartbeat_interval_ms,
+                ),
+              )
+            }
+          />
+        </label>
+        <label>
+          <span>心跳超时 ms</span>
+          <input
+            type="number"
+            value={governanceNumber(connection.metadata, 'heartbeat_timeout_ms')}
+            onChange={(event) =>
+              handleGovernanceFieldChange(
+                connectionIndex,
+                'heartbeat_timeout_ms',
+                parseMetadataNumber(
+                  event.target.value,
+                  DEFAULT_CONNECTION_GOVERNANCE.heartbeat_timeout_ms,
+                ),
+              )
+            }
+          />
+        </label>
+        <label>
+          <span>限流次数</span>
+          <input
+            type="number"
+            value={governanceNumber(connection.metadata, 'rate_limit_max_attempts')}
+            onChange={(event) =>
+              handleGovernanceFieldChange(
+                connectionIndex,
+                'rate_limit_max_attempts',
+                parseMetadataNumber(
+                  event.target.value,
+                  DEFAULT_CONNECTION_GOVERNANCE.rate_limit_max_attempts,
+                ),
+              )
+            }
+          />
+        </label>
+        <label>
+          <span>限流窗口 ms</span>
+          <input
+            type="number"
+            value={governanceNumber(connection.metadata, 'rate_limit_window_ms')}
+            onChange={(event) =>
+              handleGovernanceFieldChange(
+                connectionIndex,
+                'rate_limit_window_ms',
+                parseMetadataNumber(
+                  event.target.value,
+                  DEFAULT_CONNECTION_GOVERNANCE.rate_limit_window_ms,
+                ),
+              )
+            }
+          />
+        </label>
+        <label>
+          <span>限流冷却 ms</span>
+          <input
+            type="number"
+            value={governanceNumber(connection.metadata, 'rate_limit_cooldown_ms')}
+            onChange={(event) =>
+              handleGovernanceFieldChange(
+                connectionIndex,
+                'rate_limit_cooldown_ms',
+                parseMetadataNumber(
+                  event.target.value,
+                  DEFAULT_CONNECTION_GOVERNANCE.rate_limit_cooldown_ms,
+                ),
+              )
+            }
+          />
+        </label>
+        <label>
+          <span>熔断阈值</span>
+          <input
+            type="number"
+            value={governanceNumber(connection.metadata, 'circuit_failure_threshold')}
+            onChange={(event) =>
+              handleGovernanceFieldChange(
+                connectionIndex,
+                'circuit_failure_threshold',
+                parseMetadataNumber(
+                  event.target.value,
+                  DEFAULT_CONNECTION_GOVERNANCE.circuit_failure_threshold,
+                ),
+              )
+            }
+          />
+        </label>
+        <label>
+          <span>熔断冷却 ms</span>
+          <input
+            type="number"
+            value={governanceNumber(connection.metadata, 'circuit_open_ms')}
+            onChange={(event) =>
+              handleGovernanceFieldChange(
+                connectionIndex,
+                'circuit_open_ms',
+                parseMetadataNumber(
+                  event.target.value,
+                  DEFAULT_CONNECTION_GOVERNANCE.circuit_open_ms,
+                ),
+              )
+            }
+          />
+        </label>
+        <label>
+          <span>重连基准 ms</span>
+          <input
+            type="number"
+            value={governanceNumber(connection.metadata, 'reconnect_base_ms')}
+            onChange={(event) =>
+              handleGovernanceFieldChange(
+                connectionIndex,
+                'reconnect_base_ms',
+                parseMetadataNumber(
+                  event.target.value,
+                  DEFAULT_CONNECTION_GOVERNANCE.reconnect_base_ms,
+                ),
+              )
+            }
+          />
+        </label>
+        <label>
+          <span>重连上限 ms</span>
+          <input
+            type="number"
+            value={governanceNumber(connection.metadata, 'reconnect_max_ms')}
+            onChange={(event) =>
+              handleGovernanceFieldChange(
+                connectionIndex,
+                'reconnect_max_ms',
+                parseMetadataNumber(
+                  event.target.value,
+                  DEFAULT_CONNECTION_GOVERNANCE.reconnect_max_ms,
+                ),
+              )
+            }
+          />
+        </label>
       </div>
-
-      <label>
-        <span>建连超时 ms</span>
-        <input
-          type="number"
-          value={governanceNumber(connection.metadata, 'connect_timeout_ms')}
-          onChange={(event) =>
-            handleGovernanceFieldChange(
-              connectionIndex,
-              'connect_timeout_ms',
-              parseMetadataNumber(
-                event.target.value,
-                DEFAULT_CONNECTION_GOVERNANCE.connect_timeout_ms,
-              ),
-            )
-          }
-        />
-      </label>
-      <label>
-        <span>操作超时 ms</span>
-        <input
-          type="number"
-          value={governanceNumber(connection.metadata, 'operation_timeout_ms')}
-          onChange={(event) =>
-            handleGovernanceFieldChange(
-              connectionIndex,
-              'operation_timeout_ms',
-              parseMetadataNumber(
-                event.target.value,
-                DEFAULT_CONNECTION_GOVERNANCE.operation_timeout_ms,
-              ),
-            )
-          }
-        />
-      </label>
-      <label>
-        <span>心跳间隔 ms</span>
-        <input
-          type="number"
-          value={governanceNumber(connection.metadata, 'heartbeat_interval_ms')}
-          onChange={(event) =>
-            handleGovernanceFieldChange(
-              connectionIndex,
-              'heartbeat_interval_ms',
-              parseMetadataNumber(
-                event.target.value,
-                DEFAULT_CONNECTION_GOVERNANCE.heartbeat_interval_ms,
-              ),
-            )
-          }
-        />
-      </label>
-      <label>
-        <span>心跳超时 ms</span>
-        <input
-          type="number"
-          value={governanceNumber(connection.metadata, 'heartbeat_timeout_ms')}
-          onChange={(event) =>
-            handleGovernanceFieldChange(
-              connectionIndex,
-              'heartbeat_timeout_ms',
-              parseMetadataNumber(
-                event.target.value,
-                DEFAULT_CONNECTION_GOVERNANCE.heartbeat_timeout_ms,
-              ),
-            )
-          }
-        />
-      </label>
-      <label>
-        <span>限流次数</span>
-        <input
-          type="number"
-          value={governanceNumber(connection.metadata, 'rate_limit_max_attempts')}
-          onChange={(event) =>
-            handleGovernanceFieldChange(
-              connectionIndex,
-              'rate_limit_max_attempts',
-              parseMetadataNumber(
-                event.target.value,
-                DEFAULT_CONNECTION_GOVERNANCE.rate_limit_max_attempts,
-              ),
-            )
-          }
-        />
-      </label>
-      <label>
-        <span>限流窗口 ms</span>
-        <input
-          type="number"
-          value={governanceNumber(connection.metadata, 'rate_limit_window_ms')}
-          onChange={(event) =>
-            handleGovernanceFieldChange(
-              connectionIndex,
-              'rate_limit_window_ms',
-              parseMetadataNumber(
-                event.target.value,
-                DEFAULT_CONNECTION_GOVERNANCE.rate_limit_window_ms,
-              ),
-            )
-          }
-        />
-      </label>
-      <label>
-        <span>限流冷却 ms</span>
-        <input
-          type="number"
-          value={governanceNumber(connection.metadata, 'rate_limit_cooldown_ms')}
-          onChange={(event) =>
-            handleGovernanceFieldChange(
-              connectionIndex,
-              'rate_limit_cooldown_ms',
-              parseMetadataNumber(
-                event.target.value,
-                DEFAULT_CONNECTION_GOVERNANCE.rate_limit_cooldown_ms,
-              ),
-            )
-          }
-        />
-      </label>
-      <label>
-        <span>熔断阈值</span>
-        <input
-          type="number"
-          value={governanceNumber(connection.metadata, 'circuit_failure_threshold')}
-          onChange={(event) =>
-            handleGovernanceFieldChange(
-              connectionIndex,
-              'circuit_failure_threshold',
-              parseMetadataNumber(
-                event.target.value,
-                DEFAULT_CONNECTION_GOVERNANCE.circuit_failure_threshold,
-              ),
-            )
-          }
-        />
-      </label>
-      <label>
-        <span>熔断冷却 ms</span>
-        <input
-          type="number"
-          value={governanceNumber(connection.metadata, 'circuit_open_ms')}
-          onChange={(event) =>
-            handleGovernanceFieldChange(
-              connectionIndex,
-              'circuit_open_ms',
-              parseMetadataNumber(
-                event.target.value,
-                DEFAULT_CONNECTION_GOVERNANCE.circuit_open_ms,
-              ),
-            )
-          }
-        />
-      </label>
-      <label>
-        <span>重连基准 ms</span>
-        <input
-          type="number"
-          value={governanceNumber(connection.metadata, 'reconnect_base_ms')}
-          onChange={(event) =>
-            handleGovernanceFieldChange(
-              connectionIndex,
-              'reconnect_base_ms',
-              parseMetadataNumber(
-                event.target.value,
-                DEFAULT_CONNECTION_GOVERNANCE.reconnect_base_ms,
-              ),
-            )
-          }
-        />
-      </label>
-      <label>
-        <span>重连上限 ms</span>
-        <input
-          type="number"
-          value={governanceNumber(connection.metadata, 'reconnect_max_ms')}
-          onChange={(event) =>
-            handleGovernanceFieldChange(
-              connectionIndex,
-              'reconnect_max_ms',
-              parseMetadataNumber(
-                event.target.value,
-                DEFAULT_CONNECTION_GOVERNANCE.reconnect_max_ms,
-              ),
-            )
-          }
-        />
-      </label>
-    </>
+    </details>
   );
 }

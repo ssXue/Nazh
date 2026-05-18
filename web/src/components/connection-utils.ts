@@ -53,9 +53,6 @@ export interface ConnectionCardListContext {
 
 /** ConnectionForm 编辑表单所需的回调集合。 */
 export interface ConnectionFormCallbacks {
-  setIdDrafts: Dispatch<SetStateAction<Record<string, string>>>;
-  commitConnectionId: (index: number) => void;
-  handleTypeChange: (index: number, value: string) => void;
   handleMetadataFieldChange: (index: number, key: string, value: JsonValue) => void;
   handleGovernanceFieldChange: (
     index: number,

@@ -294,6 +294,19 @@ function normalizedConnectionType(connectionType: string): string {
   return connectionType.trim().toLowerCase();
 }
 
+/** 连接协议类型的中文显示名（用于 header badge）。 */
+export function connectionTypeLabel(connectionType: string): string {
+  const type = normalizedConnectionType(connectionType);
+  if (isSerialConnectionType(type)) { return '串口'; }
+  if (isCanConnectionType(type)) { return 'CAN'; }
+  if (isEthercatConnectionType(type)) { return 'EtherCAT'; }
+  if (isBarkConnectionType(type)) { return 'Bark'; }
+  if (type === 'modbus' || type === 'modbus_tcp') { return 'Modbus'; }
+  if (isHttpConnectionType(type)) { return 'HTTP'; }
+  if (type === 'mqtt') { return 'MQTT'; }
+  return connectionType || '连接';
+}
+
 export function isSerialConnectionType(connectionType: string): boolean {
   switch (normalizedConnectionType(connectionType)) {
     case 'serial':

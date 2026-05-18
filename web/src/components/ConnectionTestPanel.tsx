@@ -1,11 +1,8 @@
 /**
- * 连接健康面板内容组件。
+ * 连接设置面板：头部 + 右列上下文（健康、绑定设备）。
  *
- * 渲染设置面板的头部（连接名/图标/测试按钮/关闭按钮）、
- * 运行态健康状态展示、熔断器重置、绑定设备列表。
- *
- * 注意：本组件不渲染外层 <section className="connection-settings-panel">，
- * 由 ConnectionStudio 主组件提供统一包裹，以确保 DOM 结构与拆分前一致。
+ * ConnectionSettingsHeader —— 左列顶部：icon + type badge + ID pill + 操作按钮。
+ * ConnectionSettingsContext —— 右列：运行态健康状态 + 熔断器重置 + 绑定设备列表。
  */
 
 import type { DeviceAssetSummary } from '../hooks/use-device-assets';
@@ -13,18 +10,18 @@ import type { ConnectionDefinition } from '../types';
 
 import {
   connectionIconFor,
-  connectionParameterBrief,
   connectionRuntimeState,
+  connectionTypeLabel,
   formatHealthTimestamp,
   isSerialConnectionType,
 } from './connection-studio-utils';
 import type { ConnectionHealthCallbacks } from './connection-utils';
 
 // ---------------------------------------------------------------------------
-// 属性
+// 共享属性
 // ---------------------------------------------------------------------------
 
-export interface ConnectionTestPanelProps {
+interface SharedProps {
   connection: ConnectionDefinition;
   connectionIndex: number;
   runtimeConnection: import('../types').ConnectionRecord | undefined;
@@ -34,27 +31,61 @@ export interface ConnectionTestPanelProps {
 }
 
 // ---------------------------------------------------------------------------
-// 连接设置面板头部 + 健康面板 + 绑定设备
+// 左列头部
 // ---------------------------------------------------------------------------
 
-export function ConnectionTestPanel({
+export function ConnectionSettingsHeader({
   connection,
   connectionIndex,
-  runtimeConnection,
-  devicesByConnectionId,
   onClose,
   healthCallbacks,
-}: ConnectionTestPanelProps) {
-  const runtimeState = connectionRuntimeState(runtimeConnection);
+}: SharedProps) {
   const ConnectionIcon = connectionIconFor(connection.type);
+  const { handleTestConnection, isTesting, testResult } = healthCallbacks;
 
-  const {
-    handleTestConnection,
-    handleResetCircuitBreaker,
-    isTesting,
-    isResettingCircuit,
-    testResult,
-  } = healthCallbacks;
+  return (
+    <div className="connection-settings-panel__header">
+      <div className="connection-settings-panel__header-row">
+        <div className="connection-settings-panel__icon">
+          <ConnectionIcon />
+        </div>
+        <span className={`connection-type-badge connection-type-badge--${connection.type}`}>
+          {connectionTypeLabel(connection.type)}
+        </span>
+        <span
+          className="connection-header-id"
+          title="点击复制连接 ID"
+          onClick={() => { void navigator.clipboard.writeText(connection.id); }}
+        >
+          ID: {connection.id || `connection_${connectionIndex + 1}`}
+        </span>
+        {isSerialConnectionType(connection.type) ? (
+          <button
+            type="button"
+            className={`ghost ${testResult !== null && testResult.ok ? 'is-success' : ''} ${testResult !== null && !testResult.ok ? 'is-error' : ''}`}
+            onClick={handleTestConnection}
+            disabled={isTesting}
+          >
+            {isTesting ? '测试中...' : '测试连接'}
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 右列上下文：健康面板 + 绑定设备
+// ---------------------------------------------------------------------------
+
+export function ConnectionSettingsContext({
+  connection,
+  runtimeConnection,
+  devicesByConnectionId,
+  healthCallbacks,
+}: SharedProps) {
+  const runtimeState = connectionRuntimeState(runtimeConnection);
+  const { handleResetCircuitBreaker, isResettingCircuit } = healthCallbacks;
 
   const boundDevices = connection.id
     ? devicesByConnectionId?.get(connection.id) ?? []
@@ -62,38 +93,6 @@ export function ConnectionTestPanel({
 
   return (
     <>
-      {/* 面板头部 */}
-      <div className="connection-settings-panel__header">
-        <div className="connection-settings-panel__icon">
-          <ConnectionIcon />
-        </div>
-        <div>
-          <strong>
-            {connection.id || `connection_${connectionIndex + 1}`}
-          </strong>
-          <span>{connectionParameterBrief(connection)}</span>
-        </div>
-        <div className="connection-settings-panel__actions">
-          {isSerialConnectionType(connection.type) ? (
-            <button
-              type="button"
-              className={`ghost ${testResult !== null && testResult.ok ? 'is-success' : ''} ${testResult !== null && !testResult.ok ? 'is-error' : ''}`}
-              onClick={handleTestConnection}
-              disabled={isTesting}
-            >
-              {isTesting ? '测试中...' : '测试连接'}
-            </button>
-          ) : null}
-          <button
-            type="button"
-            className="connection-settings-panel__close"
-            onClick={onClose}
-          >
-            完成
-          </button>
-        </div>
-      </div>
-
       {/* 健康面板 */}
       <section className="connection-health-panel">
         <div className="connection-health-panel__headline">
