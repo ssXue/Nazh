@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { SpotlightCard } from '../animations/SpotlightCard';
 import { hasTauriRuntime } from '../../lib/tauri';
@@ -67,6 +67,7 @@ export function DeviceModelingPanel({
   const [detail, setDetail] = useState<DeviceAssetDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const detailPanelRef = useRef<HTMLDivElement>(null);
 
   const filteredAssets = useMemo(() => {
     if (!searchQuery.trim()) return assets;
@@ -102,6 +103,31 @@ export function DeviceModelingPanel({
   const handleCloseDetail = useCallback(() => {
     setDetail(null);
   }, []);
+
+  useEffect(() => {
+    if (!detail) {
+      return;
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setDetail(null);
+      }
+    }
+
+    function handleClickOutside(event: MouseEvent) {
+      if (detailPanelRef.current && !detailPanelRef.current.contains(event.target as Node)) {
+        setDetail(null);
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [detail]);
 
   const handleDelete = useCallback(
     async (id: string) => {
@@ -246,6 +272,7 @@ export function DeviceModelingPanel({
 
   const detailOverlay = detail ? (
     <DetailPanel
+      ref={detailPanelRef}
       detail={detail}
       workspacePath={workspacePath}
       connectionsById={connectionsById}
@@ -273,7 +300,7 @@ export function DeviceModelingPanel({
 }
 
 /** 设备详情子面板。 */
-function DetailPanel({
+const DetailPanel = forwardRef(function DetailPanel({
   detail,
   workspacePath,
   connectionsById,
@@ -295,7 +322,7 @@ function DetailPanel({
   onDelete: () => void;
   onStatusMessage: (msg: string) => void;
   onAddCapabilityToCanvas?: (nodeOp: import('../FlowgramCanvas').CanvasNodeOp) => void;
-}) {
+}, ref: React.Ref<HTMLDivElement>) {
   const [tab, setTab] = useState<'signals' | 'capabilities' | 'snapshots'>('signals');
   const [patching, setPatching] = useState(false);
   const { patchField } = useDeviceAssets(workspacePath);
@@ -322,7 +349,7 @@ function DetailPanel({
   const manufacturer = spec?.manufacturer as string | undefined;
 
   return (
-    <div className="dm-detail-dialog">
+    <div ref={ref} className="dm-detail-dialog">
       {/* 头部 */}
       <div className="dm-detail-header">
         <div className="dm-detail-header__left">
@@ -426,4 +453,4 @@ function DetailPanel({
       </div>
     </div>
   );
-}
+});
