@@ -12,7 +12,6 @@ import {
   DeleteActionIcon,
   SearchIcon,
   DeviceIcon,
-  BackIcon,
   ConnectionsIcon,
 } from './AppIcons';
 import { ExpandTransition } from './ExpandTransition';
@@ -279,7 +278,6 @@ export function DeviceModelingPanel({
       runtimeById={runtimeById}
       onJumpToConnection={onJumpToConnection}
       onReload={() => void handleOpenDetail(detail.id)}
-      onBack={handleCloseDetail}
       onDelete={() => void handleDelete(detail.id)}
       onStatusMessage={onStatusMessage}
       onAddCapabilityToCanvas={onAddCapabilityToCanvas}
@@ -307,7 +305,6 @@ const DetailPanel = forwardRef(function DetailPanel({
   runtimeById,
   onJumpToConnection,
   onReload,
-  onBack,
   onDelete,
   onStatusMessage,
   onAddCapabilityToCanvas,
@@ -318,7 +315,6 @@ const DetailPanel = forwardRef(function DetailPanel({
   runtimeById: Map<string, ConnectionRecord>;
   onJumpToConnection?: (connectionId: string) => void;
   onReload: () => void;
-  onBack: () => void;
   onDelete: () => void;
   onStatusMessage: (msg: string) => void;
   onAddCapabilityToCanvas?: (nodeOp: import('../FlowgramCanvas').CanvasNodeOp) => void;
@@ -353,14 +349,6 @@ const DetailPanel = forwardRef(function DetailPanel({
       {/* 头部 */}
       <div className="dm-detail-header">
         <div className="dm-detail-header__left">
-          <button
-            type="button"
-            className="dm-back-btn"
-            onClick={onBack}
-            title="返回设备列表"
-          >
-            <BackIcon />
-          </button>
           <DeviceTypeBadge type={String(spec?.type ?? detail.device_type)} />
           <div className="dm-detail-header__info">
             <EditableField
