@@ -515,6 +515,11 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
   gap: 10px;
 }
 
+.studio-content__page {
+  width: 100%;
+  min-height: 0;
+}
+
 .studio-content--panel > .panel {
   border: 0;
   border-radius: var(--radius-none);
@@ -554,6 +559,14 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
 
 .studio-content--panel
   > .studio-content__panel--scroll:has(.runtime-manager)
+  > .studio-content__page {
+  height: 100%;
+  min-height: 0;
+}
+
+.studio-content--panel
+  > .studio-content__panel--scroll:has(.runtime-manager)
+  > .studio-content__page
   > .runtime-manager {
   height: 100%;
 }

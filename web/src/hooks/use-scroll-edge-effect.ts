@@ -17,11 +17,8 @@ export function useScrollEdgeEffect<T extends HTMLElement>() {
       element.dataset.scrollActive = hasOverflow ? 'true' : 'false';
       element.dataset.scrollTop = showTopEdge ? 'true' : 'false';
       element.dataset.scrollBottom = showBottomEdge ? 'true' : 'false';
-      element.style.setProperty('--scroll-mask-top', hasOverflow && showTopEdge ? '24px' : '0px');
-      element.style.setProperty(
-        '--scroll-mask-bottom',
-        hasOverflow && showBottomEdge ? '24px' : '0px',
-      );
+      element.style.setProperty('--scroll-edge-top-opacity', showTopEdge ? '1' : '0');
+      element.style.setProperty('--scroll-edge-bottom-opacity', showBottomEdge ? '1' : '0');
     };
 
     updateScrollState();

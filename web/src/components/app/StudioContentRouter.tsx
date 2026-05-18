@@ -1,6 +1,5 @@
 import { StrictMode, useCallback, useEffect, useRef, type ReactNode, type RefObject } from 'react';
 
-import { AnimatedContent } from '../animations/AnimatedContent';
 import type { UseConnectionLibraryResult } from '../../hooks/use-connection-library';
 import type { UseProjectLibraryResult } from '../../hooks/use-project-library';
 import type { UseSettingsResult } from '../../hooks/use-settings';
@@ -27,6 +26,7 @@ import { BoardsPanel, type BoardItem } from './BoardsPanel';
 import { DashboardPanel } from './DashboardPanel';
 import { InfrastructurePanel } from './InfrastructurePanel';
 import { LogsPanel } from './LogsPanel';
+import { PanelPageShell } from './PanelPageShell';
 import { PluginPanel } from './PluginPanel';
 import { RuntimeManagerPanel } from './RuntimeManagerPanel';
 import { ScrollSurface } from './ScrollSurface';
@@ -409,7 +409,7 @@ export function StudioContentRouter({
     }
   })();
 
-  // about 页不需要 ScrollSurface/AnimatedContent 包裹，直接全屏渲染
+  // about 页不需要面板页壳包裹，直接全屏渲染
   if (section === 'about') {
     return (
       <StrictStudioPanel>
@@ -422,13 +422,7 @@ export function StudioContentRouter({
 
   return (
     <StrictStudioPanel>
-      <AnimatedContent key={section} triggerOnMount distance={20} duration={0.35}>
-        <section className="studio-content studio-content--panel">
-          <ScrollSurface className="panel studio-content__panel studio-content__panel--scroll">
-            {panel}
-          </ScrollSurface>
-        </section>
-      </AnimatedContent>
+      <PanelPageShell pageKey={section}>{panel}</PanelPageShell>
     </StrictStudioPanel>
   );
 }

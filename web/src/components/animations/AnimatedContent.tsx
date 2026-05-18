@@ -58,8 +58,11 @@ export function AnimatedContent({
       autoAlpha: animateOpacity ? initialOpacity : 1,
     });
 
+    let tween: gsap.core.Tween | null = null;
+    let scrollTrigger: ScrollTrigger | null = null;
+
     if (triggerOnMount) {
-      gsap.to(el, {
+      tween = gsap.to(el, {
         [axis]: 0,
         scale: 1,
         autoAlpha: 1,
@@ -68,14 +71,17 @@ export function AnimatedContent({
         delay,
         onComplete,
       });
-      return;
+      return () => {
+        tween?.kill();
+        gsap.killTweensOf(el);
+      };
     }
 
-    ScrollTrigger.create({
+    scrollTrigger = ScrollTrigger.create({
       trigger: el,
       start: `top ${100 - threshold * 100}%`,
       onEnter: () => {
-        gsap.to(el, {
+        tween = gsap.to(el, {
           [axis]: 0,
           scale: 1,
           autoAlpha: 1,
@@ -88,9 +94,9 @@ export function AnimatedContent({
     });
 
     return () => {
-      ScrollTrigger.getAll().forEach((st) => {
-        if (st.vars.trigger === el) st.kill();
-      });
+      tween?.kill();
+      scrollTrigger?.kill();
+      gsap.killTweensOf(el);
     };
   }, [reduced, distance, direction, reverse, duration, ease, initialOpacity, animateOpacity, scale, threshold, delay, triggerOnMount, onComplete]);
 
