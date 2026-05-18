@@ -2,7 +2,7 @@ import type { NodeSettingsProps } from '../settings-shared';
 
 export function SwitchNodeSettings({ draft, updateDraft }: NodeSettingsProps) {
   return (
-    <section className="flowgram-panel flowgram-panel--branches">
+    <section className="flowgram-panel--branches">
       <div className="flowgram-panel__header">
         <h4>分支设置</h4>
       </div>

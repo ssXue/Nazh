@@ -733,7 +733,7 @@ function FlowgramNodeSettingsPanel({
       {draft.nodeType === 'switch' ? <SwitchNodeSettings {...settingsProps} /> : null}
 
       {branchSummary.length > 0 ? (
-        <section className="flowgram-panel flowgram-panel--branches">
+        <section className="flowgram-panel--branches">
           <div className="flowgram-panel__header">
             <h4>输出分支</h4>
           </div>
