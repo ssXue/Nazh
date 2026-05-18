@@ -56,26 +56,20 @@ export function useAiConfigState() {
   };
 
   const handleAiProviderTest = async (draft: AiProviderDraft) => {
-    console.log('[ai-test] 收到 draft:', { id: draft.id, name: draft.name, hasApiKey: !!draft.apiKey, apiKeyLen: draft.apiKey?.length });
     setAiTesting(true);
     setAiTestResult(null);
     try {
       // keep 模式下 draft.apiKey 为空，需从后端补回已存 key
       let resolvedDraft = draft;
       if (!resolvedDraft.apiKey && resolvedDraft.id) {
-        console.log('[ai-test] apiKey 为空，尝试从后端加载, providerId:', resolvedDraft.id);
         const savedKey = await loadApiKey(resolvedDraft.id);
-        console.log('[ai-test] 后端返回 key 长度:', savedKey.length);
         if (savedKey) {
           resolvedDraft = { ...resolvedDraft, apiKey: savedKey };
         }
       }
-      console.log('[ai-test] 最终 draft:', { id: resolvedDraft.id, hasApiKey: !!resolvedDraft.apiKey, apiKeyLen: resolvedDraft.apiKey?.length, baseUrl: resolvedDraft.baseUrl, model: resolvedDraft.defaultModel });
       const result = await testProviderConnection(resolvedDraft);
-      console.log('[ai-test] 测试结果:', result);
       setAiTestResult(result);
     } catch (error) {
-      console.error('[ai-test] 异常:', error);
       setAiTestResult({
         success: false,
         message: describeUnknownError(error).message,
