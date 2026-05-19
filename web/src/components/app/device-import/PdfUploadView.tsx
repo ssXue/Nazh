@@ -1,0 +1,49 @@
+import { FilePdfIcon, UploadIcon } from '../AppIcons';
+
+export function PdfUploadView({
+  file,
+  dragOver,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  onFileInputChange,
+  fileInputRef,
+}: {
+  file: File | null;
+  dragOver: boolean;
+  onDragOver: (e: React.DragEvent) => void;
+  onDragLeave: () => void;
+  onDrop: (e: React.DragEvent) => void;
+  onFileInputChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  fileInputRef: React.RefObject<HTMLInputElement | null>;
+}) {
+  return (
+    <div className="dm-drawer__pdf-area">
+      <div
+        className={`dm-drawer__dropzone${dragOver ? ' is-active' : ''}${file ? ' has-file' : ''}`}
+        onDragOver={onDragOver}
+        onDragLeave={onDragLeave}
+        onDrop={onDrop}
+        onClick={() => fileInputRef.current?.click()}
+      >
+        <UploadIcon width={24} height={24} />
+        {file ? (
+          <div className="dm-drawer__file-info">
+            <FilePdfIcon width={16} height={16} />
+            <span className="dm-drawer__file-name">{file.name}</span>
+            <span className="dm-drawer__file-size">{(file.size / 1024).toFixed(0)} KB</span>
+          </div>
+        ) : (
+          <p>拖拽 PDF 文件到此处，或点击选择</p>
+        )}
+      </div>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".pdf,application/pdf"
+        hidden
+        onChange={onFileInputChange}
+      />
+    </div>
+  );
+}

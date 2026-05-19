@@ -9,6 +9,8 @@
 
 pub(crate) mod config;
 pub(crate) mod reader;
+pub(crate) mod reader_modbus;
+pub(crate) mod reader_protocols;
 #[cfg(test)]
 mod tests;
 

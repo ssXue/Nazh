@@ -15,6 +15,7 @@
 //! | `variables_init` | 部署期变量声明 → `Arc<WorkflowVariables>` 初始化器（ADR-0012）|
 
 mod deploy;
+mod edge_window;
 mod pin_validator;
 pub mod pull;
 mod runner;
