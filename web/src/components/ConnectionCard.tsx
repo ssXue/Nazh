@@ -76,15 +76,13 @@ function ConnectionCardItem({
             <span
               className={`asset-card__chip${boundDeviceCount > 0 ? ' asset-card__chip--accent' : ''}`}
             >
-              {boundDeviceCount > 0 ? `${boundDeviceCount} 设备` : '无设备绑定'}
+              {`${boundDeviceCount} 设备`}
             </span>
             <span className="asset-card__chip">
-              {usage.nodeIds.length > 0 ? `${usage.nodeIds.length} 节点` : '未绑定节点'}
+              {`${usage.nodeIds.length} 节点`}
             </span>
             <span className="asset-card__chip">
-              {usage.projectNames.length > 0
-                ? `${usage.projectNames.length} 工程`
-                : '全局可用'}
+              {`${usage.projectNames.length} 工程`}
             </span>
           </div>
         </div>
