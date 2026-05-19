@@ -517,6 +517,7 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
 
 .studio-content__page {
   width: 100%;
+  flex: 1;
   min-height: 0;
 }
 
