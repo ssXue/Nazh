@@ -38,7 +38,7 @@
     "@tauri-apps/api": "^2.10.1",
     "@tauri-apps/plugin-dialog": "^2.7.1",
     "@tauri-apps/plugin-http": "^2.5.9",
-    "ai": "^6.0.182",
+    "ai": "^6.0.188",
     "gsap": "^3.15.0",
     "js-yaml": "^4.1.1",
     "marked": "^18.0.3",
