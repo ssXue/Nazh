@@ -277,14 +277,16 @@ pub(super) fn classify_text_target(path: &[String], name: &str) -> Option<TextTa
         "Name"
             if has_parent(path, "Device")
                 && !has_parent(path, "TxPdo")
-                && !has_parent(path, "RxPdo") =>
+                && !has_parent(path, "RxPdo")
+                && !has_parent(path, "Dictionary") =>
         {
             Some(TextTarget::DeviceName)
         }
         "Type"
             if has_parent(path, "Device")
                 && !has_parent(path, "TxPdo")
-                && !has_parent(path, "RxPdo") =>
+                && !has_parent(path, "RxPdo")
+                && !has_parent(path, "Dictionary") =>
         {
             Some(TextTarget::DeviceType)
         }
@@ -724,6 +726,97 @@ mod tests {
             .unwrap()
             .id;
         assert_ne!(id_a, id_b, "不同厂商相同 ProductCode 应生成不同设备 ID");
+    }
+
+    /// 回归测试：ESI Dictionary 中 Object 的 `<Type>DTF000</Type>` 不应覆盖设备型号。
+    ///
+    /// 背景：ZLG ZLG_ECAT_IO.xml 的 `<Dictionary>/<Objects>/<Object>` 包含
+    /// `<Type>DTF000</Type>`（对象 0xF000 的 DataType 引用），路径满足
+    /// `has_parent(path, "Device")` 且不在 TxPdo/RxPdo 下，会被错误匹配为
+    /// `TextTarget::DeviceType`，覆盖真正的 `<Type ProductCode="...">ZLG_ECAT_IO</Type>`。
+    /// 修复：在 `classify_text_target` 的 DeviceType/DeviceName 匹配中增加
+    /// `!has_parent(path, "Dictionary")` 条件。
+    #[test]
+    fn esi_dictionary_内的_type_name_不覆盖设备型号() {
+        let esi = r##"
+<EtherCATInfo>
+  <Vendor>
+    <Id>#x00201811</Id>
+    <Name>ZLG</Name>
+  </Vendor>
+  <Descriptions>
+    <Devices>
+      <Device Physics="YY">
+        <Type ProductCode="#x00000001" RevisionNo="#x00000001">ZLG_ECAT_IO</Type>
+        <Name>ZLG_ECAT_IO</Name>
+        <Profile>
+          <Dictionary>
+            <DataTypes>
+              <DataType>
+                <Name>DTF000</Name>
+                <BitSize>48</BitSize>
+                <SubItem>
+                  <SubIdx>0</SubIdx>
+                  <Name>SubIndex 000</Name>
+                  <Type>USINT</Type>
+                  <BitSize>8</BitSize>
+                  <BitOffs>0</BitOffs>
+                </SubItem>
+              </DataType>
+            </DataTypes>
+            <Objects>
+              <Object>
+                <Index>#xF000</Index>
+                <Name>Modular Device Profile</Name>
+                <Type>DTF000</Type>
+                <BitSize>48</BitSize>
+              </Object>
+            </Objects>
+          </Dictionary>
+        </Profile>
+        <RxPdo>
+          <Index>#x1600</Index>
+          <Name>PDOChannel</Name>
+          <Entry>
+            <Index>#x7000</Index>
+            <SubIndex>1</SubIndex>
+            <BitLen>8</BitLen>
+            <Name>LED1</Name>
+            <DataType>USINT</DataType>
+          </Entry>
+        </RxPdo>
+        <TxPdo>
+          <Index>#x1A00</Index>
+          <Name>PDIChannel</Name>
+          <Entry>
+            <Index>#x6000</Index>
+            <SubIndex>1</SubIndex>
+            <BitLen>8</BitLen>
+            <Name>LED1_STATE</Name>
+            <DataType>USINT</DataType>
+          </Entry>
+        </TxPdo>
+      </Device>
+    </Devices>
+  </Descriptions>
+</EtherCATInfo>
+"##;
+        let result = import_esi_to_device_yaml(esi).unwrap();
+        assert_eq!(result.device_yamls.len(), 1);
+        let spec = parse_device_yaml(&result.device_yamls[0]).unwrap();
+
+        // 型号应来自 Device/Type 文本，而非 Dictionary/Objects/Object/Type
+        assert!(
+            spec.model
+                .as_deref()
+                .is_some_and(|m| m.starts_with("ZLG_ECAT_IO")),
+            "model 应以 ZLG_ECAT_IO 开头，实际: {:?}",
+            spec.model
+        );
+        // id 应基于 vendor_id * 31 + product_code，而非 DTF000 的哈希
+        assert_eq!(spec.id, "202704", "device id 应为 202704");
+        // 信号应正常解析（1 个 digital input + 1 个 digital output）
+        assert_eq!(spec.signals.len(), 2);
     }
 
     #[test]

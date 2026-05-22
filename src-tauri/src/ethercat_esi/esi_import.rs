@@ -8,8 +8,8 @@ use super::eni_import::import_eni_to_device_yaml;
 use super::types::{EsiDevice, EsiImportResult, EsiPdo, EsiPdoEntry, PdoDirection};
 use super::utils::{
     apply_text_target, attr_number, attr_string, build_signals, classify_text_target,
-    default_device_id, end_name, finish_entry, is_devices_device_path, model_label, start_name,
-    to_u8, to_u16, xml_root_name,
+    default_device_id, end_name, finish_entry, has_parent, is_devices_device_path, model_label,
+    start_name, to_u8, to_u16, xml_root_name,
 };
 
 /// 将 ESI XML 转换为 Device DSL YAML。
@@ -94,7 +94,11 @@ fn parse_esi_devices(esi_xml: &str) -> Result<Vec<EsiDevice>, String> {
                             ..EsiDevice::default()
                         });
                     }
-                    "Type" if current_device.is_some() && current_pdo.is_none() => {
+                    "Type"
+                        if current_device.is_some()
+                            && current_pdo.is_none()
+                            && !has_parent(&path, "Dictionary") =>
+                    {
                         if let Some(device) = current_device.as_mut() {
                             device.product_code = attr_number(&element, b"ProductCode");
                             device.revision_no = attr_number(&element, b"RevisionNo");
