@@ -28,6 +28,37 @@ pub(crate) fn device_asset_file_paths(
     })
 }
 
+pub(crate) fn device_asset_latest_path_only(
+    app: &AppHandle,
+    workspace_path: Option<&str>,
+    asset_id: &str,
+) -> Result<PathBuf, String> {
+    let (workspace_dir, _) = resolve_project_workspace_dir(app, workspace_path)?;
+    let stem = sanitize_asset_file_stem(asset_id);
+    Ok(workspace_dir
+        .join(DSL_ASSETS_DIR)
+        .join(DEVICES_DIR)
+        .join(format!("{stem}.device.yaml")))
+}
+
+pub(crate) async fn write_device_asset_latest(
+    app: &AppHandle,
+    workspace_path: Option<&str>,
+    asset_id: &str,
+    yaml_text: &str,
+) -> Result<(), String> {
+    let path = device_asset_latest_path_only(app, workspace_path, asset_id)?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .await
+            .map_err(|error| format!("创建设备 DSL 目录失败: {error}"))?;
+    }
+    fs::write(&path, yaml_text)
+        .await
+        .map_err(|error| format!("写入 DSL 资产文件失败 `{}`: {error}", path.display()))?;
+    Ok(())
+}
+
 pub(crate) fn connection_asset_file_paths(
     app: &AppHandle,
     workspace_path: Option<&str>,

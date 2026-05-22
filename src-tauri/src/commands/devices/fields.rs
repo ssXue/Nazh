@@ -90,6 +90,9 @@ pub(crate) async fn patch_device_field(
 /// 将设备 DSL 的 `connection:` 块写入或清除。
 /// - `connection_id` / `connection_type` 均为 `None` 时，清除绑定
 /// - 否则写入或更新 `connection` 块
+///
+/// 连接绑定是运行态配置（现场部署关注点），不属于设备型号的结构性变更，
+/// 因此只覆写 latest YAML，不分配版本号、不写入版本快照、不追加快照元数据。
 #[tauri::command]
 pub(crate) async fn bind_device_connection(
     app: AppHandle,
@@ -118,26 +121,16 @@ pub(crate) async fn bind_device_connection(
         _ => None,
     };
 
-    let new_yaml = serde_yaml::to_string(&spec).map_err(|e| format!("序列化设备 DSL 失败: {e}"))?;
+    let new_yaml =
+        serde_yaml::to_string(&spec).map_err(|e| format!("序列化设备 DSL 失败: {e}"))?;
 
-    let version = next_device_asset_version(&app, workspace_path.as_deref(), &asset_id).await?;
-    write_device_asset_yaml(
+    crate::asset_files::write_device_asset_latest(
         &app,
         workspace_path.as_deref(),
         &asset_id,
-        version,
         new_yaml.trim(),
     )
     .await?;
-
-    let meta = DeviceSnapshotMeta {
-        version,
-        label: "绑定连接".to_owned(),
-        description: String::new(),
-        reason: SnapshotReason::Edit,
-        created_at: chrono::Utc::now().to_rfc3339(),
-    };
-    append_device_snapshot(&app, workspace_path.as_deref(), &asset_id, meta).await?;
 
     Ok(())
 }
