@@ -175,6 +175,9 @@ export const CONNECTION_TEMPLATES: ConnectionTemplate[] = [
         backend: 'ethercrab',
         interface: 'eth0',
         cycle_time_ms: 10,
+        dc_sync0_period_us: 10000,
+        dc_sync0_shift_us: 5000,
+        dc_start_delay_us: 100000,
         op_timeout_ms: 15000,
         governance: DEFAULT_CONNECTION_GOVERNANCE,
       },
@@ -429,8 +432,10 @@ export function connectionParameterBrief(connection: ConnectionDefinition): stri
   if (isEthercatConnectionType(type)) {
     const iface = metadataString(connection.metadata, 'interface', '未配置接口');
     const cycleMs = metadataNumber(connection.metadata, 'cycle_time_ms', 10);
+    const cycleUs = metadataNumber(connection.metadata, 'cycle_time_us', 0);
     const opTimeoutMs = metadataNumber(connection.metadata, 'op_timeout_ms', 15000);
-    return `${compactConnectionValue(iface, '未配置接口')} · ${cycleMs}ms 周期 · OP ${opTimeoutMs}ms`;
+    const cycleLabel = cycleUs > 0 ? `${cycleUs}us` : `${cycleMs}ms`;
+    return `${compactConnectionValue(iface, '未配置接口')} · ${cycleLabel} 周期 · OP ${opTimeoutMs}ms`;
   }
 
   if (type === 'modbus' || type === 'modbus_tcp') {

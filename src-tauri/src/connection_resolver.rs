@@ -153,11 +153,27 @@ async fn protocol_to_runtime_metadata(
             backend,
             interface,
             cycle_time_ms,
+            cycle_time_us,
+            dc_sync0_period_us,
+            dc_sync0_shift_us,
+            dc_start_delay_us,
             op_timeout_ms,
         } => {
             metadata.insert("backend".to_owned(), enum_to_json(backend)?);
             metadata.insert("interface".to_owned(), json!(interface));
             metadata.insert("cycle_time_ms".to_owned(), json!(cycle_time_ms));
+            if let Some(value) = cycle_time_us {
+                metadata.insert("cycle_time_us".to_owned(), json!(value));
+            }
+            if let Some(value) = dc_sync0_period_us {
+                metadata.insert("dc_sync0_period_us".to_owned(), json!(value));
+            }
+            if let Some(value) = dc_sync0_shift_us {
+                metadata.insert("dc_sync0_shift_us".to_owned(), json!(value));
+            }
+            if let Some(value) = dc_start_delay_us {
+                metadata.insert("dc_start_delay_us".to_owned(), json!(value));
+            }
             metadata.insert("op_timeout_ms".to_owned(), json!(op_timeout_ms));
             "ethercat"
         }

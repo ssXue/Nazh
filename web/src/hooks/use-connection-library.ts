@@ -181,6 +181,10 @@ function protocolFromConnection(connection: ConnectionDefinition): JsonRecord {
         backend: stringField(metadata, 'backend', 'ethercrab'),
         interface: stringField(metadata, 'interface'),
         cycle_time_ms: numberField(metadata, 'cycle_time_ms', 10),
+        cycle_time_us: optionalNumber(metadata, 'cycle_time_us'),
+        dc_sync0_period_us: optionalNumber(metadata, 'dc_sync0_period_us'),
+        dc_sync0_shift_us: optionalNumber(metadata, 'dc_sync0_shift_us'),
+        dc_start_delay_us: optionalNumber(metadata, 'dc_start_delay_us'),
         op_timeout_ms: numberField(metadata, 'op_timeout_ms', 15000),
       };
     default:

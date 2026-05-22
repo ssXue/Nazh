@@ -252,7 +252,7 @@ EtherCAT 主站初始化失败: EtherCAT TX/RX 任务已终止（接口 `<iface>
 - `sqlWriter.database_path` 必须显式配置；测试 fixture 也要给出项目内或临时路径，禁止静默写入 `./nazh-local.sqlite3`。
 - `modbusRead` 无 `connection_id` 时默认拒绝运行；只有测试/demo 明确设置 `simulation: true` 时才允许正弦模拟读数。
 - `canRead` / `canWrite` 默认 fail-fast：无 `connection_id` 且 `simulation: false`（默认值）时，`on_deploy` 与 `transform` 双重防御直接报错；只有显式 `simulation: true` 才使用 `MockBackend`。这条与 `modbusRead` 对齐，避免现场漏配时静默给出假数据/假"发送成功"。
-- CAN/SLCAN 配置必须显式声明 `interface` / `channel` / `baud_rate` / `bitrate`；EtherCAT 配置必须显式声明 `backend` / `interface` / `cycle_time_ms` / `op_timeout_ms`。mock 后端也按同一规则写全字段。
+- CAN/SLCAN 配置必须显式声明 `interface` / `channel` / `baud_rate` / `bitrate`；EtherCAT 配置必须显式声明 `backend` / `interface` / `cycle_time_ms` / `op_timeout_ms`。`ethercrab` 真实后端还必须声明 `dc_sync0_period_us` / `dc_sync0_shift_us` / `dc_start_delay_us`；亚毫秒过程数据周期通过 `cycle_time_us` 显式声明。除 `dc_sync0_shift_us` 可为 0 外，其余微秒字段为 0 必须失败。mock 后端也按同一规则写全字段。
 
 ### 新增 DEVICE_IO 节点的 simulation 约定
 

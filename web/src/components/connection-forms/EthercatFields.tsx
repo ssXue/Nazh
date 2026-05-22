@@ -2,6 +2,26 @@ import type { ConnectionDefinition, JsonValue } from '../../types';
 
 import { metadataNumber, metadataString } from '../connection-studio-utils';
 
+function optionalMetadataNumber(metadata: JsonValue, key: string): number | '' {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+    return '';
+  }
+  const value = metadata[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : '';
+}
+
+function optionalInteger(rawValue: string, min: number): number | null {
+  const trimmed = rawValue.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const parsed = Number(trimmed);
+  if (!Number.isSafeInteger(parsed)) {
+    return null;
+  }
+  return Math.max(parsed, min);
+}
+
 export interface EthercatFieldsProps {
   connection: ConnectionDefinition;
   connectionIndex: number;
@@ -77,6 +97,70 @@ export function EthercatFields({
             )
           }
           min={1}
+        />
+      </label>
+      <label>
+        <span>周期 (us)</span>
+        <input
+          type="number"
+          value={optionalMetadataNumber(connection.metadata, 'cycle_time_us')}
+          onChange={(event) =>
+            handleMetadataFieldChange(
+              connectionIndex,
+              'cycle_time_us',
+              optionalInteger(event.target.value, 1),
+            )
+          }
+          min={1}
+          placeholder="可选"
+        />
+      </label>
+      <label>
+        <span>SYNC0 周期 (us)</span>
+        <input
+          type="number"
+          value={optionalMetadataNumber(connection.metadata, 'dc_sync0_period_us')}
+          onChange={(event) =>
+            handleMetadataFieldChange(
+              connectionIndex,
+              'dc_sync0_period_us',
+              optionalInteger(event.target.value, 1),
+            )
+          }
+          min={1}
+          placeholder="可选"
+        />
+      </label>
+      <label>
+        <span>SYNC0 Shift (us)</span>
+        <input
+          type="number"
+          value={optionalMetadataNumber(connection.metadata, 'dc_sync0_shift_us')}
+          onChange={(event) =>
+            handleMetadataFieldChange(
+              connectionIndex,
+              'dc_sync0_shift_us',
+              optionalInteger(event.target.value, 0),
+            )
+          }
+          min={0}
+          placeholder="可选"
+        />
+      </label>
+      <label>
+        <span>DC 延迟 (us)</span>
+        <input
+          type="number"
+          value={optionalMetadataNumber(connection.metadata, 'dc_start_delay_us')}
+          onChange={(event) =>
+            handleMetadataFieldChange(
+              connectionIndex,
+              'dc_start_delay_us',
+              optionalInteger(event.target.value, 1),
+            )
+          }
+          min={1}
+          placeholder="可选"
         />
       </label>
       <label>
