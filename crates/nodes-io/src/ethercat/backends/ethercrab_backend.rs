@@ -138,7 +138,7 @@ pub struct EthercrabBackend {
     maindevice: Arc<MainDevice<'static>>,
     group: Arc<Mutex<Option<OpGroup>>>,
     slaves: Vec<SlaveEntry>,
-    cycle_time_ms: u64,
+    cycle_duration: Duration,
     process_handle: Mutex<Option<tokio::task::JoinHandle<()>>>,
 }
 
@@ -150,11 +150,14 @@ impl EthercrabBackend {
     pub fn create(
         config: &EthercatConfig,
     ) -> impl Future<Output = Result<Self, EthercatError>> + '_ {
-        let cycle_time_ms = config.cycle_time_ms;
         let op_timeout_ms = config.op_timeout_ms;
         let interface = config.interface.clone();
 
         Box::pin(async move {
+            let cycle_duration = config.cycle_duration()?;
+            let dc_start_delay = config.dc_start_delay()?;
+            let dc_sync0_period = config.dc_sync0_period()?;
+            let dc_sync0_shift = config.dc_sync0_shift()?;
             let maindevice = ensure_maindevice(&interface, op_timeout_ms).await?;
 
             // 发现从站并初始化（PreOp 阶段不能访问 PDI）
@@ -185,8 +188,6 @@ impl EthercrabBackend {
                 }
             }
 
-            let cycle_duration = Duration::from_millis(cycle_time_ms);
-
             let group = group
                 .into_pre_op_pdi(&maindevice)
                 .await
@@ -196,14 +197,19 @@ impl EthercrabBackend {
                 .configure_dc_sync(
                     &maindevice,
                     DcConfiguration {
-                        start_delay: Duration::from_millis(100),
-                        sync0_period: cycle_duration,
-                        sync0_shift: cycle_duration / 2,
+                        start_delay: dc_start_delay,
+                        sync0_period: dc_sync0_period,
+                        sync0_shift: dc_sync0_shift,
                     },
                 )
                 .await
                 .map_err(|e| EthercatError::InitFailed(format!("DC SYNC0 配置失败: {e}")))?;
-            tracing::info!("EtherCAT DC SYNC0 配置完成");
+            tracing::info!(
+                sync0_period = %format_cycle_duration(dc_sync0_period),
+                sync0_shift = %format_cycle_duration(dc_sync0_shift),
+                start_delay = %format_cycle_duration(dc_start_delay),
+                "EtherCAT DC SYNC0 配置完成"
+            );
 
             // 转换到 SAFE-OP 后请求 OP，并马上开始过程数据交换。
             //
@@ -219,7 +225,7 @@ impl EthercrabBackend {
                 .request_into_op(&maindevice)
                 .await
                 .map_err(|e| EthercatError::InitFailed(format!("请求进入 OP 状态失败: {e}")))?;
-            wait_for_all_op(&group, &maindevice, cycle_time_ms, op_timeout_ms).await?;
+            wait_for_all_op(&group, &maindevice, op_timeout_ms).await?;
 
             // OP 阶段更新 PDI 大小
             for subdevice in group.iter(&maindevice) {
@@ -232,16 +238,23 @@ impl EthercrabBackend {
             }
 
             let group = Arc::new(Mutex::new(Some(group)));
-            let process_handle =
-                spawn_process_data_loop(Arc::clone(&maindevice), Arc::clone(&group), cycle_time_ms);
+            let process_handle = spawn_process_data_loop(
+                Arc::clone(&maindevice),
+                Arc::clone(&group),
+                cycle_duration,
+            );
 
-            tracing::info!(cycle_time_ms, op_timeout_ms, "EtherCAT 主站已进入 OP 状态");
+            tracing::info!(
+                cycle = %format_cycle_duration(cycle_duration),
+                op_timeout_ms,
+                "EtherCAT 主站已进入 OP 状态"
+            );
 
             Ok(Self {
                 maindevice,
                 group,
                 slaves,
-                cycle_time_ms,
+                cycle_duration,
                 process_handle: Mutex::new(Some(process_handle)),
             })
         })
@@ -398,9 +411,9 @@ impl EthercatBus for EthercrabBackend {
 
     fn channel_info(&self) -> String {
         format!(
-            "ethercrab ({} 从站, {}ms 周期)",
+            "ethercrab ({} 从站, {} 周期)",
             self.slaves.len(),
-            self.cycle_time_ms,
+            format_cycle_duration(self.cycle_duration),
         )
     }
 }
@@ -409,11 +422,9 @@ impl EthercatBus for EthercrabBackend {
 async fn wait_for_all_op(
     group: &OpGroup,
     maindevice: &MainDevice<'_>,
-    cycle_time_ms: u64,
     op_timeout_ms: u64,
 ) -> Result<(), EthercatError> {
     let timeout = Duration::from_millis(op_timeout_ms);
-    let cycle = Duration::from_millis(cycle_time_ms.max(1));
     let started_at = Instant::now();
 
     loop {
@@ -442,7 +453,7 @@ async fn wait_for_all_op(
             )));
         }
 
-        tokio::time::sleep(cycle).await;
+        sleep_or_yield(response.extra.next_cycle_wait).await;
     }
 }
 
@@ -453,15 +464,13 @@ async fn wait_for_all_op(
 fn spawn_process_data_loop(
     maindevice: Arc<MainDevice<'static>>,
     group: Arc<Mutex<Option<OpGroup>>>,
-    cycle_time_ms: u64,
+    cycle_duration: Duration,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
-        let cycle = Duration::from_millis(cycle_time_ms.max(1));
         let mut consecutive_errors = 0_u64;
         let mut consecutive_non_op = 0_u64;
 
         loop {
-            let started_at = Instant::now();
             let result = {
                 let guard = group.lock().await;
                 let Some(group) = guard.as_ref() else {
@@ -470,8 +479,10 @@ fn spawn_process_data_loop(
                 group.tx_rx_dc(&maindevice).await
             };
 
+            let mut next_delay = cycle_duration;
             match result {
                 Ok(response) => {
+                    next_delay = response.extra.next_cycle_wait;
                     consecutive_errors = 0;
                     if response.all_op() {
                         consecutive_non_op = 0;
@@ -497,13 +508,26 @@ fn spawn_process_data_loop(
                 }
             }
 
-            if let Some(delay) = cycle.checked_sub(started_at.elapsed()) {
-                tokio::time::sleep(delay).await;
-            } else {
-                tokio::task::yield_now().await;
-            }
+            sleep_or_yield(next_delay).await;
         }
     })
+}
+
+async fn sleep_or_yield(delay: Duration) {
+    if delay.is_zero() {
+        tokio::task::yield_now().await;
+    } else {
+        tokio::time::sleep(delay).await;
+    }
+}
+
+fn format_cycle_duration(duration: Duration) -> String {
+    let micros = duration.as_micros();
+    if micros >= 1_000 && micros.is_multiple_of(1_000) {
+        format!("{}ms", micros / 1_000)
+    } else {
+        format!("{micros}us")
+    }
 }
 
 /// 将用户配置的从站选择器解析为 ethercrab 迭代序号。

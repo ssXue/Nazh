@@ -245,6 +245,10 @@ fn mock_config() -> EthercatConfig {
         backend: "mock".to_owned(),
         interface: "mock-eth0".to_owned(),
         cycle_time_ms: 5,
+        cycle_time_us: None,
+        dc_sync0_period_us: None,
+        dc_sync0_shift_us: None,
+        dc_start_delay_us: None,
         op_timeout_ms: 15_000,
     }
 }

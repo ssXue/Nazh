@@ -25,6 +25,8 @@ pub use self::pdo_read::{EthercatPdoReadConfig, EthercatPdoReadNode};
 pub use self::pdo_write::{EthercatPdoWriteConfig, EthercatPdoWriteNode};
 pub use self::status::{EthercatStatusConfig, EthercatStatusNode};
 
+use std::time::Duration;
+
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
@@ -114,8 +116,16 @@ pub struct EthercatConfig {
     pub backend: String,
     /// 网络接口名: `"eth0"`, `"enp0s31f6"`, `"\\Device\\NPF_{...}"`。
     pub interface: String,
-    /// PDO 刷新周期（毫秒）。
+    /// PDO 刷新周期（毫秒，兼容旧配置）。
     pub cycle_time_ms: u64,
+    /// PDO 刷新周期（微秒）。配置后优先于 `cycle_time_ms`。
+    pub cycle_time_us: Option<u64>,
+    /// DC SYNC0 周期（微秒）。`ethercrab` 真实后端必填。
+    pub dc_sync0_period_us: Option<u64>,
+    /// DC SYNC0 相位偏移（微秒）。`ethercrab` 真实后端必填，可为 0。
+    pub dc_sync0_shift_us: Option<u64>,
+    /// DC 首次脉冲延迟（微秒）。`ethercrab` 真实后端必填。
+    pub dc_start_delay_us: Option<u64>,
     /// 进入 OP 状态等待超时（毫秒）。
     pub op_timeout_ms: u64,
 }
@@ -145,12 +155,102 @@ impl EthercatConfig {
                 "EtherCAT 配置 cycle_time_ms 必须大于 0".to_owned(),
             ));
         }
+        if matches!(config.cycle_time_us, Some(0)) {
+            return Err(EthercatError::InitFailed(
+                "EtherCAT 配置 cycle_time_us 必须大于 0".to_owned(),
+            ));
+        }
+        if matches!(config.dc_sync0_period_us, Some(0)) {
+            return Err(EthercatError::InitFailed(
+                "EtherCAT 配置 dc_sync0_period_us 必须大于 0".to_owned(),
+            ));
+        }
+        if matches!(config.dc_start_delay_us, Some(0)) {
+            return Err(EthercatError::InitFailed(
+                "EtherCAT 配置 dc_start_delay_us 必须大于 0".to_owned(),
+            ));
+        }
+        if config.backend == "ethercrab" {
+            if config.dc_sync0_period_us.is_none() {
+                return Err(EthercatError::InitFailed(
+                    "EtherCAT ethercrab 后端缺少 dc_sync0_period_us".to_owned(),
+                ));
+            }
+            if config.dc_sync0_shift_us.is_none() {
+                return Err(EthercatError::InitFailed(
+                    "EtherCAT ethercrab 后端缺少 dc_sync0_shift_us".to_owned(),
+                ));
+            }
+            if config.dc_start_delay_us.is_none() {
+                return Err(EthercatError::InitFailed(
+                    "EtherCAT ethercrab 后端缺少 dc_start_delay_us".to_owned(),
+                ));
+            }
+        }
         if config.op_timeout_ms == 0 {
             return Err(EthercatError::InitFailed(
                 "EtherCAT 配置 op_timeout_ms 必须大于 0".to_owned(),
             ));
         }
         Ok(config)
+    }
+
+    /// 实际 PDO 刷新周期。
+    pub(crate) fn cycle_duration(&self) -> Result<Duration, EthercatError> {
+        if let Some(value) = self.cycle_time_us {
+            if value == 0 {
+                return Err(EthercatError::InitFailed(
+                    "EtherCAT 配置 cycle_time_us 必须大于 0".to_owned(),
+                ));
+            }
+            return Ok(Duration::from_micros(value));
+        }
+        if self.cycle_time_ms == 0 {
+            return Err(EthercatError::InitFailed(
+                "EtherCAT 配置 cycle_time_ms 必须大于 0".to_owned(),
+            ));
+        }
+        Ok(Duration::from_millis(self.cycle_time_ms))
+    }
+
+    /// 实际 DC SYNC0 周期。
+    pub(crate) fn dc_sync0_period(&self) -> Result<Duration, EthercatError> {
+        let Some(value) = self.dc_sync0_period_us else {
+            return Err(EthercatError::InitFailed(
+                "EtherCAT 配置缺少 dc_sync0_period_us".to_owned(),
+            ));
+        };
+        if value == 0 {
+            return Err(EthercatError::InitFailed(
+                "EtherCAT 配置 dc_sync0_period_us 必须大于 0".to_owned(),
+            ));
+        }
+        Ok(Duration::from_micros(value))
+    }
+
+    /// 实际 DC SYNC0 相位偏移。
+    pub(crate) fn dc_sync0_shift(&self) -> Result<Duration, EthercatError> {
+        let Some(value) = self.dc_sync0_shift_us else {
+            return Err(EthercatError::InitFailed(
+                "EtherCAT 配置缺少 dc_sync0_shift_us".to_owned(),
+            ));
+        };
+        Ok(Duration::from_micros(value))
+    }
+
+    /// 实际 DC 首次脉冲延迟。
+    pub(crate) fn dc_start_delay(&self) -> Result<Duration, EthercatError> {
+        let Some(value) = self.dc_start_delay_us else {
+            return Err(EthercatError::InitFailed(
+                "EtherCAT 配置缺少 dc_start_delay_us".to_owned(),
+            ));
+        };
+        if value == 0 {
+            return Err(EthercatError::InitFailed(
+                "EtherCAT 配置 dc_start_delay_us 必须大于 0".to_owned(),
+            ));
+        }
+        Ok(Duration::from_micros(value))
     }
 }
 
@@ -178,5 +278,65 @@ mod tests {
             .is_err(),
             "cycle_time_ms/op_timeout_ms 是运行时总线参数，不能静默补默认值"
         );
+    }
+
+    #[test]
+    fn ethercat_config_支持微秒级周期和_dc_sync0_参数() {
+        let config = EthercatConfig::from_metadata(&serde_json::json!({
+            "backend": "ethercrab",
+            "interface": "en0",
+            "cycle_time_ms": 1,
+            "cycle_time_us": 50,
+            "dc_sync0_period_us": 50,
+            "dc_sync0_shift_us": 10,
+            "dc_start_delay_us": 100_000,
+            "op_timeout_ms": 15_000,
+        }))
+        .unwrap();
+
+        assert_eq!(config.cycle_duration().unwrap(), Duration::from_micros(50));
+        assert_eq!(config.dc_sync0_period().unwrap(), Duration::from_micros(50));
+        assert_eq!(config.dc_sync0_shift().unwrap(), Duration::from_micros(10));
+        assert_eq!(
+            config.dc_start_delay().unwrap(),
+            Duration::from_micros(100_000)
+        );
+    }
+
+    #[test]
+    fn ethercat_config_拒绝零值微秒级参数() {
+        assert!(
+            EthercatConfig::from_metadata(&serde_json::json!({
+                "backend": "ethercrab",
+                "interface": "en0",
+                "cycle_time_ms": 1,
+                "cycle_time_us": 0,
+                "op_timeout_ms": 15_000,
+            }))
+            .is_err()
+        );
+        assert!(
+            EthercatConfig::from_metadata(&serde_json::json!({
+                "backend": "ethercrab",
+                "interface": "en0",
+                "cycle_time_ms": 1,
+                "dc_sync0_period_us": 0,
+                "op_timeout_ms": 15_000,
+            }))
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn ethercat_config_真实后端必须显式声明_dc_时序() {
+        let err = EthercatConfig::from_metadata(&serde_json::json!({
+            "backend": "ethercrab",
+            "interface": "en0",
+            "cycle_time_ms": 1,
+            "op_timeout_ms": 15_000,
+        }))
+        .unwrap_err();
+
+        assert!(err.to_string().contains("dc_sync0_period_us"));
     }
 }

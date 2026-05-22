@@ -13,7 +13,7 @@ pub async fn create_ethercat_bus(
         "ethercrab" => ethercrab_backend::EthercrabBackend::create(config)
             .await
             .map(|b| Box::new(b) as Box<dyn EthercatBus>),
-        "mock" | "" => Ok(Box::new(mock::MockBackend::new(config))),
+        "mock" | "" => mock::MockBackend::new(config).map(|b| Box::new(b) as Box<dyn EthercatBus>),
         other => Err(EthercatError::UnsupportedBackend(other.to_owned())),
     }
 }

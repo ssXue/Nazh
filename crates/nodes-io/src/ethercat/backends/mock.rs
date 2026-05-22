@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 use std::sync::RwLock;
+use std::time::Duration;
 
 use async_trait::async_trait;
 
@@ -19,11 +20,12 @@ struct MockSlave {
 /// Mock EtherCAT 主站后端。
 pub struct MockBackend {
     slaves: RwLock<HashMap<u16, MockSlave>>,
-    cycle_time_ms: u64,
+    cycle_duration: Duration,
 }
 
 impl MockBackend {
-    pub fn new(config: &EthercatConfig) -> Self {
+    pub fn new(config: &EthercatConfig) -> Result<Self, EthercatError> {
+        let cycle_duration = config.cycle_duration()?;
         // 创建默认模拟从站：3 个从站，各 4 字节输入 / 4 字节输出
         let mut slaves = HashMap::new();
         for addr in 1..=3u16 {
@@ -43,10 +45,10 @@ impl MockBackend {
                 },
             );
         }
-        Self {
+        Ok(Self {
             slaves: RwLock::new(slaves),
-            cycle_time_ms: config.cycle_time_ms,
-        }
+            cycle_duration,
+        })
     }
 }
 
@@ -131,10 +133,19 @@ impl EthercatBus for MockBackend {
 
     fn channel_info(&self) -> String {
         format!(
-            "mock-ethercat ({} 从站, {}ms 周期)",
+            "mock-ethercat ({} 从站, {} 周期)",
             self.slaves.read().map_or(0, |s| s.len()),
-            self.cycle_time_ms,
+            format_cycle_duration(self.cycle_duration),
         )
+    }
+}
+
+fn format_cycle_duration(duration: Duration) -> String {
+    let micros = duration.as_micros();
+    if micros >= 1_000 && micros.is_multiple_of(1_000) {
+        format!("{}ms", micros / 1_000)
+    } else {
+        format!("{micros}us")
     }
 }
 
