@@ -590,7 +590,6 @@ html.is-tauri-runtime .studio-frame:not(:has(.studio-nav-sidebar.is-collapsed)) 
   min-height: 0;
   height: 100%;
   overflow: hidden;
-  animation: studio-board-enter 320ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .studio-board-workspace__canvas-area {
@@ -1139,7 +1138,6 @@ html.is-platform-windows .studio-frame:has(.studio-nav-sidebar.is-collapsed) .wi
   display: grid;
   gap: 12px;
   min-height: auto;
-  animation: studio-stage-enter 240ms ease;
 }
 
 .boards-panel {
