@@ -28,12 +28,48 @@ pub(crate) async fn restart_app(app: AppHandle) {
     }
 }
 
-/// 枚举本机所有网络接口，供 `EtherCAT` 等需要绑定物理网卡的连接面板使用。
+/// 已知虚拟接口名称前缀，用于从网卡列表中排除。
+///
+/// macOS 典型虚拟接口：`awdl*`（Apple Wireless Direct Link）、`llw*`（Low Latency WLAN）、
+/// `utun*`（VPN 隧道）、`bridge*`（网桥）、`anpi*`（虚拟 NIC）。
+/// Linux 典型虚拟接口：`docker*`、`virbr*`、`veth*`、`br-*`。
+/// EtherCAT 需要绑定物理以太网卡，这些虚拟接口不适合。
+const VIRTUAL_INTERFACE_PREFIXES: &[&str] = &[
+    "lo",
+    "awdl",
+    "llw",
+    "utun",
+    "bridge",
+    "anpi",
+    "vnic",
+    "stf",
+    "gif",
+    "docker",
+    "virbr",
+    "veth",
+    "br-",
+];
+
+fn is_candidate_physical_nic(iface: &pnet_datalink::NetworkInterface) -> bool {
+    if iface.is_loopback() || iface.mac.is_none() {
+        return false;
+    }
+    let name = iface.name.to_lowercase();
+    !VIRTUAL_INTERFACE_PREFIXES
+        .iter()
+        .any(|prefix| name.starts_with(prefix))
+}
+
+/// 枚举本机物理网卡候选接口，供 `EtherCAT` 等需要绑定物理网卡的连接面板使用。
+///
+/// 通过名称前缀启发式过滤已知虚拟接口（`utun`/`awdl`/`bridge` 等），
+/// 仅返回可能是物理以太网的接口。
 #[tauri::command]
 pub(crate) async fn list_network_interfaces() -> Result<Vec<NetworkInterfaceInfo>, String> {
     let interfaces = pnet_datalink::interfaces();
     let result = interfaces
         .into_iter()
+        .filter(is_candidate_physical_nic)
         .map(|iface| {
             let is_loopback = iface.is_loopback();
             let is_up = iface.is_up();

@@ -39,6 +39,12 @@ export function EthercatFields({
   scannedInterfaces,
   isScanningInterfaces,
 }: EthercatFieldsProps) {
+  const savedInterface = metadataString(connection.metadata, 'interface', '');
+  const scannedNames = new Set(
+    scannedInterfaces.filter((i) => !i.isLoopback).map((i) => i.name),
+  );
+  const showSavedFallback = savedInterface && !scannedNames.has(savedInterface);
+
   return (
     <>
       <label>
@@ -57,12 +63,15 @@ export function EthercatFields({
         <span>网络接口</span>
         <div className="serial-port-select">
           <select
-            value={metadataString(connection.metadata, 'interface', 'eth0')}
+            value={savedInterface || ''}
             onChange={(event) =>
               handleMetadataFieldChange(connectionIndex, 'interface', event.target.value)
             }
           >
             <option value="">-- 选择网卡 --</option>
+            {showSavedFallback && (
+              <option value={savedInterface}>{savedInterface}</option>
+            )}
             {scannedInterfaces
               .filter((iface) => !iface.isLoopback)
               .map((iface) => (
