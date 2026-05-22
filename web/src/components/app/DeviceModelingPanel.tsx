@@ -34,6 +34,8 @@ interface DeviceModelingPanelProps {
   onAddCapabilityToCanvas?: (nodeOp: import('../FlowgramCanvas').CanvasNodeOp) => void;
   /** 由 InfrastructurePanel 传入 true 以跳过 grid view 的 panel__header（外层已统一渲染）。 */
   hideHeader?: boolean;
+  /** 外部变更时递增此值，触发设备列表刷新。 */
+  refreshKey?: number;
 }
 
 export function DeviceModelingPanel({
@@ -45,6 +47,7 @@ export function DeviceModelingPanel({
   onStatusMessage,
   onAddCapabilityToCanvas,
   hideHeader = false,
+  refreshKey = 0,
 }: DeviceModelingPanelProps) {
   const connectionsById = useMemo(
     () => new Map(connections.map((c) => [c.id, c])),
@@ -81,7 +84,7 @@ export function DeviceModelingPanel({
 
   useEffect(() => {
     void loadAssets();
-  }, [loadAssets]);
+  }, [loadAssets, refreshKey]);
 
   const handleOpenDetail = useCallback(
     async (id: string) => {

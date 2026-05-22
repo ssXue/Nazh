@@ -86,6 +86,7 @@
 }
 
 .dm-card .board-card__name {
+  width: 200px;
   font-size: var(--font-body, 13px);
   color: var(--text);
   overflow: hidden;

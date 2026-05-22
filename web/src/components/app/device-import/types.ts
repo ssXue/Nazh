@@ -49,7 +49,7 @@ export const ESI_PHASES: PhaseInfo[] = [
 export interface DeviceImportDrawerProps {
   workspacePath: string;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (message?: string) => void;
   onStatusMessage: (message: string) => void;
 }
 

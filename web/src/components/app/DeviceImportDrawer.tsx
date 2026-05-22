@@ -203,12 +203,12 @@ export function DeviceImportDrawer({
     setPhase('idle');
   }, []);
 
-  /** 从抽取结果 YAML 中提取 id/type/model 并保存设备 + 关联能力。 */
+  /** 从抽取结果 YAML 中提取 id/type/model 并保存设备 + 关联能力。返回保存结果消息。 */
   const saveExtractedDevice = useCallback(async (
     yaml: string,
     caps: string[],
     label: string,
-  ): Promise<string> => {
+  ): Promise<{ deviceId: string; message: string }> => {
     const idMatch = yaml.match(/^id:\s*(.+)$/m);
     const typeMatch = yaml.match(/^type:\s*(.+)$/m);
     const modelMatch = yaml.match(/^model:\s*(.+)$/m);
@@ -236,7 +236,7 @@ export function DeviceImportDrawer({
       ? `${label}：设备 ${deviceId} + ${savedCaps}/${caps.length} 个能力已保存`
       : `${label}：设备 ${deviceId} 已保存`;
     onStatusMessage(msg);
-    return deviceId;
+    return { deviceId, message: msg };
   }, [saveAsset, saveCapability, onStatusMessage]);
 
   /** 解析 AI 流式输出的原始 JSON，提取 deviceYaml + capabilityYamls。 */
@@ -287,7 +287,8 @@ export function DeviceImportDrawer({
     setStreamingText('');
 
     // 用修正后的 YAML 重试保存
-    return saveExtractedDevice(corrected.yaml, corrected.caps.length > 0 ? corrected.caps : caps, `${label}（AI 修正）`);
+    const result = await saveExtractedDevice(corrected.yaml, corrected.caps.length > 0 ? corrected.caps : caps, `${label}（AI 修正）`);
+    return result.message;
   }, [extractProposalStream, parseAiStreamJson, saveExtractedDevice, onStatusMessage]);
 
   // ---- AI 抽取 ----
@@ -327,16 +328,16 @@ export function DeviceImportDrawer({
 
     // 阶段 2：自动保存（失败则 AI 校正重试一次）
     try {
-      await saveExtractedDevice(yaml, caps, caps.length > 0 ? '文本抽取' : '文本抽取（基础模式）');
+      const { message } = await saveExtractedDevice(yaml, caps, caps.length > 0 ? '文本抽取' : '文本抽取（基础模式）');
       resetState();
-      onSaved();
+      onSaved(message);
       onClose();
     } catch (saveError) {
       console.error('[DeviceImport] 自动保存失败, 尝试 AI 校正:', saveError);
       try {
-        await retryWithAiCorrection(yaml, caps, String(saveError), '文本抽取');
+        const correctionMsg = await retryWithAiCorrection(yaml, caps, String(saveError), '文本抽取');
         resetState();
-        onSaved();
+        onSaved(correctionMsg);
         onClose();
       } catch (correctionError) {
         console.error('[DeviceImport] AI 校正后仍然失败:', correctionError);
@@ -390,16 +391,16 @@ export function DeviceImportDrawer({
 
     // 阶段 3：自动保存（失败则 AI 校正重试一次）
     try {
-      await saveExtractedDevice(yaml, caps, 'PDF 抽取');
+      const { message } = await saveExtractedDevice(yaml, caps, 'PDF 抽取');
       resetState();
-      onSaved();
+      onSaved(message);
       onClose();
     } catch (saveError) {
       console.error('[DeviceImport] PDF 自动保存失败, 尝试 AI 校正:', saveError);
       try {
-        await retryWithAiCorrection(yaml, caps, String(saveError), 'PDF 抽取');
+        const correctionMsg = await retryWithAiCorrection(yaml, caps, String(saveError), 'PDF 抽取');
         resetState();
-        onSaved();
+        onSaved(correctionMsg);
         onClose();
       } catch (correctionError) {
         console.error('[DeviceImport] AI 校正后仍然失败:', correctionError);
@@ -433,7 +434,7 @@ export function DeviceImportDrawer({
       ].join('');
       onStatusMessage(msg);
       resetState();
-      onSaved();
+      onSaved(msg);
       onClose();
     } catch (error) {
       console.error('[DeviceImport] ESI 导入失败:', error);

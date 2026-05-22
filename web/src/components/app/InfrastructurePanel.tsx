@@ -1,7 +1,7 @@
 //! 全局资产管理面板：设备视图（主）+ 连接视图（基础设施）
 //! 设备语义高于协议适配（AGENTS.md 设计原则三）——设备是业务一等公民，连接是传输基础设施。
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { ConnectionStudio } from '../ConnectionStudio';
 import type { CanvasNodeOp } from '../FlowgramCanvas';
@@ -36,6 +36,9 @@ export function InfrastructurePanel({
   const [activeTab, setActiveTab] = useState<InfraTab>('devices');
   const [focusConnectionId, setFocusConnectionId] = useState<string | null>(null);
   const [importDrawerOpen, setImportDrawerOpen] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+  const [deviceRefreshKey, setDeviceRefreshKey] = useState(0);
+  const toastTimer = useRef<ReturnType<typeof setTimeout>>(null);
 
   // 共享的设备资产摘要——用于连接 Tab 反查"绑定设备"。
   // 两个 Tab 各自维护状态，切换到连接 Tab 时刷新一次以兜底跨 Tab 编辑造成的过期。
@@ -136,6 +139,7 @@ export function InfrastructurePanel({
             onJumpToConnection={handleJumpToConnection}
             onStatusMessage={onStatusMessage}
             onAddCapabilityToCanvas={onAddCapabilityToCanvas}
+            refreshKey={deviceRefreshKey}
             hideHeader
           />
         ) : (
@@ -160,10 +164,20 @@ export function InfrastructurePanel({
           <DeviceImportDrawer
             workspacePath={workspacePath}
             onClose={() => setImportDrawerOpen(false)}
-            onSaved={() => { setImportDrawerOpen(false); void loadDeviceSummaries(); }}
+            onSaved={(msg) => {
+              setImportDrawerOpen(false);
+              setDeviceRefreshKey((k) => k + 1);
+              void loadDeviceSummaries();
+              setToast(msg ?? '设备已保存');
+              if (toastTimer.current) clearTimeout(toastTimer.current);
+              toastTimer.current = setTimeout(() => setToast(null), 3500);
+            }}
             onStatusMessage={onStatusMessage}
           />
         </div>
+      ) : null}
+      {toast ? (
+        <div className="infra-panel__toast" role="status" aria-live="polite">{toast}</div>
       ) : null}
     </section>
   );
