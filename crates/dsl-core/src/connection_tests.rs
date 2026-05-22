@@ -89,6 +89,80 @@ secrets:
 }
 
 #[test]
+fn ethercat_connection_spec_支持微秒级_dc_参数() {
+    let yaml = format!(
+        r#"
+id: ecat-main
+protocol:
+  type: ethercat
+  backend: ethercrab
+  interface: en0
+  cycle_time_ms: 1
+  cycle_time_us: 50
+  dc_sync0_period_us: 50
+  dc_sync0_shift_us: 10
+  dc_start_delay_us: 100000
+  op_timeout_ms: 15000
+{}
+"#,
+        governance_yaml()
+    );
+
+    let spec = parse_connection_yaml_validated(&yaml).unwrap();
+    assert!(matches!(
+        spec.protocol,
+        ConnectionProtocol::Ethercat {
+            cycle_time_us: Some(50),
+            dc_sync0_period_us: Some(50),
+            dc_sync0_shift_us: Some(10),
+            dc_start_delay_us: Some(100_000),
+            ..
+        }
+    ));
+}
+
+#[test]
+fn ethercat_connection_spec_拒绝零值微秒级_dc_参数() {
+    let yaml = format!(
+        r#"
+id: ecat-main
+protocol:
+  type: ethercat
+  backend: ethercrab
+  interface: en0
+  cycle_time_ms: 1
+  dc_sync0_period_us: 0
+  op_timeout_ms: 15000
+{}
+"#,
+        governance_yaml()
+    );
+
+    let err = parse_connection_yaml_validated(&yaml).unwrap_err();
+    assert!(err.to_string().contains("dc_sync0_period_us"));
+}
+
+#[test]
+fn ethercat_connection_spec_真实后端必须声明_dc_时序() {
+    let yaml = format!(
+        r#"
+id: ecat-main
+protocol:
+  type: ethercat
+  backend: ethercrab
+  interface: en0
+  cycle_time_ms: 1
+  op_timeout_ms: 15000
+{}
+"#,
+        governance_yaml()
+    );
+
+    let err = parse_connection_yaml_validated(&yaml).unwrap_err();
+    assert!(err.to_string().contains("dc_sync0_period_us"));
+}
+
+#[test]
 fn 明文_password_字段被_schema_拒绝() {
     let yaml = format!(
         r#"

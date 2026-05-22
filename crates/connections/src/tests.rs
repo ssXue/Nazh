@@ -95,6 +95,22 @@ async fn register_connection_拒绝缺少显式总线参数的_can_与_ethercat(
         .await
         .unwrap_err();
     assert!(ethercat_err.to_string().contains("backend"));
+
+    let ethercat_cycle_err = manager
+        .register_connection(ConnectionDefinition {
+            id: "ecat-cycle".to_owned(),
+            kind: "ethercat".to_owned(),
+            metadata: json!({
+                "backend": "ethercrab",
+                "interface": "en0",
+                "cycle_time_ms": 1,
+                "cycle_time_us": 0,
+                "op_timeout_ms": 15_000,
+            }),
+        })
+        .await
+        .unwrap_err();
+    assert!(ethercat_cycle_err.to_string().contains("cycle_time_us"));
 }
 
 #[tokio::test]

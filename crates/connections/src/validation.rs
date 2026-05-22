@@ -184,6 +184,47 @@ pub(crate) fn validate_connection_definition(kind: &str, metadata: &Value) -> Re
             if cycle_time_ms == 0 {
                 return Err("EtherCAT 连接 cycle_time_ms 必须大于 0".to_owned());
             }
+            if metadata
+                .and_then(|value| value.get("cycle_time_us"))
+                .is_some_and(|value| value.as_u64() == Some(0))
+            {
+                return Err("EtherCAT 连接 cycle_time_us 必须大于 0".to_owned());
+            }
+            if metadata
+                .and_then(|value| value.get("dc_sync0_period_us"))
+                .is_some_and(|value| value.as_u64() == Some(0))
+            {
+                return Err("EtherCAT 连接 dc_sync0_period_us 必须大于 0".to_owned());
+            }
+            if metadata
+                .and_then(|value| value.get("dc_start_delay_us"))
+                .is_some_and(|value| value.as_u64() == Some(0))
+            {
+                return Err("EtherCAT 连接 dc_start_delay_us 必须大于 0".to_owned());
+            }
+            if backend == "ethercrab" {
+                if metadata
+                    .and_then(|value| value.get("dc_sync0_period_us"))
+                    .and_then(Value::as_u64)
+                    .is_none()
+                {
+                    return Err("EtherCAT ethercrab 连接需要配置 dc_sync0_period_us".to_owned());
+                }
+                if metadata
+                    .and_then(|value| value.get("dc_sync0_shift_us"))
+                    .and_then(Value::as_u64)
+                    .is_none()
+                {
+                    return Err("EtherCAT ethercrab 连接需要配置 dc_sync0_shift_us".to_owned());
+                }
+                if metadata
+                    .and_then(|value| value.get("dc_start_delay_us"))
+                    .and_then(Value::as_u64)
+                    .is_none()
+                {
+                    return Err("EtherCAT ethercrab 连接需要配置 dc_start_delay_us".to_owned());
+                }
+            }
 
             let op_timeout_ms = metadata
                 .and_then(|value| value.get("op_timeout_ms"))

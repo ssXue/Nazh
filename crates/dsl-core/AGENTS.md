@@ -33,6 +33,7 @@ crates/dsl-core/src/
 - `HumanDuration`（时长）YAML 表示为字符串（"30s"/"5m"/"1h"/"500ms"），自定义反序列化为毫秒数
 - `ActionTarget` 使用 `#[serde(flatten)]` 映射 `capability: <id>` / `action: <id>` 形式
 - `pin_mapping` 模块依赖 `nazh-core` 的 `PinDefinition` / `PinType` / `PinDirection` 等类型
+- `ConnectionProtocol::Ethercat` 必须保留 `cycle_time_ms` / `op_timeout_ms` 必填字段；`ethercrab` 真实后端还必须显式声明 `dc_sync0_period_us` / `dc_sync0_shift_us` / `dc_start_delay_us`。亚毫秒过程数据周期用可选 `cycle_time_us` 表达，validate 阶段拒绝除 shift 以外的 0 值。
 - `SignalSource::EthercatPdo.slave_address` 是可选字段：标准 ESI 设备目录可省略；ENI/主站配置导入多从站拓扑时必须填入物理从站地址，以便同一 PDO 条目能区分不同轴/从站。
 - 保存、导入、AI 生成等资产入口应优先走 `parse_*_yaml_validated()`；兼容性解析入口只做反序列化，不代表资产可执行。
 - `CapabilitySpec::validate()` 必须覆盖 required input range、模板变量是否存在于 inputs、重复 input/output id、fallback 非空/非重复/非自引用等可在单资产内验证的约束。

@@ -94,6 +94,18 @@ pub enum ConnectionProtocol {
         backend: EthercatBackend,
         interface: String,
         cycle_time_ms: u64,
+        #[serde(default)]
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cycle_time_us: Option<u64>,
+        #[serde(default)]
+        #[serde(skip_serializing_if = "Option::is_none")]
+        dc_sync0_period_us: Option<u64>,
+        #[serde(default)]
+        #[serde(skip_serializing_if = "Option::is_none")]
+        dc_sync0_shift_us: Option<u64>,
+        #[serde(default)]
+        #[serde(skip_serializing_if = "Option::is_none")]
+        dc_start_delay_us: Option<u64>,
         op_timeout_ms: u64,
     },
 }
@@ -273,13 +285,46 @@ impl ConnectionProtocol {
                 validate_can_bitrate(connection_id, *bitrate)?;
             }
             Self::Ethercat {
-                backend: _,
+                backend,
                 interface,
                 cycle_time_ms,
+                cycle_time_us,
+                dc_sync0_period_us,
+                dc_sync0_shift_us,
+                dc_start_delay_us,
                 op_timeout_ms,
             } => {
                 validate_non_empty(connection_id, "protocol.interface", interface)?;
                 validate_positive_u64(connection_id, "protocol.cycle_time_ms", *cycle_time_ms)?;
+                if let Some(value) = cycle_time_us {
+                    validate_positive_u64(connection_id, "protocol.cycle_time_us", *value)?;
+                }
+                if let Some(value) = dc_sync0_period_us {
+                    validate_positive_u64(connection_id, "protocol.dc_sync0_period_us", *value)?;
+                }
+                if let Some(value) = dc_start_delay_us {
+                    validate_positive_u64(connection_id, "protocol.dc_start_delay_us", *value)?;
+                }
+                if *backend == EthercatBackend::Ethercrab {
+                    if dc_sync0_period_us.is_none() {
+                        return validation_error(
+                            connection_id,
+                            "protocol.dc_sync0_period_us 是 ethercrab 后端必填项",
+                        );
+                    }
+                    if dc_sync0_shift_us.is_none() {
+                        return validation_error(
+                            connection_id,
+                            "protocol.dc_sync0_shift_us 是 ethercrab 后端必填项",
+                        );
+                    }
+                    if dc_start_delay_us.is_none() {
+                        return validation_error(
+                            connection_id,
+                            "protocol.dc_start_delay_us 是 ethercrab 后端必填项",
+                        );
+                    }
+                }
                 validate_positive_u64(connection_id, "protocol.op_timeout_ms", *op_timeout_ms)?;
             }
         }
