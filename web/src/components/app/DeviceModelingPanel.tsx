@@ -85,8 +85,11 @@ export function DeviceModelingPanel({
     );
   }, [assets, searchQuery]);
 
+  const isInitialMount = useRef(true);
+
   useEffect(() => {
-    void loadAssets();
+    void loadAssets(isInitialMount.current ? undefined : true);
+    isInitialMount.current = false;
   }, [loadAssets, refreshKey]);
 
   const handleOpenDetail = useCallback(

@@ -64,7 +64,7 @@ export function InfrastructurePanel({
   }, [deviceSummaries]);
 
   const handleAssetsChanged = useCallback(() => {
-    void loadDeviceSummaries();
+    void loadDeviceSummaries(true);
     setDeviceRefreshKey((k) => k + 1);
   }, [loadDeviceSummaries]);
 
