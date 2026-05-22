@@ -38,6 +38,7 @@ ADR（Architecture Decision Record）是一种轻量级文档格式，用于记�
 | [0023](0023-ethercat-tx-rx-恢复策略-暂缓.md) | EtherCAT TX/RX 任务终止后的恢复策略（方案 B 已实施，方案 C/D 预研归档） | 已部分实施 | 2026-05-13 |
 | [0024](0024-device-signal-read-and-event-trigger.md) | 设备信号读取与事件触发节点（`deviceSignalRead` / `deviceEventTrigger`） | 已实施 | 2026-05-15 |
 | [0025](0025-连接资产模型替代-connections-json.md) | 连接资产模型替代 `connections.json` | 已实施 | 2026-05-17 |
+| [0026](0026-资产连接绑定收口.md) | 资产连接绑定收口 | 已接受 | 2026-05-23 |
 
 ## 如何新增 ADR
 
