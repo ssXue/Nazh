@@ -212,7 +212,9 @@ pub(crate) async fn delete_device_asset_yaml(
         DEVICES_DIR,
         ".sources.yaml",
     )
-    .await
+    .await?;
+
+    super::snapshots::delete_device_snapshot_file(app, workspace_path, asset_id).await
 }
 
 pub(crate) async fn delete_capability_asset_yaml(

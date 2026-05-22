@@ -97,3 +97,24 @@ pub(crate) async fn delete_device_snapshot_meta(
 
     Ok(())
 }
+
+/// 删除设备资产的整个快照元数据文件。设备删除时调用。
+pub(crate) async fn delete_device_snapshot_file(
+    app: &AppHandle,
+    workspace_path: Option<&str>,
+    asset_id: &str,
+) -> Result<(), String> {
+    let (workspace_dir, _) = resolve_project_workspace_dir(app, workspace_path)?;
+    let path = workspace_dir
+        .join(DSL_ASSETS_DIR)
+        .join(DEVICES_DIR)
+        .join(format!(
+            "{}{SNAPSHOTS_SUFFIX}",
+            sanitize_asset_file_stem(asset_id)
+        ));
+    match fs::remove_file(&path).await {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(format!("删除快照元数据失败 `{}`: {e}", path.display())),
+    }
+}
