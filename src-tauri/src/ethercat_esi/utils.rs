@@ -41,7 +41,7 @@ pub(super) fn attr_string(element: &BytesStart<'_>, key: &[u8]) -> Option<String
         .flatten()
         .find(|attr| attr.key.local_name().as_ref() == key)
         .and_then(|attr| {
-            attr.decode_and_unescape_value(element.decoder())
+            attr.decoded_and_normalized_value(quick_xml::XmlVersion::Implicit1_0, element.decoder())
                 .ok()
                 .map(|value| value.trim().to_owned())
         })
