@@ -81,9 +81,9 @@ export function useDeviceAssets(workspacePath = '') {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const loadAssets = useCallback(async () => {
+  const loadAssets = useCallback(async (silent = false) => {
     if (!hasTauriRuntime()) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     setError(null);
     try {
       const list = await invoke<DeviceAssetSummary[]>('list_device_assets', {
@@ -93,7 +93,7 @@ export function useDeviceAssets(workspacePath = '') {
     } catch (err) {
       setError(`加载设备列表失败: ${err}`);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [workspacePath]);
 
@@ -297,7 +297,7 @@ export function useDeviceAssets(workspacePath = '') {
         targetVersion,
         workspacePath: workspacePath.trim() || null,
       });
-      await loadAssets();
+      await loadAssets(true);
     },
     [loadAssets, workspacePath],
   );
@@ -329,7 +329,7 @@ export function useDeviceAssets(workspacePath = '') {
         snapshotLabel: snapshotLabel ?? null,
         workspacePath: workspacePath.trim() || null,
       });
-      await loadAssets();
+      await loadAssets(true);
     },
     [loadAssets, workspacePath],
   );
@@ -349,7 +349,7 @@ export function useDeviceAssets(workspacePath = '') {
         unit: unit ?? null,
         workspacePath: workspacePath.trim() || null,
       });
-      await loadAssets();
+      await loadAssets(true);
     },
     [loadAssets, workspacePath],
   );
@@ -362,7 +362,7 @@ export function useDeviceAssets(workspacePath = '') {
         signalYaml,
         workspacePath: workspacePath.trim() || null,
       });
-      await loadAssets();
+      await loadAssets(true);
     },
     [loadAssets, workspacePath],
   );
@@ -375,7 +375,7 @@ export function useDeviceAssets(workspacePath = '') {
         index,
         workspacePath: workspacePath.trim() || null,
       });
-      await loadAssets();
+      await loadAssets(true);
     },
     [loadAssets, workspacePath],
   );
@@ -388,7 +388,7 @@ export function useDeviceAssets(workspacePath = '') {
         alarmYaml,
         workspacePath: workspacePath.trim() || null,
       });
-      await loadAssets();
+      await loadAssets(true);
     },
     [loadAssets, workspacePath],
   );
@@ -401,7 +401,7 @@ export function useDeviceAssets(workspacePath = '') {
         index,
         workspacePath: workspacePath.trim() || null,
       });
-      await loadAssets();
+      await loadAssets(true);
     },
     [loadAssets, workspacePath],
   );
