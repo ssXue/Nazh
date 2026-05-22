@@ -189,6 +189,7 @@ fn parse_eni_slaves(eni_xml: &str) -> Result<Vec<EniSlave>, String> {
 fn eni_slave_to_device(slave: &EniSlave, group_id: &str, warnings: &mut Vec<String>) -> EsiDevice {
     let mut device = EsiDevice {
         device_type: Some("ethercat_slave".to_owned()),
+        vendor_id: None,
         vendor_name: None,
         name: slave.name.clone(),
         type_name: slave.name.clone(),

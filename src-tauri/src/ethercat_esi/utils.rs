@@ -85,7 +85,9 @@ pub(super) fn deterministic_hash(data: &[u8]) -> u64 {
 /// 没有 `ProductCode` 时，使用设备标签的稳定哈希值。
 pub(super) fn default_device_id(device: &EsiDevice) -> String {
     if let Some(product_code) = device.product_code {
-        return format!("{:06}", product_code % 1_000_000);
+        let vendor = device.vendor_id.unwrap_or(0);
+        let combined = u64::from(vendor) * 31 + u64::from(product_code);
+        return format!("{:06}", combined % 1_000_000);
     }
     // Fallback：没有 ProductCode（如 ENI 网络设备），对标签做确定性哈希
     let label = device
@@ -270,6 +272,7 @@ pub(super) fn is_devices_device_path(path: &[String]) -> bool {
 
 pub(super) fn classify_text_target(path: &[String], name: &str) -> Option<TextTarget> {
     match name {
+        "Id" if has_parent(path, "Vendor") => Some(TextTarget::VendorId),
         "Name" if has_parent(path, "Vendor") => Some(TextTarget::VendorName),
         "Name"
             if has_parent(path, "Device")
@@ -303,6 +306,7 @@ pub(super) fn classify_text_target(path: &[String], name: &str) -> Option<TextTa
 pub(super) fn apply_text_target(
     target: TextTarget,
     value: &str,
+    vendor_id: &mut Option<u32>,
     vendor_name: &mut Option<String>,
     current_device: &mut Option<EsiDevice>,
     current_pdo: &mut Option<EsiPdo>,
@@ -313,6 +317,11 @@ pub(super) fn apply_text_target(
     }
 
     match target {
+        TextTarget::VendorId => {
+            if let Some(value) = parse_esi_u32(value) {
+                *vendor_id = Some(value);
+            }
+        }
         TextTarget::VendorName => *vendor_name = Some(value.to_owned()),
         TextTarget::DeviceName => {
             if let Some(device) = current_device.as_mut() {
@@ -643,7 +652,7 @@ mod tests {
         let result = import_esi_to_device_yaml(SAMPLE_ESI).unwrap();
         assert_eq!(result.device_yamls.len(), 1);
         let spec = parse_device_yaml(&result.device_yamls[0]).unwrap();
-        assert_eq!(spec.id, "072658");
+        assert_eq!(spec.id, "072720");
         assert_eq!(spec.manufacturer.as_deref(), Some("Beckhoff"));
         assert!(spec.connection.is_none());
         assert_eq!(spec.signals.len(), 2);
@@ -664,7 +673,7 @@ mod tests {
     fn esi_导入不生成_connection() {
         let result = import_esi_to_device_yaml(SAMPLE_ESI).unwrap();
         let spec = parse_device_yaml(&result.device_yamls[0]).unwrap();
-        assert_eq!(spec.id, "072658");
+        assert_eq!(spec.id, "072720");
         assert!(!result.device_yamls[0].contains("connection:"));
     }
 
@@ -672,6 +681,49 @@ mod tests {
     fn esi_导入默认不生成_connection() {
         let result = import_esi_to_device_yaml(SAMPLE_ESI).unwrap();
         assert!(!result.device_yamls[0].contains("connection:"));
+    }
+
+    #[test]
+    fn esi_不同厂商相同_product_code_生成不同设备_id() {
+        let vendor_a_esi = r##"
+<EtherCATInfo>
+  <Vendor>
+    <Id>#x00AA0001</Id>
+    <Name>VendorA</Name>
+  </Vendor>
+  <Descriptions>
+    <Devices>
+      <Device>
+        <Type ProductCode="#x00000001" RevisionNo="#x00000001">DevA</Type>
+        <Name>Device A</Name>
+      </Device>
+    </Devices>
+  </Descriptions>
+</EtherCATInfo>
+"##;
+        let vendor_b_esi = r##"
+<EtherCATInfo>
+  <Vendor>
+    <Id>#x00BB0002</Id>
+    <Name>VendorB</Name>
+  </Vendor>
+  <Descriptions>
+    <Devices>
+      <Device>
+        <Type ProductCode="#x00000001" RevisionNo="#x00000001">DevB</Type>
+        <Name>Device B</Name>
+      </Device>
+    </Devices>
+  </Descriptions>
+</EtherCATInfo>
+"##;
+        let id_a = parse_device_yaml(&import_esi_to_device_yaml(vendor_a_esi).unwrap().device_yamls[0])
+            .unwrap()
+            .id;
+        let id_b = parse_device_yaml(&import_esi_to_device_yaml(vendor_b_esi).unwrap().device_yamls[0])
+            .unwrap()
+            .id;
+        assert_ne!(id_a, id_b, "不同厂商相同 ProductCode 应生成不同设备 ID");
     }
 
     #[test]

@@ -74,6 +74,7 @@ fn parse_esi_devices(esi_xml: &str) -> Result<Vec<EsiDevice>, String> {
     let mut path = Vec::<String>::new();
     let mut text = String::new();
     let mut devices = Vec::new();
+    let mut vendor_id: Option<u32> = None;
     let mut vendor_name = None;
     let mut current_device: Option<EsiDevice> = None;
     let mut current_pdo: Option<EsiPdo> = None;
@@ -88,6 +89,7 @@ fn parse_esi_devices(esi_xml: &str) -> Result<Vec<EsiDevice>, String> {
                 match name.as_str() {
                     "Device" if is_devices_device_path(&path) => {
                         current_device = Some(EsiDevice {
+                            vendor_id,
                             vendor_name: vendor_name.clone(),
                             ..EsiDevice::default()
                         });
@@ -157,6 +159,7 @@ fn parse_esi_devices(esi_xml: &str) -> Result<Vec<EsiDevice>, String> {
                     apply_text_target(
                         target,
                         text.trim(),
+                        &mut vendor_id,
                         &mut vendor_name,
                         &mut current_device,
                         &mut current_pdo,

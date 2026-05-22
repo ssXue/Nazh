@@ -11,6 +11,7 @@ pub(crate) struct EsiImportResult {
 #[derive(Debug, Clone, Default)]
 pub(super) struct EsiDevice {
     pub(super) device_type: Option<String>,
+    pub(super) vendor_id: Option<u32>,
     pub(super) vendor_name: Option<String>,
     pub(super) name: Option<String>,
     pub(super) type_name: Option<String>,
@@ -50,6 +51,7 @@ pub(super) struct EsiPdoEntry {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum TextTarget {
+    VendorId,
     VendorName,
     DeviceName,
     DeviceType,
