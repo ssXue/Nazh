@@ -6,9 +6,9 @@ use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use ethercrab::{
-    DefaultLock, MainDevice, MainDeviceConfig, PduStorage, SubDeviceGroup, Timeouts,
+    DcSync, DefaultLock, MainDevice, MainDeviceConfig, PduStorage, SubDeviceGroup, Timeouts,
     std::{ethercat_now, tx_rx_task},
-    subdevice_group::Op,
+    subdevice_group::{DcConfiguration, HasDc, Op},
 };
 use tokio::sync::Mutex;
 
@@ -23,7 +23,7 @@ const MAX_SUBDEVICES: usize = 64;
 const PDI_LEN: usize = 2048;
 const MAX_PDU_DATA: usize = 2048;
 const MAX_FRAMES: usize = 16;
-type OpGroup = SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, DefaultLock, Op>;
+type OpGroup = SubDeviceGroup<MAX_SUBDEVICES, PDI_LEN, DefaultLock, Op, HasDc>;
 
 /// PDU 存储 —— 进程级单例。`PduStorage::try_split()` 只能调用一次（内部
 /// `is_split` 是 `AtomicBool`，不可复位），所以 EtherCAT 主站的生命周期与
@@ -158,7 +158,7 @@ impl EthercrabBackend {
             let maindevice = ensure_maindevice(&interface, op_timeout_ms).await?;
 
             // 发现从站并初始化（PreOp 阶段不能访问 PDI）
-            let group = maindevice
+            let mut group = maindevice
                 .init_single_group::<MAX_SUBDEVICES, PDI_LEN>(ethercat_now)
                 .await
                 .map_err(|e| EthercatError::InitFailed(format!("从站发现失败: {e}")))?;
@@ -175,6 +175,35 @@ impl EthercrabBackend {
             }
 
             tracing::info!(count = slaves.len(), "EtherCAT 从站发现完成");
+
+            // 为所有支持 DC 的从站启用 SYNC0 同步。
+            // DM-LinkX-4C 等 DC 同步从站要求主站启用 SYNC0 才能完成
+            // PRE-OP → SAFE-OP 状态转换，否则从站会因缺少周期同步信号而超时。
+            for mut subdevice in group.iter_mut(&maindevice) {
+                if subdevice.dc_support().any() {
+                    subdevice.set_dc_sync(DcSync::Sync0);
+                }
+            }
+
+            let cycle_duration = Duration::from_millis(cycle_time_ms);
+
+            let group = group
+                .into_pre_op_pdi(&maindevice)
+                .await
+                .map_err(|e| EthercatError::InitFailed(format!("进入 PreOpPdi 失败: {e}")))?;
+
+            let group = group
+                .configure_dc_sync(
+                    &maindevice,
+                    DcConfiguration {
+                        start_delay: Duration::from_millis(100),
+                        sync0_period: cycle_duration,
+                        sync0_shift: cycle_duration / 2,
+                    },
+                )
+                .await
+                .map_err(|e| EthercatError::InitFailed(format!("DC SYNC0 配置失败: {e}")))?;
+            tracing::info!("EtherCAT DC SYNC0 配置完成");
 
             // 转换到 SAFE-OP 后请求 OP，并马上开始过程数据交换。
             //
@@ -239,7 +268,7 @@ impl EthercatBus for EthercrabBackend {
         )?;
 
         group
-            .tx_rx(&self.maindevice)
+            .tx_rx_dc(&self.maindevice)
             .await
             .map_err(|e| EthercatError::PdoReadFailed(format!("TX/RX 失败: {e}")))?;
 
@@ -289,7 +318,7 @@ impl EthercatBus for EthercrabBackend {
         // 写完缓冲区还要触发一次 TX/RX，输出帧才会真正上线。
         // 这里复用 `read_inputs` 路径上的同一把 group 锁，避免与并发 read 竞争 maindevice 的 PDU 通道。
         group
-            .tx_rx(&self.maindevice)
+            .tx_rx_dc(&self.maindevice)
             .await
             .map_err(|e| EthercatError::PdoWriteFailed(format!("TX/RX 失败: {e}")))?;
 
@@ -348,7 +377,7 @@ impl EthercatBus for EthercrabBackend {
             let outputs = io.outputs();
             outputs.fill(0);
         }
-        if let Err(error) = group.tx_rx(&self.maindevice).await {
+        if let Err(error) = group.tx_rx_dc(&self.maindevice).await {
             tracing::warn!(?error, "EtherCAT 安全关闭期间最终 TX/RX 失败");
         }
 
@@ -389,7 +418,7 @@ async fn wait_for_all_op(
 
     loop {
         let response = group
-            .tx_rx(maindevice)
+            .tx_rx_dc(maindevice)
             .await
             .map_err(|e| EthercatError::InitFailed(format!("等待 OP 状态期间 TX/RX 失败: {e}")))?;
 
@@ -438,7 +467,7 @@ fn spawn_process_data_loop(
                 let Some(group) = guard.as_ref() else {
                     break;
                 };
-                group.tx_rx(&maindevice).await
+                group.tx_rx_dc(&maindevice).await
             };
 
             match result {
