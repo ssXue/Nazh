@@ -36,6 +36,8 @@ interface DeviceModelingPanelProps {
   hideHeader?: boolean;
   /** 外部变更时递增此值，触发设备列表刷新。 */
   refreshKey?: number;
+  /** 设备列表变更（删除/绑定）后通知外层刷新共享摘要。 */
+  onAssetsChanged?: () => void;
 }
 
 export function DeviceModelingPanel({
@@ -48,6 +50,7 @@ export function DeviceModelingPanel({
   onAddCapabilityToCanvas,
   hideHeader = false,
   refreshKey = 0,
+  onAssetsChanged,
 }: DeviceModelingPanelProps) {
   const connectionsById = useMemo(
     () => new Map(connections.map((c) => [c.id, c])),
@@ -137,11 +140,12 @@ export function DeviceModelingPanel({
         await deleteAsset(id);
         onStatusMessage(`设备 ${id} 已删除`);
         setDetail(null);
+        onAssetsChanged?.();
       } catch (error) {
         onStatusMessage(`删除设备失败: ${error}`);
       }
     },
-    [deleteAsset, onStatusMessage],
+    [deleteAsset, onStatusMessage, onAssetsChanged],
   );
 
   if (!isTauriRuntime) {
@@ -230,12 +234,10 @@ export function DeviceModelingPanel({
                   value={asset.connection?.id ?? ''}
                   onChange={(e) => {
                     const cid = e.target.value;
-                    if (!cid) {
-                      void bindConnection(asset.id, null, null, null);
-                    } else {
-                      const def = connectionsById.get(cid);
-                      void bindConnection(asset.id, def?.type ?? '', cid, asset.connection?.unit ?? null);
-                    }
+                    const op = !cid
+                      ? bindConnection(asset.id, null, null, null)
+                      : bindConnection(asset.id, connectionsById.get(cid)?.type ?? '', cid, asset.connection?.unit ?? null);
+                    void op.then(() => onAssetsChanged?.());
                   }}
                 >
                   <option value="">未绑定</option>
@@ -387,6 +389,17 @@ const DetailPanel = forwardRef(function DetailPanel({
                   {(spec.network_group as string)}
                 </span>
               )}
+              {(() => {
+                if (!spec?.ethercat_identity) return null;
+                const id = spec.ethercat_identity as Record<string, unknown>;
+                const badges: string[] = [];
+                if (typeof id.product_code === 'number') badges.push(`PC 0x${(id.product_code as number).toString(16).toUpperCase().padStart(8, '0')}`);
+                if (typeof id.revision_no === 'number') badges.push(`Rev 0x${(id.revision_no as number).toString(16).toUpperCase().padStart(8, '0')}`);
+                if (typeof id.slave_address === 'number') badges.push(`Addr ${id.slave_address}`);
+                return badges.map((b) => (
+                  <span key={b} className="dm-badge dm-badge--meta">{b}</span>
+                ));
+              })()}
             </div>
           </div>
         </div>

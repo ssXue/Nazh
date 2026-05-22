@@ -26,9 +26,26 @@ pub struct DeviceSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub network_group: Option<String>,
     #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ethercat_identity: Option<EthercatIdentity>,
+    #[serde(default)]
     pub signals: Vec<SignalSpec>,
     #[serde(default)]
     pub alarms: Vec<AlarmSpec>,
+}
+
+/// EtherCAT 设备标识信息（ESI/ENI 导入时填充）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EthercatIdentity {
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub product_code: Option<u32>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub revision_no: Option<u32>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub slave_address: Option<u16>,
 }
 
 /// 对 `ConnectionManager` 中连接的引用。

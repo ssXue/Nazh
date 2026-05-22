@@ -21,6 +21,7 @@ fn sample_device_with_signals(id: &str, signals: Vec<SignalSpec>) -> DeviceSpec 
             unit: Some(1),
         }),
         network_group: None,
+        ethercat_identity: None,
         signals,
         alarms: vec![],
     }

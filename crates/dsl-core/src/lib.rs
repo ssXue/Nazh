@@ -20,8 +20,8 @@ pub use connection::{
     EthercatBackend, HeaderSpec, HeaderValueSpec, HttpMethod, SerialFlowControl, SerialParity,
 };
 pub use device::{
-    AccessMode, AlarmSeverity, AlarmSpec, ConnectionRef, DataType, DeviceSpec, SignalSource,
-    SignalSpec, SignalType,
+    AccessMode, AlarmSeverity, AlarmSpec, ConnectionRef, DataType, DeviceSpec, EthercatIdentity,
+    SignalSource, SignalSpec, SignalType,
 };
 pub use error::DslError;
 pub use parser::{

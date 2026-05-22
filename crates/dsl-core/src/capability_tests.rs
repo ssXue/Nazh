@@ -380,6 +380,7 @@ fn 从设备生成能力_只取写信号() {
         model: None,
         connection: None,
         network_group: None,
+        ethercat_identity: None,
         signals: vec![
             SignalSpec {
                 id: "pressure".to_owned(),
@@ -437,6 +438,7 @@ fn 从设备生成能力_无写信号返回空() {
         model: None,
         connection: None,
         network_group: None,
+        ethercat_identity: None,
         signals: vec![SignalSpec {
             id: "temp".to_owned(),
             signal_type: SignalType::AnalogInput,
@@ -464,6 +466,7 @@ fn 从_can_output_信号生成写能力_因编码语义无法无损表达而失�
         model: None,
         connection: None,
         network_group: None,
+        ethercat_identity: None,
         signals: vec![SignalSpec {
             id: "target_speed".to_owned(),
             signal_type: SignalType::AnalogOutput,

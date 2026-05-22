@@ -63,6 +63,11 @@ export function InfrastructurePanel({
     return map;
   }, [deviceSummaries]);
 
+  const handleAssetsChanged = useCallback(() => {
+    void loadDeviceSummaries();
+    setDeviceRefreshKey((k) => k + 1);
+  }, [loadDeviceSummaries]);
+
   const handleTabChange = useCallback(
     (next: InfraTab) => {
       setActiveTab(next);
@@ -140,6 +145,7 @@ export function InfrastructurePanel({
             onStatusMessage={onStatusMessage}
             onAddCapabilityToCanvas={onAddCapabilityToCanvas}
             refreshKey={deviceRefreshKey}
+            onAssetsChanged={handleAssetsChanged}
             hideHeader
           />
         ) : (
@@ -166,8 +172,7 @@ export function InfrastructurePanel({
             onClose={() => setImportDrawerOpen(false)}
             onSaved={(msg) => {
               setImportDrawerOpen(false);
-              setDeviceRefreshKey((k) => k + 1);
-              void loadDeviceSummaries();
+              handleAssetsChanged();
               setToast(msg ?? '设备已保存');
               if (toastTimer.current) clearTimeout(toastTimer.current);
               toastTimer.current = setTimeout(() => setToast(null), 3500);

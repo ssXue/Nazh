@@ -100,19 +100,7 @@ pub(super) fn default_device_id(device: &EsiDevice) -> String {
 }
 
 pub(super) fn model_label(device: &EsiDevice) -> Option<String> {
-    let base = device.type_name.clone().or_else(|| device.name.clone())?;
-    let mut parts = Vec::new();
-    if let Some(product_code) = device.product_code {
-        parts.push(format!("ProductCode 0x{product_code:08X}"));
-    }
-    if let Some(revision_no) = device.revision_no {
-        parts.push(format!("Revision 0x{revision_no:08X}"));
-    }
-    if parts.is_empty() {
-        Some(base)
-    } else {
-        Some(format!("{base} ({})", parts.join(", ")))
-    }
+    device.type_name.clone().or_else(|| device.name.clone())
 }
 
 pub(super) fn build_signals(device: &EsiDevice, warnings: &mut Vec<String>) -> Vec<SignalSpec> {

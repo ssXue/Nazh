@@ -1,6 +1,6 @@
 //! ESI（EtherCAT Slave Information）解析逻辑。
 
-use nazh_dsl_core::device::DeviceSpec;
+use nazh_dsl_core::device::{DeviceSpec, EthercatIdentity};
 use quick_xml::Reader;
 use quick_xml::events::Event;
 
@@ -54,6 +54,11 @@ fn build_device_yaml(
         model: model_label(device),
         connection: None,
         network_group: device.network_group.clone(),
+        ethercat_identity: Some(EthercatIdentity {
+            product_code: device.product_code,
+            revision_no: device.revision_no,
+            slave_address: None,
+        }),
         signals,
         alarms: Vec::new(),
     };

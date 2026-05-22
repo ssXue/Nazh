@@ -143,6 +143,7 @@ mod tests {
                 unit: Some(1),
             }),
             network_group: None,
+            ethercat_identity: None,
             signals: vec![],
             alarms: vec![],
         }

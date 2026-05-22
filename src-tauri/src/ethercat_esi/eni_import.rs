@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use nazh_dsl_core::device::{ConnectionRef, DeviceSpec};
+use nazh_dsl_core::device::{ConnectionRef, DeviceSpec, EthercatIdentity};
 use quick_xml::Reader;
 use quick_xml::events::Event;
 
@@ -50,6 +50,11 @@ pub(super) fn import_eni_to_device_yaml(eni_xml: &str) -> Result<EsiImportResult
                 unit: None,
             }),
             network_group: Some(group_id.clone()),
+            ethercat_identity: Some(EthercatIdentity {
+                product_code: slave.product_code,
+                revision_no: slave.revision_no,
+                slave_address: slave.phys_addr,
+            }),
             signals,
             alarms: Vec::new(),
         };
@@ -278,22 +283,7 @@ fn eni_slave_device_id(slave: &EniSlave) -> String {
 
 /// 从 ENI 从站信息派生 model 标签。
 fn eni_slave_model(slave: &EniSlave) -> Option<String> {
-    let base = slave.name.as_deref()?;
-    let mut parts = Vec::new();
-    if let Some(product_code) = slave.product_code {
-        parts.push(format!("ProductCode 0x{product_code:08X}"));
-    }
-    if let Some(revision_no) = slave.revision_no {
-        parts.push(format!("Revision 0x{revision_no:08X}"));
-    }
-    if let Some(addr) = slave.phys_addr {
-        parts.push(format!("Addr {addr}"));
-    }
-    if parts.is_empty() {
-        Some(base.to_owned())
-    } else {
-        Some(format!("{base} ({})", parts.join(", ")))
-    }
+    slave.name.clone()
 }
 
 fn eni_topology_summary(slaves: &[EniSlave]) -> Vec<String> {
