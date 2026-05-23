@@ -326,6 +326,7 @@ function App() {
   async function handleDeploy() {
     testRun.reset();
     engine.clearResults();
+    engine.setIsRuntimeDockCollapsed(false);
 
     if (!activeBoard || !activeProject) {
       engine.setStatusMessage('请先从所有看板进入工程。');
