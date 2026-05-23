@@ -144,6 +144,44 @@ pub async fn deploy_workflow_and_restore_variables<S: BuildHasher>(
     // B1-R0-01/B1-R0-05：变量控制事件走独立通道，与执行可观测事件分离。
     let (var_event_tx, var_event_rx) = mpsc::channel::<WorkflowVariableEvent>(event_capacity);
 
+    // 部署期间 on_deploy 循环是串行的（拓扑序依次 await），先完成的节点
+    //（如 timer）后台触发器立即开始往 event_tx 灌事件，但 event_rx 的消费者
+    //（壳层 forwarder）要到 deploy 函数返回后才启动。这导致事件积压溢出。
+    //
+    // 解决：在 on_deploy 之前 spawn proxy drain task，即时消费 event_rx 和
+    // var_event_rx 并转发到 final channel。部署完成后 final_rx 交给壳层。
+    let (event_final_tx, event_final_rx) = mpsc::channel(event_capacity);
+    let (var_event_final_tx, var_event_final_rx) =
+        mpsc::channel::<WorkflowVariableEvent>(event_capacity);
+    let _proxy_guard = tokio::spawn(async move {
+        let mut event_rx = event_rx;
+        let mut var_event_rx = var_event_rx;
+        loop {
+            tokio::select! {
+                event = event_rx.recv() => {
+                    match event {
+                        Some(e) => {
+                            if event_final_tx.send(e).await.is_err() {
+                                break;
+                            }
+                        }
+                        None => break,
+                    }
+                }
+                event = var_event_rx.recv() => {
+                    match event {
+                        Some(e) => {
+                            if var_event_final_tx.send(e).await.is_err() {
+                                break;
+                            }
+                        }
+                        None => break,
+                    }
+                }
+            }
+        }
+    });
+
     // ADR-0012 Phase 2：注入变量事件通道，让 set/CAS 在值变化时通过
     // WorkflowVariableEvent::Changed 流向 Tauri shell drain loop
     //（Task 4 转发到 workflow://variable-changed）。
@@ -456,8 +494,8 @@ pub async fn deploy_workflow_and_restore_variables<S: BuildHasher>(
             store: Arc::clone(&store),
         },
         streams: WorkflowStreams {
-            event_rx,
-            var_event_rx,
+            event_rx: event_final_rx,
+            var_event_rx: var_event_final_rx,
             result_rx,
             store,
         },

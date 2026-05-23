@@ -25,7 +25,7 @@ use nazh_core::{
     guard::guarded_execute,
 };
 
-use super::edge_window::{EdgeKey, EdgeWindow, EDGE_WINDOW_DURATION};
+use super::edge_window::{EDGE_WINDOW_DURATION, EdgeKey, EdgeWindow};
 use super::pull::{EdgesByConsumer, PureMemo};
 use super::types::DownstreamTarget;
 

@@ -107,11 +107,7 @@ impl EdgeWindow {
     }
 
     /// 无条件刷新剩余数据（用于循环退出时保底）。
-    pub(crate) fn force_flush(
-        &mut self,
-        from_node: &str,
-        event_tx: &mpsc::Sender<ExecutionEvent>,
-    ) {
+    pub(crate) fn force_flush(&mut self, from_node: &str, event_tx: &mpsc::Sender<ExecutionEvent>) {
         if self.transmit_count == 0 {
             return;
         }
