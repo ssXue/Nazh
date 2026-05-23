@@ -87,10 +87,6 @@ export interface NodeSettingsProps {
   aiProviders: AiProviderView[];
   activeAiProviderId: string | null;
   resolvedGlobalAiProvider: AiProviderView | null;
-  preferredCopilotProvider: AiProviderView | null;
-  aiGenerateButtonTitle: string;
-  aiGenerating: boolean;
-  onOpenAiDialog: () => void;
 }
 
 export function readString(value: unknown, fallback = ''): string {

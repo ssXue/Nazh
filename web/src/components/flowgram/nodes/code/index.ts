@@ -45,11 +45,9 @@ export const definition = {
     if (!ctx.draft.script.trim()) {
       result.push({ tone: 'danger', message: '脚本为空。' });
     }
-    const { aiProviders, activeAiProviderId, resolvedGlobalAiProvider, preferredCopilotProvider } = ctx;
+    const { aiProviders, activeAiProviderId, resolvedGlobalAiProvider } = ctx;
     if (aiProviders.length === 0) {
       result.push({ tone: 'warning', message: '当前尚未配置全局 AI，运行时将无法完成 AI 调用。' });
-    } else if (activeAiProviderId && !preferredCopilotProvider) {
-      result.push({ tone: 'danger', message: `全局 AI ${activeAiProviderId} 未在配置中找到。` });
     } else if (!resolvedGlobalAiProvider) {
       result.push({ tone: 'warning', message: '当前还没有选中全局 AI，请先前往 AI 配置页设置。' });
     } else if (!resolvedGlobalAiProvider.enabled) {

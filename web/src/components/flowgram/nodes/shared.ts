@@ -348,7 +348,6 @@ export interface NodeValidationContext {
   aiProviders: import('../../../types').AiProviderView[];
   activeAiProviderId: string | null;
   resolvedGlobalAiProvider: import('../../../types').AiProviderView | null;
-  preferredCopilotProvider: import('../../../types').AiProviderView | null;
   usesManagedConnection: boolean;
 }
 

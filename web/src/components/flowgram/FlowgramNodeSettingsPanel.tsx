@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { type FlowNodeEntity, useClientContext } from '@flowgram.ai/free-layout-editor';
 import { type PanelFactory, usePanelManager } from '@flowgram.ai/panel-manager-plugin';
@@ -14,7 +14,6 @@ import {
   getNodeDefinition,
 } from './flowgram-node-library';
 import type { NodeValidationContext } from './nodes/shared';
-import { generateScriptStream, getNodeContext } from '../../lib/script-generation';
 
 import {
   type SelectedNodeDraft,
@@ -25,7 +24,6 @@ import {
   readConnectionMetadataString,
   supportsConnectionBinding,
   connectionMatchesNodeType,
-  isUsableAiProvider,
   isScriptNode,
   usesDynamicPorts,
   validateConnectionBinding,
@@ -62,21 +60,6 @@ import { CapabilityCallNodeSettings } from './nodes/capabilityCall/settings';
 
 export { type FlowgramNodeSettingsPanelProps, FLOWGRAM_NODE_SETTINGS_PANEL_KEY } from './node-settings-types';
 
-function ThinkingBody({ text }: { text: string }) {
-  const ref = useRef<HTMLPreElement>(null);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (el) {
-      el.scrollTop = el.scrollHeight;
-    }
-  }, [text]);
-
-  return (
-    <pre ref={ref} className="flowgram-ai-dialog__thinking-body"><code>{text}</code></pre>
-  );
-}
-
 const NODE_SETTINGS_MAP: Record<string, React.FC<NodeSettingsProps>> = {
   native: NativeNodeSettings,
   code: CodeNodeSettings,
@@ -107,18 +90,11 @@ function FlowgramNodeSettingsPanel({
   connections,
   aiProviders,
   activeAiProviderId,
-  copilotParams,
 }: FlowgramNodeSettingsPanelProps) {
   const panelManager = usePanelManager();
   const { document, playground } = useClientContext();
   const node = document.getNode(nodeId) as FlowNodeEntity | undefined;
   const [draft, setDraft] = useState<SelectedNodeDraft | null>(() => (node ? readNodeDraft(node) : null));
-  const [aiDialogOpen, setAiDialogOpen] = useState(false);
-  const [aiDialogRequirement, setAiDialogRequirement] = useState('');
-  const [aiGenerating, setAiGenerating] = useState(false);
-  const [aiGenerateError, setAiGenerateError] = useState<string | null>(null);
-  const [aiStreamPreview, setAiStreamPreview] = useState<string | null>(null);
-  const [aiThinkingPreview, setAiThinkingPreview] = useState<string | null>(null);
 
   const closePanel = useCallback(() => {
     panelManager.close(FLOWGRAM_NODE_SETTINGS_PANEL_KEY);
@@ -162,20 +138,6 @@ function FlowgramNodeSettingsPanel({
     () => activeCopilotProvider ?? aiProviders.find((p) => p.enabled) ?? aiProviders[0] ?? null,
     [activeCopilotProvider, aiProviders],
   );
-
-  const preferredCopilotProvider = useMemo(() => {
-    if (isUsableAiProvider(resolvedGlobalAiProvider)) { return resolvedGlobalAiProvider; }
-    return aiProviders.find((p) => isUsableAiProvider(p)) ?? null;
-  }, [aiProviders, resolvedGlobalAiProvider]);
-
-  const aiGenerateButtonTitle = useMemo(() => {
-    if (preferredCopilotProvider) { return `使用 ${preferredCopilotProvider.name} 生成 Rhai 脚本`; }
-    if (aiProviders.length === 0) { return '请先在 AI 配置中添加提供商'; }
-    if (activeCopilotProvider && !activeCopilotProvider.enabled) { return `全局 AI ${activeCopilotProvider.name} 已被禁用`; }
-    if (activeCopilotProvider && !activeCopilotProvider.hasApiKey) { return `请先为全局 AI ${activeCopilotProvider.name} 配置 API Key`; }
-    if (aiProviders.some((p) => p.enabled)) { return '请先为可用的 AI 提供商配置 API Key'; }
-    return '请先启用一个 AI 提供商';
-  }, [activeCopilotProvider, aiProviders, preferredCopilotProvider]);
 
   const selectedConnection = useMemo(
     () => draft?.connectionId ? connections.find((c) => c.id === draft.connectionId) ?? null : null,
@@ -259,7 +221,6 @@ function FlowgramNodeSettingsPanel({
         aiProviders,
         activeAiProviderId,
         resolvedGlobalAiProvider,
-        preferredCopilotProvider,
         usesManagedConnection: draft.nodeType === 'httpClient' ? usesManagedHttpConnection : draft.nodeType === 'barkPush' ? usesManagedBarkConnection : false,
       };
       nextDiagnostics.push(...nodeDef.validate(validationCtx));
@@ -304,43 +265,6 @@ function FlowgramNodeSettingsPanel({
     [node],
   );
 
-  const handleAiGenerate = useCallback(
-    async () => {
-      if (!node || !draft || !preferredCopilotProvider) { return; }
-
-      const requirement = aiDialogRequirement.trim();
-      if (!requirement) { setAiGenerateError('请输入生成需求。'); return; }
-
-      setAiGenerating(true);
-      setAiGenerateError(null);
-      setAiStreamPreview('');
-      setAiThinkingPreview('');
-      try {
-        const context = getNodeContext(node);
-        const script = await generateScriptStream(
-          requirement,
-          context,
-          { provider: preferredCopilotProvider, model: preferredCopilotProvider.defaultModel, params: copilotParams },
-          (rawText) => setAiStreamPreview(rawText),
-          (thinkingText) => setAiThinkingPreview(thinkingText),
-        );
-        if (!script) { setAiGenerateError('AI 未返回有效代码。'); return; }
-        updateDraft({ script });
-        setAiGenerateError(null);
-        setAiStreamPreview(null);
-        setAiThinkingPreview(null);
-        setAiDialogOpen(false);
-        setAiDialogRequirement('');
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        setAiGenerateError(message || '生成失败，请重试。');
-      } finally {
-        setAiGenerating(false);
-      }
-    },
-    [aiDialogRequirement, copilotParams, draft, node, preferredCopilotProvider, updateDraft],
-  );
-
   if (!node || !draft || playground.config.readonly) {
     return null;
   }
@@ -357,13 +281,6 @@ function FlowgramNodeSettingsPanel({
     aiProviders,
     activeAiProviderId,
     resolvedGlobalAiProvider,
-    preferredCopilotProvider,
-    aiGenerateButtonTitle,
-    aiGenerating,
-    onOpenAiDialog: () => {
-      setAiGenerateError(null);
-      setAiDialogOpen(true);
-    },
   };
 
   return (
@@ -477,87 +394,8 @@ function FlowgramNodeSettingsPanel({
             {note.message}
           </article>
         ))}
-        {aiGenerateError ? (
-          <article className="flowgram-note flowgram-note--danger">{aiGenerateError}</article>
-        ) : null}
       </div>
       </div>
-
-      {aiDialogOpen ? (
-        <div
-          className="flowgram-ai-dialog-layer"
-          onClick={() => {
-            if (!aiGenerating) {
-              setAiDialogOpen(false);
-              setAiDialogRequirement('');
-              setAiGenerateError(null);
-              setAiStreamPreview(null);
-              setAiThinkingPreview(null);
-            }
-          }}
-        >
-          <div
-            className="flowgram-ai-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="flowgram-ai-dialog-title"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <strong id="flowgram-ai-dialog-title">AI 脚本生成</strong>
-            <p className="flowgram-ai-dialog__hint">描述你希望脚本实现的功能，AI 将生成 Rhai 代码。</p>
-            <textarea
-              className="flowgram-ai-dialog__textarea"
-              value={aiDialogRequirement}
-              onChange={(event) => {
-                setAiGenerateError(null);
-                setAiDialogRequirement(event.target.value);
-              }}
-              placeholder="例如：将摄氏温度转为华氏温度，并添加严重级别字段"
-              disabled={aiGenerating}
-              autoFocus
-            />
-            {aiGenerateError ? (
-              <article className="flowgram-note flowgram-note--danger">{aiGenerateError}</article>
-            ) : null}
-            {aiThinkingPreview !== null && aiThinkingPreview.length > 0 ? (
-              <details className="flowgram-ai-dialog__thinking" open={aiStreamPreview === '' || aiStreamPreview === null}>
-                <summary className="flowgram-ai-dialog__thinking-toggle">
-                  <span>思考过程</span>
-                  <span className="flowgram-ai-dialog__thinking-badge">{aiStreamPreview ? '完成' : '思考中...'}</span>
-                </summary>
-                <ThinkingBody text={aiThinkingPreview} />
-              </details>
-            ) : null}
-            {aiStreamPreview !== null && aiStreamPreview.length > 0 ? (
-              <pre className="flowgram-ai-dialog__preview"><code>{aiStreamPreview}</code></pre>
-            ) : null}
-            <div className="flowgram-ai-dialog__actions">
-              <button
-                type="button"
-                className="flowgram-ai-dialog__action"
-                disabled={aiGenerating}
-                onClick={() => {
-                  setAiDialogOpen(false);
-                  setAiDialogRequirement('');
-                  setAiGenerateError(null);
-                  setAiStreamPreview(null);
-                  setAiThinkingPreview(null);
-                }}
-              >
-                取消
-              </button>
-              <button
-                type="button"
-                className="flowgram-ai-dialog__action flowgram-ai-dialog__action--primary"
-                disabled={aiGenerating || !aiDialogRequirement.trim()}
-                onClick={() => { void handleAiGenerate(); }}
-              >
-                {aiGenerating ? '生成中...' : '生成'}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
     </section>
   );
 }
