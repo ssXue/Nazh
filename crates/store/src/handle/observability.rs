@@ -2,8 +2,8 @@
 
 use std::sync::Arc;
 
-use crate::{BatchWriter, DeploymentAuditRecord, Store, StoreError, StoredObservabilityRecord};
 use super::StoreHandle;
+use crate::{BatchWriter, DeploymentAuditRecord, Store, StoreError, StoredObservabilityRecord};
 
 /// 批量写入器的可观测性记录条目。
 #[derive(Debug)]

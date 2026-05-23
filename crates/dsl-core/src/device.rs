@@ -34,7 +34,7 @@ pub struct DeviceSpec {
     pub alarms: Vec<AlarmSpec>,
 }
 
-/// EtherCAT 设备标识信息（ESI/ENI 导入时填充）。
+/// `EtherCAT` 设备标识信息（ESI/ENI 导入时填充）。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EthercatIdentity {
     #[serde(default)]

@@ -21,7 +21,7 @@ pub(crate) async fn extract_text_from_pdf(pdf_base64: String) -> Result<String, 
         .decode(&pdf_base64)
         .map_err(|e| format!("PDF base64 解码失败: {e}"))?;
 
-    tracing::info!("PDF 文本提取开始，文件大小 {} 字节", pdf_bytes.len());
+    tracing::debug!("PDF 文本提取开始，文件大小 {} 字节", pdf_bytes.len());
 
     let text = pdf_extract::extract_text_from_mem(&pdf_bytes)
         .map_err(|e| format!("PDF 文本提取失败: {e}"))?;
@@ -31,7 +31,7 @@ pub(crate) async fn extract_text_from_pdf(pdf_base64: String) -> Result<String, 
         return Err("PDF 文本提取结果为空，文件可能是扫描件或图片型 PDF".to_owned());
     }
 
-    tracing::info!("PDF 文本提取完成，提取字符数 {}", trimmed.len());
+    tracing::debug!("PDF 文本提取完成，提取字符数 {}", trimmed.len());
 
     Ok(trimmed.to_owned())
 }

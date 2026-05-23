@@ -1,7 +1,7 @@
 //! Copilot 对话持久化 + AI 配置 async 句柄方法。
 
-use crate::{CopilotConversation, CopilotMessage, Store, StoreError};
 use super::StoreHandle;
+use crate::{CopilotConversation, CopilotMessage, Store, StoreError};
 
 impl StoreHandle {
     /// 列出所有 copilot 对话。

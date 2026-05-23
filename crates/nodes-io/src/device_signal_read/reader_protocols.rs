@@ -1,9 +1,9 @@
-//! CAN / MQTT / EtherCAT / Serial 协议源读取实现（ADR-0024 Phase 2/3）。
+//! CAN / MQTT / `EtherCAT` / Serial 协议源读取实现（ADR-0024 Phase 2/3）。
 
 use std::io::Write as IoWrite;
 
-use uuid::Uuid;
 use serde_json::Value;
+use uuid::Uuid;
 
 use nazh_core::EngineError;
 

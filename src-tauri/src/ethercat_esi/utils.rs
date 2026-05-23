@@ -674,6 +674,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::similar_names)]
     fn esi_不同厂商相同_product_code_生成不同设备_id() {
         let vendor_a_esi = r##"
 <EtherCATInfo>
@@ -707,19 +708,27 @@ mod tests {
   </Descriptions>
 </EtherCATInfo>
 "##;
-        let id_a = parse_device_yaml(&import_esi_to_device_yaml(vendor_a_esi).unwrap().device_yamls[0])
-            .unwrap()
-            .id;
-        let id_b = parse_device_yaml(&import_esi_to_device_yaml(vendor_b_esi).unwrap().device_yamls[0])
-            .unwrap()
-            .id;
+        let id_a = parse_device_yaml(
+            &import_esi_to_device_yaml(vendor_a_esi)
+                .unwrap()
+                .device_yamls[0],
+        )
+        .unwrap()
+        .id;
+        let id_b = parse_device_yaml(
+            &import_esi_to_device_yaml(vendor_b_esi)
+                .unwrap()
+                .device_yamls[0],
+        )
+        .unwrap()
+        .id;
         assert_ne!(id_a, id_b, "不同厂商相同 ProductCode 应生成不同设备 ID");
     }
 
     /// 回归测试：ESI Dictionary 中 Object 的 `<Type>DTF000</Type>` 不应覆盖设备型号。
     ///
-    /// 背景：ZLG ZLG_ECAT_IO.xml 的 `<Dictionary>/<Objects>/<Object>` 包含
-    /// `<Type>DTF000</Type>`（对象 0xF000 的 DataType 引用），路径满足
+    /// 背景：ZLG `ZLG_ECAT_IO.xml` 的 `<Dictionary>/<Objects>/<Object>` 包含
+    /// `<Type>DTF000</Type>`（对象 0xF000 的 `DataType` 引用），路径满足
     /// `has_parent(path, "Device")` 且不在 TxPdo/RxPdo 下，会被错误匹配为
     /// `TextTarget::DeviceType`，覆盖真正的 `<Type ProductCode="...">ZLG_ECAT_IO</Type>`。
     /// 修复：在 `classify_text_target` 的 DeviceType/DeviceName 匹配中增加

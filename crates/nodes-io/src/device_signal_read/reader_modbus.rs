@@ -1,7 +1,7 @@
 //! Modbus Register 源读取实现（ADR-0024 Phase 1）。
 
-use uuid::Uuid;
 use serde_json::Value;
+use uuid::Uuid;
 
 use nazh_core::EngineError;
 

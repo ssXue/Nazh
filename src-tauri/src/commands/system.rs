@@ -33,20 +33,9 @@ pub(crate) async fn restart_app(app: AppHandle) {
 /// macOS 典型虚拟接口：`awdl*`（Apple Wireless Direct Link）、`llw*`（Low Latency WLAN）、
 /// `utun*`（VPN 隧道）、`bridge*`（网桥）、`anpi*`（虚拟 NIC）。
 /// Linux 典型虚拟接口：`docker*`、`virbr*`、`veth*`、`br-*`。
-/// EtherCAT 需要绑定物理以太网卡，这些虚拟接口不适合。
+/// `EtherCAT` 需要绑定物理以太网卡，这些虚拟接口不适合。
 const VIRTUAL_INTERFACE_PREFIXES: &[&str] = &[
-    "lo",
-    "awdl",
-    "llw",
-    "utun",
-    "bridge",
-    "anpi",
-    "vnic",
-    "stf",
-    "gif",
-    "docker",
-    "virbr",
-    "veth",
+    "lo", "awdl", "llw", "utun", "bridge", "anpi", "vnic", "stf", "gif", "docker", "virbr", "veth",
     "br-",
 ];
 

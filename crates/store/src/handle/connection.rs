@@ -1,7 +1,7 @@
 //! 连接私有配置 async 句柄方法。
 
-use crate::{StoreError, StoredConnectionLocalOverride, StoredConnectionSecret};
 use super::StoreHandle;
+use crate::{StoreError, StoredConnectionLocalOverride, StoredConnectionSecret};
 
 impl StoreHandle {
     /// 写入或更新一个连接密钥。
