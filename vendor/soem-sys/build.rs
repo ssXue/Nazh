@@ -37,6 +37,7 @@ fn main() {
     } else if target.contains("darwin") {
         let osal = soem_src.join("contrib/osal/macosx");
         let oshw = soem_src.join("contrib/oshw/macosx");
+        apply_macos_patches(&soem_src);
         core_files.push(osal.join("osal.c"));
         core_files.push(oshw.join("nicdrv.c"));
         core_files.push(oshw.join("oshw.c"));
@@ -115,6 +116,24 @@ fn main() {
         .expect("无法写入 bindings.rs");
 
     println!("cargo:rerun-if-changed=wrapper.h");
+}
+
+/// macOS OSAL 本地补丁：覆盖 submodule 中的上游原版。
+///
+/// 上游 SOEM 的 macOS OSAL 使用 `clock_nanosleep`（macOS 不支持），
+/// 本补丁替换为 `nanosleep` 并补充 `ec_timet` / `osal_mutext` 类型定义。
+fn apply_macos_patches(soem_src: &Path) {
+    let patch_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap()).join("patch/macosx");
+    let target_dir = soem_src.join("contrib/osal/macosx");
+    for name in &["osal.c", "osal_defs.h"] {
+        let src = patch_dir.join(name);
+        let dst = target_dir.join(name);
+        if src.exists() {
+            fs::copy(&src, &dst).unwrap_or_else(|e| {
+                panic!("复制 macOS OSAL 补丁 {name} 失败: {e}");
+            });
+        }
+    }
 }
 
 /// 从 SOEM CMake 默认值生成 `ec_options.h`。
