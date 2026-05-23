@@ -101,7 +101,7 @@ async fn register_connection_拒绝缺少显式总线参数的_can_与_ethercat(
             id: "ecat-cycle".to_owned(),
             kind: "ethercat".to_owned(),
             metadata: json!({
-                "backend": "ethercrab",
+                "backend": "soem",
                 "interface": "en0",
                 "cycle_time_ms": 1,
                 "cycle_time_us": 0,

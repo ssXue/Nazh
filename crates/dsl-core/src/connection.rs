@@ -159,7 +159,7 @@ pub enum HeaderValueSpec {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum EthercatBackend {
-    Ethercrab,
+    Soem,
     Mock,
 }
 
@@ -232,12 +232,7 @@ impl ConnectionProtocol {
             } => {
                 validate_non_empty(connection_id, "protocol.port_path", port_path)?;
                 validate_positive_u32(connection_id, "protocol.baud_rate", *baud_rate)?;
-                if !matches!(*data_bits, 5..=8) {
-                    return validation_error(connection_id, "protocol.data_bits 必须在 5-8 之间");
-                }
-                if !matches!(*stop_bits, 1 | 2) {
-                    return validation_error(connection_id, "protocol.stop_bits 只能是 1 或 2");
-                }
+                validate_serial_frame_params(connection_id, *data_bits, *stop_bits)?;
                 if let Some(value) = read_timeout_ms {
                     validate_positive_u64(connection_id, "protocol.read_timeout_ms", *value)?;
                 }
@@ -294,38 +289,17 @@ impl ConnectionProtocol {
                 dc_start_delay_us,
                 op_timeout_ms,
             } => {
-                validate_non_empty(connection_id, "protocol.interface", interface)?;
-                validate_positive_u64(connection_id, "protocol.cycle_time_ms", *cycle_time_ms)?;
-                if let Some(value) = cycle_time_us {
-                    validate_positive_u64(connection_id, "protocol.cycle_time_us", *value)?;
-                }
-                if let Some(value) = dc_sync0_period_us {
-                    validate_positive_u64(connection_id, "protocol.dc_sync0_period_us", *value)?;
-                }
-                if let Some(value) = dc_start_delay_us {
-                    validate_positive_u64(connection_id, "protocol.dc_start_delay_us", *value)?;
-                }
-                if *backend == EthercatBackend::Ethercrab {
-                    if dc_sync0_period_us.is_none() {
-                        return validation_error(
-                            connection_id,
-                            "protocol.dc_sync0_period_us 是 ethercrab 后端必填项",
-                        );
-                    }
-                    if dc_sync0_shift_us.is_none() {
-                        return validation_error(
-                            connection_id,
-                            "protocol.dc_sync0_shift_us 是 ethercrab 后端必填项",
-                        );
-                    }
-                    if dc_start_delay_us.is_none() {
-                        return validation_error(
-                            connection_id,
-                            "protocol.dc_start_delay_us 是 ethercrab 后端必填项",
-                        );
-                    }
-                }
-                validate_positive_u64(connection_id, "protocol.op_timeout_ms", *op_timeout_ms)?;
+                validate_ethercat_params(
+                    connection_id,
+                    interface,
+                    *cycle_time_ms,
+                    cycle_time_us.as_ref(),
+                    dc_sync0_period_us.as_ref(),
+                    dc_start_delay_us.as_ref(),
+                    *op_timeout_ms,
+                    *backend,
+                    dc_sync0_shift_us.as_ref(),
+                )?;
             }
         }
 
@@ -484,6 +458,47 @@ fn validate_can_bitrate(connection_id: &str, bitrate: u32) -> Result<(), DslErro
     ) {
         return validation_error(connection_id, "protocol.bitrate 不在支持的 CAN 速率列表中");
     }
+    Ok(())
+}
+
+fn validate_serial_frame_params(
+    connection_id: &str,
+    data_bits: u8,
+    stop_bits: u8,
+) -> Result<(), DslError> {
+    if !matches!(data_bits, 5..=8) {
+        return validation_error(connection_id, "protocol.data_bits 必须在 5-8 之间");
+    }
+    if !matches!(stop_bits, 1 | 2) {
+        return validation_error(connection_id, "protocol.stop_bits 只能是 1 或 2");
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments, clippy::similar_names)]
+fn validate_ethercat_params(
+    connection_id: &str,
+    interface: &str,
+    cycle_time_ms: u64,
+    cycle_time_us: Option<&u64>,
+    dc_sync0_period_us: Option<&u64>,
+    dc_start_delay_us: Option<&u64>,
+    op_timeout_ms: u64,
+    _backend: EthercatBackend,
+    _dc_sync0_shift_us: Option<&u64>,
+) -> Result<(), DslError> {
+    validate_non_empty(connection_id, "protocol.interface", interface)?;
+    validate_positive_u64(connection_id, "protocol.cycle_time_ms", cycle_time_ms)?;
+    if let Some(value) = cycle_time_us {
+        validate_positive_u64(connection_id, "protocol.cycle_time_us", *value)?;
+    }
+    if let Some(value) = dc_sync0_period_us {
+        validate_positive_u64(connection_id, "protocol.dc_sync0_period_us", *value)?;
+    }
+    if let Some(value) = dc_start_delay_us {
+        validate_positive_u64(connection_id, "protocol.dc_start_delay_us", *value)?;
+    }
+    validate_positive_u64(connection_id, "protocol.op_timeout_ms", op_timeout_ms)?;
     Ok(())
 }
 

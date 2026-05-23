@@ -50,12 +50,12 @@ export function EthercatFields({
       <label>
         <span>后端</span>
         <select
-          value={metadataString(connection.metadata, 'backend', 'ethercrab')}
+          value={metadataString(connection.metadata, 'backend', 'soem')}
           onChange={(event) =>
             handleMetadataFieldChange(connectionIndex, 'backend', event.target.value)
           }
         >
-          <option value="ethercrab">ethercrab（真实）</option>
+          <option value="soem">SOEM（真实）</option>
           <option value="mock">Mock（模拟）</option>
         </select>
       </label>

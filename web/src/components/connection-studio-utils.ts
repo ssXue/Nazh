@@ -166,18 +166,15 @@ export const CONNECTION_TEMPLATES: ConnectionTemplate[] = [
   {
     key: 'ethercat',
     label: 'EtherCAT',
-    description: '适合工业以太网 EtherCAT 主站，使用 ethercrab 纯 Rust 后端。',
+    description: '适合工业以太网 EtherCAT 主站，使用 SOEM 后端。',
     idPrefix: 'ethercat',
     definition: {
       id: 'ethercat',
       type: 'ethercat',
       metadata: {
-        backend: 'ethercrab',
+        backend: 'soem',
         interface: 'eth0',
         cycle_time_ms: 10,
-        dc_sync0_period_us: 10000,
-        dc_sync0_shift_us: 5000,
-        dc_start_delay_us: 100000,
         op_timeout_ms: 15000,
         governance: DEFAULT_CONNECTION_GOVERNANCE,
       },

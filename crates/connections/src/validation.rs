@@ -162,9 +162,9 @@ pub(crate) fn validate_connection_definition(kind: &str, metadata: &Value) -> Re
                 .map(str::to_ascii_lowercase)
                 .unwrap_or_default();
             if backend.is_empty() {
-                return Err("EtherCAT 连接需要配置 backend（ethercrab/mock）".to_owned());
+                return Err("EtherCAT 连接需要配置 backend（soem/mock）".to_owned());
             }
-            if !matches!(backend.as_str(), "ethercrab" | "mock") {
+            if !matches!(backend.as_str(), "soem" | "mock") {
                 return Err(format!("EtherCAT 连接不支持 backend: {backend}"));
             }
 
@@ -202,30 +202,6 @@ pub(crate) fn validate_connection_definition(kind: &str, metadata: &Value) -> Re
             {
                 return Err("EtherCAT 连接 dc_start_delay_us 必须大于 0".to_owned());
             }
-            if backend == "ethercrab" {
-                if metadata
-                    .and_then(|value| value.get("dc_sync0_period_us"))
-                    .and_then(Value::as_u64)
-                    .is_none()
-                {
-                    return Err("EtherCAT ethercrab 连接需要配置 dc_sync0_period_us".to_owned());
-                }
-                if metadata
-                    .and_then(|value| value.get("dc_sync0_shift_us"))
-                    .and_then(Value::as_u64)
-                    .is_none()
-                {
-                    return Err("EtherCAT ethercrab 连接需要配置 dc_sync0_shift_us".to_owned());
-                }
-                if metadata
-                    .and_then(|value| value.get("dc_start_delay_us"))
-                    .and_then(Value::as_u64)
-                    .is_none()
-                {
-                    return Err("EtherCAT ethercrab 连接需要配置 dc_start_delay_us".to_owned());
-                }
-            }
-
             let op_timeout_ms = metadata
                 .and_then(|value| value.get("op_timeout_ms"))
                 .and_then(Value::as_u64)

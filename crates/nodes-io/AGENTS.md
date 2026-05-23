@@ -20,8 +20,8 @@
 | `mqttClient` | MQTT | 两种模式：publish（变换节点）/ subscribe（触发器，壳层启动订阅） |
 | `canRead` | CAN/SLCAN | 通过 USB-CAN SLCAN 适配器接收 CAN 帧（默认 fail-fast；`config.simulation=true` 时显式启用 Mock 后端） |
 | `canWrite` | CAN/SLCAN | 通过 USB-CAN SLCAN 适配器发送 CAN 帧（默认 fail-fast；`config.simulation=true` 时显式启用 Mock 后端） |
-| `ethercatPdoRead` | EtherCAT | 读取从站 PDO 输入数据（ethercrab 真实后端 / Mock 回退） |
-| `ethercatPdoWrite` | EtherCAT | 写入从站 PDO 输出数据（ethercrab 真实后端 / Mock 回退） |
+| `ethercatPdoRead` | EtherCAT | 读取从站 PDO 输入数据（SOEM 真实后端 / Mock 回退） |
+| `ethercatPdoWrite` | EtherCAT | 写入从站 PDO 输出数据（SOEM 真实后端 / Mock 回退） |
 | `ethercatStatus` | EtherCAT | 查询所有从站状态与通道信息 |
 | `barkPush` | HTTP | 向 Bark 服务推送 iOS 通知 |
 | `sqlWriter` | sqlite | 本地持久化写入（`database_path` 必填，内部 `spawn_blocking` 包装 `rusqlite`） |
@@ -139,74 +139,28 @@ Plugin 注册入口：`IoPlugin::register(&mut NodeRegistry)`，在 `lib.rs` 集
 - 同一 `connection_id` 的所有 EtherCAT 节点共享同一个主站后端，存储在 `ConnectionManager::shared_sessions` 缓存中；
 - `ethercat::session::EthercatRuntime` 是轻量级操作句柄，按需创建，内部委托给 `ConnectionManager::ensure_shared_session`；
 - 部署期通过 `connection_id` 建立后端；开发/测试可绑定 `backend: mock` 的 EtherCAT 连接，后续 transform 复用；
-- ethercrab 后端在建连时执行从站发现 + PreOp → OP 状态转换，PDU TX/RX 由后台 tokio task 驱动；
-- `PduStorage` 是全局静态单例（`try_split()` 只能调用一次，内部 `is_split` 是 `AtomicBool`，不可复位），因此**同一进程内 EtherCAT 主站只能绑定到第一次成功初始化的网卡**——后续部署若 `interface` 改变，`ensure_maindevice` 会显式报错要求重启 nazh-desktop；
+- SOEM 后端在建连时执行从站发现 + PDO 映射 + DC 配置 + PreOp → SAFE-OP → OP 状态转换；PDU TX/RX 由后台 OS 线程（`soem-cyclic`）驱动；
 - 共享会话不使用 `ConnectionGuard` 的排他借用，改用 `record_connect_success` / `record_connect_failure` 直接报告健康状态；
-- 撤销部署时 `lifecycle_guard` 清理共享会话；运行错误时 `runtime.shutdown()` 移除会话，所有共享节点下次 `ensure_session` 重建。**注意**：进程级 TX/RX 后台任务 + `MainDevice` 不会随 session cleanup 一起销毁——`shutdown()` 只丢 backend 壳，下一次部署若 `interface` 一致则复用。
+- 撤销部署时 `lifecycle_guard` 清理共享会话；运行错误时 `runtime.shutdown()` 移除会话，所有共享节点下次 `ensure_session` 重建。
 - PDO read/write 运行期失败必须记录 `record_connect_failure` 并清理共享会话，返回 `StageExecution` 一类运行期错误；不能把从站/PDO/链路错误伪装成 `NodeConfig`，也不能继续复用已失败会话。
 
 修改 EtherCAT 节点时必须保留这个共享会话模型。
 
-#### tx_rx_task 接入坑点（删除/重写守护）
+#### SOEM 后端架构（`soem_backend.rs`）
 
-`crates/nodes-io/src/ethercat/backends/ethercrab_backend.rs::ensure_maindevice` 的 TX/RX 任务接入是 ethercrab 0.7 API 的反直觉点，**改这段前必读**：
+SOEM（Simple Open EtherCAT Master）通过 `soem-sys` FFI crate（`cc` + `bindgen`）集成：
 
-`ethercrab::std::tx_rx_task` 的签名是 `fn(...) -> Result<impl Future<Output = Result<...>>, io::Error>`——**同步函数返回 `Result<Future, io::Error>`**：
+- `vendor/soem-sys/` — sys crate：编译 SOEM C 源码 + bindgen 生成 Rust FFI 绑定
+- `vendor/soem-src/` — SOEM Git 源码（git clone --depth 1）
+- 三端 OSAL/OSHW：Linux（raw socket）、macOS（pcap）、Windows（WinPcap/Npcap）
+- macOS 贡献 OSAL 已重写（原 `osal.c` 使用旧版 `ec_timet` API 不兼容当前 SOEM 主线）
 
-- 同步部分：打开 raw socket、读 MAC/MTU。失败必须立即返回，不能继续构造 `MainDevice`，否则会拿到一个 PDU 永远不上线的死主站
-- 异步部分：返回的 `Future` 必须被 `tokio::spawn` 持续 poll，PDU 收发循环才会运行
-
-正确写法：
-
-```rust
-let task = tx_rx_task(interface, tx, rx).map_err(...)?;       // 同步段失败提前返回
-let tx_handle = tokio::spawn(async move { task.await; ... }); // 异步段交给 tokio 驱动
-```
-
-**反例**（曾经踩过的坑，2026-05-06 修复）：
-
-```rust
-// ❌ 错的：tx_rx_task() 在 Ok 分支返回 Future，被 if let Err 模式整个丢弃
-tokio::spawn(async move {
-    if let Err(e) = tx_rx_task(&iface, tx, rx) {
-        tracing::error!(...);
-    }
-    // Ok(future) 直接 drop —— PDU 帧永远不上线，init_single_group 一律 timeout: PDU
-});
-```
-
-`PDU_STATE` 缓存命中时还要校验 `tx_handle.is_finished()`：socket 异常退出后必须给出"任务已死，请重启"的明确错误，不能让后续 `init_single_group` 继续 hang 到超时。
+所有 unsafe 操作封装在 `soem-sys` 的安全函数中（`safe_ecx_init` 等），`nodes-io` 保持 `unsafe_code = "forbid"`。
+后台周期线程通过 `ContextPtr`（Send 包装的 `*mut ecx_context`）+ `soem_sys::cyclic_loop` 在 `soem-sys` 中创建，绕过 `*mut` 的 Send 约束。
 
 #### `write_outputs` 自动 tx_rx
 
-`EthercatBus::write_outputs` 是 `async fn`，每次写完输出缓冲会立即触发一次 `group.tx_rx(&maindevice).await`，让数据上线。Nazh 没有全局周期 ticker（节点是事件驱动），如果 `write_outputs` 只 stage 不刷帧，写入永远卡在本地缓冲。改成带周期 ticker 的设计前，请保持这个"写即刷帧"的语义。
-
-#### TX/RX 任务死亡后的现场排查（ADR-0023）
-
-部署 EtherCAT 工作流时若撞到下面这条错误，**不是 Nazh bug，是 ethercrab 0.7 API 的硬约束**：
-
-```text
-EtherCAT 主站初始化失败: EtherCAT TX/RX 任务已终止（接口 `<iface>`）；
-请重启 nazh-desktop 后重试，或检查网卡是否被拔出/链路中断
-```
-
-含义：上一次部署期间或之后，进程级后台 TX/RX 任务因 socket 错误（`SendFrame` / `ReceiveFrame` / `PartialSend`）退出。`PduStorage::try_split` 已被消费一次不可复位，且失败路径未归还 `(PduTx, PduRx)`——**当前进程内无法软恢复，必须重启 nazh-desktop**。
-
-诊断与应对路径：
-
-1. **看根因**——重启前在 stderr 找上一次的：
-   ```text
-   ERROR ethercrab_backend: EtherCAT TX/RX 任务异常终止 error=...
-   ```
-   `error=...` 是 ethercrab 给出的真实终止原因。开发期建议跑：
-   ```bash
-   RUST_LOG=info,ethercrab=debug \
-     ../web/node_modules/.bin/tauri dev --no-watch
-   ```
-2. **检查物理链路**——`en8` 这类是 macOS USB-Ethernet 或虚拟网卡；`ifconfig` 确认 UP，必要时拔插一次 USB 适配器重置 BPF。
-3. **重启 nazh-desktop**——前端会弹出确认对话框，点击"重启应用"即可一键重启；也可手动退出后重新打开。`PDU_STORAGE` 是进程级 `static`，进程退出即释放。
-
-设计层面的取舍、可选恢复方案（Tauri 重启入口 / vendor patch / 切库）以及重新评估的触发条件见 `docs/adr/0023-ethercat-tx-rx-恢复策略-暂缓.md`。**不要在没看 ADR-0023 的情况下尝试在 `ensure_maindevice` 加重试逻辑**——`tx_rx_task` 失败路径不归还 tx/rx，所谓"重试"不可能跑得通。
+`EthercatBus::write_outputs` 是 `async fn`，每次写完输出缓冲会立即触发一次 `ecx_send_processdata` + `ecx_receive_processdata`，让数据上线。Nazh 没有全局周期 ticker（节点是事件驱动），如果 `write_outputs` 只 stage 不刷帧，写入永远卡在本地缓冲。改成带周期 ticker 的设计前，请保持这个"写即刷帧"的语义。
 
 ### 元数据约定（ADR-0008）
 
@@ -252,7 +206,7 @@ EtherCAT 主站初始化失败: EtherCAT TX/RX 任务已终止（接口 `<iface>
 - `sqlWriter.database_path` 必须显式配置；测试 fixture 也要给出项目内或临时路径，禁止静默写入 `./nazh-local.sqlite3`。
 - `modbusRead` 无 `connection_id` 时默认拒绝运行；只有测试/demo 明确设置 `simulation: true` 时才允许正弦模拟读数。
 - `canRead` / `canWrite` 默认 fail-fast：无 `connection_id` 且 `simulation: false`（默认值）时，`on_deploy` 与 `transform` 双重防御直接报错；只有显式 `simulation: true` 才使用 `MockBackend`。这条与 `modbusRead` 对齐，避免现场漏配时静默给出假数据/假"发送成功"。
-- CAN/SLCAN 配置必须显式声明 `interface` / `channel` / `baud_rate` / `bitrate`；EtherCAT 配置必须显式声明 `backend` / `interface` / `cycle_time_ms` / `op_timeout_ms`。`ethercrab` 真实后端还必须声明 `dc_sync0_period_us` / `dc_sync0_shift_us` / `dc_start_delay_us`；亚毫秒过程数据周期通过 `cycle_time_us` 显式声明。除 `dc_sync0_shift_us` 可为 0 外，其余微秒字段为 0 必须失败。mock 后端也按同一规则写全字段。
+- CAN/SLCAN 配置必须显式声明 `interface` / `channel` / `baud_rate` / `bitrate`；EtherCAT 配置必须显式声明 `backend` / `interface` / `cycle_time_ms` / `op_timeout_ms`。SOEM 后端（`backend: "soem"`）的 DC 参数可选（由 `ecx_configdc` 自动配置）；亚毫秒过程数据周期通过 `cycle_time_us` 显式声明。mock 后端也按同一规则写全字段。
 
 ### 新增 DEVICE_IO 节点的 simulation 约定
 
@@ -267,7 +221,7 @@ EtherCAT 主站初始化失败: EtherCAT TX/RX 任务已终止（接口 `<iface>
 ## 依赖约束
 
 - 允许：`nazh-core`、`connections`、`chrono`、`serde_json`、`url`、`tokio`、`uuid`、`tracing`、`thiserror`
-- 可选（按 feature 门控，ADR-0018）：`reqwest`、`rumqttc`、`rusqlite`、`tokio-modbus`、`serialport`、`ethercrab`
+- 可选（按 feature 门控，ADR-0018）：`reqwest`、`rumqttc`、`rusqlite`、`tokio-modbus`、`serialport`、`soem-sys`
 - 协议依赖是本 crate 的**职责所在**，但不能传染：
   - **`nodes-flow` 不能依赖 `nodes-io`**
   - **`nazh-core` / `connections` / `scripting` 都不能依赖本 crate**
@@ -283,7 +237,7 @@ EtherCAT 主站初始化失败: EtherCAT TX/RX 任务已终止（接口 `<iface>
 | `io-serial` | `serialTrigger` | `serialport` |
 | `io-notify` | `barkPush` | `reqwest`（与 `io-http` 共享） |
 | `io-can` | `canRead` / `canWrite` | `serialport`（SLCAN） |
-| `io-ethercat` | `ethercatPdoRead` / `ethercatPdoWrite` / `ethercatStatus` | `ethercrab` |
+| `io-ethercat` | `ethercatPdoRead` / `ethercatPdoWrite` / `ethercatStatus` | `soem-sys` |
 | **元 feature `io-all`** | 全部以上 | 全部以上 |
 
 永远启用（无 feature 门控）：`timer` / `native` / `debugConsole` + `template` 工具——零额外依赖，任何部署都用得到。

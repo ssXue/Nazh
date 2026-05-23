@@ -229,7 +229,7 @@ async fn open_shared_session(
         .record_connect_success(connection_id, "EtherCAT 主站共享会话已建立", None)
         .await;
 
-    tracing::info!(connection_id, channel_info, "EtherCAT 主站共享会话已建立");
+    tracing::debug!(connection_id, channel_info, "EtherCAT 主站共享会话已建立");
 
     Ok(SharedEthercatSession {
         bus: Mutex::new(Some(bus)),
