@@ -34,6 +34,7 @@ export function buildCopilotTools(
   onCanvasOp?: (op: CanvasOpEvent) => void,
   refMap?: RefMap,
   workspacePath?: string,
+  getNodeConfig?: (nodeId: string) => { node_type: string; label?: string; config: Record<string, unknown> } | null,
 ) {
   const map = refMap ?? new Map<string, string>();
   return {
@@ -99,6 +100,22 @@ export function buildCopilotTools(
       description: '获取 Rhai 脚本 API 参考文档，包括所有内置函数（rand、now_ms、from_json、to_json、is_blank）、工作流变量 API（vars.get/set/cas）和使用约束。当你需要编写或解释 code 节点、if/switch/loop 条件脚本时调用此工具。',
       inputSchema: z.object({}),
       execute: async (): Promise<string> => dispatchQueryTool('get_scripting_reference', {}, workspacePath),
+    }),
+    get_workflow_node_config: tool({
+      description: '获取当前画布上指定节点的完整配置，包括节点类型、label、config 对象（含 script、interval 等字段）。在编辑已有节点前应先调用此工具了解当前配置。',
+      inputSchema: z.object({
+        node_id: z.string().describe('节点的实际 ID'),
+      }),
+      execute: async ({ node_id }): Promise<string> => {
+        if (!getNodeConfig) {
+          return '错误：画布未就绪，无法读取节点配置';
+        }
+        const cfg = getNodeConfig(node_id);
+        if (!cfg) {
+          return `错误：节点 \`${node_id}\` 在当前画布上未找到`;
+        }
+        return JSON.stringify(cfg, null, 2);
+      },
     }),
     // ── 画布工具 ──
     create_workflow: tool({

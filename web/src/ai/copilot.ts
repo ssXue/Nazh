@@ -76,6 +76,7 @@ export interface CopilotCallbacks {
   onToolCalls?: (info: { names: string[] }) => void;
   onToolResult?: (info: { name: string; isError: boolean }) => void;
   onCanvasOp?: (op: CanvasOpEvent) => void;
+  getNodeConfig?: (nodeId: string) => { node_type: string; label?: string; config: Record<string, unknown> } | null;
 }
 
 export interface CopilotResult {
@@ -121,7 +122,7 @@ export async function copilotStream(options: CopilotStreamOptions): Promise<Copi
   const model = await createLanguageModel({ provider, modelOverride });
 
   // 构建工具
-  const tools = buildCopilotTools(callbacks?.onCanvasOp, undefined, workspacePath);
+  const tools = buildCopilotTools(callbacks?.onCanvasOp, undefined, workspacePath, callbacks?.getNodeConfig);
 
   // 构建系统提示
   const systemParts = [BUILTIN_SYSTEM_PROMPT];

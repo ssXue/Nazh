@@ -410,6 +410,19 @@ export const CopilotPanel = forwardRef<CopilotPanelHandle, CopilotPanelProps>(
             };
             scheduleFlush();
           },
+          getNodeConfig: (nodeId: string) => {
+            const graph = canvasRef.current?.getCurrentWorkflowGraph();
+            if (!graph) return null;
+            const node = graph.nodes[nodeId];
+            if (!node) return null;
+            const flowgramNode = graph.editor_graph?.nodes.find((n) => n.id === nodeId);
+            const label = (flowgramNode?.data as Record<string, unknown> | undefined)?.label as string | undefined;
+            return {
+              node_type: node.type,
+              label: label ?? node.type,
+              config: (node.config as Record<string, unknown> | undefined) ?? {},
+            };
+          },
         },
         abortController.signal,
       );

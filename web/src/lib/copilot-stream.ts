@@ -51,6 +51,7 @@ export async function copilotChatStream(
     onToolCalls?: (info: ToolCallInfo) => void;
     onToolResult?: (info: ToolResultInfo) => void;
     onCanvasOp?: (op: CanvasOpEvent) => void;
+    getNodeConfig?: (nodeId: string) => { node_type: string; label?: string; config: Record<string, unknown> } | null;
   },
   signal?: AbortSignal,
 ): Promise<CopilotStreamResult> {
@@ -94,6 +95,7 @@ export async function copilotChatStream(
         : undefined,
       onToolResult: callbacks?.onToolResult,
       onCanvasOp: callbacks?.onCanvasOp,
+      getNodeConfig: callbacks?.getNodeConfig,
     },
   });
 
