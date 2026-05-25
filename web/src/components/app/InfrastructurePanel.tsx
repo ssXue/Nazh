@@ -161,6 +161,7 @@ export function InfrastructurePanel({
             onConsumeFocus={() => setFocusConnectionId(null)}
             onStatusMessage={onStatusMessage}
             hideHeader
+            workspacePath={workspacePath}
           />
         )}
       </div>

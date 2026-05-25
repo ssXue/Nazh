@@ -12,6 +12,7 @@ export type {
   AiThinkingConfig,
   AiThinkingMode,
   ConnectionDefinition,
+  ConnectionDiagnosticResult,
   DeployResponse,
   DescribeNodePinsRequest,
   DescribeNodePinsResponse,

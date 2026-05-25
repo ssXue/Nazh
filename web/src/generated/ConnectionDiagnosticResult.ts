@@ -3,4 +3,4 @@
 /**
  * 连接资产诊断结果。
  */
-export type ConnectionDiagnosticResult = { ok: boolean, connection_id: string, protocol: string, latency_ms: bigint | null, message: string, detail: string | null, };
+export type ConnectionDiagnosticResult = { ok: boolean, connectionId: string, protocol: string, latencyMs?: bigint, message: string, detail?: string, };

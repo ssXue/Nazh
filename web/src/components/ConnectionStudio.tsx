@@ -22,6 +22,7 @@ import {
   listSerialPorts,
   listNetworkInterfaces,
   resetConnectionCircuitBreaker,
+  testConnectionAsset,
   testSerialConnection,
   type SerialPortInfo,
   type TestSerialResult,
@@ -66,6 +67,7 @@ export function ConnectionStudio({
   storageError,
   onStatusMessage,
   hideHeader = false,
+  workspacePath,
 }: ConnectionStudioProps) {
   const runtimeById = useMemo(
     () => new Map(runtimeConnections.map((connection) => [connection.id, connection])),
@@ -95,6 +97,7 @@ export function ConnectionStudio({
   const [scannedInterfaces, setScannedInterfaces] = useState<NetworkInterfaceInfo[]>([]);
   const [isScanningInterfaces, setIsScanningInterfaces] = useState(false);
   const [testResult, setTestResult] = useState<TestSerialResult | null>(null);
+  const [diagnosticResult, setDiagnosticResult] = useState<import('../types').ConnectionDiagnosticResult | null>(null);
   const [isTesting, setIsTesting] = useState(false);
   const [isResettingCircuit, setIsResettingCircuit] = useState(false);
   const settingsPanelRef = useRef<HTMLElement>(null);
@@ -190,6 +193,7 @@ export function ConnectionStudio({
     if (activeConnectionIndex === null) {
       setScannedPorts([]);
       setTestResult(null);
+      setDiagnosticResult(null);
       return;
     }
 
@@ -197,6 +201,7 @@ export function ConnectionStudio({
     if (!connection || !isSerialConnectionType(connection.type)) {
       setScannedPorts([]);
       setTestResult(null);
+      setDiagnosticResult(null);
       return;
     }
 
@@ -418,35 +423,25 @@ export function ConnectionStudio({
     }
 
     const connection = connections[activeConnectionIndex];
-    if (!connection) {
+    if (!connection?.id) {
       return;
     }
 
     setIsTesting(true);
     setTestResult(null);
-
-    const portPath = metadataString(connection.metadata, 'port_path', '');
-    const baudRate = metadataNumber(connection.metadata, 'baud_rate', 9600);
-    const dataBits = metadataNumber(connection.metadata, 'data_bits', 8);
-    const parity = metadataString(connection.metadata, 'parity', 'none');
-    const stopBits = metadataNumber(connection.metadata, 'stop_bits', 1);
-    const flowControl = metadataString(connection.metadata, 'flow_control', 'none');
+    setDiagnosticResult(null);
 
     try {
-      const result = await testSerialConnection(
-        portPath,
-        baudRate,
-        dataBits,
-        parity,
-        stopBits,
-        flowControl,
-      );
-      setTestResult(result);
+      const result = await testConnectionAsset(connection.id, workspacePath);
+      setDiagnosticResult(result);
+      if (result.ok) {
+        setTestResult({ ok: true, message: result.message });
+      } else {
+        setTestResult({ ok: false, message: result.message });
+      }
     } catch (error) {
-      setTestResult({
-        ok: false,
-        message: error instanceof Error ? error.message : '测试连接失败',
-      });
+      const message = error instanceof Error ? error.message : '诊断失败';
+      setTestResult({ ok: false, message });
     } finally {
       setIsTesting(false);
     }
@@ -595,6 +590,7 @@ export function ConnectionStudio({
                       isTesting,
                       isResettingCircuit,
                       testResult,
+                      diagnosticResult,
                     }}
                   />
 
@@ -633,6 +629,7 @@ export function ConnectionStudio({
                       isTesting,
                       isResettingCircuit,
                       testResult,
+                      diagnosticResult,
                     }}
                   />
 
@@ -655,9 +652,19 @@ export function ConnectionStudio({
                         : '还没有节点通过 connection_id 绑定到这个连接。'}
                     </article>
 
-                    {isSerialConnectionType(activeConnection.type) && testResult !== null ? (
+                    {isSerialConnectionType(activeConnection.type) && testResult !== null && !diagnosticResult ? (
                       <article className={`flowgram-note flowgram-note--${testResult.ok ? 'info' : 'danger'}`}>
                         {testResult.message}
+                      </article>
+                    ) : null}
+
+                    {diagnosticResult !== null ? (
+                      <article className={`flowgram-note flowgram-note--${diagnosticResult.ok ? 'info' : 'danger'}`}>
+                        <strong>{diagnosticResult.protocol}</strong>
+                        {' · '}
+                        {diagnosticResult.message}
+                        {diagnosticResult.latencyMs != null ? ` · ${diagnosticResult.latencyMs} ms` : ''}
+                        {diagnosticResult.detail ? ` · ${diagnosticResult.detail}` : ''}
                       </article>
                     ) : null}
                   </div>

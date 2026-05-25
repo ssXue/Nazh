@@ -35,6 +35,8 @@ export interface ConnectionStudioProps {
   onStatusMessage: (msg: string) => void;
   /** 由 InfrastructurePanel 传入 true 以跳过顶部 panel__header（外层已统一渲染）。 */
   hideHeader?: boolean;
+  /** 当前工作区路径，传给 test_connection_asset IPC。 */
+  workspacePath?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -77,4 +79,5 @@ export interface ConnectionHealthCallbacks {
   isTesting: boolean;
   isResettingCircuit: boolean;
   testResult: import('../lib/tauri').TestSerialResult | null;
+  diagnosticResult: import('../types').ConnectionDiagnosticResult | null;
 }

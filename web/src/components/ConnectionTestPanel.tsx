@@ -13,7 +13,6 @@ import {
   connectionRuntimeState,
   connectionTypeLabel,
   formatHealthTimestamp,
-  isSerialConnectionType,
 } from './connection-studio-utils';
 import type { ConnectionHealthCallbacks } from './connection-utils';
 
@@ -59,16 +58,14 @@ export function ConnectionSettingsHeader({
         >
           ID: {connection.id || `connection_${connectionIndex + 1}`}
         </span>
-        {isSerialConnectionType(connection.type) ? (
-          <button
-            type="button"
-            className={`ghost ${testResult !== null && testResult.ok ? 'is-success' : ''} ${testResult !== null && !testResult.ok ? 'is-error' : ''}`}
-            onClick={handleTestConnection}
-            disabled={isTesting}
-          >
-            {isTesting ? '测试中...' : '测试连接'}
-          </button>
-        ) : null}
+        <button
+          type="button"
+          className={`ghost ${testResult !== null && testResult.ok ? 'is-success' : ''} ${testResult !== null && !testResult.ok ? 'is-error' : ''}`}
+          onClick={handleTestConnection}
+          disabled={isTesting}
+        >
+          {isTesting ? '诊断中...' : '诊断连接'}
+        </button>
       </div>
     </div>
   );

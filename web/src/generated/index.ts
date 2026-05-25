@@ -2,6 +2,7 @@
 // 运行 `cargo test --workspace --lib export_bindings` 重新生成。
 
 export type { ConnectionDefinition } from './ConnectionDefinition';
+export type { ConnectionDiagnosticResult } from './ConnectionDiagnosticResult';
 export type { ConnectionHealthSnapshot } from './ConnectionHealthSnapshot';
 export type { ConnectionHealthState } from './ConnectionHealthState';
 export type { ConnectionRecord } from './ConnectionRecord';

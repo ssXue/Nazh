@@ -8,6 +8,7 @@ import type {
   AiProviderDraft,
   AiTestResult,
   ConnectionDefinition,
+  ConnectionDiagnosticResult,
   ConnectionRecord,
   DeadLetterRecord,
   DeployResponse,
@@ -709,6 +710,16 @@ export async function testSerialConnection(
     parity,
     stopBits,
     flowControl,
+  });
+}
+
+export async function testConnectionAsset(
+  connectionId: string,
+  workspacePath?: string,
+): Promise<ConnectionDiagnosticResult> {
+  return invoke<ConnectionDiagnosticResult>('test_connection_asset', {
+    connectionId,
+    workspacePath: workspacePath?.trim() || null,
   });
 }
 
