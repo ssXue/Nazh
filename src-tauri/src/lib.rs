@@ -351,7 +351,8 @@ pub fn run() {
             commands::capabilities::save_capability_sources,
             commands::capabilities::load_capability_sources,
             commands::system::restart_app,
-            commands::system::list_network_interfaces
+            commands::system::list_network_interfaces,
+            commands::connection_diagnostic::test_connection_asset
         ]);
 
     if let Err(error) = builder.run(tauri::generate_context!()) {

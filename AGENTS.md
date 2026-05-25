@@ -129,7 +129,7 @@ IPC boundary types are defined once in Rust and auto-generated to TypeScript via
 
 Workflow commands are split across `workflow_deploy.rs` / `workflow_dispatch.rs` / `workflow_undeploy.rs` (since 2026-05-03, was single `workflow.rs`). Other command domains remain in their respective files (`ai.rs`, `catalog.rs`, `connections.rs`, `variables.rs`, `devices/`, etc.).
 
-86 commands covering:
+87 commands covering:
 - workflow lifecycle/runtime: `deploy_workflow`, `dispatch_payload`, `undeploy_workflow`, `list_runtime_workflows`, `set_active_runtime_workflow`, `list_dead_letters`
 - node / pin catalog: `list_node_types`, `describe_node_pins`
 - workflow variables: `snapshot_workflow_variables`, `set_workflow_variable`, `delete_workflow_variable`, `reset_workflow_variable`, `query_variable_history`, `set_global_variable`, `get_global_variable`, `list_global_variables`, `delete_global_variable`
@@ -145,6 +145,7 @@ Workflow commands are split across `workflow_deploy.rs` / `workflow_dispatch.rs`
 - humanLoop（HITL 审批节点）: `respond_human_loop`, `list_pending_approvals`
 - reactive: `subscribe_reactive_pin`（ADR-0015 Phase 2，OutputCache watch → Tauri 事件推送）
 - system: `restart_app`, `list_network_interfaces`
+- connection diagnostic: `test_connection_asset`（ADR-0026 Phase 3，一次性协议级连通性探测）
 
 Connection / Device / Capability DSL assets are persisted only as reviewable YAML under the active workspace: `dsl/connections/*.connection.yaml`, `dsl/connections/versions/*.connection.yaml`, `dsl/devices/*.device.yaml`, `dsl/devices/versions/*.device.yaml`, `dsl/devices/sources/*.sources.yaml`, `dsl/capabilities/*.capability.yaml`, `dsl/capabilities/versions/*.capability.yaml`, and `dsl/capabilities/sources/*.sources.yaml`. Connection secrets and local environment overrides live in SQLite Store, not in YAML. The canvas AI edit path reads reviewed device/capability YAML files via `load_ai_asset_context` before asking the model to modify a workflow.
 

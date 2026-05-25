@@ -14,6 +14,35 @@ use nazh_engine::ConnectionDefinition;
 
 use crate::asset_files::list_connection_asset_yaml_files;
 
+/// 获取连接协议的运行时类型字符串。
+pub(crate) fn resolve_connection_kind(protocol: &ConnectionProtocol) -> &'static str {
+    match protocol {
+        ConnectionProtocol::ModbusTcp { .. } => "modbus",
+        ConnectionProtocol::Serial { .. } => "serial",
+        ConnectionProtocol::Mqtt { .. } => "mqtt",
+        ConnectionProtocol::Http { .. } => "http",
+        ConnectionProtocol::Bark { .. } => "bark",
+        ConnectionProtocol::CanSlcan { .. } => "can-slcan",
+        ConnectionProtocol::Ethercat { .. } => "ethercat",
+    }
+}
+
+/// 为一次性诊断构建运行时元数据（复用密钥 + 环境覆盖逻辑）。
+pub(crate) async fn build_probe_metadata(
+    spec: &nazh_dsl_core::ConnectionSpec,
+    environment_id: Option<&str>,
+    store: Option<&StoreHandle>,
+) -> Result<Map<String, Value>, String> {
+    let (kind, mut metadata) =
+        protocol_to_runtime_metadata(&spec.id, &spec.protocol, store).await?;
+    insert_governance_metadata(&mut metadata, &spec.governance)?;
+    insert_secret_metadata(&spec.id, &mut metadata, &spec.secrets.0, store).await?;
+    apply_local_overrides(&spec.id, environment_id, &mut metadata, store).await?;
+    // kind is used by callers but not needed in metadata for probe
+    let _ = kind;
+    Ok(metadata)
+}
+
 /// 从工作区连接资产解析运行时连接定义。
 ///
 /// `connection_ids` 为 `Some` 时只解析指定 ID 的连接资产；为 `None` 时解析全部。

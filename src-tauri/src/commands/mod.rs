@@ -1,6 +1,7 @@
 pub(crate) mod ai;
 pub(crate) mod capabilities;
 pub(crate) mod catalog;
+pub(crate) mod connection_diagnostic;
 pub(crate) mod connections;
 pub(crate) mod copilot;
 pub(crate) mod copilot_tools;

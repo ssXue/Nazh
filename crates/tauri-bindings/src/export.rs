@@ -71,6 +71,9 @@ pub fn export_all() -> Result<(), ts_rs::ExportError> {
     PersistedDeploymentSessionCollection::export(&cfg)?;
     PersistedDeploymentSessionState::export(&cfg)?;
 
+    // 连接诊断类型（ADR-0026 Phase 3）
+    ConnectionDiagnosticResult::export(&cfg)?;
+
     trim_typescript_trailing_whitespace(cfg.out_dir())?;
     Ok(())
 }

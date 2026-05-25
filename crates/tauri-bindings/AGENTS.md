@@ -25,6 +25,7 @@ crates/tauri-bindings/src/
 ├── runtime.rs           # runtime workflow / dead letter / focus IPC 类型
 ├── observability.rs     # observability 查询与清理 IPC 类型
 ├── serial.rs            # serial port 列表 / 测试连接 IPC 类型
+├── connection_diagnostic.rs # 连接资产一次性诊断结果类型（ADR-0026 Phase 3）
 ├── deployment_session.rs # deployment session 文件态 IPC 类型
 ├── export.rs            # ts-rs export_all 汇总入口
 └── tests.rs             # IPC helper 回归测试
@@ -38,6 +39,7 @@ crates/tauri-bindings/src/
 - `DeleteWorkflowVariableRequest` / `ResetWorkflowVariableRequest` / `QueryVariableHistoryRequest` / `SetGlobalVariableRequest` / `GetGlobalVariableRequest` / `ListGlobalVariablesRequest` / `DeleteGlobalVariableRequest` 及对应响应类型（ADR-0012 Phase 3 / ADR-0022）— 供变量删除、重置、历史查询与全局变量 CRUD IPC 命令序列化
 - `VariableChangedPayload`（ADR-0012 Phase 2）— `workflow://variable-changed` 事件载荷；包含 `workflow_id` / `name` / `value` / `updated_at` / `updated_by`；`updated_by` 加 `#[serde(skip_serializing_if = "Option::is_none")]` 与 ts(optional) 契约对齐
 - `list_node_types_response(&NodeRegistry)` — `src/workflow.rs`
+- `ConnectionDiagnosticResult` — ADR-0026 Phase 3，`test_connection_asset` IPC 响应类型
 - `export_all()`（仅 `ts-export` feature） — `src/export.rs`
 
 ## 内部约定

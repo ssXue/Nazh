@@ -7,6 +7,7 @@
 //! `cargo test -p tauri-bindings --features ts-export export_bindings`
 //! 触发本 crate 与所有依赖 crate 的 TypeScript 类型导出。
 
+mod connection_diagnostic;
 mod copilot;
 mod deployment_session;
 mod export;
@@ -17,6 +18,7 @@ mod serial;
 mod variables;
 mod workflow;
 
+pub use connection_diagnostic::*;
 pub use copilot::*;
 pub use deployment_session::*;
 #[cfg(feature = "ts-export")]
