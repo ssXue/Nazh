@@ -61,6 +61,7 @@ const TOOL_BEHAVIORAL_PROMPT = `
 - 修改已有节点时，使用 \`edit_workflow_node\` 并传入该节点的实际 ID（从画布状态中获取），不要创建新节点
 - 删除节点时，先确认该节点 ID 存在于当前画布状态中
 - 需要连接的节点首选 capabilityCall（业务能力调用，自动按 capability 实现走 Modbus/MQTT/Serial/CAN）；低层协议节点（modbusRead、serialTrigger、canRead、canWrite）仅用于调试或兼容场景，都需传入 \`connection_id\`
+- deviceSignalRead / deviceEventTrigger / capabilityCall 是高级设备节点，它们的连接从设备资产自动继承（通过 device_id），**禁止**在 config 中传入 \`connection_id\`。只需传入 \`device_id\`（以及 signal_id / capability_id 等语义字段），连接在部署期自动解析
 - 对于工业场景，优先从最小可运行链路开始
 - 纯问答（不涉及创建/修改工作流）直接用 Markdown 回答，不需要调用工具
 - 需要编写或解释 Rhai 脚本时，调用 \`get_scripting_reference\` 获取 API 文档

@@ -149,6 +149,13 @@ export function readNodeDraft(node: FlowNodeEntity): SelectedNodeDraft {
       if (Array.isArray(raw) && raw.length > 0) return JSON.stringify(raw, null, 2);
       return '';
     })(),
+    // deviceSignalRead / deviceEventTrigger
+    deviceId: readString(config.device_id),
+    signalId: readString(config.signal_id),
+    signalPollTimeoutMs: readNumberString(config.poll_timeout_ms, '2000'),
+    signalSimulation: readBoolean(config.simulation, true),
+    eventPollIntervalMs: readNumberString(config.poll_interval_ms, '1000'),
+    eventSimulation: readBoolean(config.simulation, true),
   };
 }
 
@@ -248,6 +255,25 @@ export function buildNodeConfig(draft: SelectedNodeDraft, currentConfig: NodeCon
         ? implementation
         : { type: 'script', content: 'payload' },
       args: isRecord(args) ? args : {},
+    };
+  }
+
+  if (draft.nodeType === 'deviceSignalRead') {
+    return {
+      ...currentConfig,
+      device_id: draft.deviceId.trim(),
+      signal_id: draft.signalId.trim(),
+      poll_timeout_ms: parsePositiveInteger(draft.signalPollTimeoutMs) ?? 2000,
+      simulation: draft.signalSimulation,
+    };
+  }
+
+  if (draft.nodeType === 'deviceEventTrigger') {
+    return {
+      ...currentConfig,
+      device_id: draft.deviceId.trim(),
+      poll_interval_ms: parsePositiveInteger(draft.eventPollIntervalMs) ?? 1000,
+      simulation: draft.eventSimulation,
     };
   }
 

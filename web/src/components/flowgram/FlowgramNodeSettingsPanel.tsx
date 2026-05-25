@@ -57,6 +57,8 @@ import { LookupNodeSettings } from './nodes/lookup/settings';
 import { SubgraphNodeSettings } from './nodes/subgraph/settings';
 import { HumanLoopNodeSettings } from './nodes/humanLoop/settings';
 import { CapabilityCallNodeSettings } from './nodes/capabilityCall/settings';
+import { DeviceSignalReadNodeSettings } from './nodes/deviceSignalRead/settings';
+import { DeviceEventTriggerNodeSettings } from './nodes/deviceEventTrigger/settings';
 
 export { type FlowgramNodeSettingsPanelProps, FLOWGRAM_NODE_SETTINGS_PANEL_KEY } from './node-settings-types';
 
@@ -83,6 +85,8 @@ const NODE_SETTINGS_MAP: Record<string, React.FC<NodeSettingsProps>> = {
   lookup: LookupNodeSettings,
   subgraph: SubgraphNodeSettings,
   humanLoop: HumanLoopNodeSettings,
+  deviceSignalRead: DeviceSignalReadNodeSettings,
+  deviceEventTrigger: DeviceEventTriggerNodeSettings,
 };
 
 function FlowgramNodeSettingsPanel({
@@ -320,7 +324,7 @@ function FlowgramNodeSettingsPanel({
 
         {supportsConnectionBinding(draft.nodeType) ? (
           <label>
-            <span>连接资源</span>
+            <span>连接资源 <span className="flowgram-form__badge-debug">调试</span></span>
             <select
               value={
                 draft.connectionId && !connections.some((c) => c.id === draft.connectionId)

@@ -1054,6 +1054,45 @@ html[data-theme='dark'] .flowgram-floating-panel--node {
   margin: 4px 0;
 }
 
+.flowgram-form__info-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 0;
+}
+
+.flowgram-form__info-label {
+  color: var(--muted);
+  font-size: var(--font-subheadline);
+  white-space: nowrap;
+}
+
+.flowgram-form__info-value {
+  color: var(--text);
+  font-size: var(--font-subheadline);
+}
+
+.flowgram-form__info-value--warn {
+  color: var(--warning, #e6a23c);
+}
+
+.flowgram-form__info-value--muted {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.flowgram-form__badge-debug {
+  display: inline-block;
+  font-size: 10px;
+  line-height: 14px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--line-faint);
+  color: var(--muted);
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
 .flowgram-form .flowgram-switch-row {
   display: flex;
   align-items: center;

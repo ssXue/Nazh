@@ -64,6 +64,13 @@ export interface SelectedNodeDraft {
   hitlDefaultAction: string;
   hitlFormSchemaJson: string;
   ethercatSlaveAddress: string;
+  // deviceSignalRead / deviceEventTrigger 共用
+  deviceId: string;
+  signalId: string;
+  signalPollTimeoutMs: string;
+  signalSimulation: boolean;
+  eventPollIntervalMs: string;
+  eventSimulation: boolean;
 }
 
 export interface NodeValidation {
@@ -210,7 +217,6 @@ export function isEthercatConnectionType(connectionType: string): boolean {
 export function supportsConnectionBinding(nodeType: string): boolean {
   return (
     nodeType === 'native' ||
-    nodeType === 'capabilityCall' ||
     nodeType === 'modbusRead' ||
     nodeType === 'serialTrigger' ||
     nodeType === 'canRead' ||
@@ -300,6 +306,15 @@ export function usesDynamicPorts(nodeType: string): boolean {
     nodeType === 'switch' ||
     nodeType === 'tryCatch' ||
     nodeType === 'loop'
+  );
+}
+
+/// 高级设备节点——连接从设备继承，不直接暴露可编辑的连接选择器（ADR-0026）。
+export function isDeviceBackedNode(nodeType: string): boolean {
+  return (
+    nodeType === 'deviceSignalRead' ||
+    nodeType === 'deviceEventTrigger' ||
+    nodeType === 'capabilityCall'
   );
 }
 
