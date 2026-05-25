@@ -8,7 +8,7 @@ It is read by both humans and AI agents (Claude Code, OpenCode, Cursor, etc.). `
 
 Nazh is an industrial-edge workflow orchestration engine with AI as a first-class capability. It connects device ingestion, data transformation, scripted logic, AI-assisted authoring, and a desktop operations UI into a single local runtime.
 
-Stack: **Rust engine (Cargo workspace, 15 packages) + Tauri v2 desktop shell + React 19 / FlowGram.AI canvas**.
+Stack: **Rust engine (Cargo workspace, 16 packages) + Tauri v2 desktop shell + React 19 / FlowGram.AI canvas**.
 
 Everything runs in one process — no HTTP/gRPC server, no external broker. AI features (copilot chat, script generation, device extraction, thinking-mode completions) are called directly from the frontend via Vercel AI SDK (`ai` v6) against user-configured OpenAI-compatible providers; API keys are read on-demand via `load_ai_api_key` IPC from local config storage（RFC-0005；当前策略是本机明文配置 + 最小传播面，不接入 OS keychain / 自建加密 vault）. Rust side only retains AI configuration management and copilot tool dispatch.
 
@@ -56,7 +56,7 @@ cargo deny check
 
 ### Three-Layer Stack
 
-1. **Rust Engine** — Cargo workspace rooted at `/` with 15 packages (see below). Public facade is the `nazh-engine` library crate at `src/lib.rs`.
+1. **Rust Engine** — Cargo workspace rooted at `/` with 16 packages (see below). Public facade is the `nazh-engine` library crate at `src/lib.rs`.
 2. **Tauri Shell** (`src-tauri/`) — Desktop app binary `nazh-desktop`. Exposes IPC commands to the frontend, bridges engine events to the UI, manages shell-side concerns (observability store, project library files, DSL asset YAML mirrors, AI config, runtime dispatch queues, deployment session files).
 3. **React Frontend** (`web/`) — Vite + React 19 + TypeScript + FlowGram.AI. Communicates **exclusively** via Tauri `invoke` / `Window::emit` — no HTTP or gRPC.
 
@@ -80,6 +80,8 @@ crates/
   dsl-compiler/       # Ring 1 — Workflow DSL 编译器：WorkflowSpec → WorkflowGraph JSON（RFC-0004 Phase 3）
 src/                 # Root facade crate `nazh-engine` — re-export + `standard_registry()`
 src-tauri/           # Tauri shell binary `nazh-desktop`
+vendor/
+  soem-sys/          # SOEM EtherCAT FFI crate（build.rs 自动编译 vendor/soem-src C 源码）
 web/                 # Frontend workspace
 ```
 

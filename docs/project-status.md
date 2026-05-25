@@ -1,4 +1,4 @@
-# Project Status（2026-05-17）
+# Project Status（2026-05-25）
 
 从 `AGENTS.md` 拆出的项目状态追踪。本文件随 ADR 落地、技术债偿还、路线图推进而更新。
 
@@ -11,7 +11,7 @@
 - **已解冻**：架构审阅 Phase A/B/C/D/E 全部完成（2026-04-30）；原 ARCHITECTURE FREEZE 段已删除。ADR-0016 仍有 deferred items，但不再阻塞常规 PR 流程。
 - **P1/P2 技术债批量偿还**（2026-05-03，commit 2e428a2）：变量事件独立通道（`WorkflowVariableEvent`）+ `NodeOutput.metadata` 改 `Option<Map>` + Rhai `default_max_operations` 统一 + `workflow.rs` 拆为 `workflow_deploy/dispatch/undeploy` 三模块 + FlowgramCanvas 988 行 / ConnectionStudio 1372 行 + core/connections/ai crate AGENTS.md 同步 + 17 IPC 类型迁入 `tauri-bindings`。详见下文"Immediate known tech debt"。
 
-## Architecture / ADR status（updated 2026-05-16）
+## Architecture / ADR status（updated 2026-05-25）
 
 - ADR-0008 (metadata separation) — **accepted / landed**
 - ADR-0017 (IPC + ts-rs 迁出 Ring 0) — **已实施**（2026-04-24，见 `crates/tauri-bindings/`）
@@ -29,13 +29,15 @@
 - ADR-0022 (工作流变量持久化) — **已实施**（2026-05-03，`crates/store/` Ring 1 SQLite crate + 壳层持久化钩子 + 部署时恢复）
 - ADR-0024 (设备信号读取与事件触发节点) — **已实施 Phase 1+2+3**（Phase 1: 2026-05-15，`deviceSignalRead` 节点 + `signal_decode.rs` 共享解码模块；Phase 2: 2026-05-15，`deviceEventTrigger` 事件监听节点（MQTT + CAN）；Phase 3: 2026-05-16，全协议覆盖——`deviceSignalRead` 支持 CanFrame/Topic/EthercatPdo/SerialCommand，`deviceEventTrigger` 支持 Modbus 定时轮询和 Serial 帧监听；前端节点库卡片就位。注册表合约测试更新至 29 种节点）
 - RFC-0003 — **已实施**（Phase 1–4 全部落地，2026-05-17）：`observability_records` SQLite 索引表接入 `observability/` 模块，事件/审计/告警直接写 Store（JSONL 双写已移除）；`deployment_audit` 表写入 deploy / undeploy 生命周期动作；变量变更 / 删除写入审计记录；部署 ast_hash 版本变更检测；新增 `query_deployment_audit` IPC（86 命令）。批量 writer 已实施（`crates/store/src/batch.rs`，`BatchWriter<O>` 异步入队 + 定时/定量 flush + Drop graceful shutdown）。Phase 4 连接私密配置已由 ADR-0025 实施（`connection_private.rs`）。
+- ADR-0026（资产连接绑定收口）— **已接受**（2026-05-23）。决策：设备绑定连接后，`deviceSignalRead` / `capabilityCall` 等高级节点从设备继承连接，低层协议节点（`serialTrigger` / `modbusRead` 等）保留直连入口供调试用。设计规格见 `docs/specs/2026-05-23-资产连接绑定收口.md`。实施待启动。
 - RFC-0004 Phase 3 (Workflow DSL 编译器) — **已实施**（2026-05-03，`crates/dsl-compiler/` 编译器 + `stateMachine` + `capabilityCall` 节点类型 + 一致性测试 + 集成测试；2026-05-09 `capabilityCall` 已接入 `connection_id` 继承与 Modbus/MQTT/Serial/CAN 执行入口，`script` implementation 未接入执行器时 fail-fast）
 - RFC-0004 资产落盘与 AI 编辑挂接 — **已实施**（2026-05-05，Device / Capability 仅以工程工作路径 `dsl/devices` / `dsl/capabilities` YAML 文件持久化；SQLite 资产表逻辑已移除；新增 `load_ai_asset_context` IPC；画布内 AI 编辑读取已审查资产并可生成 `capabilityCall`）
 
 ## Immediate known tech debt
 
-- **IPC surface 契约测试**（2026-05-17）：`src-tauri/tests/ipc_surface_contract.rs` 已建立，从 `generate_handler!` 块提取实际注册命令并与硬编码预期列表比对（86 个），同时验证每个 handler 条目都有对应的 `#[tauri::command]` 函数。增删 IPC 命令时必须同步更新预期列表，否则测试失败。
+- **IPC surface 契约测试**（2026-05-17）：`src-tauri/tests/ipc_surface_contract.rs` 已建立，从 `generate_handler!` 块提取实际注册命令并与硬编码预期列表比对，同时验证每个 handler 条目都有对应的 `#[tauri::command]` 函数。增删 IPC 命令时必须同步更新预期列表，否则测试失败。
 - **[SECURITY] AI API key 明文收敛**（2026-05-16，2026-05-17 更新存储描述）：API key 以明文存储于 SQLite Store 的 `ai_config` 表（原 `ai-config.json` 文件已在 RFC-0003 Phase 4 迁移后废弃，SQLite 文件权限 0o600）。当前决策是不接入 OS keychain / 自建加密 vault，改为收敛传播面：`load_ai_config` 永不返回明文 key，`load_ai_api_key` 走集中校验后按需返回，敏感 extra headers 不保存不回传，前端默认关闭 key 读取调试日志。后续若产品安全边界升级，再另开 ADR 评估密钥后端。
+- **SOEM vendor 依赖治理**（2026-05-25）：`vendor/soem-src` 为 git submodule 跟踪上游 SOEM，`vendor/soem-sys` 为 FFI crate。macOS OSAL 补丁在 `soem-sys/patch/`。需注意：SOEM 上游版本升级时重新验证补丁可应用性；非 macOS 平台的 OSAL 适配层随 Release workflow 已覆盖（Windows / Linux）。
 - **Architecture review 派生 P1/P2**（2026-04-29，2026-05-09 复核）：~~变量控制事件从 `ExecutionEvent` 拆出~~（已偿还：`WorkflowVariableEvent` 独立枚举 + 独立通道，B1-R0-01/B1-R0-05）；~~`src/graph/` 触发 ADR-0020 重评~~（已偿还，2026-05-01 拆为 `crates/graph/`）；~~Rhai `max_operations` 增加统一 clamp~~（已偿还：`scripting::default_max_operations()` 统一，D-01）；~~`NodeOutput.metadata` 显式三值语义~~（已偿还：`Map` → `Option<Map>`，B1-R0-02）；~~前端大文件拆分~~（已偿还：FlowgramCanvas 2025→988 行 / ConnectionStudio 1372 行，C-02）；~~`workflow.rs` 单文件过大~~（已偿还：拆为 `workflow_deploy/dispatch/undeploy` 三模块，C-01）；~~runtime / dead-letter / scoped event 等 IPC 类型迁入 `tauri-bindings`~~（已偿还，壳层改用生成类型）。~~B4-IPC-06 `copilot://stream/{id}` payload 生成类型~~（已过时：RFC-0005 将 AI HTTP 调用前移到前端后，Rust 侧不再 emit copilot stream 事件，`tauriEventStream` 为纯前端工具函数，无需 ts-rs 生成类型）；~~`src-tauri/src/runtime.rs` 二次拆分~~（不再需要：Batch 1 大文件拆分后已降至 498 行，低于 500 行审查阈值）。~~ADR-0016 deferred items~~（已偿还：2026-05-13 BackpressureDetected 发射 + 定时窗口 + 前端热力图）。`payload_bytes`/`received_at` 精确统计仍为低优先级未来可选项（`queue_depth` 已通过 `max_queue_depth` 部分覆盖）。
 - **Crates 审阅修复收口**（2026-05-09）：除 CR-P3-09 作为持续治理项不做无目标大重构外，其余 crates 审阅问题已完成代码修复与验证；stale AI 生成物目录已删除并由 `crates/ai/AGENTS.md` 固化 root `web/src/generated/` 的唯一真值源。大文件拆分已完成，`crates/` 下已无超过 500 行的 Rust 源文件。
 - **设备/连接节点边界收口**（2026-05-05，2026-05-09 部分收口，2026-05-13 完成阶段 1+2）：当前连接资源层方向正确；`capabilityCall` 已成为 DSL 高级动作入口并接入真实协议执行；前端节点库新增"设备能力"分组并把 capabilityCall 列为业务编排首选，`serialTrigger` / `modbusRead` / `canRead` / `canWrite` / `mqttClient` 文案降级为调试/适配器，capabilityCall 连接绑定 UI 补齐，AI copilot system prompt 同步调整；阶段 1 完成 `canRead` / `canWrite` 引入显式 `simulation` 开关 + 默认 fail-fast + `on_deploy` 双层防御，对齐 `modbusRead` 标杆，工业现场漏配时不再静默给出假数据。EtherCAT 三件套维持原状。设备信号读取/事件入口（`deviceSignalRead` / `deviceEventTrigger`）已由 ADR-0024 实施完成（2026-05-16），支持全协议覆盖。
@@ -53,7 +55,21 @@
 - `crates/nodes-flow/src/state_machine.rs` — `stateMachine` 节点（动态 output pins + Rhai 条件评估 + `NodeDispatch::Route`）
 - `crates/nodes-io/src/capability_call.rs` — `capabilityCall` 节点（编译期快照 + 模板解析 + `connection_id` 继承 + Modbus/MQTT/Serial/CAN 协议执行；未接入执行器的 `script` implementation fail-fast）
 - 4 个一致性测试（`WorkflowGraph::from_json()` 守护 schema 漂移）+ 集成测试
-- 标准注册表当前节点总数 27（Flow 8 + IO 16 + Pure 3）；RFC-0004 Phase 3 新增 `stateMachine` / `capabilityCall`，其后又陆续合入 `humanLoop`（HITL 审批）+ EtherCAT 三件套（`ethercatPdoRead` / `ethercatPdoWrite` / `ethercatStatus`，2026-05-06）+ ADR-0024 双节点（`deviceSignalRead` / `deviceEventTrigger`，2026-05-15/16），注册表合约测试随之更新至 29 种
+- 标准注册表当前节点总数 29（Flow 8 + IO 18 + Pure 3）：RFC-0004 Phase 3 新增 `stateMachine` / `capabilityCall`，其后陆续合入 `humanLoop` + EtherCAT 三件套（`ethercatPdoRead` / `ethercatPdoWrite` / `ethercatStatus`）+ ADR-0024 双节点（`deviceSignalRead` / `deviceEventTrigger`）。
+
+## EtherCAT 后端迁移：ethercrab → SOEM（2026-05-25）
+
+**已完成**。EtherCAT 主站后端从 ethercrab（纯 Rust）切换到 SOEM（Simple Open EtherCAT Master，C 库 via FFI）：
+
+- `vendor/soem-src` — SOEM 上游 C 源码（git submodule，dependabot 可感知更新）
+- `vendor/soem-sys` — `build.rs` 自动编译的 FFI crate（macOS OSAL 补丁放在 `soem-sys/patch/`）
+- `crates/nodes-io/src/ethercat_*` — EtherCAT 三件套节点后端统一改走 soem-sys FFI
+- DC SYNC0 周期同步：`EthercatConfig` 新增微秒级参数（`cycle_time_us` / `dc_sync0_period_us` / `dc_sync0_shift_us` / `dc_start_delay_us`），前端表单与连接 DSL 同步支持
+- ESI/ENI 导入改进：`device_id` 纳入 `vendor_id` 避免跨厂商冲突、ProductCode/Revision/Addr 移至 badge、XML 解析迁移到 quick-xml 0.40 `decoded_and_normalized_value` API
+- 网卡列表过滤虚拟接口 + 保留已保存网卡名显示
+- ADR-0023 恢复策略仍为方案 B（一键重启），SOEM 侧 `PduStorage::try_split` 一次性消费约束不变
+
+根因：ethercrab 0.7 的 `PduStorage::try_split` + `TxRxFut` 错误分支不归还 (tx, rx)，进程内无法软恢复。SOEM 的 C 回调模型在错误恢复和实时性上更成熟，且上游社区活跃。`vendor/soem-src` 以 submodule 跟踪上游，`soem-sys/patch/` 存放 macOS OSAL 补丁（参见 Critical Coding Constraint #11）。
 
 ## RFC-0004 Phase 4
 
@@ -107,10 +123,13 @@
 > 9. ✅ **ADR-0015** 反应式数据引脚 — **Phase 1+2+3 已实施**（2026-04-30）。全部完成。
 > 9b. ✅ **ADR-0016** 边级可观测性 — **已实施**（2026-05-13）。`EdgeTransmitSummary` + `BackpressureDetected` 已发射；100ms 定时窗口 flush；前端边热力图 UI。
 > 9c. ✅ **ADR-0024** 设备信号读取与事件触发节点 — **Phase 1+2+3 已实施**（2026-05-16）。`deviceSignalRead`（全协议轮询读取）+ `deviceEventTrigger`（MQTT/CAN/Modbus/Serial 事件监听）+ `signal_decode.rs` 共享解码模块。
+> 9d. ✅ EtherCAT 后端迁移到 SOEM（2026-05-25）。`vendor/soem-sys` FFI + DC SYNC0 + ESI 导入改进。
+> 9e. 🔲 **ADR-0026** 资产连接绑定收口 — 已接受（2026-05-23），实施待启动。
 > 10. 真实协议驱动扩展（OPC-UA、Kafka 消费者等）
 > 11. AI 能力扩展（embeddings、vision，未来 ADR）
 
 ## 评估性 ADR
 
 - ADR-0020 `src/graph/` 编排层归属 — **已实施**（2026-05-01，拆为 `crates/graph/` Ring 1 crate，依赖 `nazh-core` + `connections`）。
-- ADR-0023 EtherCAT TX/RX 任务终止后的恢复策略 — **方案 B 已实施**（2026-05-13）。约束来自 ethercrab 0.7：`PduStorage::try_split` 一次性消费 + `TxRxFut` 错误分支不归还 (tx, rx)，进程内无法软恢复。诊断守卫（`ensure_maindevice` 检测 `tx_handle.is_finished()`）已落地，命中时前端弹出确认对话框，用户可一键重启 nazh-desktop（IPC `restart_app` → `AppHandle::restart()`）。方案 C（vendor patch）和方案 D（切库）仍预研归档，若现场对一键重启仍不满意再评估。详见 `docs/adr/0023-ethercat-tx-rx-恢复策略-暂缓.md`。
+- ADR-0023 EtherCAT TX/RX 任务终止后的恢复策略 — **方案 B 已实施**（2026-05-13），后端已迁移到 SOEM（2026-05-25）。原约束来自 ethercrab 0.7 的 `PduStorage::try_split` 一次性消费问题。SOEM 侧采用 C 回调模型，恢复能力有所改善，但仍保留诊断守卫 + 一键重启作为兜底。方案 C（vendor patch）和方案 D（切库）中，方案 D（切库）已事实执行（切到 SOEM）。详见 `docs/adr/0023-ethercat-tx-rx-恢复策略-暂缓.md`。
+- ADR-0026 资产连接绑定收口 — **已接受**（2026-05-23），实施待启动。设备绑定连接后，高级节点从设备继承连接；低层协议节点保留直连入口。设计规格见 `docs/specs/2026-05-23-资产连接绑定收口.md`。
