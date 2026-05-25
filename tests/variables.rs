@@ -196,7 +196,7 @@ async fn 部署后写变量触发_variablechanged_事件() {
     vars.set("setpoint", json!(42.0), Some("test"))
         .expect("写入应成功");
 
-    // 期望在 1 秒内收到 WorkflowVariableEvent::Changed；空 DAG 几乎无干扰事件。
+    // 期望在超时内收到 WorkflowVariableEvent::Changed；空 DAG 几乎无干扰事件。
     let received_change = timeout(Duration::from_secs(10), async {
         loop {
             match deployment.next_var_event().await {
@@ -221,7 +221,7 @@ async fn 部署后写变量触发_variablechanged_事件() {
     .await;
     assert!(
         matches!(received_change, Ok(true)),
-        "未在 1s 内收到 WorkflowVariableEvent::Changed"
+        "未在超时内收到 WorkflowVariableEvent::Changed"
     );
 
     deployment.shutdown().await;

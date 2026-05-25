@@ -1,4 +1,4 @@
-# Project Status（2026-05-25）
+# Project Status（2026-05-26）
 
 从 `AGENTS.md` 拆出的项目状态追踪。本文件随 ADR 落地、技术债偿还、路线图推进而更新。
 
@@ -35,6 +35,7 @@
 
 ## Immediate known tech debt
 
+- **~~变量事件 proxy drain 竞态~~** **已修复**（2026-05-26）：`deploy.rs` 的 proxy drain task 在 `event_rx` 关闭时立即 `break`，导致 `var_event_rx` 也被连带关闭——变量事件在 `current_thread` tokio runtime 下可能丢失。修复为两个 channel 独立追踪存活状态，全部关闭才退出。`tests/variables.rs` 的间歇性失败从此消除。
 - **IPC surface 契约测试**（2026-05-17）：`src-tauri/tests/ipc_surface_contract.rs` 已建立，从 `generate_handler!` 块提取实际注册命令并与硬编码预期列表比对，同时验证每个 handler 条目都有对应的 `#[tauri::command]` 函数。增删 IPC 命令时必须同步更新预期列表，否则测试失败。
 - **[SECURITY] AI API key 明文收敛**（2026-05-16，2026-05-17 更新存储描述）：API key 以明文存储于 SQLite Store 的 `ai_config` 表（原 `ai-config.json` 文件已在 RFC-0003 Phase 4 迁移后废弃，SQLite 文件权限 0o600）。当前决策是不接入 OS keychain / 自建加密 vault，改为收敛传播面：`load_ai_config` 永不返回明文 key，`load_ai_api_key` 走集中校验后按需返回，敏感 extra headers 不保存不回传，前端默认关闭 key 读取调试日志。后续若产品安全边界升级，再另开 ADR 评估密钥后端。
 - **SOEM vendor 依赖治理**（2026-05-25）：`vendor/soem-src` 为 git submodule 跟踪上游 SOEM，`vendor/soem-sys` 为 FFI crate。macOS OSAL 补丁在 `soem-sys/patch/`。需注意：SOEM 上游版本升级时重新验证补丁可应用性；非 macOS 平台的 OSAL 适配层随 Release workflow 已覆盖（Windows / Linux）。

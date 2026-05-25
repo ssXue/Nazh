@@ -156,28 +156,37 @@ pub async fn deploy_workflow_and_restore_variables<S: BuildHasher>(
     let _proxy_guard = tokio::spawn(async move {
         let mut event_rx = event_rx;
         let mut var_event_rx = var_event_rx;
+        let mut event_rx_alive = true;
+        let mut var_event_rx_alive = true;
         loop {
             tokio::select! {
-                event = event_rx.recv() => {
+                event = event_rx.recv(), if event_rx_alive => {
                     match event {
                         Some(e) => {
                             if event_final_tx.send(e).await.is_err() {
                                 break;
                             }
                         }
-                        None => break,
+                        None => {
+                            event_rx_alive = false;
+                        }
                     }
                 }
-                event = var_event_rx.recv() => {
+                event = var_event_rx.recv(), if var_event_rx_alive => {
                     match event {
                         Some(e) => {
                             if var_event_final_tx.send(e).await.is_err() {
                                 break;
                             }
                         }
-                        None => break,
+                        None => {
+                            var_event_rx_alive = false;
+                        }
                     }
                 }
+            }
+            if !event_rx_alive && !var_event_rx_alive {
+                break;
             }
         }
     });
