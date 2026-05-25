@@ -15,14 +15,23 @@ use nazh_engine::ConnectionDefinition;
 use crate::asset_files::list_connection_asset_yaml_files;
 
 /// 从工作区连接资产解析运行时连接定义。
+///
+/// `connection_ids` 为 `Some` 时只解析指定 ID 的连接资产；为 `None` 时解析全部。
+/// 返回 `(已解析定义列表, 跳过的资产数)`。
 pub(crate) async fn resolve_connection_definitions(
     app: &AppHandle,
     workspace_path: Option<&str>,
     environment_id: Option<&str>,
     store: Option<&StoreHandle>,
-) -> Result<Vec<ConnectionDefinition>, String> {
+    connection_ids: Option<&[String]>,
+) -> Result<(Vec<ConnectionDefinition>, usize), String> {
     let files = list_connection_asset_yaml_files(app, workspace_path).await?;
+    let id_set = connection_ids.map(|ids| {
+        let set: std::collections::HashSet<&str> = ids.iter().map(String::as_str).collect();
+        set
+    });
     let mut definitions = Vec::with_capacity(files.len());
+    let mut skipped = 0usize;
 
     for path in files {
         let yaml = tokio::fs::read_to_string(&path)
@@ -30,6 +39,15 @@ pub(crate) async fn resolve_connection_definitions(
             .map_err(|error| format!("读取连接资产失败 `{}`: {error}", path.display()))?;
         let spec = parse_connection_yaml_validated(&yaml)
             .map_err(|error| format!("连接资产无效: {error}"))?;
+
+        // 按 ID 过滤：若指定了引用集合且当前 ID 不在其中，跳过
+        if let Some(ref ids) = id_set
+            && !ids.contains(spec.id.as_str())
+        {
+            skipped += 1;
+            continue;
+        }
+
         let (kind, mut metadata) =
             protocol_to_runtime_metadata(&spec.id, &spec.protocol, store).await?;
 
@@ -44,7 +62,7 @@ pub(crate) async fn resolve_connection_definitions(
         });
     }
 
-    Ok(definitions)
+    Ok((definitions, skipped))
 }
 
 #[allow(clippy::too_many_lines)]
@@ -290,6 +308,7 @@ mod tests {
 
     #[tokio::test]
     async fn secret_ref_缺少_store_返回可定位错误() {
+        // 直接测底层函数，不走 resolve_connection_definitions（需要文件系统）
         let error = resolve_secret_ref("bark-main", "secret://device_key", None)
             .await
             .unwrap_err();

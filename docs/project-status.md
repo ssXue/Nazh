@@ -29,7 +29,7 @@
 - ADR-0022 (工作流变量持久化) — **已实施**（2026-05-03，`crates/store/` Ring 1 SQLite crate + 壳层持久化钩子 + 部署时恢复）
 - ADR-0024 (设备信号读取与事件触发节点) — **已实施 Phase 1+2+3**（Phase 1: 2026-05-15，`deviceSignalRead` 节点 + `signal_decode.rs` 共享解码模块；Phase 2: 2026-05-15，`deviceEventTrigger` 事件监听节点（MQTT + CAN）；Phase 3: 2026-05-16，全协议覆盖——`deviceSignalRead` 支持 CanFrame/Topic/EthercatPdo/SerialCommand，`deviceEventTrigger` 支持 Modbus 定时轮询和 Serial 帧监听；前端节点库卡片就位。注册表合约测试更新至 29 种节点）
 - RFC-0003 — **已实施**（Phase 1–4 全部落地，2026-05-17）：`observability_records` SQLite 索引表接入 `observability/` 模块，事件/审计/告警直接写 Store（JSONL 双写已移除）；`deployment_audit` 表写入 deploy / undeploy 生命周期动作；变量变更 / 删除写入审计记录；部署 ast_hash 版本变更检测；新增 `query_deployment_audit` IPC（86 命令）。批量 writer 已实施（`crates/store/src/batch.rs`，`BatchWriter<O>` 异步入队 + 定时/定量 flush + Drop graceful shutdown）。Phase 4 连接私密配置已由 ADR-0025 实施（`connection_private.rs`）。
-- ADR-0026（资产连接绑定收口）— **已接受**（2026-05-23）。决策：设备绑定连接后，`deviceSignalRead` / `capabilityCall` 等高级节点从设备继承连接，低层协议节点（`serialTrigger` / `modbusRead` 等）保留直连入口供调试用。设计规格见 `docs/specs/2026-05-23-资产连接绑定收口.md`。实施待启动。
+- ADR-0026（资产连接绑定收口）— **Phase 1 已实施**（2026-05-25）。`connection_collector` 从节点配置 + 设备快照收集引用连接 ID，`resolve_connection_definitions` 按引用集合过滤，`deploy_workflow` 只解析实际使用的连接资产。Phase 2（高级节点 UI 可见性）和 Phase 3（资产诊断 IPC）待启动。
 - RFC-0004 Phase 3 (Workflow DSL 编译器) — **已实施**（2026-05-03，`crates/dsl-compiler/` 编译器 + `stateMachine` + `capabilityCall` 节点类型 + 一致性测试 + 集成测试；2026-05-09 `capabilityCall` 已接入 `connection_id` 继承与 Modbus/MQTT/Serial/CAN 执行入口，`script` implementation 未接入执行器时 fail-fast）
 - RFC-0004 资产落盘与 AI 编辑挂接 — **已实施**（2026-05-05，Device / Capability 仅以工程工作路径 `dsl/devices` / `dsl/capabilities` YAML 文件持久化；SQLite 资产表逻辑已移除；新增 `load_ai_asset_context` IPC；画布内 AI 编辑读取已审查资产并可生成 `capabilityCall`）
 
@@ -124,7 +124,7 @@
 > 9b. ✅ **ADR-0016** 边级可观测性 — **已实施**（2026-05-13）。`EdgeTransmitSummary` + `BackpressureDetected` 已发射；100ms 定时窗口 flush；前端边热力图 UI。
 > 9c. ✅ **ADR-0024** 设备信号读取与事件触发节点 — **Phase 1+2+3 已实施**（2026-05-16）。`deviceSignalRead`（全协议轮询读取）+ `deviceEventTrigger`（MQTT/CAN/Modbus/Serial 事件监听）+ `signal_decode.rs` 共享解码模块。
 > 9d. ✅ EtherCAT 后端迁移到 SOEM（2026-05-25）。`vendor/soem-sys` FFI + DC SYNC0 + ESI 导入改进。
-> 9e. 🔲 **ADR-0026** 资产连接绑定收口 — 已接受（2026-05-23），实施待启动。
+> 9e. ✅ **ADR-0026** 资产连接绑定收口 Phase 1 — **已实施**（2026-05-25）。`crates/graph/src/connection_collector.rs` 引用收集 + `resolve_connection_definitions` 按 ID 过滤 + `deploy_workflow` 调用链路 + 部署审计记录 referenced/skipped/explicit/inherited。Phase 2/3 待启动。
 > 10. 真实协议驱动扩展（OPC-UA、Kafka 消费者等）
 > 11. AI 能力扩展（embeddings、vision，未来 ADR）
 
@@ -132,4 +132,4 @@
 
 - ADR-0020 `src/graph/` 编排层归属 — **已实施**（2026-05-01，拆为 `crates/graph/` Ring 1 crate，依赖 `nazh-core` + `connections`）。
 - ADR-0023 EtherCAT TX/RX 任务终止后的恢复策略 — **方案 B 已实施**（2026-05-13），后端已迁移到 SOEM（2026-05-25）。原约束来自 ethercrab 0.7 的 `PduStorage::try_split` 一次性消费问题。SOEM 侧采用 C 回调模型，恢复能力有所改善，但仍保留诊断守卫 + 一键重启作为兜底。方案 C（vendor patch）和方案 D（切库）中，方案 D（切库）已事实执行（切到 SOEM）。详见 `docs/adr/0023-ethercat-tx-rx-恢复策略-暂缓.md`。
-- ADR-0026 资产连接绑定收口 — **已接受**（2026-05-23），实施待启动。设备绑定连接后，高级节点从设备继承连接；低层协议节点保留直连入口。设计规格见 `docs/specs/2026-05-23-资产连接绑定收口.md`。
+- ADR-0026 资产连接绑定收口 — **Phase 1 已实施**（2026-05-25），Phase 2/3 待启动。

@@ -5,7 +5,8 @@ mod workflow_deploy_helpers;
 use workflow_deploy_helpers::{derive_workflow_id, normalize_sql_writer_paths};
 
 use nazh_engine::{
-    ConnectionDefinition, RuntimeResources, WorkflowGraph, WorkflowId,
+    ConnectionDefinition, DeviceBinding, RuntimeResources, WorkflowGraph, WorkflowId,
+    collect_referenced_connection_ids,
     deploy_workflow_and_restore_variables as deploy_workflow_graph,
 };
 use serde_json::{Value, json};
@@ -16,6 +17,7 @@ use tauri_bindings::{
 };
 
 use crate::{
+    commands::devices::assets::list_device_assets,
     connection_resolver::resolve_connection_definitions,
     observability::ObservabilityStore,
     registry::shared_node_registry,
@@ -104,6 +106,35 @@ async fn load_persisted_variable_overrides(
     }
 }
 
+/// 从工作区设备资产构建设备连接绑定映射（ADR-0026 Phase 1）。
+///
+/// 仅提取 `device_id → DeviceBinding`，不做协议校验。设备未绑定连接时不出现在结果中。
+async fn build_device_bindings(
+    app: &AppHandle,
+    workspace_path: Option<&str>,
+) -> Result<HashMap<String, DeviceBinding>, String> {
+    let summaries = list_device_assets(
+        app.clone(),
+        workspace_path.map(std::borrow::ToOwned::to_owned),
+    )
+    .await?;
+    let mut bindings = HashMap::new();
+    for summary in summaries {
+        if let Some(conn_ref) = &summary.connection
+            && !conn_ref.id.is_empty()
+        {
+            bindings.insert(
+                summary.id.clone(),
+                DeviceBinding {
+                    device_id: summary.id.clone(),
+                    connection_id: conn_ref.id.clone(),
+                },
+            );
+        }
+    }
+    Ok(bindings)
+}
+
 async fn apply_connection_definitions(
     state: &DesktopState,
     definitions: Vec<ConnectionDefinition>,
@@ -153,8 +184,23 @@ pub(crate) async fn deploy_workflow_from_json(
         deployed_at,
     };
     let store_handle = state.store_handle().ok();
-    let connection_definitions =
-        resolve_connection_definitions(app, None, None, store_handle.as_ref()).await?;
+
+    // ADR-0026 Phase 1：收集引用连接，只解析工作流实际使用的连接资产
+    let device_bindings = build_device_bindings(app, None).await?;
+    let conn_report = collect_referenced_connection_ids(&graph.nodes, &device_bindings)
+        .map_err(|e| stringify_error(&e))?;
+    let (connection_definitions, connection_assets_skipped) = resolve_connection_definitions(
+        app,
+        None,
+        None,
+        store_handle.as_ref(),
+        if conn_report.referenced_ids.is_empty() {
+            None
+        } else {
+            Some(&conn_report.referenced_ids)
+        },
+    )
+    .await?;
     let connection_assets_resolved = connection_definitions.len();
     apply_connection_definitions(state, connection_definitions).await?;
     record_deployment_audit(
@@ -168,6 +214,9 @@ pub(crate) async fn deploy_workflow_from_json(
             "workflow_id": workflow_id.clone(),
             "source": "json",
             "connection_assets_resolved": connection_assets_resolved,
+            "connection_assets_skipped": connection_assets_skipped,
+            "connection_explicit_ids": conn_report.explicit_ids,
+            "connection_inherited_ids": conn_report.inherited_ids,
             "ast_hash": ast_hash,
         })),
     )
@@ -358,17 +407,33 @@ pub(crate) async fn deploy_workflow(
         deployed_at: deployed_at.clone(),
     };
     let store_handle = state.store_handle().ok();
-    let connection_definitions = match resolve_connection_definitions(
+
+    // ADR-0026 Phase 1：收集引用连接，只解析工作流实际使用的连接资产
+    let workspace_path_str = observability_context
+        .as_ref()
+        .map(|context| context.workspace_path.as_str());
+    let device_bindings = build_device_bindings(&app, workspace_path_str)
+        .await
+        .map_err(|error| {
+            format!("加载设备连接绑定失败（工作流仍可部署，但设备继承的连接将无法解析）: {error}")
+        })?;
+    let conn_report = collect_referenced_connection_ids(&graph.nodes, &device_bindings)
+        .map_err(|e| stringify_error(&e))?;
+
+    let (connection_definitions, connection_assets_skipped) = match resolve_connection_definitions(
         &app,
-        observability_context
-            .as_ref()
-            .map(|context| context.workspace_path.as_str()),
+        workspace_path_str,
         metadata.environment_id.as_deref(),
         store_handle.as_ref(),
+        if conn_report.referenced_ids.is_empty() {
+            None
+        } else {
+            Some(&conn_report.referenced_ids)
+        },
     )
     .await
     {
-        Ok(definitions) => definitions,
+        Ok(result) => result,
         Err(error) => {
             record_deployment_audit(
                 &state,
@@ -410,6 +475,9 @@ pub(crate) async fn deploy_workflow(
             "project_name": metadata.project_name.clone(),
             "environment_name": metadata.environment_name.clone(),
             "connection_assets_resolved": connection_assets_resolved,
+            "connection_assets_skipped": connection_assets_skipped,
+            "connection_explicit_ids": conn_report.explicit_ids,
+            "connection_inherited_ids": conn_report.inherited_ids,
             "ast_hash": ast_hash,
         })),
     )

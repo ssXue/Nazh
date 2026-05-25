@@ -22,19 +22,20 @@
 
 ```text
 crates/graph/src/
-├── lib.rs              # crate public facade
-├── types.rs            # WorkflowGraph / WorkflowEdge / WorkflowDeployment 等类型
-├── deploy.rs           # deploy_workflow* 入口与部署编排
-├── runner.rs           # 单节点执行循环
+├── lib.rs                    # crate public facade
+├── types.rs                  # WorkflowGraph / WorkflowEdge / WorkflowDeployment 等类型
+├── deploy.rs                 # deploy_workflow* 入口与部署编排
+├── runner.rs                 # 单节点执行循环
+├── connection_collector.rs   # 部署期连接引用收集（ADR-0026 Phase 1）
 ├── topology/
-│   ├── mod.rs          # DAG 校验与拓扑排序
-│   └── classify.rs     # source pin → PinKind 边分类
+│   ├── mod.rs                # DAG 校验与拓扑排序
+│   └── classify.rs           # source pin → PinKind 边分类
 ├── pull/
-│   ├── collector.rs    # Data 输入收集与 payload merge
-│   ├── index.rs        # pull path 索引
-│   └── memo.rs         # Pure 节点 memo
-├── pin_validator.rs    # 部署期 pin 类型兼容校验
-└── variables_init.rs   # 变量声明初始化
+│   ├── collector.rs          # Data 输入收集与 payload merge
+│   ├── index.rs              # pull path 索引
+│   └── memo.rs               # Pure 节点 memo
+├── pin_validator.rs          # 部署期 pin 类型兼容校验
+└── variables_init.rs         # 变量声明初始化
 ```
 
 关键 API：
@@ -42,6 +43,8 @@ crates/graph/src/
 - `deploy_workflow(...)`
 - `deploy_workflow_and_restore_variables(...)`
 - `build_workflow_variables(...)`
+- `collect_referenced_connection_ids(...)` — ADR-0026 Phase 1
+- `DeviceBinding` / `ConnectionReferenceReport` — 收集器输入/输出
 - `WorkflowGraph` / `WorkflowEdge`
 - `WorkflowDeployment` / `WorkflowIngress` / `WorkflowStreams`
 
@@ -75,6 +78,7 @@ crates/graph/src/
 | 改 DataStore 引用计数或 channel 失败路径 | 增加 channel closed / partial send / Data-only 输出回归测试 |
 | 改 pull path 或 Pure memo | `pull/*` tests，确认 timeout、memo key、递归依赖和错误定位 |
 | 改部署生命周期或 shutdown 顺序 | `WorkflowDeployment::shutdown` 相关测试与壳层 runtime 持有逻辑 |
+| 改 `connection_collector` 或高级设备节点类型列表 | `connection_collector` 单元测试、壳层 `workflow_deploy` 集成 |
 | 新增公共 IPC/TS 类型 | 迁到 `crates/tauri-bindings`，不要把 shell-only 类型塞回本 crate |
 
 ## 测试清单
@@ -100,3 +104,4 @@ npm --prefix web run build
 - ADR-0015 Reactive 引脚
 - ADR-0016 边级可观测性
 - ADR-0020 graph 编排层长期归属
+- ADR-0026 资产连接绑定收口（Phase 1 部署期引用收集）

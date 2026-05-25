@@ -14,6 +14,7 @@
 //! | `pin_validator` | 部署期 Pin 类型兼容校验（ADR-0010 阶段 0.5） |
 //! | `variables_init` | 部署期变量声明 → `Arc<WorkflowVariables>` 初始化器（ADR-0012）|
 
+mod connection_collector;
 mod deploy;
 mod edge_window;
 mod pin_validator;
@@ -30,6 +31,9 @@ pub(crate) const DEFAULT_INPUT_PIN_ID: &str = "in";
 /// `WorkflowEdge.source_port_id == None` 时回落到此值。
 pub(crate) const DEFAULT_OUTPUT_PIN_ID: &str = "out";
 
+pub use connection_collector::{
+    ConnectionReferenceReport, DeviceBinding, collect_referenced_connection_ids,
+};
 pub use deploy::{deploy_workflow, deploy_workflow_and_restore_variables};
 pub use types::{
     WorkflowDeployment, WorkflowDeploymentParts, WorkflowEdge, WorkflowGraph, WorkflowIngress,
