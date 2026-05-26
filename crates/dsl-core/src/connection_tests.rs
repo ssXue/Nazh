@@ -159,7 +159,29 @@ protocol:
     );
 
     let result = parse_connection_yaml_validated(&yaml);
-    assert!(result.is_err(), "ethercrab 后端必须填写 dc_sync0_period_us / dc_start_delay_us");
+    assert!(result.is_err(), "ethercrab 后端必须填写 dc_sync0_period_us / dc_sync0_shift_us / dc_start_delay_us");
+}
+
+#[test]
+fn ethercat_connection_spec_ethercrab_backend_需要_dc_sync0_shift_us() {
+    let yaml = format!(
+        r#"
+id: ecat-main
+protocol:
+  type: ethercat
+  backend: ethercrab
+  interface: en0
+  cycle_time_ms: 1
+  dc_sync0_period_us: 50
+  dc_start_delay_us: 100000
+  op_timeout_ms: 15000
+{}
+"#,
+        governance_yaml()
+    );
+
+    let err = parse_connection_yaml_validated(&yaml).unwrap_err();
+    assert!(err.to_string().contains("dc_sync0_shift_us"), "缺少 dc_sync0_shift_us 应报错: {err}");
 }
 
 #[test]

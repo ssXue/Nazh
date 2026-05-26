@@ -485,7 +485,7 @@ fn validate_ethercat_params(
     dc_start_delay_us: Option<&u64>,
     op_timeout_ms: u64,
     backend: EthercatBackend,
-    _dc_sync0_shift_us: Option<&u64>,
+    dc_sync0_shift_us: Option<&u64>,
 ) -> Result<(), DslError> {
     validate_non_empty(connection_id, "protocol.interface", interface)?;
     validate_positive_u64(connection_id, "protocol.cycle_time_ms", cycle_time_ms)?;
@@ -504,6 +504,12 @@ fn validate_ethercat_params(
             return validation_error(
                 connection_id,
                 "protocol.dc_sync0_period_us（ethercrab 后端必填）",
+            );
+        }
+        if dc_sync0_shift_us.is_none() {
+            return validation_error(
+                connection_id,
+                "protocol.dc_sync0_shift_us（ethercrab 后端必填）",
             );
         }
         if dc_start_delay_us.is_none() {
