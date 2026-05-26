@@ -166,13 +166,13 @@ export const CONNECTION_TEMPLATES: ConnectionTemplate[] = [
   {
     key: 'ethercat',
     label: 'EtherCAT',
-    description: '适合工业以太网 EtherCAT 主站，使用 SOEM 后端。',
+    description: '适合工业以太网 EtherCAT 主站，使用 ethercrab 后端。',
     idPrefix: 'ethercat',
     definition: {
       id: 'ethercat',
       type: 'ethercat',
       metadata: {
-        backend: 'soem',
+        backend: 'ethercrab',
         interface: 'eth0',
         cycle_time_ms: 10,
         op_timeout_ms: 15000,
@@ -214,11 +214,16 @@ export function platformDefaultPortPath(): string {
   if (typeof navigator === 'undefined') {
     return '/dev/ttyUSB0';
   }
-  const platformKey = navigator.platform.startsWith('Win')
-    ? 'win32'
-    : navigator.platform.startsWith('Mac')
-      ? 'darwin'
-      : 'linux';
+
+  let platformKey: string;
+  if (navigator.platform.startsWith('Win')) {
+    platformKey = 'win32';
+  } else if (navigator.platform.startsWith('Mac')) {
+    platformKey = 'darwin';
+  } else {
+    platformKey = 'linux';
+  }
+
   return DEFAULT_PORT_PATH[platformKey] ?? '/dev/ttyUSB0';
 }
 
@@ -266,9 +271,8 @@ export function metadataBoolean(
 }
 
 export function governanceRecord(metadata: JsonValue | undefined): Record<string, JsonValue> {
-  return metadataRecord(metadata).governance && isRecord(metadataRecord(metadata).governance)
-    ? (metadataRecord(metadata).governance as Record<string, JsonValue>)
-    : {};
+  const governance = metadataRecord(metadata).governance;
+  return isRecord(governance) ? governance : {};
 }
 
 export function governanceNumber(
@@ -301,9 +305,9 @@ export function connectionTypeLabel(connectionType: string): string {
   if (isCanConnectionType(type)) { return 'CAN'; }
   if (isEthercatConnectionType(type)) { return 'EtherCAT'; }
   if (isBarkConnectionType(type)) { return 'Bark'; }
-  if (type === 'modbus' || type === 'modbus_tcp') { return 'Modbus'; }
+  if (isModbusConnectionType(type)) { return 'Modbus'; }
   if (isHttpConnectionType(type)) { return 'HTTP'; }
-  if (type === 'mqtt') { return 'MQTT'; }
+  if (isMqttConnectionType(type)) { return 'MQTT'; }
   return connectionType || '连接';
 }
 
@@ -352,9 +356,24 @@ export function isBarkConnectionType(connectionType: string): boolean {
   }
 }
 
+export function isModbusConnectionType(connectionType: string): boolean {
+  switch (normalizedConnectionType(connectionType)) {
+    case 'modbus':
+    case 'modbus_tcp':
+      return true;
+    default:
+      return false;
+  }
+}
+
+export function isMqttConnectionType(connectionType: string): boolean {
+  return normalizedConnectionType(connectionType) === 'mqtt';
+}
+
 export function isEthercatConnectionType(connectionType: string): boolean {
   switch (normalizedConnectionType(connectionType)) {
     case 'ethercat':
+    case 'ethercat-ethercrab':
     case 'ethercat-soem':
     case 'ecat':
       return true;
@@ -387,16 +406,15 @@ export function connectionIconFor(connectionType: string): ConnectionIconCompone
     return BarkNodeIcon;
   }
 
-  switch (type) {
-    case 'modbus':
-    case 'modbus_tcp':
-      return ModbusNodeIcon;
-    case 'http':
-    case 'http_sink':
-      return HttpClientNodeIcon;
-    default:
-      return ConnectionsIcon;
+  if (isModbusConnectionType(type)) {
+    return ModbusNodeIcon;
   }
+
+  if (isHttpConnectionType(type)) {
+    return HttpClientNodeIcon;
+  }
+
+  return ConnectionsIcon;
 }
 
 function compactConnectionValue(value: string, fallback: string): string {
@@ -435,14 +453,14 @@ export function connectionParameterBrief(connection: ConnectionDefinition): stri
     return `${compactConnectionValue(iface, '未配置接口')} · ${cycleLabel} 周期 · OP ${opTimeoutMs}ms`;
   }
 
-  if (type === 'modbus' || type === 'modbus_tcp') {
+  if (isModbusConnectionType(type)) {
     const host = metadataString(connection.metadata, 'host', '未配置主机');
     const port = metadataNumber(connection.metadata, 'port', 502);
     const unitId = metadataNumber(connection.metadata, 'unit_id', 1);
     return `${compactConnectionValue(host, '未配置主机')}:${port} · Unit ${unitId}`;
   }
 
-  if (type === 'mqtt') {
+  if (isMqttConnectionType(type)) {
     const host = metadataString(connection.metadata, 'host', '未配置 Broker');
     const port = metadataNumber(connection.metadata, 'port', 1883);
     const topic = metadataString(connection.metadata, 'topic', '未配置 Topic');
@@ -452,13 +470,13 @@ export function connectionParameterBrief(connection: ConnectionDefinition): stri
     )}`;
   }
 
-  if (type === 'http' || type === 'http_sink') {
+  if (isHttpConnectionType(type)) {
     const method = metadataString(connection.metadata, 'method', 'POST').toUpperCase();
     const url = metadataString(connection.metadata, 'url', '未配置 URL');
     return `${method} · ${compactConnectionValue(url, '未配置 URL')}`;
   }
 
-  if (type === 'bark' || type === 'bark_push') {
+  if (isBarkConnectionType(type)) {
     const serverUrl = metadataString(connection.metadata, 'server_url', 'https://api.day.app');
     const deviceKey = metadataString(connection.metadata, 'device_key', '未配置 Key');
     return `${compactConnectionValue(serverUrl, 'https://api.day.app')} · ${compactConnectionValue(
