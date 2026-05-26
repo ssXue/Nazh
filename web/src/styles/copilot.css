@@ -283,6 +283,42 @@
   min-height: 1em;
 }
 
+/* --- 用户消息折叠 --- */
+
+.copilot-msg__content--collapsed {
+  max-height: 120px;
+  overflow: hidden;
+  position: relative;
+}
+
+.copilot-msg__content--collapsed::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 36px;
+  background: linear-gradient(transparent, var(--accent));
+  pointer-events: none;
+}
+
+.copilot-msg__expand-btn {
+  display: block;
+  margin-top: 4px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: var(--font-caption1);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.copilot-msg__expand-btn:hover {
+  color: #fff;
+}
+
 /* --- Markdown 渲染 --- */
 
 .copilot-md {

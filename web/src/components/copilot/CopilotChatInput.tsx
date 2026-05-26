@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 
 import { useSettings } from '../../hooks/use-settings';
 
@@ -23,6 +23,14 @@ export function CopilotChatInput({ value, onChange, onSend, status, onCancel }: 
   const { resolvedThemeMode } = useSettings();
   const isDark = resolvedThemeMode === 'dark';
   const glow = isDark ? GLOW_DARK : GLOW_LIGHT;
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // value 清空（发送后）时立即重置高度
+  useEffect(() => {
+    if (!value && textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+    }
+  }, [value]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -53,6 +61,7 @@ export function CopilotChatInput({ value, onChange, onSend, status, onCancel }: 
       backgroundColor="var(--surface)"
     >
       <textarea
+        ref={textareaRef}
         className="copilot-input__textarea"
         data-testid="copilot-input"
         placeholder="输入消息… (Enter 发送，Shift+Enter 换行)"

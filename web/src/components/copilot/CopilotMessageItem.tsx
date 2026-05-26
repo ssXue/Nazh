@@ -1,3 +1,5 @@
+import { useEffect, useRef, useState } from 'react';
+
 import type { CanvasOpEvent } from '../../lib/copilot-stream';
 import { MarkdownContent } from './MarkdownContent';
 
@@ -38,6 +40,9 @@ function CanvasOpsCard({ ops }: { ops: CanvasOpEvent[] }) {
   );
 }
 
+/** 用户消息最大折叠高度（px），超出后显示展开按钮 */
+const COLLAPSED_MAX_HEIGHT = 120;
+
 export function CopilotMessageItem({
   role,
   content,
@@ -75,14 +80,45 @@ export function CopilotMessageItem({
           <CanvasOpsCard ops={canvasOps!} />
         )}
         {isUser ? (
-          <div className="copilot-msg__content">
-            {content || (streaming ? '...' : '')}
-          </div>
+          <CollapsibleUserContent content={content} placeholder={streaming ? '...' : ''} />
         ) : (
           <MarkdownContent content={content} streaming={streaming} />
         )}
         {streaming && <span className="copilot-msg__cursor" />}
       </div>
+    </div>
+  );
+}
+
+/** 长用户消息自动折叠，点击展开/收起。 */
+function CollapsibleUserContent({ content, placeholder }: { content: string; placeholder: string }) {
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [overflowing, setOverflowing] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    const el = contentRef.current;
+    if (!el) return;
+    setOverflowing(el.scrollHeight > COLLAPSED_MAX_HEIGHT);
+  }, [content]);
+
+  const collapsed = overflowing && !expanded;
+
+  return (
+    <div
+      className={`copilot-msg__content${collapsed ? ' copilot-msg__content--collapsed' : ''}`}
+      ref={contentRef}
+    >
+      {content || placeholder}
+      {overflowing && (
+        <button
+          type="button"
+          className="copilot-msg__expand-btn"
+          onClick={() => setExpanded((prev) => !prev)}
+        >
+          {expanded ? '收起' : '展开全部'}
+        </button>
+      )}
     </div>
   );
 }
