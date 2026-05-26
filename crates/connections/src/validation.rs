@@ -153,7 +153,7 @@ pub(crate) fn validate_connection_definition(kind: &str, metadata: &Value) -> Re
                 return Err(format!("CAN-SLCAN 连接不支持 bitrate: {bitrate}"));
             }
         }
-        "ethercat" | "ethercat-soem" | "ecat" => {
+        "ethercat" | "ethercat-ethercrab" | "ecat" => {
             let backend = metadata
                 .and_then(|value| value.get("backend"))
                 .and_then(Value::as_str)
@@ -162,9 +162,9 @@ pub(crate) fn validate_connection_definition(kind: &str, metadata: &Value) -> Re
                 .map(str::to_ascii_lowercase)
                 .unwrap_or_default();
             if backend.is_empty() {
-                return Err("EtherCAT 连接需要配置 backend（soem/mock）".to_owned());
+                return Err("EtherCAT 连接需要配置 backend（ethercrab/mock）".to_owned());
             }
-            if !matches!(backend.as_str(), "soem" | "mock") {
+            if !matches!(backend.as_str(), "ethercrab" | "mock") {
                 return Err(format!("EtherCAT 连接不支持 backend: {backend}"));
             }
 

@@ -374,7 +374,6 @@ export function isEthercatConnectionType(connectionType: string): boolean {
   switch (normalizedConnectionType(connectionType)) {
     case 'ethercat':
     case 'ethercat-ethercrab':
-    case 'ethercat-soem':
     case 'ecat':
       return true;
     default:

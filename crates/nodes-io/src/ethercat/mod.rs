@@ -267,7 +267,7 @@ mod tests {
                 "op_timeout_ms": 15_000,
             }))
             .is_err(),
-            "backend 是运行时后端选择，不能静默默认 soem"
+            "backend 是运行时后端选择，不能静默默认 ethercrab"
         );
         assert!(
             EthercatConfig::from_metadata(&serde_json::json!({
