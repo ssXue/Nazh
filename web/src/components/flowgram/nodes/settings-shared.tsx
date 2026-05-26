@@ -1,8 +1,40 @@
 import type { AiGenerationParams, AiProviderView, ConnectionDefinition } from '../../../types';
 import type { FlowgramLogicBranch } from './shared';
-import { isRecord as _isRecord } from './shared';
 
-export const isRecord = _isRecord;
+import { isRecord } from './shared';
+export { isRecord };
+
+import {
+  isHttpConnectionType,
+  isBarkConnectionType,
+  isSerialConnectionType,
+  isCanConnectionType,
+  isEthercatConnectionType,
+} from '../../connection-studio-utils';
+
+export {
+  isHttpConnectionType,
+  isBarkConnectionType,
+  isSerialConnectionType,
+  isCanConnectionType,
+  isEthercatConnectionType,
+};
+
+export function supportsConnectionBinding(nodeType: string): boolean {
+  return (
+    nodeType === 'native' ||
+    nodeType === 'modbusRead' ||
+    nodeType === 'serialTrigger' ||
+    nodeType === 'canRead' ||
+    nodeType === 'canWrite' ||
+    nodeType === 'ethercatPdoRead' ||
+    nodeType === 'ethercatPdoWrite' ||
+    nodeType === 'ethercatStatus' ||
+    nodeType === 'mqttClient' ||
+    nodeType === 'httpClient' ||
+    nodeType === 'barkPush'
+  );
+}
 
 export interface SelectedNodeDraft {
   id: string;
@@ -158,78 +190,6 @@ export function parseFiniteNumber(value: string): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-export function isHttpConnectionType(connectionType: string): boolean {
-  switch (connectionType.trim().toLowerCase()) {
-    case 'http':
-    case 'http_sink':
-      return true;
-    default:
-      return false;
-  }
-}
-
-export function isBarkConnectionType(connectionType: string): boolean {
-  switch (connectionType.trim().toLowerCase()) {
-    case 'bark':
-    case 'bark_push':
-      return true;
-    default:
-      return false;
-  }
-}
-
-export function isSerialConnectionType(connectionType: string): boolean {
-  switch (connectionType.trim().toLowerCase()) {
-    case 'serial':
-    case 'serialport':
-    case 'serial_port':
-    case 'uart':
-    case 'rs232':
-    case 'rs485':
-      return true;
-    default:
-      return false;
-  }
-}
-
-export function isCanConnectionType(connectionType: string): boolean {
-  switch (connectionType.trim().toLowerCase()) {
-    case 'can':
-    case 'can-slcan':
-    case 'slcan':
-      return true;
-    default:
-      return false;
-  }
-}
-
-export function isEthercatConnectionType(connectionType: string): boolean {
-  switch (connectionType.trim().toLowerCase()) {
-    case 'ethercat':
-    case 'ethercat-soem':
-    case 'ecat':
-      return true;
-    default:
-      return false;
-  }
-}
-
-export function supportsConnectionBinding(nodeType: string): boolean {
-  return (
-    nodeType === 'native' ||
-    nodeType === 'modbusRead' ||
-    nodeType === 'serialTrigger' ||
-    nodeType === 'canRead' ||
-    nodeType === 'canWrite' ||
-    nodeType === 'ethercatPdoRead' ||
-    nodeType === 'ethercatPdoWrite' ||
-    nodeType === 'ethercatStatus' ||
-    nodeType === 'mqttClient' ||
-    nodeType === 'httpClient' ||
-    nodeType === 'barkPush'
-  );
-}
-
 export function connectionMatchesNodeType(nodeType: string, connection: ConnectionDefinition): boolean {
   switch (nodeType) {
     case 'capabilityCall':
@@ -268,7 +228,7 @@ export function compatibleConnectionHint(nodeType: string): string {
     case 'ethercatPdoRead':
     case 'ethercatPdoWrite':
     case 'ethercatStatus':
-      return 'ethercat / ethercat-soem / ecat';
+      return 'ethercat / ethercat-ethercrab / ecat';
     case 'modbusRead':
       return 'modbus';
     case 'mqttClient':
