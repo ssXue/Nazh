@@ -35,7 +35,7 @@ rusqlite = { workspace = true, optional = true }
 tokio-modbus = { workspace = true, optional = true }
 rumqttc = { workspace = true, optional = true }
 serialport = { workspace = true, optional = true }
-soem-sys = { path = "../../vendor/soem-sys", optional = true }
+ethercrab = { workspace = true, optional = true }
 
 [features]
 # 默认启用全部协议节点：保持桌面 / 工作站构建零回归。
@@ -54,4 +54,4 @@ io-modbus = ["dep:tokio-modbus"]
 io-serial = ["dep:serialport"]
 io-notify = ["dep:reqwest"]
 io-can = ["dep:serialport"]
-io-ethercat = ["dep:soem-sys"]
+io-ethercat = ["dep:ethercrab"]

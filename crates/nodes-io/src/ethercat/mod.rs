@@ -1,7 +1,7 @@
 //! EtherCAT 主站节点支持。
 #![allow(clippy::doc_markdown, clippy::large_futures)]
 //!
-//! 使用 SOEM C 库（通过 `soem-sys` FFI），通过共享会话模式支持多节点复用同一主站实例。
+//! 使用 `ethercrab` 纯 Rust 库，通过共享会话模式支持多节点复用同一主站实例。
 //!
 //! ## 共享会话模型
 //!
@@ -12,7 +12,7 @@
 //!
 //! | 后端 | 平台 | 状态 |
 //! |------|------|------|
-//! | `soem` | Linux / macOS / Windows | **已实现** — SOEM C 库 FFI |
+//! | `ethercrab` | Linux / macOS / Windows | **已实现** — 纯 Rust EtherCAT 主站 |
 //! | `mock` | 全平台 | **已实现** — 模拟从站，用于测试 |
 
 mod backends;
@@ -51,7 +51,7 @@ pub struct SlaveState {
 
 /// EtherCAT 总线抽象 trait —— 借鉴 CAN `CanBus` 设计。
 ///
-/// 所有后端（soem / mock）统一实现此接口。
+/// 所有后端（ethercrab / mock）统一实现此接口。
 #[async_trait]
 pub trait EthercatBus: Send + Sync {
     /// 刷新 I/O 并读取指定从站的输入 PDO。
@@ -111,7 +111,7 @@ pub enum EthercatError {
 /// EtherCAT 主站配置 —— 从 `ConnectionDefinition::metadata` 解析。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EthercatConfig {
-    /// 后端类型: `"soem"`, `"mock"`。
+    /// 后端类型: `"ethercrab"`, `"mock"`。
     pub backend: String,
     /// 网络接口名: `"eth0"`, `"enp0s31f6"`, `"\\Device\\NPF_{...}"`。
     pub interface: String,
@@ -119,11 +119,11 @@ pub struct EthercatConfig {
     pub cycle_time_ms: u64,
     /// PDO 刷新周期（微秒）。配置后优先于 `cycle_time_ms`。
     pub cycle_time_us: Option<u64>,
-    /// DC SYNC0 周期（微秒）。SOEM 后端可选，由 `ecx_configdc` 自动配置。
+    /// DC SYNC0 周期（微秒）。ethercrab 后端必填。
     pub dc_sync0_period_us: Option<u64>,
-    /// DC SYNC0 相位偏移（微秒）。SOEM 后端可选。
+    /// DC SYNC0 相位偏移（微秒）。ethercrab 后端必填。
     pub dc_sync0_shift_us: Option<u64>,
-    /// DC 首次脉冲延迟（微秒）。SOEM 后端可选。
+    /// DC 首次脉冲延迟（微秒）。ethercrab 后端必填。
     pub dc_start_delay_us: Option<u64>,
     /// 进入 OP 状态等待超时（毫秒）。
     pub op_timeout_ms: u64,
@@ -137,10 +137,10 @@ impl EthercatConfig {
         config.backend = config.backend.trim().to_ascii_lowercase();
         if config.backend.is_empty() {
             return Err(EthercatError::InitFailed(
-                "EtherCAT 配置缺少 backend（soem/mock）".to_owned(),
+                "EtherCAT 配置缺少 backend（ethercrab/mock）".to_owned(),
             ));
         }
-        if !matches!(config.backend.as_str(), "soem" | "mock") {
+        if !matches!(config.backend.as_str(), "ethercrab" | "mock") {
             return Err(EthercatError::UnsupportedBackend(config.backend));
         }
         config.interface = config.interface.trim().to_owned();
@@ -158,6 +158,23 @@ impl EthercatConfig {
             return Err(EthercatError::InitFailed(
                 "EtherCAT 配置 cycle_time_us 必须大于 0".to_owned(),
             ));
+        }
+        if config.backend == "ethercrab" {
+            if config.dc_sync0_period_us.is_none() {
+                return Err(EthercatError::InitFailed(
+                    "EtherCAT 配置缺少 dc_sync0_period_us（ethercrab 后端必填）".to_owned(),
+                ));
+            }
+            if config.dc_sync0_shift_us.is_none() {
+                return Err(EthercatError::InitFailed(
+                    "EtherCAT 配置缺少 dc_sync0_shift_us（ethercrab 后端必填）".to_owned(),
+                ));
+            }
+            if config.dc_start_delay_us.is_none() {
+                return Err(EthercatError::InitFailed(
+                    "EtherCAT 配置缺少 dc_start_delay_us（ethercrab 后端必填）".to_owned(),
+                ));
+            }
         }
         if matches!(config.dc_sync0_period_us, Some(0)) {
             return Err(EthercatError::InitFailed(
@@ -196,7 +213,6 @@ impl EthercatConfig {
     }
 
     /// 实际 DC SYNC0 周期。
-    #[allow(dead_code)]
     pub(crate) fn dc_sync0_period(&self) -> Result<Duration, EthercatError> {
         let Some(value) = self.dc_sync0_period_us else {
             return Err(EthercatError::InitFailed(
@@ -212,7 +228,6 @@ impl EthercatConfig {
     }
 
     /// 实际 DC SYNC0 相位偏移。
-    #[allow(dead_code)]
     pub(crate) fn dc_sync0_shift(&self) -> Result<Duration, EthercatError> {
         let Some(value) = self.dc_sync0_shift_us else {
             return Err(EthercatError::InitFailed(
@@ -223,7 +238,6 @@ impl EthercatConfig {
     }
 
     /// 实际 DC 首次脉冲延迟。
-    #[allow(dead_code)]
     pub(crate) fn dc_start_delay(&self) -> Result<Duration, EthercatError> {
         let Some(value) = self.dc_start_delay_us else {
             return Err(EthercatError::InitFailed(
@@ -268,7 +282,7 @@ mod tests {
     #[test]
     fn ethercat_config_支持微秒级周期和_dc_sync0_参数() {
         let config = EthercatConfig::from_metadata(&serde_json::json!({
-            "backend": "soem",
+            "backend": "ethercrab",
             "interface": "en0",
             "cycle_time_ms": 1,
             "cycle_time_us": 50,
@@ -289,20 +303,25 @@ mod tests {
     fn ethercat_config_拒绝零值微秒级参数() {
         assert!(
             EthercatConfig::from_metadata(&serde_json::json!({
-                "backend": "soem",
+                "backend": "ethercrab",
                 "interface": "en0",
                 "cycle_time_ms": 1,
                 "cycle_time_us": 0,
+                "dc_sync0_period_us": 50,
+                "dc_sync0_shift_us": 0,
+                "dc_start_delay_us": 100,
                 "op_timeout_ms": 15_000,
             }))
             .is_err()
         );
         assert!(
             EthercatConfig::from_metadata(&serde_json::json!({
-                "backend": "soem",
+                "backend": "ethercrab",
                 "interface": "en0",
                 "cycle_time_ms": 1,
                 "dc_sync0_period_us": 0,
+                "dc_sync0_shift_us": 0,
+                "dc_start_delay_us": 100,
                 "op_timeout_ms": 15_000,
             }))
             .is_err()
@@ -310,16 +329,30 @@ mod tests {
     }
 
     #[test]
-    fn ethercat_config_soem_后端不需要_dc_参数() {
+    fn ethercat_config_ethercrab_后端需要_dc_参数() {
+        assert!(
+            EthercatConfig::from_metadata(&serde_json::json!({
+                "backend": "ethercrab",
+                "interface": "en0",
+                "cycle_time_ms": 1,
+                "op_timeout_ms": 15_000,
+            }))
+            .is_err(),
+            "ethercrab 后端必须填写 dc_sync0_period_us / dc_sync0_shift_us / dc_start_delay_us"
+        );
+    }
+
+    #[test]
+    fn ethercat_config_mock_后端不需要_dc_参数() {
         let config = EthercatConfig::from_metadata(&serde_json::json!({
-            "backend": "soem",
-            "interface": "en0",
+            "backend": "mock",
+            "interface": "mock-ecat",
             "cycle_time_ms": 1,
             "op_timeout_ms": 15_000,
         }))
         .unwrap();
 
-        assert_eq!(config.backend, "soem");
+        assert_eq!(config.backend, "mock");
         assert!(config.dc_sync0_period_us.is_none());
     }
 }

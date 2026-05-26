@@ -20,8 +20,8 @@
 | `mqttClient` | MQTT | 两种模式：publish（变换节点）/ subscribe（触发器，壳层启动订阅） |
 | `canRead` | CAN/SLCAN | 通过 USB-CAN SLCAN 适配器接收 CAN 帧（默认 fail-fast；`config.simulation=true` 时显式启用 Mock 后端） |
 | `canWrite` | CAN/SLCAN | 通过 USB-CAN SLCAN 适配器发送 CAN 帧（默认 fail-fast；`config.simulation=true` 时显式启用 Mock 后端） |
-| `ethercatPdoRead` | EtherCAT | 读取从站 PDO 输入数据（SOEM 真实后端 / Mock 回退） |
-| `ethercatPdoWrite` | EtherCAT | 写入从站 PDO 输出数据（SOEM 真实后端 / Mock 回退） |
+| `ethercatPdoRead` | EtherCAT | 读取从站 PDO 输入数据（ethercrab 真实后端 / Mock 回退） |
+| `ethercatPdoWrite` | EtherCAT | 写入从站 PDO 输出数据（ethercrab 真实后端 / Mock 回退） |
 | `ethercatStatus` | EtherCAT | 查询所有从站状态与通道信息 |
 | `barkPush` | HTTP | 向 Bark 服务推送 iOS 通知 |
 | `sqlWriter` | sqlite | 本地持久化写入（`database_path` 必填，内部 `spawn_blocking` 包装 `rusqlite`） |
@@ -139,24 +139,23 @@ Plugin 注册入口：`IoPlugin::register(&mut NodeRegistry)`，在 `lib.rs` 集
 - 同一 `connection_id` 的所有 EtherCAT 节点共享同一个主站后端，存储在 `ConnectionManager::shared_sessions` 缓存中；
 - `ethercat::session::EthercatRuntime` 是轻量级操作句柄，按需创建，内部委托给 `ConnectionManager::ensure_shared_session`；
 - 部署期通过 `connection_id` 建立后端；开发/测试可绑定 `backend: mock` 的 EtherCAT 连接，后续 transform 复用；
-- SOEM 后端在建连时执行从站发现 + PDO 映射 + DC 配置 + PreOp → SAFE-OP → OP 状态转换；PDU TX/RX 由后台 OS 线程（`soem-cyclic`）驱动；
+- ethercrab 后端在建连时执行从站发现 + PDO 映射 + DC SYNC0 手动配置 + PreOpPdi → SAFE-OP → OP 状态转换；PDU TX/RX 由后台 tokio 任务驱动；
 - 共享会话不使用 `ConnectionGuard` 的排他借用，改用 `record_connect_success` / `record_connect_failure` 直接报告健康状态；
 - 撤销部署时 `lifecycle_guard` 清理共享会话；运行错误时 `runtime.shutdown()` 移除会话，所有共享节点下次 `ensure_session` 重建。
 - PDO read/write 运行期失败必须记录 `record_connect_failure` 并清理共享会话，返回 `StageExecution` 一类运行期错误；不能把从站/PDO/链路错误伪装成 `NodeConfig`，也不能继续复用已失败会话。
 
 修改 EtherCAT 节点时必须保留这个共享会话模型。
 
-#### SOEM 后端架构（`soem_backend.rs`）
+#### Ethercrab 后端架构（`ethercrab_backend.rs`）
 
-SOEM（Simple Open EtherCAT Master）通过 `soem-sys` FFI crate（`cc` + `bindgen`）集成：
+ethercrab 0.7（纯 Rust）通过 workspace 依赖集成：
 
-- `vendor/soem-sys/` — sys crate：编译 SOEM C 源码 + bindgen 生成 Rust FFI 绑定
-- `vendor/soem-src/` — SOEM Git 源码（git clone --depth 1）
-- 三端 OSAL/OSHW：Linux（raw socket）、macOS（pcap）、Windows（WinPcap/Npcap）
-- macOS 贡献 OSAL 已重写（原 `osal.c` 使用旧版 `ec_timet` API 不兼容当前 SOEM 主线）
-
-所有 unsafe 操作封装在 `soem-sys` 的安全函数中（`safe_ecx_init` 等），`nodes-io` 保持 `unsafe_code = "forbid"`。
-后台周期线程通过 `ContextPtr`（Send 包装的 `*mut ecx_context`）+ `soem_sys::cyclic_loop` 在 `soem-sys` 中创建，绕过 `*mut` 的 Send 约束。
+- `ethercrab = { version = "0.7", default-features = false, features = ["std", "log"] }`
+- 无 C FFI、无 submodule、无 bindgen — 全链路 safe Rust，与 `unsafe_code = "forbid"` 一致
+- PDU 存储为进程级单例（`PduStorage::try_split()` 不可复位），首次部署后绑死在该 interface 上
+- TX/RX 由 tokio 后台任务驱动（`tx_rx_task`），非 OS 线程
+- DC SYNC0 参数必须显式配置（`dc_sync0_period_us` / `dc_sync0_shift_us` / `dc_start_delay_us`），无自动发现
+- AL status code 翻译表（35 条）已搬入，`get_slave_states` 目前返回硬编码 OP 状态（ethercrab 0.7 暂无直接读取从站 AL status code 的 API）
 
 #### `write_outputs` 自动 tx_rx
 
@@ -206,7 +205,7 @@ SOEM（Simple Open EtherCAT Master）通过 `soem-sys` FFI crate（`cc` + `bindg
 - `sqlWriter.database_path` 必须显式配置；测试 fixture 也要给出项目内或临时路径，禁止静默写入 `./nazh-local.sqlite3`。
 - `modbusRead` 无 `connection_id` 时默认拒绝运行；只有测试/demo 明确设置 `simulation: true` 时才允许正弦模拟读数。
 - `canRead` / `canWrite` 默认 fail-fast：无 `connection_id` 且 `simulation: false`（默认值）时，`on_deploy` 与 `transform` 双重防御直接报错；只有显式 `simulation: true` 才使用 `MockBackend`。这条与 `modbusRead` 对齐，避免现场漏配时静默给出假数据/假"发送成功"。
-- CAN/SLCAN 配置必须显式声明 `interface` / `channel` / `baud_rate` / `bitrate`；EtherCAT 配置必须显式声明 `backend` / `interface` / `cycle_time_ms` / `op_timeout_ms`。SOEM 后端（`backend: "soem"`）的 DC 参数可选（由 `ecx_configdc` 自动配置）；亚毫秒过程数据周期通过 `cycle_time_us` 显式声明。mock 后端也按同一规则写全字段。
+- CAN/SLCAN 配置必须显式声明 `interface` / `channel` / `baud_rate` / `bitrate`；EtherCAT 配置必须显式声明 `backend` / `interface` / `cycle_time_ms` / `op_timeout_ms`。ethercrab 后端（`backend: "ethercrab"`）的 DC 参数必填（`dc_sync0_period_us` / `dc_sync0_shift_us` / `dc_start_delay_us`）；亚毫秒过程数据周期通过 `cycle_time_us` 显式声明。mock 后端也按同一规则写全字段。
 
 ### 新增 DEVICE_IO 节点的 simulation 约定
 
@@ -221,7 +220,7 @@ SOEM（Simple Open EtherCAT Master）通过 `soem-sys` FFI crate（`cc` + `bindg
 ## 依赖约束
 
 - 允许：`nazh-core`、`connections`、`chrono`、`serde_json`、`url`、`tokio`、`uuid`、`tracing`、`thiserror`
-- 可选（按 feature 门控，ADR-0018）：`reqwest`、`rumqttc`、`rusqlite`、`tokio-modbus`、`serialport`、`soem-sys`
+- 可选（按 feature 门控，ADR-0018）：`reqwest`、`rumqttc`、`rusqlite`、`tokio-modbus`、`serialport`、`ethercrab`
 - 协议依赖是本 crate 的**职责所在**，但不能传染：
   - **`nodes-flow` 不能依赖 `nodes-io`**
   - **`nazh-core` / `connections` / `scripting` 都不能依赖本 crate**
@@ -237,7 +236,7 @@ SOEM（Simple Open EtherCAT Master）通过 `soem-sys` FFI crate（`cc` + `bindg
 | `io-serial` | `serialTrigger` | `serialport` |
 | `io-notify` | `barkPush` | `reqwest`（与 `io-http` 共享） |
 | `io-can` | `canRead` / `canWrite` | `serialport`（SLCAN） |
-| `io-ethercat` | `ethercatPdoRead` / `ethercatPdoWrite` / `ethercatStatus` | `soem-sys` |
+| `io-ethercat` | `ethercatPdoRead` / `ethercatPdoWrite` / `ethercatStatus` | `ethercrab` |
 | **元 feature `io-all`** | 全部以上 | 全部以上 |
 
 永远启用（无 feature 门控）：`timer` / `native` / `debugConsole` + `template` 工具——零额外依赖，任何部署都用得到。

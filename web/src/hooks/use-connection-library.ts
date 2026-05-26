@@ -178,7 +178,7 @@ function protocolFromConnection(connection: ConnectionDefinition): JsonRecord {
     case 'ethercat':
       return {
         type,
-        backend: stringField(metadata, 'backend', 'soem'),
+        backend: stringField(metadata, 'backend', 'ethercrab'),
         interface: stringField(metadata, 'interface'),
         cycle_time_ms: numberField(metadata, 'cycle_time_ms', 10),
         cycle_time_us: optionalNumber(metadata, 'cycle_time_us'),

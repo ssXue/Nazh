@@ -80,8 +80,6 @@ crates/
   dsl-compiler/       # Ring 1 — Workflow DSL 编译器：WorkflowSpec → WorkflowGraph JSON（RFC-0004 Phase 3）
 src/                 # Root facade crate `nazh-engine` — re-export + `standard_registry()`
 src-tauri/           # Tauri shell binary `nazh-desktop`
-vendor/
-  soem-sys/          # SOEM EtherCAT FFI crate（build.rs 自动编译 vendor/soem-src C 源码）
 web/                 # Frontend workspace
 ```
 

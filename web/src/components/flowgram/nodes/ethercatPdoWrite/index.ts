@@ -8,7 +8,7 @@ export const definition = {
   palette: { title: 'PDO Write', badge: 'EtherCAT' },
   ai: {
     hint:
-      'EtherCAT PDO 写入节点；config 可含 slave_address；payload 需提供 data 数组（[0x01, 0x02, ...]）；需要绑定 ethercat / ethercat-soem / ecat 连接。',
+      'EtherCAT PDO 写入节点；config 可含 slave_address；payload 需提供 data 数组（[0x01, 0x02, ...]）；需要绑定 ethercat / ecat 连接。',
   },
   requiresConnection: true,
 

@@ -95,7 +95,7 @@ fn ethercat_connection_spec_支持微秒级_dc_参数() {
 id: ecat-main
 protocol:
   type: ethercat
-  backend: soem
+  backend: ethercrab
   interface: en0
   cycle_time_ms: 1
   cycle_time_us: 50
@@ -128,7 +128,7 @@ fn ethercat_connection_spec_拒绝零值微秒级_dc_参数() {
 id: ecat-main
 protocol:
   type: ethercat
-  backend: soem
+  backend: ethercrab
   interface: en0
   cycle_time_ms: 1
   dc_sync0_period_us: 0
@@ -143,13 +143,13 @@ protocol:
 }
 
 #[test]
-fn ethercat_connection_spec_soem_backend_无需_dc_参数() {
+fn ethercat_connection_spec_ethercrab_backend_需要_dc_参数() {
     let yaml = format!(
         r#"
 id: ecat-main
 protocol:
   type: ethercat
-  backend: soem
+  backend: ethercrab
   interface: en0
   cycle_time_ms: 1
   op_timeout_ms: 15000
@@ -158,8 +158,8 @@ protocol:
         governance_yaml()
     );
 
-    let spec = parse_connection_yaml_validated(&yaml).unwrap();
-    assert!(matches!(spec.protocol, ConnectionProtocol::Ethercat { .. }));
+    let result = parse_connection_yaml_validated(&yaml);
+    assert!(result.is_err(), "ethercrab 后端必须填写 dc_sync0_period_us / dc_start_delay_us");
 }
 
 #[test]

@@ -159,7 +159,7 @@ pub enum HeaderValueSpec {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum EthercatBackend {
-    Soem,
+    Ethercrab,
     Mock,
 }
 
@@ -484,7 +484,7 @@ fn validate_ethercat_params(
     dc_sync0_period_us: Option<&u64>,
     dc_start_delay_us: Option<&u64>,
     op_timeout_ms: u64,
-    _backend: EthercatBackend,
+    backend: EthercatBackend,
     _dc_sync0_shift_us: Option<&u64>,
 ) -> Result<(), DslError> {
     validate_non_empty(connection_id, "protocol.interface", interface)?;
@@ -499,6 +499,20 @@ fn validate_ethercat_params(
         validate_positive_u64(connection_id, "protocol.dc_start_delay_us", *value)?;
     }
     validate_positive_u64(connection_id, "protocol.op_timeout_ms", op_timeout_ms)?;
+    if matches!(backend, EthercatBackend::Ethercrab) {
+        if dc_sync0_period_us.is_none() {
+            return validation_error(
+                connection_id,
+                "protocol.dc_sync0_period_us（ethercrab 后端必填）",
+            );
+        }
+        if dc_start_delay_us.is_none() {
+            return validation_error(
+                connection_id,
+                "protocol.dc_start_delay_us（ethercrab 后端必填）",
+            );
+        }
+    }
     Ok(())
 }
 

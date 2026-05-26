@@ -8,7 +8,7 @@ export const definition = {
   palette: { title: 'PDO Read', badge: 'EtherCAT' },
   ai: {
     hint:
-      'EtherCAT PDO 读取节点；config 可含 slave_address；需要绑定 ethercat / ethercat-soem / ecat 连接。',
+      'EtherCAT PDO 读取节点；config 可含 slave_address；需要绑定 ethercat / ecat 连接。',
   },
   requiresConnection: true,
 

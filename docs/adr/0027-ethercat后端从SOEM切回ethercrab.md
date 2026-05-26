@@ -1,6 +1,6 @@
 # ADR-0027: EtherCAT 后端从 SOEM 切回 ethercrab
 
-- **状态**: 提议中
+- **状态**: 已实施
 - **日期**: 2026-05-26
 - **决策者**: ssXue
 - **关联**: ADR-0023（EtherCAT TX/RX 恢复策略，暂缓）、commit `48287d1`（ethercrab→SOEM 迁移，无 ADR）
