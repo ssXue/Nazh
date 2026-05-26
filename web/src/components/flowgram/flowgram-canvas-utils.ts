@@ -8,91 +8,15 @@
 import type { WorkflowJSON as FlowgramWorkflowJSON } from '@flowgram.ai/free-layout-editor';
 import type { WorkflowWindowStatus } from '../../types';
 
-// ---------------------------------------------------------------------------
-// 连接类型判断
-// ---------------------------------------------------------------------------
-
-/** 将连接类型归一化为小写。 */
-function normalizedConnectionType(connectionType: string): string {
-  return connectionType.trim().toLowerCase();
-}
-
-/** 判断是否为串口类连接。 */
-export function isSerialConnectionType(connectionType: string): boolean {
-  switch (normalizedConnectionType(connectionType)) {
-    case 'serial':
-    case 'serialport':
-    case 'serial_port':
-    case 'uart':
-    case 'rs232':
-    case 'rs485':
-      return true;
-    default:
-      return false;
-  }
-}
-
-/** 判断是否为 CAN / SLCAN 类连接。 */
-export function isCanConnectionType(connectionType: string): boolean {
-  switch (normalizedConnectionType(connectionType)) {
-    case 'can':
-    case 'can-slcan':
-    case 'slcan':
-      return true;
-    default:
-      return false;
-  }
-}
-
-/** 判断是否为 Modbus 类连接。 */
-export function isModbusConnectionType(connectionType: string): boolean {
-  switch (normalizedConnectionType(connectionType)) {
-    case 'modbus':
-    case 'modbus_tcp':
-      return true;
-    default:
-      return false;
-  }
-}
-
-/** 判断是否为 MQTT 连接。 */
-export function isMqttConnectionType(connectionType: string): boolean {
-  return normalizedConnectionType(connectionType) === 'mqtt';
-}
-
-/** 判断是否为 HTTP 类连接。 */
-export function isHttpConnectionType(connectionType: string): boolean {
-  switch (normalizedConnectionType(connectionType)) {
-    case 'http':
-    case 'http_sink':
-      return true;
-    default:
-      return false;
-  }
-}
-
-/** 判断是否为 Bark 类连接。 */
-export function isBarkConnectionType(connectionType: string): boolean {
-  switch (normalizedConnectionType(connectionType)) {
-    case 'bark':
-    case 'bark_push':
-      return true;
-    default:
-      return false;
-  }
-}
-
-/** 判断是否为 EtherCAT 类连接。 */
-export function isEthercatConnectionType(connectionType: string): boolean {
-  switch (normalizedConnectionType(connectionType)) {
-    case 'ethercat':
-    case 'ethercat-soem':
-    case 'ecat':
-      return true;
-    default:
-      return false;
-  }
-}
+export {
+  isSerialConnectionType,
+  isCanConnectionType,
+  isModbusConnectionType,
+  isMqttConnectionType,
+  isHttpConnectionType,
+  isBarkConnectionType,
+  isEthercatConnectionType,
+} from '../connection-studio-utils';
 
 // ---------------------------------------------------------------------------
 // 导出文件名
