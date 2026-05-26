@@ -1,4 +1,4 @@
-import { type NodeDefinition, type NodeSeed, type NodeValidationContext, type NodeValidation } from '../shared';
+import { type NodeDefinition, type NodeSeed, type NodeValidationContext, type NodeValidation, isRecord } from '../shared';
 
 export const definition = {
   kind: 'ethercatStatus' as const,
@@ -7,7 +7,7 @@ export const definition = {
   palette: { title: 'Status', badge: 'EtherCAT' },
   ai: {
     hint:
-      'EtherCAT 从站状态查询节点；输出 slaves 列表和 channelInfo；需要绑定 ethercat / ethercat-soem / ecat 连接。',
+      'EtherCAT 从站状态查询节点；输出 slaves 列表和 channelInfo；需要绑定 ethercat / ecat 连接。',
   },
   requiresConnection: true,
 
@@ -22,7 +22,7 @@ export const definition = {
   },
 
   normalizeConfig(config: unknown): NodeSeed['config'] {
-    return { ...(typeof config === 'object' && config !== null && !Array.isArray(config) ? config : {}) };
+    return { ...(isRecord(config) ? config : {}) };
   },
 
   getOutputPorts() {
