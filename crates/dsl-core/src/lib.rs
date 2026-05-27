@@ -21,7 +21,7 @@ pub use connection::{
 };
 pub use device::{
     AccessMode, AlarmSeverity, AlarmSpec, ConnectionRef, DataType, DeviceSpec, EthercatIdentity,
-    SignalSource, SignalSpec, SignalType,
+    SignalSource, SignalSpec, SignalType, ValidationDiagnostic, ValidationLevel, ValidationResult,
 };
 pub use error::DslError;
 pub use parser::{

@@ -20,11 +20,29 @@ pub fn parse_device_yaml(yaml: &str) -> Result<DeviceSpec, DslError> {
 
 /// 从 YAML 文本解析并校验 [`DeviceSpec`]。
 ///
+/// 先执行 YAML 反序列化，再调用 [`DeviceSpec::validate()`] 进行语义校验。
+/// 返回解析后的 spec（即使有 warning），但存在 error 时返回 [`DslError`]。
+///
 /// # Errors
 ///
-/// YAML 解析失败或设备语义校验失败时返回 [`DslError`]。
+/// YAML 解析失败或设备语义校验存在 error 级诊断时返回 [`DslError`]。
 pub fn parse_device_yaml_validated(yaml: &str) -> Result<DeviceSpec, DslError> {
-    parse_device_yaml(yaml)
+    let spec = parse_device_yaml(yaml)?;
+    let result = spec.validate();
+    if result.is_valid() {
+        Ok(spec)
+    } else {
+        let errors: Vec<String> = result
+            .diagnostics
+            .iter()
+            .filter(|d| d.level == crate::device::ValidationLevel::Error)
+            .map(|d| format!("{}: {}", d.path, d.message))
+            .collect();
+        Err(DslError::Validation {
+            context: format!("device `{}`", spec.id),
+            detail: format!("语义校验失败:\n{}", errors.join("\n")),
+        })
+    }
 }
 
 /// 从 YAML 文本解析 [`CapabilitySpec`]。

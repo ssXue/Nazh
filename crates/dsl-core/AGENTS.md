@@ -18,7 +18,7 @@ crates/dsl-core/src/
 ├── lib.rs          # re-exports
 ├── error.rs        # DslError (YamlParse / Validation / JsonSerialization)
 ├── connection.rs   # ConnectionSpec / ConnectionProtocol / ConnectionGovernanceSpec / ConnectionSecretRefs（ADR-0025）
-├── device.rs       # DeviceSpec / SignalSpec / AlarmSpec / ConnectionRef / SignalSource（含 CanFrame / EthercatPdo）/ SignalType / AccessMode / DataType / ByteOrder / AlarmSeverity
+├── device.rs       # DeviceSpec / SignalSpec / AlarmSpec / ConnectionRef / SignalSource（含 CanFrame / EthercatPdo）/ SignalType / AccessMode / DataType / ByteOrder / AlarmSeverity + DeviceSpec::validate() + ValidationLevel / ValidationDiagnostic / ValidationResult（RFC-0006 Phase 1）
 ├── capability.rs   # CapabilitySpec / CapabilityParam / CapabilityOutput / CapabilityImpl（含 CanWrite）/ SafetyConstraints / SafetyLevel + validate() + generate_capabilities_from_device() / try_generate_capabilities_from_device()（Phase 2）
 ├── workflow.rs     # WorkflowSpec / StateSpec / TransitionSpec / ActionSpec / ActionTarget / Range / HumanDuration
 ├── parser.rs       # parse_*_yaml / parse_*_yaml_validated
@@ -36,6 +36,20 @@ crates/dsl-core/src/
 - `ConnectionProtocol::Ethercat` 必须保留 `cycle_time_ms` / `op_timeout_ms` 必填字段；ethercrab 后端（`backend: "ethercrab"`）的 DC 参数必填（`dc_sync0_period_us` / `dc_sync0_shift_us` / `dc_start_delay_us`）；mock 后端 DC 参数可选。亚毫秒过程数据周期用可选 `cycle_time_us` 表达，validate 阶段拒绝除 shift 以外的 0 值。
 - `SignalSource::EthercatPdo.slave_address` 是可选字段：标准 ESI 设备目录可省略；ENI/主站配置导入多从站拓扑时必须填入物理从站地址，以便同一 PDO 条目能区分不同轴/从站。
 - 保存、导入、AI 生成等资产入口应优先走 `parse_*_yaml_validated()`；兼容性解析入口只做反序列化，不代表资产可执行。
+- `DeviceSpec::validate()`（RFC-0006 Phase 1）校验规则：
+
+  | 规则 | 级别 | 路径 |
+  |------|------|------|
+  | 信号 ID 在设备内唯一 | error | `signals[N].id` |
+  | 信号 ID 非空且符合 `^[a-zA-Z_][a-zA-Z0-9_]*$` | error | `signals[N].id` |
+  | `range.min < range.max` | error | `signals[N].range` |
+  | 模拟信号有 `unit` 和 `range` | warning | `signals[N].unit` / `signals[N].range` |
+  | `source.type` 与 `connection.type` 协议一致（modbus-rtu 与 register 互认） | warning | `signals[N].source` |
+  | `scale` 表达式括号匹配 | error | `signals[N].scale` |
+  | `scale` 不含除法（除零风险） | warning | `signals[N].scale` |
+  | 写信号建议配套 alarm | warning | `alarms` |
+  | 告警 ID 唯一且非空 | error | `alarms[N].id` |
+  | 告警 condition 非空且括号匹配 | error | `alarms[N].condition` |
 - `CapabilitySpec::validate()` 必须覆盖 required input range、模板变量是否存在于 inputs、重复 input/output id、fallback 非空/非重复/非自引用等可在单资产内验证的约束。
 - `ConnectionSpec::validate()` 必须覆盖连接 ID 非空、协议字段非空、治理阈值显式有效、密钥引用格式、HTTP 敏感 Header 不允许明文 literal。连接资产不得保存明文 password/token/device_key/Authorization 等敏感值。
 - 从 Device signal 生成 Capability 时，`try_generate_capabilities_from_device()` 是带诊断的入口；`generate_capabilities_from_device()` 仅保留兼容用途。当前结构无法无损表达 CAN / Modbus / EtherCAT 编码语义时必须拒绝生成，而不是用 `${value}` 伪装成功。

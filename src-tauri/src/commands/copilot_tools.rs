@@ -257,6 +257,54 @@ fn tool_get_scripting_reference(_call: &AiToolCall) -> String {
     scripting::generate_api_reference()
 }
 
+fn tool_validate_device_yaml(call: &AiToolCall) -> Result<String, String> {
+    use nazh_dsl_core::parse_device_yaml;
+
+    let args = parse_args(call)?;
+    let yaml = args["yaml"].as_str().ok_or("缺少 yaml 参数")?;
+
+    let spec = match parse_device_yaml(yaml) {
+        Ok(s) => s,
+        Err(e) => {
+            let result = json!({
+                "valid": false,
+                "parsed": null,
+                "errors": [{ "path": "yaml", "message": e.to_string() }],
+                "warnings": []
+            });
+            return serde_json::to_string_pretty(&result)
+                .map_err(|e| format!("序列化失败: {e}"));
+        }
+    };
+
+    let validation = spec.validate();
+    let errors: Vec<_> = validation
+        .diagnostics
+        .iter()
+        .filter(|d| d.level == nazh_dsl_core::ValidationLevel::Error)
+        .map(|d| json!({ "path": d.path, "message": d.message }))
+        .collect();
+    let warnings: Vec<_> = validation
+        .diagnostics
+        .iter()
+        .filter(|d| d.level == nazh_dsl_core::ValidationLevel::Warning)
+        .map(|d| json!({ "path": d.path, "message": d.message }))
+        .collect();
+
+    let result = json!({
+        "valid": validation.is_valid(),
+        "parsed": {
+            "id": spec.id,
+            "device_type": spec.device_type,
+            "signal_count": spec.signals.len(),
+            "alarm_count": spec.alarms.len(),
+        },
+        "errors": errors,
+        "warnings": warnings,
+    });
+    serde_json::to_string_pretty(&result).map_err(|e| format!("序列化失败: {e}"))
+}
+
 /// 前端 copilot 查询工具调度入口。
 ///
 /// 仅处理只读查询工具，画布操作由前端直接执行。
@@ -295,6 +343,7 @@ pub async fn dispatch_query_tool(
         "read_asset_yaml" => tool_read_asset_yaml(&call, &ctx).await,
         "validate_workflow" => tool_validate_workflow(&call),
         "get_scripting_reference" => Ok(tool_get_scripting_reference(&call)),
+        "validate_device_yaml" => tool_validate_device_yaml(&call),
         _ => Err(format!("未知工具: {tool_name}")),
     }
 }

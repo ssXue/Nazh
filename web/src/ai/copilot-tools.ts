@@ -101,6 +101,13 @@ export function buildCopilotTools(
       inputSchema: z.object({}),
       execute: async (): Promise<string> => dispatchQueryTool('get_scripting_reference', {}, workspacePath),
     }),
+    validate_device_yaml: tool({
+      description: '校验设备 DSL YAML 的结构和语义完整性。校验规则包括：信号 ID 唯一性与格式、量程合法性、协议一致性、scale 表达式语法、告警 ID 唯一性与条件语法等。保存设备前必须先调用此工具校验。',
+      inputSchema: z.object({
+        yaml: z.string().describe('设备 DSL YAML 文本'),
+      }),
+      execute: async ({ yaml }): Promise<string> => dispatchQueryTool('validate_device_yaml', { yaml }, workspacePath),
+    }),
     get_workflow_node_config: tool({
       description: '获取当前画布上指定节点的完整配置，包括节点类型、label、config 对象（含 script、interval 等字段）。在编辑已有节点前应先调用此工具了解当前配置。',
       inputSchema: z.object({

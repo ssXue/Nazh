@@ -6,6 +6,53 @@ use serde::{Deserialize, Serialize};
 
 use crate::workflow::Range;
 
+/// 校验诊断级别（RFC-0006 Phase 1）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ValidationLevel {
+    Error,
+    Warning,
+}
+
+/// 单条校验诊断。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ValidationDiagnostic {
+    pub level: ValidationLevel,
+    pub path: String,
+    pub message: String,
+}
+
+/// 设备校验结果。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ValidationResult {
+    pub diagnostics: Vec<ValidationDiagnostic>,
+}
+
+impl ValidationResult {
+    /// 是否无 error 级诊断。
+    pub fn is_valid(&self) -> bool {
+        self.diagnostics
+            .iter()
+            .all(|d| d.level != ValidationLevel::Error)
+    }
+}
+
+fn error(path: impl Into<String>, message: impl Into<String>) -> ValidationDiagnostic {
+    ValidationDiagnostic {
+        level: ValidationLevel::Error,
+        path: path.into(),
+        message: message.into(),
+    }
+}
+
+fn warning(path: impl Into<String>, message: impl Into<String>) -> ValidationDiagnostic {
+    ValidationDiagnostic {
+        level: ValidationLevel::Warning,
+        path: path.into(),
+        message: message.into(),
+    }
+}
+
 /// 设备 DSL 结构化模型。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DeviceSpec {
@@ -193,6 +240,212 @@ pub struct AlarmSpec {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub action: Option<String>,
+}
+
+impl DeviceSpec {
+    /// 校验设备定义的语义完整性（RFC-0006 Phase 1）。
+    ///
+    /// 覆盖：信号 ID 唯一性 + 格式、量程合法性、协议一致性、
+    /// scale 表达式语法、告警 ID 唯一性 + condition 语法、写信号配套告警建议。
+    pub fn validate(&self) -> ValidationResult {
+        let mut diagnostics = Vec::new();
+
+        // 信号校验
+        let mut signal_ids = std::collections::HashSet::new();
+        let has_write_signal = self.signals.iter().any(|s| {
+            matches!(
+                s.signal_type,
+                SignalType::AnalogOutput | SignalType::DigitalOutput
+            )
+        });
+
+        for (i, signal) in self.signals.iter().enumerate() {
+            let path_prefix = format!("signals[{i}]");
+
+            // 信号 ID 非空
+            if signal.id.trim().is_empty() {
+                diagnostics.push(error(
+                    format!("{path_prefix}.id"),
+                    "信号 ID 不能为空",
+                ));
+            } else {
+                // 信号 ID 格式：^[a-zA-Z_][a-zA-Z0-9_]*$
+                let valid_id = signal
+                    .id
+                    .chars()
+                    .enumerate()
+                    .all(|(pos, c)| {
+                        if pos == 0 {
+                            c.is_ascii_alphabetic() || c == '_'
+                        } else {
+                            c.is_ascii_alphanumeric() || c == '_'
+                        }
+                    });
+                if !valid_id {
+                    diagnostics.push(error(
+                        format!("{path_prefix}.id"),
+                        format!(
+                            "信号 ID `{}` 不符合格式要求（须匹配 ^[a-zA-Z_][a-zA-Z0-9_]*$）",
+                            signal.id
+                        ),
+                    ));
+                }
+
+                // 信号 ID 唯一性
+                if !signal_ids.insert(signal.id.clone()) {
+                    diagnostics.push(error(
+                        format!("{path_prefix}.id"),
+                        format!("重复信号 ID `{}`", signal.id),
+                    ));
+                }
+            }
+
+            // 量程校验
+            if let Some(range) = &signal.range {
+                if range.min >= range.max {
+                    diagnostics.push(error(
+                        format!("{path_prefix}.range"),
+                        format!(
+                            "量程 min({}) 必须小于 max({})",
+                            range.min, range.max
+                        ),
+                    ));
+                }
+            }
+
+            // 模拟信号应有 unit 和 range
+            if matches!(
+                signal.signal_type,
+                SignalType::AnalogInput | SignalType::AnalogOutput
+            ) {
+                if signal.unit.is_none() {
+                    diagnostics.push(warning(
+                        format!("{path_prefix}.unit"),
+                        format!("模拟信号 `{}` 建议声明 unit", signal.id),
+                    ));
+                }
+                if signal.range.is_none() {
+                    diagnostics.push(warning(
+                        format!("{path_prefix}.range"),
+                        format!("模拟信号 `{}` 建议声明 range", signal.id),
+                    ));
+                }
+            }
+
+            // source.type 与 connection.type 协议一致性
+            if let Some(conn) = &self.connection {
+                let expected = match &signal.source {
+                    SignalSource::Register { .. } => Some("modbus-tcp"),
+                    SignalSource::Topic { .. } => Some("mqtt"),
+                    SignalSource::SerialCommand { .. } => Some("serial"),
+                    SignalSource::CanFrame { .. } => Some("can"),
+                    SignalSource::EthercatPdo { .. } => Some("ethercat"),
+                };
+                if let Some(expected_protocol) = expected {
+                    if conn.connection_type != expected_protocol
+                        && !(conn.connection_type == "modbus-rtu"
+                            && matches!(signal.source, SignalSource::Register { .. }))
+                    {
+                        diagnostics.push(warning(
+                            format!("{path_prefix}.source"),
+                            format!(
+                                "信号 source 类型为 `{}`，但设备连接类型为 `{}`",
+                                expected_protocol, conn.connection_type
+                            ),
+                        ));
+                    }
+                }
+            }
+
+            // scale 表达式括号匹配
+            if let Some(scale) = &signal.scale {
+                let mut depth = 0i32;
+                for ch in scale.chars() {
+                    match ch {
+                        '(' => depth += 1,
+                        ')' => {
+                            depth -= 1;
+                            if depth < 0 {
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                if depth != 0 {
+                    diagnostics.push(error(
+                        format!("{path_prefix}.scale"),
+                        format!("scale 表达式括号不匹配: `{scale}`"),
+                    ));
+                }
+                // scale 不含除法（除零风险）
+                if scale.contains('/') {
+                    diagnostics.push(warning(
+                        format!("{path_prefix}.scale"),
+                        format!("scale 表达式含除法运算，存在除零风险: `{scale}`"),
+                    ));
+                }
+            }
+        }
+
+        // 写信号建议配套 alarm
+        if has_write_signal && self.alarms.is_empty() {
+            diagnostics.push(warning(
+                "alarms",
+                "设备包含写信号但未声明任何告警，建议为写操作配套安全告警",
+            ));
+        }
+
+        // 告警校验
+        let mut alarm_ids = std::collections::HashSet::new();
+        for (i, alarm) in self.alarms.iter().enumerate() {
+            let path_prefix = format!("alarms[{i}]");
+
+            // 告警 ID 唯一性
+            if alarm.id.trim().is_empty() {
+                diagnostics.push(error(
+                    format!("{path_prefix}.id"),
+                    "告警 ID 不能为空",
+                ));
+            } else if !alarm_ids.insert(alarm.id.clone()) {
+                diagnostics.push(error(
+                    format!("{path_prefix}.id"),
+                    format!("重复告警 ID `{}`", alarm.id),
+                ));
+            }
+
+            // 告警 condition 非空 + 括号匹配
+            let cond = alarm.condition.trim();
+            if cond.is_empty() {
+                diagnostics.push(error(
+                    format!("{path_prefix}.condition"),
+                    "告警条件不能为空",
+                ));
+            } else {
+                let mut depth = 0i32;
+                for ch in cond.chars() {
+                    match ch {
+                        '(' => depth += 1,
+                        ')' => {
+                            depth -= 1;
+                            if depth < 0 {
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                if depth != 0 {
+                    diagnostics.push(error(
+                        format!("{path_prefix}.condition"),
+                        format!("告警条件括号不匹配: `{}`", alarm.condition),
+                    ));
+                }
+            }
+        }
+
+        ValidationResult { diagnostics }
+    }
 }
 
 #[cfg(test)]
@@ -451,5 +704,292 @@ type: test
         let spec: DeviceSpec = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(spec.id, "test_device");
         assert!(spec.connection.is_none());
+    }
+
+    // ── validate() 校验规则测试 ──
+
+    fn make_valid_device() -> DeviceSpec {
+        DeviceSpec {
+            id: "test_dev".to_owned(),
+            device_type: "sensor".to_owned(),
+            manufacturer: None,
+            model: None,
+            connection: Some(ConnectionRef {
+                connection_type: "modbus-tcp".to_owned(),
+                id: "conn1".to_owned(),
+                unit: None,
+            }),
+            network_group: None,
+            ethercat_identity: None,
+            signals: vec![SignalSpec {
+                id: "temp".to_owned(),
+                signal_type: SignalType::AnalogInput,
+                unit: Some("℃".to_owned()),
+                range: Some(Range { min: -40.0, max: 125.0 }),
+                source: SignalSource::Register {
+                    register: 40001,
+                    access: AccessMode::Read,
+                    data_type: DataType::Float32,
+                    bit: None,
+                },
+                scale: None,
+            }],
+            alarms: vec![],
+        }
+    }
+
+    #[test]
+    fn validate_合法设备_无诊断() {
+        let spec = make_valid_device();
+        let result = spec.validate();
+        assert!(result.is_valid());
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn validate_信号id重复_error() {
+        let mut spec = make_valid_device();
+        spec.signals.push(spec.signals[0].clone());
+        let result = spec.validate();
+        assert!(!result.is_valid());
+        let errors: Vec<_> = result.diagnostics.iter().filter(|d| d.level == ValidationLevel::Error).collect();
+        assert!(errors.iter().any(|d| d.message.contains("重复信号 ID")));
+    }
+
+    #[test]
+    fn validate_信号id非法字符_error() {
+        let mut spec = make_valid_device();
+        spec.signals[0].id = "1temp".to_owned();
+        let result = spec.validate();
+        assert!(!result.is_valid());
+        assert!(result.diagnostics.iter().any(|d| d.message.contains("不符合格式要求")));
+    }
+
+    #[test]
+    fn validate_信号id空_error() {
+        let mut spec = make_valid_device();
+        spec.signals[0].id = "".to_owned();
+        let result = spec.validate();
+        assert!(!result.is_valid());
+        assert!(result.diagnostics.iter().any(|d| d.message.contains("不能为空")));
+    }
+
+    #[test]
+    fn validate_量程反转_error() {
+        let mut spec = make_valid_device();
+        spec.signals[0].range = Some(Range { min: 100.0, max: 50.0 });
+        let result = spec.validate();
+        assert!(!result.is_valid());
+        assert!(result.diagnostics.iter().any(|d| d.path.contains("range") && d.message.contains("必须小于")));
+    }
+
+    #[test]
+    fn validate_模拟信号缺unit_warning() {
+        let mut spec = make_valid_device();
+        spec.signals[0].unit = None;
+        let result = spec.validate();
+        assert!(result.is_valid());
+        assert!(result.diagnostics.iter().any(|d| d.message.contains("建议声明 unit")));
+    }
+
+    #[test]
+    fn validate_模拟信号缺range_warning() {
+        let mut spec = make_valid_device();
+        spec.signals[0].range = None;
+        let result = spec.validate();
+        assert!(result.is_valid());
+        assert!(result.diagnostics.iter().any(|d| d.message.contains("建议声明 range")));
+    }
+
+    #[test]
+    fn validate_协议不一致_warning() {
+        let mut spec = make_valid_device();
+        spec.connection = Some(ConnectionRef {
+            connection_type: "mqtt".to_owned(),
+            id: "broker".to_owned(),
+            unit: None,
+        });
+        let result = spec.validate();
+        assert!(result.is_valid());
+        assert!(result.diagnostics.iter().any(|d| d.message.contains("信号 source 类型为") && d.message.contains("mqtt")));
+    }
+
+    #[test]
+    fn validate_modbus_rtu与register一致_无warning() {
+        let mut spec = make_valid_device();
+        spec.connection = Some(ConnectionRef {
+            connection_type: "modbus-rtu".to_owned(),
+            id: "rtu1".to_owned(),
+            unit: None,
+        });
+        let result = spec.validate();
+        assert!(result.is_valid());
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn validate_scale括号不匹配_error() {
+        let mut spec = make_valid_device();
+        spec.signals[0].scale = Some("(raw + 1".to_owned());
+        let result = spec.validate();
+        assert!(!result.is_valid());
+        assert!(result.diagnostics.iter().any(|d| d.message.contains("scale 表达式括号不匹配")));
+    }
+
+    #[test]
+    fn validate_scale含除法_warning() {
+        let mut spec = make_valid_device();
+        spec.signals[0].scale = Some("raw / 100".to_owned());
+        let result = spec.validate();
+        assert!(result.is_valid());
+        assert!(result.diagnostics.iter().any(|d| d.message.contains("除零风险")));
+    }
+
+    #[test]
+    fn validate_写信号无alarm_warning() {
+        let mut spec = make_valid_device();
+        spec.signals.push(SignalSpec {
+            id: "setpoint".to_owned(),
+            signal_type: SignalType::AnalogOutput,
+            unit: Some("℃".to_owned()),
+            range: Some(Range { min: 0.0, max: 100.0 }),
+            source: SignalSource::Register {
+                register: 40010,
+                access: AccessMode::Write,
+                data_type: DataType::Float32,
+                bit: None,
+            },
+            scale: None,
+        });
+        let result = spec.validate();
+        assert!(result.is_valid());
+        assert!(result.diagnostics.iter().any(|d| d.message.contains("写信号但未声明任何告警")));
+    }
+
+    #[test]
+    fn validate_告警id重复_error() {
+        let mut spec = make_valid_device();
+        spec.alarms = vec![
+            AlarmSpec {
+                id: "alarm1".to_owned(),
+                condition: "temp > 80".to_owned(),
+                severity: AlarmSeverity::Warning,
+                action: None,
+            },
+            AlarmSpec {
+                id: "alarm1".to_owned(),
+                condition: "temp > 90".to_owned(),
+                severity: AlarmSeverity::Critical,
+                action: None,
+            },
+        ];
+        let result = spec.validate();
+        assert!(!result.is_valid());
+        assert!(result.diagnostics.iter().any(|d| d.message.contains("重复告警 ID")));
+    }
+
+    #[test]
+    fn validate_告警id空_error() {
+        let mut spec = make_valid_device();
+        spec.alarms = vec![AlarmSpec {
+            id: "".to_owned(),
+            condition: "temp > 80".to_owned(),
+            severity: AlarmSeverity::Warning,
+            action: None,
+        }];
+        let result = spec.validate();
+        assert!(!result.is_valid());
+        assert!(result.diagnostics.iter().any(|d| d.path.contains("alarms") && d.message.contains("不能为空")));
+    }
+
+    #[test]
+    fn validate_告警条件空_error() {
+        let mut spec = make_valid_device();
+        spec.alarms = vec![AlarmSpec {
+            id: "alarm1".to_owned(),
+            condition: "  ".to_owned(),
+            severity: AlarmSeverity::Warning,
+            action: None,
+        }];
+        let result = spec.validate();
+        assert!(!result.is_valid());
+        assert!(result.diagnostics.iter().any(|d| d.message.contains("告警条件不能为空")));
+    }
+
+    #[test]
+    fn validate_告警条件括号不匹配_error() {
+        let mut spec = make_valid_device();
+        spec.alarms = vec![AlarmSpec {
+            id: "alarm1".to_owned(),
+            condition: "(temp > 80".to_owned(),
+            severity: AlarmSeverity::Warning,
+            action: None,
+        }];
+        let result = spec.validate();
+        assert!(!result.is_valid());
+        assert!(result.diagnostics.iter().any(|d| d.message.contains("告警条件括号不匹配")));
+    }
+
+    #[test]
+    fn validate_数字信号无需unit_range() {
+        let mut spec = make_valid_device();
+        spec.signals[0] = SignalSpec {
+            id: "switch".to_owned(),
+            signal_type: SignalType::DigitalInput,
+            unit: None,
+            range: None,
+            source: SignalSource::Register {
+                register: 40100,
+                access: AccessMode::Read,
+                data_type: DataType::Bool,
+                bit: Some(0),
+            },
+            scale: None,
+        };
+        let result = spec.validate();
+        assert!(result.is_valid());
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn parse_device_yaml_validated_语义校验失败() {
+        let yaml = r#"
+id: bad_dev
+type: sensor
+signals:
+  - id: temp
+    signal_type: analog_input
+    source:
+      type: register
+      register: 40001
+      data_type: float32
+    scale: "(broken"
+"#;
+        let result = super::super::parser::parse_device_yaml_validated(yaml);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("语义校验失败"));
+    }
+
+    #[test]
+    fn parse_device_yaml_validated_通过() {
+        let yaml = r#"
+id: good_dev
+type: sensor
+connection:
+  type: modbus-tcp
+  id: conn1
+signals:
+  - id: temp
+    signal_type: analog_input
+    unit: C
+    range: [0, 100]
+    source:
+      type: register
+      register: 40001
+      data_type: float32
+"#;
+        let result = super::super::parser::parse_device_yaml_validated(yaml);
+        assert!(result.is_ok());
     }
 }
