@@ -123,6 +123,65 @@ export function buildCopilotTools(
       }),
       execute: async ({ device_yaml, signal_ids }): Promise<string> => dispatchQueryTool('infer_capabilities_from_signals', { device_yaml, signal_ids }, workspacePath),
     }),
+    // ── 资产操作工具（RFC-0006 Phase 3） ──
+    copilot_save_device_asset: tool({
+      description: '保存或更新设备资产。内部会先校验 YAML 合法性（validate_device_yaml），校验通过后才写入磁盘。此操作会立即持久化到磁盘，调用前应向用户确认。',
+      inputSchema: z.object({
+        id: z.string().describe('设备 ID'),
+        spec_yaml: z.string().describe('完整的设备 DSL YAML 文本'),
+      }),
+      execute: async ({ id, spec_yaml }): Promise<string> => dispatchQueryTool('save_device_asset', { id, spec_yaml }, workspacePath),
+    }),
+    copilot_delete_device_asset: tool({
+      description: '删除设备资产及其版本历史。此操作不可撤销，调用前必须向用户确认。',
+      inputSchema: z.object({
+        asset_id: z.string().describe('要删除的设备 ID'),
+      }),
+      execute: async ({ asset_id }): Promise<string> => dispatchQueryTool('delete_device_asset', { asset_id }, workspacePath),
+    }),
+    copilot_save_capability_asset: tool({
+      description: '保存或更新能力资产。此操作会立即持久化到磁盘。',
+      inputSchema: z.object({
+        id: z.string().describe('能力 ID'),
+        spec_yaml: z.string().describe('完整的能力 DSL YAML 文本'),
+      }),
+      execute: async ({ id, spec_yaml }): Promise<string> => dispatchQueryTool('save_capability_asset', { id, spec_yaml }, workspacePath),
+    }),
+    copilot_add_device_signal: tool({
+      description: '向设备追加一个信号。signal_yaml 须为合法的 SignalSpec YAML 片段。',
+      inputSchema: z.object({
+        asset_id: z.string().describe('设备 ID'),
+        signal_yaml: z.string().describe('SignalSpec YAML 片段'),
+      }),
+      execute: async ({ asset_id, signal_yaml }): Promise<string> => dispatchQueryTool('add_device_signal', { asset_id, signal_yaml }, workspacePath),
+    }),
+    copilot_remove_device_signal: tool({
+      description: '删除设备的指定信号。signal_index 从 0 开始。',
+      inputSchema: z.object({
+        asset_id: z.string().describe('设备 ID'),
+        signal_index: z.number().describe('信号索引（从 0 开始）'),
+      }),
+      execute: async ({ asset_id, signal_index }): Promise<string> => dispatchQueryTool('remove_device_signal', { asset_id, signal_index }, workspacePath),
+    }),
+    copilot_bind_device_connection: tool({
+      description: '绑定或解绑设备与连接的关联。不传 connection_type/connection_id 时清除绑定。',
+      inputSchema: z.object({
+        asset_id: z.string().describe('设备 ID'),
+        connection_type: z.string().optional().describe('连接类型（如 modbus-tcp、mqtt）'),
+        connection_id: z.string().optional().describe('连接 ID'),
+        unit: z.number().optional().describe('Modbus 从站地址'),
+      }),
+      execute: async (args): Promise<string> => dispatchQueryTool('bind_device_connection', args, workspacePath),
+    }),
+    copilot_patch_device_field: tool({
+      description: '修改设备 DSL 的任意字段。path 为 JSON Pointer 格式（如 /manufacturer），value 为字符串形式的 JSON 值。',
+      inputSchema: z.object({
+        asset_id: z.string().describe('设备 ID'),
+        path: z.string().describe('JSON Pointer 路径（如 /manufacturer）'),
+        value: z.string().describe('新值（字符串形式的 JSON 值）'),
+      }),
+      execute: async ({ asset_id, path, value }): Promise<string> => dispatchQueryTool('patch_device_field', { asset_id, path, value }, workspacePath),
+    }),
     get_workflow_node_config: tool({
       description: '获取当前画布上指定节点的完整配置，包括节点类型、label、config 对象（含 script、interval 等字段）。在编辑已有节点前应先调用此工具了解当前配置。',
       inputSchema: z.object({

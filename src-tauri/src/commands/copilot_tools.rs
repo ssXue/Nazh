@@ -381,9 +381,177 @@ fn tool_infer_capabilities(call: &AiToolCall) -> Result<String, String> {
     serde_json::to_string_pretty(&result).map_err(|e| format!("序列化失败: {e}"))
 }
 
-/// 前端 copilot 查询工具调度入口。
+// ── 资产操作工具（RFC-0006 Phase 3） ──
+
+async fn tool_save_device_asset(
+    call: &AiToolCall,
+    ctx: &CopilotToolCtx,
+) -> Result<String, String> {
+    use crate::commands::devices::assets::save_device_asset;
+
+    let args = parse_args(call)?;
+    let id = args["id"].as_str().ok_or("缺少 id 参数")?.to_owned();
+    let spec_yaml = args["spec_yaml"].as_str().ok_or("缺少 spec_yaml 参数")?.to_owned();
+
+    // 先校验再保存（双保险）
+    let spec = nazh_dsl_core::parse_device_yaml(&spec_yaml)
+        .map_err(|e| format!("设备 YAML 解析失败: {e}"))?;
+    let validation = spec.validate();
+    if !validation.is_valid() {
+        let errors: Vec<_> = validation
+            .diagnostics
+            .iter()
+            .filter(|d| d.level == nazh_dsl_core::ValidationLevel::Error)
+            .map(|d| format!("{}: {}", d.path, d.message))
+            .collect();
+        return Err(format!("校验失败，拒绝保存:\n{}", errors.join("\n")));
+    }
+
+    let name = spec.model.clone().unwrap_or_else(|| id.clone());
+    let device_type = spec.device_type.clone();
+
+    save_device_asset(
+        ctx.app.clone(),
+        id.clone(),
+        name,
+        device_type,
+        spec_yaml,
+        ctx.workspace_path.clone(),
+        None,
+        Some("copilot".to_owned()),
+    )
+    .await?;
+
+    Ok(format!("设备 `{id}` 已保存"))
+}
+
+async fn tool_delete_device_asset(
+    call: &AiToolCall,
+    ctx: &CopilotToolCtx,
+) -> Result<String, String> {
+    use crate::commands::devices::assets::delete_device_asset;
+
+    let args = parse_args(call)?;
+    let asset_id = args["asset_id"].as_str().ok_or("缺少 asset_id 参数")?.to_owned();
+
+    delete_device_asset(ctx.app.clone(), asset_id.clone(), ctx.workspace_path.clone()).await?;
+    Ok(format!("设备 `{asset_id}` 已删除"))
+}
+
+async fn tool_save_capability_asset(
+    call: &AiToolCall,
+    ctx: &CopilotToolCtx,
+) -> Result<String, String> {
+    use crate::commands::capabilities::save_capability;
+
+    let args = parse_args(call)?;
+    let id = args["id"].as_str().ok_or("缺少 id 参数")?.to_owned();
+    let spec_yaml = args["spec_yaml"].as_str().ok_or("缺少 spec_yaml 参数")?.to_owned();
+
+    let spec = nazh_dsl_core::parse_capability_yaml(&spec_yaml)
+        .map_err(|e| format!("能力 YAML 解析失败: {e}"))?;
+
+    save_capability(
+        ctx.app.clone(),
+        id.clone(),
+        spec.device_id.clone(),
+        spec.description.clone(),
+        None,
+        spec_yaml,
+        ctx.workspace_path.clone(),
+    )
+    .await?;
+
+    Ok(format!("能力 `{id}` 已保存"))
+}
+
+async fn tool_add_device_signal(
+    call: &AiToolCall,
+    ctx: &CopilotToolCtx,
+) -> Result<String, String> {
+    use crate::commands::devices::fields::add_device_signal;
+
+    let args = parse_args(call)?;
+    let asset_id = args["asset_id"].as_str().ok_or("缺少 asset_id 参数")?.to_owned();
+    let signal_yaml = args["signal_yaml"].as_str().ok_or("缺少 signal_yaml 参数")?.to_owned();
+
+    add_device_signal(ctx.app.clone(), asset_id.clone(), signal_yaml, ctx.workspace_path.clone())
+        .await?;
+    Ok(format!("已为设备 `{asset_id}` 添加信号"))
+}
+
+async fn tool_remove_device_signal(
+    call: &AiToolCall,
+    ctx: &CopilotToolCtx,
+) -> Result<String, String> {
+    use crate::commands::devices::fields::remove_device_signal;
+
+    let args = parse_args(call)?;
+    let asset_id = args["asset_id"].as_str().ok_or("缺少 asset_id 参数")?.to_owned();
+    let signal_index = args["signal_index"]
+        .as_u64()
+        .ok_or("缺少 signal_index 参数")? as usize;
+
+    remove_device_signal(
+        ctx.app.clone(),
+        asset_id.clone(),
+        signal_index,
+        ctx.workspace_path.clone(),
+    )
+    .await?;
+    Ok(format!("已从设备 `{asset_id}` 删除信号索引 {signal_index}"))
+}
+
+async fn tool_bind_device_connection(
+    call: &AiToolCall,
+    ctx: &CopilotToolCtx,
+) -> Result<String, String> {
+    use crate::commands::devices::fields::bind_device_connection;
+
+    let args = parse_args(call)?;
+    let asset_id = args["asset_id"].as_str().ok_or("缺少 asset_id 参数")?.to_owned();
+    let connection_type = args.get("connection_type").and_then(|v| v.as_str()).map(String::from);
+    let connection_id = args.get("connection_id").and_then(|v| v.as_str()).map(String::from);
+    let unit = args.get("unit").and_then(|v| v.as_u64()).and_then(|v| u8::try_from(v).ok());
+
+    bind_device_connection(
+        ctx.app.clone(),
+        asset_id.clone(),
+        connection_type,
+        connection_id,
+        unit,
+        ctx.workspace_path.clone(),
+    )
+    .await?;
+    Ok(format!("设备 `{asset_id}` 连接绑定已更新"))
+}
+
+async fn tool_patch_device_field(
+    call: &AiToolCall,
+    ctx: &CopilotToolCtx,
+) -> Result<String, String> {
+    use crate::commands::devices::fields::patch_device_field;
+
+    let args = parse_args(call)?;
+    let asset_id = args["asset_id"].as_str().ok_or("缺少 asset_id 参数")?.to_owned();
+    let path = args["path"].as_str().ok_or("缺少 path 参数")?.to_owned();
+    let value = args["value"].as_str().ok_or("缺少 value 参数")?.to_owned();
+
+    patch_device_field(
+        ctx.app.clone(),
+        asset_id.clone(),
+        path.clone(),
+        value,
+        None,
+        ctx.workspace_path.clone(),
+    )
+    .await?;
+    Ok(format!("设备 `{asset_id}` 字段 `{path}` 已更新"))
+}
+
+/// 前端 copilot 工具调度入口。
 ///
-/// 仅处理只读查询工具，画布操作由前端直接执行。
+/// 处理只读查询工具和资产操作工具（RFC-0006 Phase 3），画布操作由前端直接执行。
 /// 返回工具执行结果的 JSON 字符串。
 pub async fn dispatch_query_tool(
     tool_name: &str,
@@ -422,6 +590,13 @@ pub async fn dispatch_query_tool(
         "validate_device_yaml" => tool_validate_device_yaml(&call),
         "get_signal_schema_template" => tool_get_signal_schema_template(&call),
         "infer_capabilities_from_signals" => tool_infer_capabilities(&call),
+        "save_device_asset" => tool_save_device_asset(&call, &ctx).await,
+        "delete_device_asset" => tool_delete_device_asset(&call, &ctx).await,
+        "save_capability_asset" => tool_save_capability_asset(&call, &ctx).await,
+        "add_device_signal" => tool_add_device_signal(&call, &ctx).await,
+        "remove_device_signal" => tool_remove_device_signal(&call, &ctx).await,
+        "bind_device_connection" => tool_bind_device_connection(&call, &ctx).await,
+        "patch_device_field" => tool_patch_device_field(&call, &ctx).await,
         _ => Err(format!("未知工具: {tool_name}")),
     }
 }
