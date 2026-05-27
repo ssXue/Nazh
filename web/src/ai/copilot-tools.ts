@@ -108,6 +108,21 @@ export function buildCopilotTools(
       }),
       execute: async ({ yaml }): Promise<string> => dispatchQueryTool('validate_device_yaml', { yaml }, workspacePath),
     }),
+    get_signal_schema_template: tool({
+      description: '获取指定协议的信号源字段约束模板，包含该协议支持的 source 变体、必填/选填字段、枚举值和示例 YAML。建模设备信号前应先调用此工具了解字段要求，避免编造字段或枚举值。',
+      inputSchema: z.object({
+        protocol: z.enum(['modbus-tcp', 'modbus-rtu', 'mqtt', 'serial', 'can', 'can-fd', 'ethercat']).describe('通信协议'),
+      }),
+      execute: async ({ protocol }): Promise<string> => dispatchQueryTool('get_signal_schema_template', { protocol }, workspacePath),
+    }),
+    infer_capabilities_from_signals: tool({
+      description: '从设备的写信号推断能力列表。自动生成的能力返回 YAML；无法自动生成的信号（CAN/Modbus/EtherCAT 写入）返回结构化建议和编码上下文，供 AI 接手手动建模。',
+      inputSchema: z.object({
+        device_yaml: z.string().describe('设备 DSL YAML 文本'),
+        signal_ids: z.array(z.string()).optional().describe('指定要推断的信号 ID 列表（不传则处理所有写信号）'),
+      }),
+      execute: async ({ device_yaml, signal_ids }): Promise<string> => dispatchQueryTool('infer_capabilities_from_signals', { device_yaml, signal_ids }, workspacePath),
+    }),
     get_workflow_node_config: tool({
       description: '获取当前画布上指定节点的完整配置，包括节点类型、label、config 对象（含 script、interval 等字段）。在编辑已有节点前应先调用此工具了解当前配置。',
       inputSchema: z.object({

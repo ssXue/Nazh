@@ -12,8 +12,9 @@ pub mod pin_mapping;
 pub mod workflow;
 
 pub use capability::{
-    CapabilityImpl, CapabilityOutput, CapabilityParam, CapabilitySpec, SafetyConstraints,
-    SafetyLevel, generate_capabilities_from_device,
+    CapabilityImpl, CapabilityInference, CapabilityOutput, CapabilityParam, CapabilitySpec,
+    SafetyConstraints, SafetyLevel, generate_capabilities_from_device,
+    infer_capabilities_from_signals,
 };
 pub use connection::{
     ConnectionGovernanceSpec, ConnectionProtocol, ConnectionSecretRefs, ConnectionSpec,
@@ -21,8 +22,10 @@ pub use connection::{
 };
 pub use device::{
     AccessMode, AlarmSeverity, AlarmSpec, ConnectionRef, DataType, DeviceSpec, EthercatIdentity,
-    SignalSource, SignalSpec, SignalType, ValidationDiagnostic, ValidationLevel, ValidationResult,
+    FieldSpec, SignalSchemaTemplate, SignalSource, SignalSpec, SignalType, SourceVariant,
+    ValidationDiagnostic, ValidationLevel, ValidationResult,
 };
+pub use device::signal_schema_template;
 pub use error::DslError;
 pub use parser::{
     parse_capability_yaml, parse_connection_yaml, parse_connection_yaml_validated,

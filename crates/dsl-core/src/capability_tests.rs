@@ -491,3 +491,148 @@ fn 从_can_output_信号生成写能力_因编码语义无法无损表达而失�
     assert!(msg.contains("CAN"));
     assert!(msg.contains("byte_offset"));
 }
+
+// ---- infer_capabilities_from_signals() 测试 ----
+
+#[test]
+fn infer_mqtt写信号_自动生成() {
+    use crate::device::{DataType, SignalSpec};
+    let device = DeviceSpec {
+        id: "press".to_owned(),
+        device_type: "press".to_owned(),
+        manufacturer: None,
+        model: None,
+        connection: None,
+        network_group: None,
+        ethercat_identity: None,
+        signals: vec![SignalSpec {
+            id: "target".to_owned(),
+            signal_type: SignalType::AnalogOutput,
+            unit: Some("mm".to_owned()),
+            range: Some(Range { min: 0.0, max: 150.0 }),
+            source: SignalSource::Topic { topic: "press/target".to_owned() },
+            scale: None,
+        }],
+        alarms: vec![],
+    };
+
+    let results = super::infer_capabilities_from_signals(&device, None);
+    assert_eq!(results.len(), 1);
+    match &results[0] {
+        super::CapabilityInference::Generated { source_signal_id, .. } => {
+            assert_eq!(source_signal_id, "target");
+        }
+        other => panic!("期望 Generated，得到 {other:?}"),
+    }
+}
+
+#[test]
+fn infer_modbus写信号_返回不支持的() {
+    use crate::device::{DataType, SignalSpec};
+    let device = DeviceSpec {
+        id: "sensor".to_owned(),
+        device_type: "sensor".to_owned(),
+        manufacturer: None,
+        model: None,
+        connection: None,
+        network_group: None,
+        ethercat_identity: None,
+        signals: vec![SignalSpec {
+            id: "setpoint".to_owned(),
+            signal_type: SignalType::AnalogOutput,
+            unit: Some("C".to_owned()),
+            range: Some(Range { min: 0.0, max: 100.0 }),
+            source: SignalSource::Register {
+                register: 40010,
+                access: AccessMode::Write,
+                data_type: DataType::Float32,
+                bit: None,
+            },
+            scale: None,
+        }],
+        alarms: vec![],
+    };
+
+    let results = super::infer_capabilities_from_signals(&device, None);
+    assert_eq!(results.len(), 1);
+    match &results[0] {
+        super::CapabilityInference::Unsupported { signal_id, encoding_info, .. } => {
+            assert_eq!(signal_id, "setpoint");
+            assert_eq!(encoding_info["source_type"], "register");
+        }
+        other => panic!("期望 Unsupported，得到 {other:?}"),
+    }
+}
+
+#[test]
+fn infer_按signal_ids过滤() {
+    use crate::device::SignalSpec;
+    let device = DeviceSpec {
+        id: "dev".to_owned(),
+        device_type: "dev".to_owned(),
+        manufacturer: None,
+        model: None,
+        connection: None,
+        network_group: None,
+        ethercat_identity: None,
+        signals: vec![
+            SignalSpec {
+                id: "cmd1".to_owned(),
+                signal_type: SignalType::AnalogOutput,
+                unit: None,
+                range: None,
+                source: SignalSource::Topic { topic: "t/1".to_owned() },
+                scale: None,
+            },
+            SignalSpec {
+                id: "cmd2".to_owned(),
+                signal_type: SignalType::AnalogOutput,
+                unit: None,
+                range: None,
+                source: SignalSource::SerialCommand { command: "CMD".to_owned() },
+                scale: None,
+            },
+        ],
+        alarms: vec![],
+    };
+
+    let results = super::infer_capabilities_from_signals(&device, Some(&["cmd1".to_owned()]));
+    assert_eq!(results.len(), 1);
+    match &results[0] {
+        super::CapabilityInference::Generated { source_signal_id, .. } => {
+            assert_eq!(source_signal_id, "cmd1");
+        }
+        other => panic!("期望 Generated，得到 {other:?}"),
+    }
+}
+
+#[test]
+fn infer_只读信号_返回空() {
+    use crate::device::{DataType, SignalSpec};
+    let device = DeviceSpec {
+        id: "sensor".to_owned(),
+        device_type: "sensor".to_owned(),
+        manufacturer: None,
+        model: None,
+        connection: None,
+        network_group: None,
+        ethercat_identity: None,
+        signals: vec![SignalSpec {
+            id: "temp".to_owned(),
+            signal_type: SignalType::AnalogInput,
+            unit: Some("C".to_owned()),
+            range: Some(Range { min: 0.0, max: 100.0 }),
+            source: SignalSource::Register {
+                register: 40001,
+                access: AccessMode::Read,
+                data_type: DataType::Float32,
+                bit: None,
+            },
+            scale: None,
+        }],
+        alarms: vec![],
+    };
+
+    let results = super::infer_capabilities_from_signals(&device, None);
+    assert!(results.is_empty());
+}

@@ -447,6 +447,125 @@ impl DeviceSpec {
         ValidationResult { diagnostics }
     }
 }
+/// 指定协议的信号源字段模板，供 AI 生成信号时参考（RFC-0006 Phase 2）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SignalSchemaTemplate {
+    pub protocol: String,
+    pub source_variants: Vec<SourceVariant>,
+    pub signal_types: Vec<String>,
+    pub data_types: Vec<String>,
+    pub example_signal_yaml: String,
+}
+
+/// 信号源变体描述。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SourceVariant {
+    #[serde(rename = "type")]
+    pub source_type: String,
+    pub description: String,
+    pub fields: Vec<FieldSpec>,
+}
+
+/// 字段规格。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FieldSpec {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub field_type: String,
+    pub required: bool,
+    pub description: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enum_values: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default: Option<String>,
+}
+
+/// 返回指定协议的信号源字段模板。
+///
+/// 协议名接受 `modbus-tcp` / `modbus-rtu` / `mqtt` / `serial` / `can` / `can-fd` / `ethercat`。
+pub fn signal_schema_template(protocol: &str) -> Result<SignalSchemaTemplate, String> {
+    match protocol {
+        "modbus-tcp" | "modbus-rtu" => Ok(SignalSchemaTemplate {
+            protocol: protocol.to_owned(),
+            source_variants: vec![SourceVariant {
+                source_type: "register".to_owned(),
+                description: "Modbus 寄存器地址".to_owned(),
+                fields: vec![
+                    FieldSpec { name: "register".into(), field_type: "u16".into(), required: true, description: "寄存器地址（如 40001）".into(), enum_values: None, default: None },
+                    FieldSpec { name: "access".into(), field_type: "string".into(), required: false, description: "访问模式".into(), enum_values: Some(vec!["read".into(), "write".into(), "read_write".into()]), default: Some("read".into()) },
+                    FieldSpec { name: "data_type".into(), field_type: "string".into(), required: true, description: "数据类型".into(), enum_values: Some(vec!["bool".into(), "u16".into(), "i16".into(), "u32".into(), "i32".into(), "float32".into(), "float64".into(), "string".into()]), default: None },
+                    FieldSpec { name: "bit".into(), field_type: "u8".into(), required: false, description: "位偏移（仅 bool 类型需要）".into(), enum_values: None, default: None },
+                ],
+            }],
+            signal_types: vec!["analog_input".into(), "analog_output".into(), "digital_input".into(), "digital_output".into()],
+            data_types: vec!["bool".into(), "u16".into(), "i16".into(), "u32".into(), "i32".into(), "float32".into(), "float64".into(), "string".into()],
+            example_signal_yaml: "id: temperature\nsignal_type: analog_input\nunit: C\nrange: [0, 100]\nsource:\n  type: register\n  register: 40001\n  access: read\n  data_type: float32".into(),
+        }),
+        "mqtt" => Ok(SignalSchemaTemplate {
+            protocol: "mqtt".to_owned(),
+            source_variants: vec![SourceVariant {
+                source_type: "topic".to_owned(),
+                description: "MQTT 主题订阅".to_owned(),
+                fields: vec![
+                    FieldSpec { name: "topic".into(), field_type: "string".into(), required: true, description: "MQTT 主题路径（如 factory/press/pressure）".into(), enum_values: None, default: None },
+                ],
+            }],
+            signal_types: vec!["analog_input".into(), "analog_output".into(), "digital_input".into(), "digital_output".into()],
+            data_types: vec![],
+            example_signal_yaml: "id: pressure\nsignal_type: analog_input\nunit: MPa\nsource:\n  type: topic\n  topic: factory/press/pressure".into(),
+        }),
+        "serial" => Ok(SignalSchemaTemplate {
+            protocol: "serial".to_owned(),
+            source_variants: vec![SourceVariant {
+                source_type: "serial_command".to_owned(),
+                description: "串口命令".to_owned(),
+                fields: vec![
+                    FieldSpec { name: "command".into(), field_type: "string".into(), required: true, description: "串口命令字符串（如 READ_TEMP）".into(), enum_values: None, default: None },
+                ],
+            }],
+            signal_types: vec!["analog_input".into(), "analog_output".into(), "digital_input".into(), "digital_output".into()],
+            data_types: vec![],
+            example_signal_yaml: "id: temperature\nsignal_type: analog_input\nunit: C\nsource:\n  type: serial_command\n  command: READ_TEMP".into(),
+        }),
+        "can" | "can-fd" => Ok(SignalSchemaTemplate {
+            protocol: protocol.to_owned(),
+            source_variants: vec![SourceVariant {
+                source_type: "can_frame".to_owned(),
+                description: "CAN 帧信号解码".to_owned(),
+                fields: vec![
+                    FieldSpec { name: "can_id".into(), field_type: "u32".into(), required: true, description: "CAN 帧标识符".into(), enum_values: None, default: None },
+                    FieldSpec { name: "is_extended".into(), field_type: "bool".into(), required: false, description: "是否扩展帧".into(), enum_values: None, default: Some("false".into()) },
+                    FieldSpec { name: "byte_offset".into(), field_type: "u8".into(), required: true, description: "数据字节偏移".into(), enum_values: None, default: None },
+                    FieldSpec { name: "byte_length".into(), field_type: "u8".into(), required: true, description: "数据字节长度".into(), enum_values: None, default: None },
+                    FieldSpec { name: "data_type".into(), field_type: "string".into(), required: true, description: "数据类型".into(), enum_values: Some(vec!["bool".into(), "u16".into(), "i16".into(), "u32".into(), "i32".into(), "float32".into(), "float64".into(), "string".into()]), default: None },
+                    FieldSpec { name: "byte_order".into(), field_type: "string".into(), required: false, description: "字节序".into(), enum_values: Some(vec!["big_endian".into(), "little_endian".into()]), default: Some("big_endian".into()) },
+                ],
+            }],
+            signal_types: vec!["analog_input".into(), "analog_output".into(), "digital_input".into(), "digital_output".into()],
+            data_types: vec!["bool".into(), "u16".into(), "i16".into(), "u32".into(), "i32".into(), "float32".into(), "float64".into(), "string".into()],
+            example_signal_yaml: "id: motor_speed\nsignal_type: analog_input\nunit: RPM\nrange: [0, 3000]\nsource:\n  type: can_frame\n  can_id: 256\n  byte_offset: 0\n  byte_length: 2\n  data_type: u16\n  byte_order: big_endian".into(),
+        }),
+        "ethercat" => Ok(SignalSchemaTemplate {
+            protocol: "ethercat".to_owned(),
+            source_variants: vec![SourceVariant {
+                source_type: "ethercat_pdo".to_owned(),
+                description: "EtherCAT PDO 条目".to_owned(),
+                fields: vec![
+                    FieldSpec { name: "slave_address".into(), field_type: "u16".into(), required: false, description: "从站地址（多从站拓扑时必填）".into(), enum_values: None, default: None },
+                    FieldSpec { name: "pdo_index".into(), field_type: "u16".into(), required: true, description: "PDO 索引（如 0x1A00）".into(), enum_values: None, default: None },
+                    FieldSpec { name: "entry_index".into(), field_type: "u16".into(), required: true, description: "PDO 条目索引".into(), enum_values: None, default: None },
+                    FieldSpec { name: "sub_index".into(), field_type: "u8".into(), required: true, description: "子索引".into(), enum_values: None, default: None },
+                    FieldSpec { name: "bit_len".into(), field_type: "u16".into(), required: true, description: "位长度".into(), enum_values: None, default: None },
+                    FieldSpec { name: "data_type".into(), field_type: "string".into(), required: false, description: "数据类型名称（如 UINT16）".into(), enum_values: None, default: None },
+                ],
+            }],
+            signal_types: vec!["analog_input".into(), "analog_output".into(), "digital_input".into(), "digital_output".into()],
+            data_types: vec![],
+            example_signal_yaml: "id: status_word\nsignal_type: analog_input\nsource:\n  type: ethercat_pdo\n  slave_address: 1001\n  pdo_index: 26880\n  entry_index: 24641\n  sub_index: 1\n  bit_len: 16\n  data_type: UINT16".into(),
+        }),
+        _ => Err(format!("不支持的协议: {protocol}")),
+    }
+}
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::needless_raw_string_hashes)]
@@ -991,5 +1110,46 @@ signals:
 "#;
         let result = super::super::parser::parse_device_yaml_validated(yaml);
         assert!(result.is_ok());
+    }
+
+    // ── signal_schema_template 测试 ──
+
+    #[test]
+    fn schema_template_modbus_tcp() {
+        let t = super::super::signal_schema_template("modbus-tcp").unwrap();
+        assert_eq!(t.protocol, "modbus-tcp");
+        assert_eq!(t.source_variants.len(), 1);
+        assert_eq!(t.source_variants[0].source_type, "register");
+        assert!(t.source_variants[0].fields.iter().any(|f| f.name == "register" && f.required));
+    }
+
+    #[test]
+    fn schema_template_mqtt() {
+        let t = super::super::signal_schema_template("mqtt").unwrap();
+        assert_eq!(t.source_variants[0].source_type, "topic");
+    }
+
+    #[test]
+    fn schema_template_serial() {
+        let t = super::super::signal_schema_template("serial").unwrap();
+        assert_eq!(t.source_variants[0].source_type, "serial_command");
+    }
+
+    #[test]
+    fn schema_template_can() {
+        let t = super::super::signal_schema_template("can").unwrap();
+        assert_eq!(t.source_variants[0].source_type, "can_frame");
+        assert!(t.source_variants[0].fields.len() >= 5);
+    }
+
+    #[test]
+    fn schema_template_ethercat() {
+        let t = super::super::signal_schema_template("ethercat").unwrap();
+        assert_eq!(t.source_variants[0].source_type, "ethercat_pdo");
+    }
+
+    #[test]
+    fn schema_template_不支持的协议() {
+        assert!(super::super::signal_schema_template("unknown").is_err());
     }
 }

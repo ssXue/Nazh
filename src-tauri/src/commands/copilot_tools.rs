@@ -305,6 +305,82 @@ fn tool_validate_device_yaml(call: &AiToolCall) -> Result<String, String> {
     serde_json::to_string_pretty(&result).map_err(|e| format!("序列化失败: {e}"))
 }
 
+fn tool_get_signal_schema_template(call: &AiToolCall) -> Result<String, String> {
+    use nazh_dsl_core::signal_schema_template;
+
+    let args = parse_args(call)?;
+    let protocol = args["protocol"].as_str().ok_or("缺少 protocol 参数")?;
+
+    let template = signal_schema_template(protocol)?;
+    serde_json::to_string_pretty(&template).map_err(|e| format!("序列化失败: {e}"))
+}
+
+fn tool_infer_capabilities(call: &AiToolCall) -> Result<String, String> {
+    use nazh_dsl_core::{infer_capabilities_from_signals, parse_device_yaml};
+
+    let args = parse_args(call)?;
+    let device_yaml = args["device_yaml"]
+        .as_str()
+        .ok_or("缺少 device_yaml 参数")?;
+
+    let spec = parse_device_yaml(device_yaml)
+        .map_err(|e| format!("设备 YAML 解析失败: {e}"))?;
+
+    let signal_ids: Option<Vec<String>> = args
+        .get("signal_ids")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        });
+
+    let inferences = infer_capabilities_from_signals(&spec, signal_ids.as_deref());
+
+    let capabilities: Vec<_> = inferences
+        .iter()
+        .filter_map(|inf| match inf {
+            nazh_dsl_core::CapabilityInference::Generated {
+                capability,
+                source_signal_id,
+            } => {
+                let yaml = serde_yaml::to_string(capability).ok()?;
+                Some(json!({
+                    "yaml": yaml,
+                    "source_signal_id": source_signal_id,
+                    "auto_generated": true,
+                }))
+            }
+            _ => None,
+        })
+        .collect();
+
+    let unsupported: Vec<_> = inferences
+        .iter()
+        .filter_map(|inf| match inf {
+            nazh_dsl_core::CapabilityInference::Unsupported {
+                signal_id,
+                reason,
+                encoding_info,
+            } => Some(json!({
+                "signal_id": signal_id,
+                "reason": reason,
+                "suggestion": {
+                    "source_type": encoding_info["source_type"],
+                    "encoding_info": encoding_info,
+                },
+            })),
+            _ => None,
+        })
+        .collect();
+
+    let result = json!({
+        "capabilities": capabilities,
+        "unsupported": unsupported,
+    });
+    serde_json::to_string_pretty(&result).map_err(|e| format!("序列化失败: {e}"))
+}
+
 /// 前端 copilot 查询工具调度入口。
 ///
 /// 仅处理只读查询工具，画布操作由前端直接执行。
@@ -344,6 +420,8 @@ pub async fn dispatch_query_tool(
         "validate_workflow" => tool_validate_workflow(&call),
         "get_scripting_reference" => Ok(tool_get_scripting_reference(&call)),
         "validate_device_yaml" => tool_validate_device_yaml(&call),
+        "get_signal_schema_template" => tool_get_signal_schema_template(&call),
+        "infer_capabilities_from_signals" => tool_infer_capabilities(&call),
         _ => Err(format!("未知工具: {tool_name}")),
     }
 }
