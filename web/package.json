@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.63",
-    "@ai-sdk/openai-compatible": "^2.0.47",
+    "@ai-sdk/openai-compatible": "^2.0.48",
     "@codemirror/lang-javascript": "^6.2.5",
     "@codemirror/lang-json": "^6.0.2",
     "@codemirror/state": "^6.6.0",
