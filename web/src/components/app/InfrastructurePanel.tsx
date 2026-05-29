@@ -9,7 +9,6 @@ import type { UseConnectionLibraryResult } from '../../hooks/use-connection-libr
 import { useDeviceAssets } from '../../hooks/use-device-assets';
 import type { DeviceAssetSummary } from '../../hooks/use-device-assets';
 import type { ConnectionRecord } from '../../types';
-import { DeviceImportDrawer } from './DeviceImportDrawer';
 import { DeviceModelingPanel } from './DeviceModelingPanel';
 
 type InfraTab = 'devices' | 'connections';
@@ -35,7 +34,6 @@ export function InfrastructurePanel({
 }: InfrastructurePanelProps) {
   const [activeTab, setActiveTab] = useState<InfraTab>('devices');
   const [focusConnectionId, setFocusConnectionId] = useState<string | null>(null);
-  const [importDrawerOpen, setImportDrawerOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [deviceRefreshKey, setDeviceRefreshKey] = useState(0);
   const toastTimer = useRef<ReturnType<typeof setTimeout>>(null);
@@ -123,14 +121,6 @@ export function InfrastructurePanel({
           <span className="panel__badge">
             {activeCount > 0 ? `${activeCount} 项` : '无'}
           </span>
-          <button
-            type="button"
-            className="panel__action"
-            data-testid="infra-import-button"
-            onClick={() => setImportDrawerOpen(true)}
-          >
-            接入设备
-          </button>
         </div>
       </div>
 
@@ -166,22 +156,6 @@ export function InfrastructurePanel({
         )}
       </div>
 
-      {importDrawerOpen ? (
-        <div className="infra-drawer-backdrop" onClick={() => setImportDrawerOpen(false)}>
-          <DeviceImportDrawer
-            workspacePath={workspacePath}
-            onClose={() => setImportDrawerOpen(false)}
-            onSaved={(msg) => {
-              setImportDrawerOpen(false);
-              handleAssetsChanged();
-              setToast(msg ?? '设备已保存');
-              if (toastTimer.current) clearTimeout(toastTimer.current);
-              toastTimer.current = setTimeout(() => setToast(null), 3500);
-            }}
-            onStatusMessage={onStatusMessage}
-          />
-        </div>
-      ) : null}
       {toast ? (
         <div className="infra-panel__toast" role="status" aria-live="polite">{toast}</div>
       ) : null}

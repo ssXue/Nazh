@@ -4,6 +4,7 @@ import { useSettings } from '../../hooks/use-settings';
 
 import { BorderGlow } from '../animations/BorderGlow';
 
+import { CopilotAttachmentChip, validateAttachment, type CopilotAttachment } from './CopilotAttachment';
 import type { CopilotSessionStatus } from './CopilotPanel';
 
 /** 亮色主题用更深的发光颜色，暗色主题保持原值 */
@@ -16,9 +17,12 @@ interface Props {
   onSend: () => void;
   status: CopilotSessionStatus;
   onCancel: () => void;
+  attachment: CopilotAttachment | null;
+  onAttachmentChange: (attachment: CopilotAttachment | null) => void;
+  onAttachmentError: (msg: string) => void;
 }
 
-export function CopilotChatInput({ value, onChange, onSend, status, onCancel }: Props) {
+export function CopilotChatInput({ value, onChange, onSend, status, onCancel, attachment, onAttachmentChange, onAttachmentError }: Props) {
   const generating = status === 'generating';
   const { resolvedThemeMode } = useSettings();
   const isDark = resolvedThemeMode === 'dark';
@@ -49,6 +53,23 @@ export function CopilotChatInput({ value, onChange, onSend, status, onCancel }: 
     onChange(el.value);
   }, [onChange]);
 
+  const handleFileSelect = useCallback(() => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.pdf,.xml,.esi';
+    input.onchange = () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      const result = validateAttachment(file);
+      if (typeof result === 'string') {
+        onAttachmentError(result);
+      } else {
+        onAttachmentChange(result);
+      }
+    };
+    input.click();
+  }, [onAttachmentChange, onAttachmentError]);
+
   return (
     <BorderGlow
       className="copilot-input"
@@ -60,6 +81,14 @@ export function CopilotChatInput({ value, onChange, onSend, status, onCancel }: 
       glowIntensity={generating ? 2.0 : 1.2}
       backgroundColor="var(--surface)"
     >
+      {attachment && (
+        <div className="copilot-attachment-bar">
+          <CopilotAttachmentChip
+            attachment={attachment}
+            onRemove={() => onAttachmentChange(null)}
+          />
+        </div>
+      )}
       <textarea
         ref={textareaRef}
         className="copilot-input__textarea"
@@ -86,9 +115,18 @@ export function CopilotChatInput({ value, onChange, onSend, status, onCancel }: 
         <span className="copilot-input__btn-wrap">
           <button
             type="button"
+            className="copilot-input__attach"
+            data-testid="copilot-attach"
+            onClick={handleFileSelect}
+            title="附加文件（PDF / ESI）"
+          >
+            &#128206;
+          </button>
+          <button
+            type="button"
             className="copilot-input__send"
             data-testid="copilot-send"
-            disabled={!value.trim()}
+            disabled={!value.trim() && !attachment}
             onClick={onSend}
             title="发送"
           >

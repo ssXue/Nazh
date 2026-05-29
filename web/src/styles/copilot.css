@@ -715,3 +715,69 @@
   gap: 6px;
   padding: 6px 0;
 }
+
+/* ── Copilot 附件（RFC-0006 Phase 6） ── */
+
+.copilot-attachment-bar {
+  display: flex;
+  padding: 4px 12px 0;
+}
+
+.copilot-attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px 3px 8px;
+  border-radius: 6px;
+  background: var(--surface-hover, rgba(0, 0, 0, 0.06));
+  font-size: 12px;
+  line-height: 1.4;
+  max-width: 100%;
+}
+
+.copilot-attachment-chip__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 240px;
+}
+
+.copilot-attachment-chip__remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--text-secondary, #888);
+  flex-shrink: 0;
+}
+
+.copilot-attachment-chip__remove:hover {
+  background: var(--surface-active, rgba(0, 0, 0, 0.1));
+  color: var(--text-primary, #333);
+}
+
+.copilot-input__attach {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  font-size: 16px;
+  color: var(--text-secondary, #888);
+  flex-shrink: 0;
+}
+
+.copilot-input__attach:hover {
+  background: var(--surface-hover, rgba(0, 0, 0, 0.06));
+}

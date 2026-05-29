@@ -118,15 +118,6 @@ export function CapabilitiesTab({ deviceId, workspacePath, onAddToCanvas }: {
             </button>
           </span>
         ))}
-        <button
-          type="button"
-          className="dm-cap-tag dm-cap-tag--action"
-          onClick={() => void handleGenerate()}
-          disabled={generating}
-          title="从设备信号自动生成能力"
-        >
-          {generating ? '生成中...' : '生成'}
-        </button>
       </div>
 
       {/* 能力详情 */}
