@@ -12,8 +12,11 @@ export {
   extractDeviceFromText,
   extractDeviceProposal,
   extractDeviceProposalStream,
+  extractDevicePipeline,
+  formatPipelineResult,
   type ExtractionProposal,
   type UncertaintyItem,
+  type PipelineResult,
 } from './device-extraction';
 export { testProviderConnection, type ConnectionTestResult } from './test-connection';
 export type { AiStreamOptions, StreamCallbacks, StreamResult } from './stream';

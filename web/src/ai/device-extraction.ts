@@ -1,8 +1,8 @@
 /// 设备 / 能力 AI 结构化抽取。
 ///
-/// 将 Rust 端的 AI 抽取提示词模板和 HTTP 调用前移到前端，
-/// 使用 Vercel AI SDK 直连 provider。
-/// PDF 文本提取仍通过 IPC 调度到 Rust（JS 无等价物）。
+/// 旧的 `extractDeviceFromText` / `extractDeviceProposal` / `extractDeviceProposalStream`
+/// 将在 Phase 6 移除（随 DeviceImportDrawer 一起清理）。
+/// 新的多阶段管道入口 `extractDevicePipeline` 在 `extraction-pipeline.ts`。
 
 import { generateText, streamText } from 'ai';
 
@@ -276,3 +276,11 @@ export async function extractDeviceProposalStream(
 
   return accumulated;
 }
+
+// ── 新管道入口 re-export（RFC-0006 Phase 5） ──
+
+export {
+  extractDevicePipeline,
+  formatPipelineResult,
+  type PipelineResult,
+} from './extraction-pipeline';
