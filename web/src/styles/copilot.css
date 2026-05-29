@@ -540,12 +540,21 @@
 .copilot-input .border-glow-inner {
   display: flex;
   align-items: flex-end;
+  gap: 0;
+  flex-direction: column;
+  width: 100%;
+}
+
+.copilot-input__row {
+  display: flex;
+  align-items: flex-end;
   gap: 6px;
-  flex-direction: row;
+  width: 100%;
 }
 
 .copilot-input__textarea {
   flex: 1;
+  width: auto;
   resize: none;
   border: none;
   border-radius: var(--radius-md);
@@ -731,7 +740,8 @@
 
 .copilot-attachment-bar {
   display: flex;
-  padding: 4px 12px 0;
+  padding: 6px 4px 2px;
+  width: 100%;
 }
 
 .copilot-attachment-chip {
