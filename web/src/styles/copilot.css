@@ -582,25 +582,36 @@
   overflow: hidden;
 }
 
+.copilot-input__btn-wrap--dual {
+  width: auto;
+  min-width: unset;
+  gap: 4px;
+  overflow: visible;
+  border-radius: 0;
+  margin-bottom: 4px;
+}
+
 .copilot-input__send {
-  width: 100%;
-  height: 100%;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
   border: none;
   border-radius: 50%;
   background: var(--accent);
   color: #fff;
-  font-size: 14px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 0;
   margin: 0;
-  transition: opacity 120ms;
+  transition: transform 120ms;
 }
 
 .copilot-input__send:hover:not(:disabled) {
-  opacity: 0.88;
+  transform: translateY(-1px);
+  background: var(--accent);
+  box-shadow: none;
 }
 
 .copilot-input__send:disabled {
@@ -609,8 +620,8 @@
 }
 
 .copilot-input__stop {
-  width: 100%;
-  height: 100%;
+  width: 28px;
+  height: 28px;
   border: none;
   border-radius: 50%;
   background: #dc3545;
@@ -770,14 +781,16 @@
   width: 28px;
   height: 28px;
   border: none;
-  border-radius: 6px;
+  border-radius: 50%;
   background: transparent;
   cursor: pointer;
-  font-size: 16px;
   color: var(--text-secondary, #888);
   flex-shrink: 0;
+  padding: 0;
+  transition: background 120ms, color 120ms;
 }
 
 .copilot-input__attach:hover {
   background: var(--surface-hover, rgba(0, 0, 0, 0.06));
+  color: var(--fg);
 }
