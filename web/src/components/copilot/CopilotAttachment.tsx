@@ -39,12 +39,6 @@ interface Props {
 export function CopilotAttachmentChip({ attachment, onRemove }: Props) {
   return (
     <span className="copilot-attachment-chip" data-testid="copilot-attachment">
-      <span className="copilot-attachment-chip__icon">
-        {attachment.type === 'pdf' ? '📄' : '📋'}
-      </span>
-      <span className="copilot-attachment-chip__name" title={attachment.name}>
-        {attachment.name}
-      </span>
       <button
         type="button"
         className="copilot-attachment-chip__remove"
@@ -54,6 +48,12 @@ export function CopilotAttachmentChip({ attachment, onRemove }: Props) {
       >
         &times;
       </button>
+      <span className="copilot-attachment-chip__icon">
+        {attachment.type === 'pdf' ? '📄' : '📋'}
+      </span>
+      <span className="copilot-attachment-chip__name" title={attachment.name}>
+        {attachment.name}
+      </span>
     </span>
   );
 }
