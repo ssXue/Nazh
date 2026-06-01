@@ -131,6 +131,9 @@ impl NodeHandle {
         let inner = &self.inner;
         let trace_id = Uuid::new_v4();
 
+        // ADR-0016 精确统计：在 store.write 消费 payload 之前计算字节数。
+        let payload_bytes = payload.to_string().len() as u64;
+
         // 1. 写 DataStore（先做，因为失败要立即返回；事件未发出避免半成品状态）
         let consumers = inner.downstream.len().max(1);
         let data_id = inner.store.write(payload, consumers)?;
@@ -177,6 +180,9 @@ impl NodeHandle {
                     edge_kind: target.edge_kind,
                     transmit_count: 1,
                     max_queue_depth: queue_depth,
+                    #[allow(clippy::cast_precision_loss)]
+                    avg_queue_depth: queue_depth as f64,
+                    total_payload_bytes: payload_bytes,
                     window_started_at: now_ts.clone(),
                     window_ended_at: now_ts,
                 }),

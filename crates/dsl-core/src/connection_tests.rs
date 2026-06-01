@@ -159,7 +159,10 @@ protocol:
     );
 
     let result = parse_connection_yaml_validated(&yaml);
-    assert!(result.is_err(), "ethercrab 后端必须填写 dc_sync0_period_us / dc_sync0_shift_us / dc_start_delay_us");
+    assert!(
+        result.is_err(),
+        "ethercrab 后端必须填写 dc_sync0_period_us / dc_sync0_shift_us / dc_start_delay_us"
+    );
 }
 
 #[test]
@@ -181,7 +184,10 @@ protocol:
     );
 
     let err = parse_connection_yaml_validated(&yaml).unwrap_err();
-    assert!(err.to_string().contains("dc_sync0_shift_us"), "缺少 dc_sync0_shift_us 应报错: {err}");
+    assert!(
+        err.to_string().contains("dc_sync0_shift_us"),
+        "缺少 dc_sync0_shift_us 应报错: {err}"
+    );
 }
 
 #[test]

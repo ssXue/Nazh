@@ -496,7 +496,7 @@ fn 从_can_output_信号生成写能力_因编码语义无法无损表达而失�
 
 #[test]
 fn infer_mqtt写信号_自动生成() {
-    use crate::device::{DataType, SignalSpec};
+    use crate::device::SignalSpec;
     let device = DeviceSpec {
         id: "press".to_owned(),
         device_type: "press".to_owned(),
@@ -509,8 +509,13 @@ fn infer_mqtt写信号_自动生成() {
             id: "target".to_owned(),
             signal_type: SignalType::AnalogOutput,
             unit: Some("mm".to_owned()),
-            range: Some(Range { min: 0.0, max: 150.0 }),
-            source: SignalSource::Topic { topic: "press/target".to_owned() },
+            range: Some(Range {
+                min: 0.0,
+                max: 150.0,
+            }),
+            source: SignalSource::Topic {
+                topic: "press/target".to_owned(),
+            },
             scale: None,
         }],
         alarms: vec![],
@@ -519,10 +524,14 @@ fn infer_mqtt写信号_自动生成() {
     let results = super::infer_capabilities_from_signals(&device, None);
     assert_eq!(results.len(), 1);
     match &results[0] {
-        super::CapabilityInference::Generated { source_signal_id, .. } => {
+        super::CapabilityInference::Generated {
+            source_signal_id, ..
+        } => {
             assert_eq!(source_signal_id, "target");
         }
-        other => panic!("期望 Generated，得到 {other:?}"),
+        other @ super::CapabilityInference::Unsupported { .. } => {
+            panic!("期望 Generated，得到 {other:?}")
+        }
     }
 }
 
@@ -541,7 +550,10 @@ fn infer_modbus写信号_返回不支持的() {
             id: "setpoint".to_owned(),
             signal_type: SignalType::AnalogOutput,
             unit: Some("C".to_owned()),
-            range: Some(Range { min: 0.0, max: 100.0 }),
+            range: Some(Range {
+                min: 0.0,
+                max: 100.0,
+            }),
             source: SignalSource::Register {
                 register: 40010,
                 access: AccessMode::Write,
@@ -556,11 +568,17 @@ fn infer_modbus写信号_返回不支持的() {
     let results = super::infer_capabilities_from_signals(&device, None);
     assert_eq!(results.len(), 1);
     match &results[0] {
-        super::CapabilityInference::Unsupported { signal_id, encoding_info, .. } => {
+        super::CapabilityInference::Unsupported {
+            signal_id,
+            encoding_info,
+            ..
+        } => {
             assert_eq!(signal_id, "setpoint");
             assert_eq!(encoding_info["source_type"], "register");
         }
-        other => panic!("期望 Unsupported，得到 {other:?}"),
+        other @ super::CapabilityInference::Generated { .. } => {
+            panic!("期望 Unsupported，得到 {other:?}")
+        }
     }
 }
 
@@ -581,7 +599,9 @@ fn infer_按signal_ids过滤() {
                 signal_type: SignalType::AnalogOutput,
                 unit: None,
                 range: None,
-                source: SignalSource::Topic { topic: "t/1".to_owned() },
+                source: SignalSource::Topic {
+                    topic: "t/1".to_owned(),
+                },
                 scale: None,
             },
             SignalSpec {
@@ -589,7 +609,9 @@ fn infer_按signal_ids过滤() {
                 signal_type: SignalType::AnalogOutput,
                 unit: None,
                 range: None,
-                source: SignalSource::SerialCommand { command: "CMD".to_owned() },
+                source: SignalSource::SerialCommand {
+                    command: "CMD".to_owned(),
+                },
                 scale: None,
             },
         ],
@@ -599,10 +621,14 @@ fn infer_按signal_ids过滤() {
     let results = super::infer_capabilities_from_signals(&device, Some(&["cmd1".to_owned()]));
     assert_eq!(results.len(), 1);
     match &results[0] {
-        super::CapabilityInference::Generated { source_signal_id, .. } => {
+        super::CapabilityInference::Generated {
+            source_signal_id, ..
+        } => {
             assert_eq!(source_signal_id, "cmd1");
         }
-        other => panic!("期望 Generated，得到 {other:?}"),
+        other @ super::CapabilityInference::Unsupported { .. } => {
+            panic!("期望 Generated，得到 {other:?}")
+        }
     }
 }
 
@@ -621,7 +647,10 @@ fn infer_只读信号_返回空() {
             id: "temp".to_owned(),
             signal_type: SignalType::AnalogInput,
             unit: Some("C".to_owned()),
-            range: Some(Range { min: 0.0, max: 100.0 }),
+            range: Some(Range {
+                min: 0.0,
+                max: 100.0,
+            }),
             source: SignalSource::Register {
                 register: 40001,
                 access: AccessMode::Read,

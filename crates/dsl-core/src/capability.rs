@@ -16,7 +16,7 @@ use crate::workflow::{HumanDuration, Range};
 pub enum CapabilityInference {
     /// 成功自动生成。
     Generated {
-        capability: CapabilitySpec,
+        capability: Box<CapabilitySpec>,
         source_signal_id: String,
     },
     /// 无法自动生成，返回编码上下文供 AI 接手。
@@ -197,8 +197,7 @@ pub fn try_generate_capabilities_from_device(
 /// 从设备信号推断能力列表（RFC-0006 Phase 2）。
 ///
 /// 对每个写信号尝试生成能力。自动生成成功的返回 `Generated`，
-/// 无法生成的（CAN / Modbus / EtherCAT 写入）返回 `Unsupported` + 编码上下文，
-/// 供 copilot AI 接手手动建模。
+/// 无法生成的（CAN / Modbus / `EtherCAT` 写入）返回 `Unsupported` + 编码上下文，
 ///
 /// `signal_ids` 为 `None` 时处理所有写信号；为 `Some(ids)` 时只处理指定信号。
 pub fn infer_capabilities_from_signals(
@@ -209,11 +208,7 @@ pub fn infer_capabilities_from_signals(
         .signals
         .iter()
         .filter(|s| is_writable_signal(s.signal_type, &s.source))
-        .filter(|s| {
-            signal_ids
-                .map(|ids| ids.contains(&s.id))
-                .unwrap_or(true)
-        })
+        .filter(|s| signal_ids.is_none_or(|ids| ids.contains(&s.id)))
         .map(|signal| infer_single_capability(device, signal))
         .collect()
 }
@@ -223,88 +218,86 @@ fn infer_single_capability(
     device: &DeviceSpec,
     signal: &crate::device::SignalSpec,
 ) -> CapabilityInference {
-    match build_capability_from_signal(device, signal) {
-        Ok(capability) => CapabilityInference::Generated {
-            capability,
+    if let Ok(capability) = build_capability_from_signal(device, signal) {
+        CapabilityInference::Generated {
+            capability: Box::new(capability),
             source_signal_id: signal.id.clone(),
-        },
-        Err(_) => {
-            // 无法自动生成，构建编码上下文
-            let (source_type, encoding_info) = match &signal.source {
-                SignalSource::Register {
-                    register,
-                    access,
-                    data_type,
-                    bit,
-                } => (
-                    "register",
-                    json!({
-                        "source_type": "register",
-                        "register": register,
-                        "access": format!("{access:?}").to_lowercase(),
-                        "data_type": format!("{data_type:?}"),
-                        "bit": bit,
-                        "scale": signal.scale,
-                    }),
-                ),
-                SignalSource::CanFrame {
-                    can_id,
-                    is_extended,
-                    byte_offset,
-                    byte_length,
-                    data_type,
-                    byte_order,
-                } => (
-                    "can_frame",
-                    json!({
-                        "source_type": "can_frame",
-                        "can_id": can_id,
-                        "is_extended": is_extended,
-                        "byte_offset": byte_offset,
-                        "byte_length": byte_length,
-                        "data_type": format!("{data_type:?}"),
-                        "byte_order": format!("{byte_order:?}"),
-                        "scale": signal.scale,
-                    }),
-                ),
-                SignalSource::EthercatPdo {
-                    slave_address,
-                    pdo_index,
-                    entry_index,
-                    sub_index,
-                    bit_len,
-                    data_type,
-                    pdo_name,
-                    entry_name,
-                } => (
-                    "ethercat_pdo",
-                    json!({
-                        "source_type": "ethercat_pdo",
-                        "slave_address": slave_address,
-                        "pdo_index": pdo_index,
-                        "entry_index": entry_index,
-                        "sub_index": sub_index,
-                        "bit_len": bit_len,
-                        "data_type": data_type,
-                        "pdo_name": pdo_name,
-                        "entry_name": entry_name,
-                        "scale": signal.scale,
-                    }),
-                ),
-                // Topic / SerialCommand 不会到这里（build_capability_from_signal 对它们总是成功）
-                _ => (
-                    "unknown",
-                    json!({ "source_type": "unknown" }),
-                ),
-            };
-            CapabilityInference::Unsupported {
-                signal_id: signal.id.clone(),
-                reason: format!(
-                    "信号 `{}` (source: {source_type}) 的 CapabilityImpl 无法自动生成",
-                    signal.id
-                ),
-                encoding_info,
+        }
+    } else {
+        // 无法自动生成，构建编码上下文
+        let (source_type, encoding_info) = match &signal.source {
+            SignalSource::Register {
+                register,
+                access,
+                data_type,
+                bit,
+            } => (
+                "register",
+                json!({
+                    "source_type": "register",
+                    "register": register,
+                    "access": format!("{access:?}").to_lowercase(),
+                    "data_type": format!("{data_type:?}"),
+                    "bit": bit,
+                    "scale": signal.scale,
+                }),
+            ),
+            SignalSource::CanFrame {
+                can_id,
+                is_extended,
+                byte_offset,
+                byte_length,
+                data_type,
+                byte_order,
+            } => (
+                "can_frame",
+                json!({
+                    "source_type": "can_frame",
+                    "can_id": can_id,
+                    "is_extended": is_extended,
+                    "byte_offset": byte_offset,
+                    "byte_length": byte_length,
+                    "data_type": format!("{data_type:?}"),
+                    "byte_order": format!("{byte_order:?}"),
+                    "scale": signal.scale,
+                }),
+            ),
+            SignalSource::EthercatPdo {
+                slave_address,
+                pdo_index,
+                entry_index,
+                sub_index,
+                bit_len,
+                data_type,
+                pdo_name,
+                entry_name,
+            } => (
+                "ethercat_pdo",
+                json!({
+                    "source_type": "ethercat_pdo",
+                    "slave_address": slave_address,
+                    "pdo_index": pdo_index,
+                    "entry_index": entry_index,
+                    "sub_index": sub_index,
+                    "bit_len": bit_len,
+                    "data_type": data_type,
+                    "pdo_name": pdo_name,
+                    "entry_name": entry_name,
+                    "scale": signal.scale,
+                }),
+            ),
+            // Topic / SerialCommand 不会到这里（build_capability_from_signal 对它们总是成功）
+            SignalSource::Topic { .. } | SignalSource::SerialCommand { .. } => {
+                ("unknown", json!({ "source_type": "unknown" }))
             }
+        };
+        CapabilityInference::Unsupported {
+            signal_id: signal.id.clone(),
+            reason: format!(
+                "信号 `{}` (source: {source_type}) 的 CapabilityImpl 无法自动生成",
+                signal.id
+            ),
+            encoding_info,
         }
     }
 }

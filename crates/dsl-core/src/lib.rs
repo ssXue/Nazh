@@ -20,12 +20,12 @@ pub use connection::{
     ConnectionGovernanceSpec, ConnectionProtocol, ConnectionSecretRefs, ConnectionSpec,
     EthercatBackend, HeaderSpec, HeaderValueSpec, HttpMethod, SerialFlowControl, SerialParity,
 };
+pub use device::signal_schema_template;
 pub use device::{
     AccessMode, AlarmSeverity, AlarmSpec, ConnectionRef, DataType, DeviceSpec, EthercatIdentity,
     FieldSpec, SignalSchemaTemplate, SignalSource, SignalSpec, SignalType, SourceVariant,
     ValidationDiagnostic, ValidationLevel, ValidationResult,
 };
-pub use device::signal_schema_template;
 pub use error::DslError;
 pub use parser::{
     parse_capability_yaml, parse_connection_yaml, parse_connection_yaml_validated,

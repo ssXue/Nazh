@@ -21,6 +21,8 @@ function makeSummary(count = 1): EdgeTransmitSummary {
     edge_kind: 'exec',
     transmit_count: count,
     max_queue_depth: 0,
+    avg_queue_depth: 0,
+    total_payload_bytes: BigInt(0),
     window_started_at: '2026-05-13T00:00:00Z',
     window_ended_at: '2026-05-13T00:00:00.100Z',
   };

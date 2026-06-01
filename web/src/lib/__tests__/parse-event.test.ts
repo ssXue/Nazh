@@ -67,6 +67,8 @@ describe('parseWorkflowEventPayload', () => {
         edge_kind: 'exec',
         transmit_count: 3,
         max_queue_depth: 1,
+        avg_queue_depth: 0.5,
+        total_payload_bytes: 128,
         window_started_at: '2026-05-13T00:00:00Z',
         window_ended_at: '2026-05-13T00:00:00.100Z',
       },

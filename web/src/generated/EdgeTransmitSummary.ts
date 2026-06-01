@@ -7,5 +7,16 @@ import type { PinKind } from "./PinKind";
  * Runner 在每次向下游 channel 发送数据后累计窗口内统计，每 100ms 刷新一条汇总。
  * 前端用 `from_node + from_pin → to_node + to_pin` 标识一条边，
  * 叠加到画布线条上实现热力图。
+ *
+ * 精确统计字段（`total_payload_bytes` / `avg_queue_depth`）在窗口内累计，
+ * flush 时快照到事件中。
  */
-export type EdgeTransmitSummary = { from_node: string, from_pin: string, to_node: string, to_pin: string, edge_kind: PinKind, transmit_count: number, max_queue_depth: number, window_started_at: string, window_ended_at: string, };
+export type EdgeTransmitSummary = { from_node: string, from_pin: string, to_node: string, to_pin: string, edge_kind: PinKind, transmit_count: number, max_queue_depth: number,
+/**
+ * 窗口内每次发送时队列深度的算术平均值。
+ */
+avg_queue_depth: number,
+/**
+ * 窗口内所有传输 payload 的序列化字节数之和。
+ */
+total_payload_bytes: bigint, window_started_at: string, window_ended_at: string, };

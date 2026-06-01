@@ -64,6 +64,9 @@ pub struct CompletedExecutionEvent {
 /// Runner 在每次向下游 channel 发送数据后累计窗口内统计，每 100ms 刷新一条汇总。
 /// 前端用 `from_node + from_pin → to_node + to_pin` 标识一条边，
 /// 叠加到画布线条上实现热力图。
+///
+/// 精确统计字段（`total_payload_bytes` / `avg_queue_depth`）在窗口内累计，
+/// flush 时快照到事件中。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
 #[serde(rename_all = "snake_case")]
@@ -75,6 +78,10 @@ pub struct EdgeTransmitSummary {
     pub edge_kind: PinKind,
     pub transmit_count: usize,
     pub max_queue_depth: usize,
+    /// 窗口内每次发送时队列深度的算术平均值。
+    pub avg_queue_depth: f64,
+    /// 窗口内所有传输 payload 的序列化字节数之和。
+    pub total_payload_bytes: u64,
     pub window_started_at: String,
     pub window_ended_at: String,
 }
@@ -388,6 +395,8 @@ mod edge_event_tests {
             edge_kind: PinKind::Exec,
             transmit_count: 5,
             max_queue_depth: 3,
+            avg_queue_depth: 1.8,
+            total_payload_bytes: 2048,
             window_started_at: "2026-04-30T10:00:00+00:00".to_owned(),
             window_ended_at: "2026-04-30T10:00:00.100+00:00".to_owned(),
         };

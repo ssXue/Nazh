@@ -272,8 +272,7 @@ fn tool_validate_device_yaml(call: &AiToolCall) -> Result<String, String> {
                 "errors": [{ "path": "yaml", "message": e.to_string() }],
                 "warnings": []
             });
-            return serde_json::to_string_pretty(&result)
-                .map_err(|e| format!("序列化失败: {e}"));
+            return serde_json::to_string_pretty(&result).map_err(|e| format!("序列化失败: {e}"));
         }
     };
 
@@ -323,17 +322,16 @@ fn tool_infer_capabilities(call: &AiToolCall) -> Result<String, String> {
         .as_str()
         .ok_or("缺少 device_yaml 参数")?;
 
-    let spec = parse_device_yaml(device_yaml)
-        .map_err(|e| format!("设备 YAML 解析失败: {e}"))?;
+    let spec = parse_device_yaml(device_yaml).map_err(|e| format!("设备 YAML 解析失败: {e}"))?;
 
-    let signal_ids: Option<Vec<String>> = args
-        .get("signal_ids")
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect()
-        });
+    let signal_ids: Option<Vec<String>> =
+        args.get("signal_ids")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            });
 
     let inferences = infer_capabilities_from_signals(&spec, signal_ids.as_deref());
 
@@ -351,7 +349,7 @@ fn tool_infer_capabilities(call: &AiToolCall) -> Result<String, String> {
                     "auto_generated": true,
                 }))
             }
-            _ => None,
+            nazh_dsl_core::CapabilityInference::Unsupported { .. } => None,
         })
         .collect();
 
@@ -370,7 +368,7 @@ fn tool_infer_capabilities(call: &AiToolCall) -> Result<String, String> {
                     "encoding_info": encoding_info,
                 },
             })),
-            _ => None,
+            nazh_dsl_core::CapabilityInference::Generated { .. } => None,
         })
         .collect();
 
@@ -383,15 +381,15 @@ fn tool_infer_capabilities(call: &AiToolCall) -> Result<String, String> {
 
 // ── 资产操作工具（RFC-0006 Phase 3） ──
 
-async fn tool_save_device_asset(
-    call: &AiToolCall,
-    ctx: &CopilotToolCtx,
-) -> Result<String, String> {
+async fn tool_save_device_asset(call: &AiToolCall, ctx: &CopilotToolCtx) -> Result<String, String> {
     use crate::commands::devices::assets::save_device_asset;
 
     let args = parse_args(call)?;
     let id = args["id"].as_str().ok_or("缺少 id 参数")?.to_owned();
-    let spec_yaml = args["spec_yaml"].as_str().ok_or("缺少 spec_yaml 参数")?.to_owned();
+    let spec_yaml = args["spec_yaml"]
+        .as_str()
+        .ok_or("缺少 spec_yaml 参数")?
+        .to_owned();
 
     // 先校验再保存（双保险）
     let spec = nazh_dsl_core::parse_device_yaml(&spec_yaml)
@@ -432,9 +430,17 @@ async fn tool_delete_device_asset(
     use crate::commands::devices::assets::delete_device_asset;
 
     let args = parse_args(call)?;
-    let asset_id = args["asset_id"].as_str().ok_or("缺少 asset_id 参数")?.to_owned();
+    let asset_id = args["asset_id"]
+        .as_str()
+        .ok_or("缺少 asset_id 参数")?
+        .to_owned();
 
-    delete_device_asset(ctx.app.clone(), asset_id.clone(), ctx.workspace_path.clone()).await?;
+    delete_device_asset(
+        ctx.app.clone(),
+        asset_id.clone(),
+        ctx.workspace_path.clone(),
+    )
+    .await?;
     Ok(format!("设备 `{asset_id}` 已删除"))
 }
 
@@ -446,7 +452,10 @@ async fn tool_save_capability_asset(
 
     let args = parse_args(call)?;
     let id = args["id"].as_str().ok_or("缺少 id 参数")?.to_owned();
-    let spec_yaml = args["spec_yaml"].as_str().ok_or("缺少 spec_yaml 参数")?.to_owned();
+    let spec_yaml = args["spec_yaml"]
+        .as_str()
+        .ok_or("缺少 spec_yaml 参数")?
+        .to_owned();
 
     let spec = nazh_dsl_core::parse_capability_yaml(&spec_yaml)
         .map_err(|e| format!("能力 YAML 解析失败: {e}"))?;
@@ -465,18 +474,26 @@ async fn tool_save_capability_asset(
     Ok(format!("能力 `{id}` 已保存"))
 }
 
-async fn tool_add_device_signal(
-    call: &AiToolCall,
-    ctx: &CopilotToolCtx,
-) -> Result<String, String> {
+async fn tool_add_device_signal(call: &AiToolCall, ctx: &CopilotToolCtx) -> Result<String, String> {
     use crate::commands::devices::fields::add_device_signal;
 
     let args = parse_args(call)?;
-    let asset_id = args["asset_id"].as_str().ok_or("缺少 asset_id 参数")?.to_owned();
-    let signal_yaml = args["signal_yaml"].as_str().ok_or("缺少 signal_yaml 参数")?.to_owned();
+    let asset_id = args["asset_id"]
+        .as_str()
+        .ok_or("缺少 asset_id 参数")?
+        .to_owned();
+    let signal_yaml = args["signal_yaml"]
+        .as_str()
+        .ok_or("缺少 signal_yaml 参数")?
+        .to_owned();
 
-    add_device_signal(ctx.app.clone(), asset_id.clone(), signal_yaml, ctx.workspace_path.clone())
-        .await?;
+    add_device_signal(
+        ctx.app.clone(),
+        asset_id.clone(),
+        signal_yaml,
+        ctx.workspace_path.clone(),
+    )
+    .await?;
     Ok(format!("已为设备 `{asset_id}` 添加信号"))
 }
 
@@ -487,7 +504,11 @@ async fn tool_remove_device_signal(
     use crate::commands::devices::fields::remove_device_signal;
 
     let args = parse_args(call)?;
-    let asset_id = args["asset_id"].as_str().ok_or("缺少 asset_id 参数")?.to_owned();
+    let asset_id = args["asset_id"]
+        .as_str()
+        .ok_or("缺少 asset_id 参数")?
+        .to_owned();
+    #[allow(clippy::cast_possible_truncation)]
     let signal_index = args["signal_index"]
         .as_u64()
         .ok_or("缺少 signal_index 参数")? as usize;
@@ -509,10 +530,22 @@ async fn tool_bind_device_connection(
     use crate::commands::devices::fields::bind_device_connection;
 
     let args = parse_args(call)?;
-    let asset_id = args["asset_id"].as_str().ok_or("缺少 asset_id 参数")?.to_owned();
-    let connection_type = args.get("connection_type").and_then(|v| v.as_str()).map(String::from);
-    let connection_id = args.get("connection_id").and_then(|v| v.as_str()).map(String::from);
-    let unit = args.get("unit").and_then(|v| v.as_u64()).and_then(|v| u8::try_from(v).ok());
+    let asset_id = args["asset_id"]
+        .as_str()
+        .ok_or("缺少 asset_id 参数")?
+        .to_owned();
+    let connection_type = args
+        .get("connection_type")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    let connection_id = args
+        .get("connection_id")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    let unit = args
+        .get("unit")
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|v| u8::try_from(v).ok());
 
     bind_device_connection(
         ctx.app.clone(),
@@ -533,7 +566,10 @@ async fn tool_patch_device_field(
     use crate::commands::devices::fields::patch_device_field;
 
     let args = parse_args(call)?;
-    let asset_id = args["asset_id"].as_str().ok_or("缺少 asset_id 参数")?.to_owned();
+    let asset_id = args["asset_id"]
+        .as_str()
+        .ok_or("缺少 asset_id 参数")?
+        .to_owned();
     let path = args["path"].as_str().ok_or("缺少 path 参数")?.to_owned();
     let value = args["value"].as_str().ok_or("缺少 value 参数")?.to_owned();
 

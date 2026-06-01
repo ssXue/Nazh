@@ -243,6 +243,9 @@ pub(crate) async fn run_node(
                         matching_targets.len()
                     };
 
+                    // ADR-0016 精确统计：在 store.write 消费 payload 之前计算字节数。
+                    let payload_bytes = node_output.payload.to_string().len() as u64;
+
                     let data_id = match store.write(node_output.payload, consumer_count) {
                         Ok(id) => id,
                         Err(error) => {
@@ -275,7 +278,7 @@ pub(crate) async fn run_node(
                                 }
                                 break;
                             }
-                            // ADR-0016：记录边传输统计。
+                            // ADR-0016：记录边传输统计（含精确 payload 字节数）。
                             let from_pin = target.source_port_id.as_deref().unwrap_or("out");
                             let to_pin = target.target_port_id.as_deref().unwrap_or("in");
                             let key = (
@@ -288,7 +291,7 @@ pub(crate) async fn run_node(
                                     .sender
                                     .max_capacity()
                                     .saturating_sub(target.sender.capacity());
-                                window.record(queue_depth, &node_id, &event_tx);
+                                window.record(queue_depth, payload_bytes, &node_id, &event_tx);
                             }
                         }
                         if let Some(error) = downstream_error {

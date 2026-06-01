@@ -1,9 +1,6 @@
 use rhai::{
     EvalAltResult, ImmutableString, def_package,
-    plugin::{
-        FuncRegistration, Module, NativeCallContext, PluginFunc, RhaiResult, TypeId,
-        combine_with_exported_module, export_module, mem,
-    },
+    plugin::{combine_with_exported_module, export_module},
 };
 
 #[allow(clippy::unnecessary_box_returns)]
@@ -77,7 +74,6 @@ mod nazh_script_helpers {
 #[export_module]
 mod nazh_bit_helpers {
     use super::{EvalAltResult, ImmutableString, to_package_error};
-    use rhai::Dynamic;
 
     /// 获取整数值指定位的布尔值（LSB 为第 0 位）。
     ///
@@ -144,7 +140,6 @@ mod nazh_bit_helpers {
 #[export_module]
 mod nazh_math_helpers {
     use super::{EvalAltResult, to_package_error};
-    use rhai::Dynamic;
 
     /// 将浮点数四舍五入到指定小数位数。
     ///
@@ -201,7 +196,6 @@ mod nazh_math_helpers {
 #[export_module]
 mod nazh_time_helpers {
     use super::{EvalAltResult, ImmutableString, to_package_error};
-    use rhai::Dynamic;
 
     /// 将 Unix 毫秒时间戳按 strftime 格式格式化（UTC 时区）。
     ///

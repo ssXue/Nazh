@@ -247,6 +247,7 @@ impl DeviceSpec {
     ///
     /// 覆盖：信号 ID 唯一性 + 格式、量程合法性、协议一致性、
     /// scale 表达式语法、告警 ID 唯一性 + condition 语法、写信号配套告警建议。
+    #[allow(clippy::too_many_lines)]
     pub fn validate(&self) -> ValidationResult {
         let mut diagnostics = Vec::new();
 
@@ -264,23 +265,16 @@ impl DeviceSpec {
 
             // 信号 ID 非空
             if signal.id.trim().is_empty() {
-                diagnostics.push(error(
-                    format!("{path_prefix}.id"),
-                    "信号 ID 不能为空",
-                ));
+                diagnostics.push(error(format!("{path_prefix}.id"), "信号 ID 不能为空"));
             } else {
                 // 信号 ID 格式：^[a-zA-Z_][a-zA-Z0-9_]*$
-                let valid_id = signal
-                    .id
-                    .chars()
-                    .enumerate()
-                    .all(|(pos, c)| {
-                        if pos == 0 {
-                            c.is_ascii_alphabetic() || c == '_'
-                        } else {
-                            c.is_ascii_alphanumeric() || c == '_'
-                        }
-                    });
+                let valid_id = signal.id.chars().enumerate().all(|(pos, c)| {
+                    if pos == 0 {
+                        c.is_ascii_alphabetic() || c == '_'
+                    } else {
+                        c.is_ascii_alphanumeric() || c == '_'
+                    }
+                });
                 if !valid_id {
                     diagnostics.push(error(
                         format!("{path_prefix}.id"),
@@ -301,16 +295,13 @@ impl DeviceSpec {
             }
 
             // 量程校验
-            if let Some(range) = &signal.range {
-                if range.min >= range.max {
-                    diagnostics.push(error(
-                        format!("{path_prefix}.range"),
-                        format!(
-                            "量程 min({}) 必须小于 max({})",
-                            range.min, range.max
-                        ),
-                    ));
-                }
+            if let Some(range) = &signal.range
+                && range.min >= range.max
+            {
+                diagnostics.push(error(
+                    format!("{path_prefix}.range"),
+                    format!("量程 min({}) 必须小于 max({})", range.min, range.max),
+                ));
             }
 
             // 模拟信号应有 unit 和 range
@@ -341,19 +332,18 @@ impl DeviceSpec {
                     SignalSource::CanFrame { .. } => Some("can"),
                     SignalSource::EthercatPdo { .. } => Some("ethercat"),
                 };
-                if let Some(expected_protocol) = expected {
-                    if conn.connection_type != expected_protocol
-                        && !(conn.connection_type == "modbus-rtu"
-                            && matches!(signal.source, SignalSource::Register { .. }))
-                    {
-                        diagnostics.push(warning(
-                            format!("{path_prefix}.source"),
-                            format!(
-                                "信号 source 类型为 `{}`，但设备连接类型为 `{}`",
-                                expected_protocol, conn.connection_type
-                            ),
-                        ));
-                    }
+                if let Some(expected_protocol) = expected
+                    && conn.connection_type != expected_protocol
+                    && !(conn.connection_type == "modbus-rtu"
+                        && matches!(signal.source, SignalSource::Register { .. }))
+                {
+                    diagnostics.push(warning(
+                        format!("{path_prefix}.source"),
+                        format!(
+                            "信号 source 类型为 `{}`，但设备连接类型为 `{}`",
+                            expected_protocol, conn.connection_type
+                        ),
+                    ));
                 }
             }
 
@@ -403,10 +393,7 @@ impl DeviceSpec {
 
             // 告警 ID 唯一性
             if alarm.id.trim().is_empty() {
-                diagnostics.push(error(
-                    format!("{path_prefix}.id"),
-                    "告警 ID 不能为空",
-                ));
+                diagnostics.push(error(format!("{path_prefix}.id"), "告警 ID 不能为空"));
             } else if !alarm_ids.insert(alarm.id.clone()) {
                 diagnostics.push(error(
                     format!("{path_prefix}.id"),
@@ -844,7 +831,10 @@ type: test
                 id: "temp".to_owned(),
                 signal_type: SignalType::AnalogInput,
                 unit: Some("℃".to_owned()),
-                range: Some(Range { min: -40.0, max: 125.0 }),
+                range: Some(Range {
+                    min: -40.0,
+                    max: 125.0,
+                }),
                 source: SignalSource::Register {
                     register: 40001,
                     access: AccessMode::Read,
@@ -871,7 +861,11 @@ type: test
         spec.signals.push(spec.signals[0].clone());
         let result = spec.validate();
         assert!(!result.is_valid());
-        let errors: Vec<_> = result.diagnostics.iter().filter(|d| d.level == ValidationLevel::Error).collect();
+        let errors: Vec<_> = result
+            .diagnostics
+            .iter()
+            .filter(|d| d.level == ValidationLevel::Error)
+            .collect();
         assert!(errors.iter().any(|d| d.message.contains("重复信号 ID")));
     }
 
@@ -881,25 +875,43 @@ type: test
         spec.signals[0].id = "1temp".to_owned();
         let result = spec.validate();
         assert!(!result.is_valid());
-        assert!(result.diagnostics.iter().any(|d| d.message.contains("不符合格式要求")));
+        assert!(
+            result
+                .diagnostics
+                .iter()
+                .any(|d| d.message.contains("不符合格式要求"))
+        );
     }
 
     #[test]
     fn validate_信号id空_error() {
         let mut spec = make_valid_device();
-        spec.signals[0].id = "".to_owned();
+        spec.signals[0].id = String::new();
         let result = spec.validate();
         assert!(!result.is_valid());
-        assert!(result.diagnostics.iter().any(|d| d.message.contains("不能为空")));
+        assert!(
+            result
+                .diagnostics
+                .iter()
+                .any(|d| d.message.contains("不能为空"))
+        );
     }
 
     #[test]
     fn validate_量程反转_error() {
         let mut spec = make_valid_device();
-        spec.signals[0].range = Some(Range { min: 100.0, max: 50.0 });
+        spec.signals[0].range = Some(Range {
+            min: 100.0,
+            max: 50.0,
+        });
         let result = spec.validate();
         assert!(!result.is_valid());
-        assert!(result.diagnostics.iter().any(|d| d.path.contains("range") && d.message.contains("必须小于")));
+        assert!(
+            result
+                .diagnostics
+                .iter()
+                .any(|d| d.path.contains("range") && d.message.contains("必须小于"))
+        );
     }
 
     #[test]
@@ -908,7 +920,12 @@ type: test
         spec.signals[0].unit = None;
         let result = spec.validate();
         assert!(result.is_valid());
-        assert!(result.diagnostics.iter().any(|d| d.message.contains("建议声明 unit")));
+        assert!(
+            result
+                .diagnostics
+                .iter()
+                .any(|d| d.message.contains("建议声明 unit"))
+        );
     }
 
     #[test]
@@ -917,7 +934,12 @@ type: test
         spec.signals[0].range = None;
         let result = spec.validate();
         assert!(result.is_valid());
-        assert!(result.diagnostics.iter().any(|d| d.message.contains("建议声明 range")));
+        assert!(
+            result
+                .diagnostics
+                .iter()
+                .any(|d| d.message.contains("建议声明 range"))
+        );
     }
 
     #[test]
@@ -930,7 +952,12 @@ type: test
         });
         let result = spec.validate();
         assert!(result.is_valid());
-        assert!(result.diagnostics.iter().any(|d| d.message.contains("信号 source 类型为") && d.message.contains("mqtt")));
+        assert!(
+            result
+                .diagnostics
+                .iter()
+                .any(|d| d.message.contains("信号 source 类型为") && d.message.contains("mqtt"))
+        );
     }
 
     #[test]
@@ -952,7 +979,12 @@ type: test
         spec.signals[0].scale = Some("(raw + 1".to_owned());
         let result = spec.validate();
         assert!(!result.is_valid());
-        assert!(result.diagnostics.iter().any(|d| d.message.contains("scale 表达式括号不匹配")));
+        assert!(
+            result
+                .diagnostics
+                .iter()
+                .any(|d| d.message.contains("scale 表达式括号不匹配"))
+        );
     }
 
     #[test]
@@ -961,7 +993,12 @@ type: test
         spec.signals[0].scale = Some("raw / 100".to_owned());
         let result = spec.validate();
         assert!(result.is_valid());
-        assert!(result.diagnostics.iter().any(|d| d.message.contains("除零风险")));
+        assert!(
+            result
+                .diagnostics
+                .iter()
+                .any(|d| d.message.contains("除零风险"))
+        );
     }
 
     #[test]
@@ -971,7 +1008,10 @@ type: test
             id: "setpoint".to_owned(),
             signal_type: SignalType::AnalogOutput,
             unit: Some("℃".to_owned()),
-            range: Some(Range { min: 0.0, max: 100.0 }),
+            range: Some(Range {
+                min: 0.0,
+                max: 100.0,
+            }),
             source: SignalSource::Register {
                 register: 40010,
                 access: AccessMode::Write,
@@ -982,7 +1022,12 @@ type: test
         });
         let result = spec.validate();
         assert!(result.is_valid());
-        assert!(result.diagnostics.iter().any(|d| d.message.contains("写信号但未声明任何告警")));
+        assert!(
+            result
+                .diagnostics
+                .iter()
+                .any(|d| d.message.contains("写信号但未声明任何告警"))
+        );
     }
 
     #[test]
@@ -1004,21 +1049,31 @@ type: test
         ];
         let result = spec.validate();
         assert!(!result.is_valid());
-        assert!(result.diagnostics.iter().any(|d| d.message.contains("重复告警 ID")));
+        assert!(
+            result
+                .diagnostics
+                .iter()
+                .any(|d| d.message.contains("重复告警 ID"))
+        );
     }
 
     #[test]
     fn validate_告警id空_error() {
         let mut spec = make_valid_device();
         spec.alarms = vec![AlarmSpec {
-            id: "".to_owned(),
+            id: String::new(),
             condition: "temp > 80".to_owned(),
             severity: AlarmSeverity::Warning,
             action: None,
         }];
         let result = spec.validate();
         assert!(!result.is_valid());
-        assert!(result.diagnostics.iter().any(|d| d.path.contains("alarms") && d.message.contains("不能为空")));
+        assert!(
+            result
+                .diagnostics
+                .iter()
+                .any(|d| d.path.contains("alarms") && d.message.contains("不能为空"))
+        );
     }
 
     #[test]
@@ -1032,7 +1087,12 @@ type: test
         }];
         let result = spec.validate();
         assert!(!result.is_valid());
-        assert!(result.diagnostics.iter().any(|d| d.message.contains("告警条件不能为空")));
+        assert!(
+            result
+                .diagnostics
+                .iter()
+                .any(|d| d.message.contains("告警条件不能为空"))
+        );
     }
 
     #[test]
@@ -1046,7 +1106,12 @@ type: test
         }];
         let result = spec.validate();
         assert!(!result.is_valid());
-        assert!(result.diagnostics.iter().any(|d| d.message.contains("告警条件括号不匹配")));
+        assert!(
+            result
+                .diagnostics
+                .iter()
+                .any(|d| d.message.contains("告警条件括号不匹配"))
+        );
     }
 
     #[test]
@@ -1120,7 +1185,12 @@ signals:
         assert_eq!(t.protocol, "modbus-tcp");
         assert_eq!(t.source_variants.len(), 1);
         assert_eq!(t.source_variants[0].source_type, "register");
-        assert!(t.source_variants[0].fields.iter().any(|f| f.name == "register" && f.required));
+        assert!(
+            t.source_variants[0]
+                .fields
+                .iter()
+                .any(|f| f.name == "register" && f.required)
+        );
     }
 
     #[test]

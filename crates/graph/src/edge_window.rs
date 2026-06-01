@@ -25,6 +25,10 @@ pub(crate) struct EdgeWindow {
     channel_capacity: usize,
     transmit_count: usize,
     max_queue_depth: usize,
+    /// 窗口内 `queue_depth` 之和（用于计算平均值）。
+    queue_depth_sum: usize,
+    /// 窗口内所有传输 payload 的序列化字节数之和。
+    total_payload_bytes: u64,
     window_start: Instant,
     /// 本窗口周期内是否已发射过背压告警（限频）。
     backpressure_reported: bool,
@@ -46,6 +50,8 @@ impl EdgeWindow {
             channel_capacity,
             transmit_count: 0,
             max_queue_depth: 0,
+            queue_depth_sum: 0,
+            total_payload_bytes: 0,
             window_start: Instant::now(),
             backpressure_reported: false,
         }
@@ -53,16 +59,20 @@ impl EdgeWindow {
 
     /// 记录一次边传输并检测背压。
     ///
+    /// `payload_bytes` 为本次传输 payload 的序列化字节数，累计到窗口统计中。
     /// 当队列深度达到容量 80% 时发射 [`BackpressureDetected`]，
     /// 每窗口周期最多发射一次以避免重复告警。
     pub(crate) fn record(
         &mut self,
         queue_depth: usize,
+        payload_bytes: u64,
         from_node: &str,
         event_tx: &mpsc::Sender<ExecutionEvent>,
     ) {
         self.transmit_count += 1;
         self.max_queue_depth = self.max_queue_depth.max(queue_depth);
+        self.queue_depth_sum += queue_depth;
+        self.total_payload_bytes += payload_bytes;
 
         if !self.backpressure_reported
             && self.channel_capacity > 0
@@ -116,6 +126,12 @@ impl EdgeWindow {
 
     fn do_flush(&mut self, from_node: &str, event_tx: &mpsc::Sender<ExecutionEvent>) {
         let now = Instant::now();
+        #[allow(clippy::cast_precision_loss)]
+        let avg_queue_depth = if self.transmit_count > 0 {
+            self.queue_depth_sum as f64 / self.transmit_count as f64
+        } else {
+            0.0
+        };
         emit_event(
             event_tx,
             ExecutionEvent::EdgeTransmitSummary(EdgeTransmitSummary {
@@ -126,12 +142,16 @@ impl EdgeWindow {
                 edge_kind: self.edge_kind,
                 transmit_count: self.transmit_count,
                 max_queue_depth: self.max_queue_depth,
+                avg_queue_depth,
+                total_payload_bytes: self.total_payload_bytes,
                 window_started_at: format_instant(self.window_start),
                 window_ended_at: format_instant(now),
             }),
         );
         self.transmit_count = 0;
         self.max_queue_depth = 0;
+        self.queue_depth_sum = 0;
+        self.total_payload_bytes = 0;
         self.backpressure_reported = false;
         self.window_start = now;
     }

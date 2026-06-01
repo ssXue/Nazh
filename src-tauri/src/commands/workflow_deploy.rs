@@ -34,7 +34,12 @@ fn compute_ast_hash(ast: &str) -> String {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     hasher.update(ast.as_bytes());
-    format!("{:x}", hasher.finalize())
+    let mut out = String::with_capacity(64);
+    for b in &hasher.finalize() {
+        use std::fmt::Write;
+        let _ = write!(out, "{b:02x}");
+    }
+    out
 }
 
 async fn record_deployment_audit(
