@@ -9,7 +9,7 @@ interface Props {
   messages: LocalMessage[];
   status: CopilotSessionStatus;
   hasConversation: boolean;
-  onSend: (text: string, attachment?: CopilotAttachment | null) => void;
+  onSend: (text: string, attachments?: CopilotAttachment[]) => void;
   onNewConversation: () => void;
   onCancel: () => void;
 }
@@ -24,13 +24,12 @@ export function CopilotChatView({
 }: Props) {
   const listRef = useRef<HTMLDivElement>(null);
   const [inputText, setInputText] = useState('');
-  const [attachment, setAttachment] = useState<CopilotAttachment | null>(null);
+  const [attachments, setAttachments] = useState<CopilotAttachment[]>([]);
 
-  /// 发送后附件自动清除（由外部 handleSend 触发）。
-  const clearAttachment = useCallback(() => setAttachment(null), []);
+  /// 发送后附件自动清除。
+  const clearAttachments = useCallback(() => setAttachments([]), []);
 
   const showToast = useCallback((msg: string) => {
-    // 简易 toast——追加一条系统消息
     console.warn('[attachment]', msg);
   }, []);
 
@@ -41,11 +40,11 @@ export function CopilotChatView({
   }, [messages]);
 
   const handleSend = useCallback(() => {
-    if ((!inputText.trim() && !attachment) || status !== 'idle') return;
-    onSend(inputText.trim(), attachment);
+    if ((!inputText.trim() && attachments.length === 0) || status !== 'idle') return;
+    onSend(inputText.trim(), attachments);
     setInputText('');
-    clearAttachment();
-  }, [inputText, attachment, status, onSend, clearAttachment]);
+    clearAttachments();
+  }, [inputText, attachments, status, onSend, clearAttachments]);
 
   return (
     <div className="copilot-chat">
@@ -73,8 +72,8 @@ export function CopilotChatView({
         onSend={handleSend}
         status={status}
         onCancel={onCancel}
-        attachment={attachment}
-        onAttachmentChange={setAttachment}
+        attachments={attachments}
+        onAttachmentsChange={setAttachments}
         onAttachmentError={showToast}
       />
     </div>

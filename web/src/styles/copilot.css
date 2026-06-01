@@ -740,8 +740,17 @@
 
 .copilot-attachment-bar {
   display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
   padding: 6px 4px 2px;
   width: 100%;
+}
+
+.copilot-attachment-hint {
+  font-size: 11px;
+  color: var(--text-secondary, #888);
+  padding: 0 4px;
 }
 
 .copilot-attachment-chip {
@@ -808,4 +817,9 @@
 .copilot-input__attach:hover {
   background: var(--surface-hover, rgba(0, 0, 0, 0.06));
   color: var(--fg);
+}
+
+.copilot-input__attach:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }

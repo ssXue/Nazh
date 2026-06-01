@@ -1,4 +1,4 @@
-/// Copilot 输入区附件 chip 组件（RFC-0006 Phase 6）。
+/// Copilot 输入区附件 chip 组件（RFC-0006 Phase 6 + P0-1 多文件支持）。
 
 export interface CopilotAttachment {
   file: File;
@@ -6,6 +6,9 @@ export interface CopilotAttachment {
   size: number;
   type: 'pdf' | 'esi';
 }
+
+export const MAX_ATTACHMENT_COUNT = 3;
+export const MAX_TOTAL_SIZE = 10 * 1024 * 1024; // 10 MB
 
 const MAX_PDF_SIZE = 6 * 1024 * 1024; // 6 MB
 const MAX_ESI_SIZE = 2 * 1024 * 1024; // 2 MB
@@ -31,12 +34,41 @@ export function validateAttachment(file: File): CopilotAttachment | string {
   return '不支持的文件类型（仅接受 .pdf / .xml / .esi）';
 }
 
-interface Props {
+/// 批量校验文件列表，返回合法附件 + 错误消息列表。
+export function validateAttachments(
+  files: FileList | File[],
+  existing: CopilotAttachment[],
+): { attachments: CopilotAttachment[]; errors: string[] } {
+  const errors: string[] = [];
+  const validated: CopilotAttachment[] = [];
+
+  for (const file of files) {
+    if (existing.length + validated.length >= MAX_ATTACHMENT_COUNT) {
+      errors.push(`最多 ${MAX_ATTACHMENT_COUNT} 个附件`);
+      break;
+    }
+    const result = validateAttachment(file);
+    if (typeof result === 'string') {
+      errors.push(result);
+    } else {
+      const totalSize = existing.reduce((s, a) => s + a.size, 0) + validated.reduce((s, a) => s + a.size, 0) + result.size;
+      if (totalSize > MAX_TOTAL_SIZE) {
+        errors.push(`总附件大小超过 10 MB`);
+        break;
+      }
+      validated.push(result);
+    }
+  }
+
+  return { attachments: validated, errors };
+}
+
+interface ChipProps {
   attachment: CopilotAttachment;
   onRemove: () => void;
 }
 
-export function CopilotAttachmentChip({ attachment, onRemove }: Props) {
+export function CopilotAttachmentChip({ attachment, onRemove }: ChipProps) {
   return (
     <span className="copilot-attachment-chip" data-testid="copilot-attachment">
       <button

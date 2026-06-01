@@ -189,6 +189,15 @@
   color: var(--text);
 }
 
+.dm-btn--copilot {
+  border-color: var(--accent-soft, rgba(74, 114, 201, 0.2));
+  color: var(--accent, #4a72c9);
+}
+
+.dm-btn--copilot:hover {
+  background: var(--accent-soft, rgba(74, 114, 201, 0.08));
+}
+
 /* ── 设备卡片：绑定连接行（紧凑视图） ── */
 
 .dm-card-connection {

@@ -4,7 +4,7 @@ import { useSettings } from '../../hooks/use-settings';
 
 import { BorderGlow } from '../animations/BorderGlow';
 
-import { CopilotAttachmentChip, validateAttachment, type CopilotAttachment } from './CopilotAttachment';
+import { CopilotAttachmentChip, validateAttachments, MAX_ATTACHMENT_COUNT, type CopilotAttachment } from './CopilotAttachment';
 import type { CopilotSessionStatus } from './CopilotPanel';
 
 /** 亮色主题用更深的发光颜色，暗色主题保持原值 */
@@ -17,12 +17,12 @@ interface Props {
   onSend: () => void;
   status: CopilotSessionStatus;
   onCancel: () => void;
-  attachment: CopilotAttachment | null;
-  onAttachmentChange: (attachment: CopilotAttachment | null) => void;
+  attachments: CopilotAttachment[];
+  onAttachmentsChange: (attachments: CopilotAttachment[]) => void;
   onAttachmentError: (msg: string) => void;
 }
 
-export function CopilotChatInput({ value, onChange, onSend, status, onCancel, attachment, onAttachmentChange, onAttachmentError }: Props) {
+export function CopilotChatInput({ value, onChange, onSend, status, onCancel, attachments, onAttachmentsChange, onAttachmentError }: Props) {
   const generating = status === 'generating';
   const { resolvedThemeMode } = useSettings();
   const isDark = resolvedThemeMode === 'dark';
@@ -53,22 +53,27 @@ export function CopilotChatInput({ value, onChange, onSend, status, onCancel, at
     onChange(el.value);
   }, [onChange]);
 
+  const handleRemoveAttachment = useCallback((index: number) => {
+    onAttachmentsChange(attachments.filter((_, i) => i !== index));
+  }, [attachments, onAttachmentsChange]);
+
   const handleFileSelect = useCallback(() => {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.pdf,.xml,.esi';
+    input.multiple = true;
     input.onchange = () => {
-      const file = input.files?.[0];
-      if (!file) return;
-      const result = validateAttachment(file);
-      if (typeof result === 'string') {
-        onAttachmentError(result);
-      } else {
-        onAttachmentChange(result);
+      if (!input.files || input.files.length === 0) return;
+      const { attachments: newAttachments, errors } = validateAttachments(input.files, attachments);
+      for (const err of errors) {
+        onAttachmentError(err);
+      }
+      if (newAttachments.length > 0) {
+        onAttachmentsChange([...attachments, ...newAttachments]);
       }
     };
     input.click();
-  }, [onAttachmentChange, onAttachmentError]);
+  }, [attachments, onAttachmentsChange, onAttachmentError]);
 
   return (
     <BorderGlow
@@ -81,12 +86,20 @@ export function CopilotChatInput({ value, onChange, onSend, status, onCancel, at
       glowIntensity={generating ? 2.0 : 1.2}
       backgroundColor="var(--surface)"
     >
-      {attachment && (
+      {attachments.length > 0 && (
         <div className="copilot-attachment-bar">
-          <CopilotAttachmentChip
-            attachment={attachment}
-            onRemove={() => onAttachmentChange(null)}
-          />
+          {attachments.map((att, i) => (
+            <CopilotAttachmentChip
+              key={`${att.name}-${att.size}`}
+              attachment={att}
+              onRemove={() => handleRemoveAttachment(i)}
+            />
+          ))}
+          {attachments.length < MAX_ATTACHMENT_COUNT && (
+            <span className="copilot-attachment-hint">
+              还可添加 {MAX_ATTACHMENT_COUNT - attachments.length} 个
+            </span>
+          )}
         </div>
       )}
       <div className="copilot-input__row">
@@ -119,7 +132,8 @@ export function CopilotChatInput({ value, onChange, onSend, status, onCancel, at
               className="copilot-input__attach"
               data-testid="copilot-attach"
               onClick={handleFileSelect}
-              title="附加文件（PDF / ESI）"
+              disabled={attachments.length >= MAX_ATTACHMENT_COUNT}
+              title={attachments.length >= MAX_ATTACHMENT_COUNT ? `最多 ${MAX_ATTACHMENT_COUNT} 个附件` : '附加文件（PDF / ESI）'}
             >
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
             </button>
@@ -127,7 +141,7 @@ export function CopilotChatInput({ value, onChange, onSend, status, onCancel, at
               type="button"
               className="copilot-input__send"
               data-testid="copilot-send"
-              disabled={!value.trim() && !attachment}
+              disabled={!value.trim() && attachments.length === 0}
               onClick={onSend}
               title="发送"
             >

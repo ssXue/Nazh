@@ -239,8 +239,8 @@ export const CopilotPanel = forwardRef<CopilotPanelHandle, CopilotPanelProps>(
   /// 标记本次 send 是否已经调用过 onEnsureBoardOpen（防止多次创建工程）。
   const boardEnsuredRef = useRef(false);
 
-  const handleSend = useCallback(async (text: string, attachment?: CopilotAttachment | null) => {
-    if ((!text.trim() && !attachment) || status !== 'idle') return;
+  const handleSend = useCallback(async (text: string, attachments?: CopilotAttachment[]) => {
+    if ((!text.trim() && (!attachments || attachments.length === 0)) || status !== 'idle') return;
 
     // 没有活跃对话时自动创建
     let convId = activeId;
@@ -270,26 +270,32 @@ export const CopilotPanel = forwardRef<CopilotPanelHandle, CopilotPanelProps>(
 
     panelLog('handleSend 开始', { convId, text: text.slice(0, 80), status });
 
-    // 如果有附件，预处理文件内容
+    // 如果有附件，逐个预处理文件内容
     let enhancedText = text.trim();
-    if (attachment) {
-      try {
-        if (attachment.type === 'pdf') {
-          const arrayBuffer = await attachment.file.arrayBuffer();
-          const base64 = btoa(
-            new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), ''),
-          );
-          const extractedText = await invoke<string>('extract_text_from_pdf', { pdfBase64: base64 });
-          enhancedText = `${text.trim()}\n\n[已附加文件: ${attachment.name}]\n提取内容:\n${extractedText}`;
-        } else {
-          const esiText = await attachment.file.text();
-          const esiResult = await invoke<{ deviceYamls: string[]; capabilityYamls?: string[]; warnings?: string[] }>('import_ethercat_esi', { esiXml: esiText });
-          const summary = `设备: ${esiResult.deviceYamls.length} 个` +
-            (esiResult.warnings?.length ? `, 警告: ${esiResult.warnings.join('; ')}` : '');
-          enhancedText = `${text.trim()}\n\n[已附加 ESI 文件: ${attachment.name}]\n${summary}`;
+    if (attachments && attachments.length > 0) {
+      const parts: string[] = [];
+      for (const attachment of attachments) {
+        try {
+          if (attachment.type === 'pdf') {
+            const arrayBuffer = await attachment.file.arrayBuffer();
+            const base64 = btoa(
+              new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), ''),
+            );
+            const extractedText = await invoke<string>('extract_text_from_pdf', { pdfBase64: base64 });
+            parts.push(`[已附加文件: ${attachment.name}]\n提取内容:\n${extractedText}`);
+          } else {
+            const esiText = await attachment.file.text();
+            const esiResult = await invoke<{ deviceYamls: string[]; capabilityYamls?: string[]; warnings?: string[] }>('import_ethercat_esi', { esiXml: esiText });
+            const summary = `设备: ${esiResult.deviceYamls.length} 个` +
+              (esiResult.warnings?.length ? `, 警告: ${esiResult.warnings.join('; ')}` : '');
+            parts.push(`[已附加 ESI 文件: ${attachment.name}]\n${summary}`);
+          }
+        } catch (e) {
+          parts.push(`[附件 ${attachment.name} 处理失败: ${e instanceof Error ? e.message : String(e)}]`);
         }
-      } catch (e) {
-        enhancedText = `${text.trim()}\n\n[附件处理失败: ${e instanceof Error ? e.message : String(e)}]`;
+      }
+      if (parts.length > 0) {
+        enhancedText = `${text.trim()}\n\n${parts.join('\n\n')}`;
       }
     }
 

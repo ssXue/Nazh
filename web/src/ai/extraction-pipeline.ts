@@ -32,8 +32,9 @@ export async function extractWithSchema<T>(
       maxOutputTokens: 16384,
     });
     return result.object;
-  } catch {
+  } catch (primaryError) {
     // fallback：generateText + JSON.parse + schema.parse
+    console.warn('[extraction-pipeline] generateObject 失败，fallback 到 generateText', primaryError instanceof Error ? primaryError.message : String(primaryError));
     const textResult = await generateText({
       model,
       prompt,
@@ -47,12 +48,82 @@ export async function extractWithSchema<T>(
   }
 }
 
-/// 从 AI 响应中提取 JSON（去除 markdown 代码块包裹）。
+/// 从 AI 响应中提取 JSON。
+///
+/// 依次尝试：markdown 代码块 → 原始文本 → 修复后 JSON。
 function extractJsonFromResponse(content: string): string {
   const trimmed = content.trim();
+
+  // 尝试提取 ```json ... ``` 代码块
   const jsonMatch = trimmed.match(/^```(?:json)?\s*\n([\s\S]*?)\n?```$/);
   if (jsonMatch) return jsonMatch[1].trim();
+
+  // 尝试直接 parse
+  try {
+    JSON.parse(trimmed);
+    return trimmed;
+  } catch {
+    // 继续尝试修复
+  }
+
+  // 尝试提取文本中间的 JSON 对象/数组
+  const objMatch = trimmed.match(/\{[\s\S]*\}/);
+  if (objMatch) {
+    const repaired = repairJson(objMatch[0]);
+    try {
+      JSON.parse(repaired);
+      return repaired;
+    } catch {
+      // 继续尝试
+    }
+  }
+
+  const arrMatch = trimmed.match(/\[[\s\S]*\]/);
+  if (arrMatch) {
+    const repaired = repairJson(arrMatch[0]);
+    try {
+      JSON.parse(repaired);
+      return repaired;
+    } catch {
+      // 放弃修复
+    }
+  }
+
+  // 全部失败，返回原始文本（由 schema.parse 报错）
   return trimmed;
+}
+
+/// 尝试修复常见 JSON 问题：截断的括号、trailing comma。
+function repairJson(text: string): string {
+  let s = text;
+
+  // 移除 trailing comma（} 或 ] 前面的逗号）
+  s = s.replace(/,\s*([}\]])/g, '$1');
+
+  // 补全截断的括号
+  let openBraces = 0;
+  let openBrackets = 0;
+  let inString = false;
+  let escape = false;
+  for (const ch of s) {
+    if (escape) { escape = false; continue; }
+    if (ch === '\\') { escape = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === '{') openBraces++;
+    else if (ch === '}') openBraces--;
+    else if (ch === '[') openBrackets++;
+    else if (ch === ']') openBrackets--;
+  }
+
+  // 截断可能在字符串中间，先关闭字符串
+  if (inString) s += '"';
+
+  // 截断可能在值中间（如数字、true 等），不追加额外字符
+  s += ']'.repeat(Math.max(0, openBrackets));
+  s += '}'.repeat(Math.max(0, openBraces));
+
+  return s;
 }
 
 // ── 提示词 ──
@@ -74,6 +145,7 @@ export interface PipelineResult {
   validationWarnings: Array<{ path: string; message: string }>;
   correctionRounds: number;
   truncated: boolean;
+  stage2Skipped: boolean;
 }
 
 /// 将管道结果格式化为 Markdown 文本，注入 copilot 对话。
@@ -131,6 +203,9 @@ export function formatPipelineResult(result: PipelineResult): string {
   if (result.truncated) {
     parts.push('\n_⚠️ 原始文本过长已截断（30k 字符），部分信息可能缺失_');
   }
+  if (result.stage2Skipped) {
+    parts.push('\n_ℹ️ 简单设备已跳过信号填充阶段，细节可能不完整。可让 Copilot 补充具体寄存器地址等细节_');
+  }
 
   return parts.join('\n');
 }
@@ -150,10 +225,12 @@ function formatSource(source: Record<string, unknown>): string {
 // ── 管道主入口 ──
 
 const MAX_TEXT_LENGTH = 30_000;
+const CHUNK_SIZE = 15_000;
 const MAX_CORRECTION_ROUNDS = 2;
 
 /// 四阶段抽取管道。
 ///
+/// Stage 0（可选）：大文本分片摘要
 /// Stage 1：大纲抽取（generateObject + DeviceOutlineSchema）
 /// Stage 2：信号填充（generateObject + SignalDetailSchema）
 /// Stage 3：Rust 侧校验（validate_device_yaml IPC）
@@ -167,11 +244,11 @@ export async function extractDevicePipeline(
     warnings: Array<{ path: string; message: string }>;
   }>,
 ): Promise<PipelineResult> {
-  // 截断过长文本
+  // Stage 0：大文本预处理
   let text = rawText;
   let truncated = false;
   if (text.length > MAX_TEXT_LENGTH) {
-    text = text.slice(0, MAX_TEXT_LENGTH) + '\n\n[文件内容过长，已截断。如需完整信息请分批提供。]';
+    text = await summarizeLongText(text, provider);
     truncated = true;
   }
 
@@ -183,14 +260,24 @@ export async function extractDevicePipeline(
     OUTLINE_SYSTEM_PROMPT,
   );
 
-  // Stage 2：信号填充
-  const outlineContext = JSON.stringify(outline, null, 2);
-  let signalDetail = await extractWithSchema(
-    `设备大纲：\n${outlineContext}\n\n原始说明书：\n---\n${text}\n---\n\n请填充所有信号的完整细节。`,
-    SignalDetailSchema,
-    provider,
-    SIGNAL_FILL_SYSTEM_PROMPT,
-  );
+  // Stage 2：信号填充（简单设备跳过）
+  const SIMPLE_SIGNAL_THRESHOLD = 3;
+  let signalDetail: SignalDetail;
+  let stage2Skipped = false;
+
+  if (outline.signalCount <= SIMPLE_SIGNAL_THRESHOLD) {
+    // 简单设备：直接从 signalSummaries 构建 SignalDetail，source 填低置信度占位
+    signalDetail = buildSimpleSignalDetail(outline);
+    stage2Skipped = true;
+  } else {
+    const outlineContext = JSON.stringify(outline, null, 2);
+    signalDetail = await extractWithSchema(
+      `设备大纲：\n${outlineContext}\n\n原始说明书：\n---\n${text}\n---\n\n请填充所有信号的完整细节。`,
+      SignalDetailSchema,
+      provider,
+      SIGNAL_FILL_SYSTEM_PROMPT,
+    ) as SignalDetail;
+  }
 
   // Stage 3 + 4：校验 + 自动修正循环
   let validationErrors: Array<{ path: string; message: string }> = [];
@@ -232,7 +319,74 @@ export async function extractDevicePipeline(
     validationWarnings,
     correctionRounds,
     truncated,
+    stage2Skipped,
   };
+}
+
+// ── 大文本分片摘要 ──
+
+/// 将过长文本分片摘要，保留关键设备信息。
+/// ≤30k：直接使用（不应进入此函数）
+/// 30k-100k：按段落分片，逐片摘要，合并
+/// >100k：分片摘要后再做一轮总结压缩
+async function summarizeLongText(text: string, provider: AiProviderView): Promise<string> {
+  const chunks = splitIntoChunks(text, CHUNK_SIZE);
+  const summaries = await Promise.all(
+    chunks.map((chunk, i) => summarizeChunk(chunk, i + 1, chunks.length, provider)),
+  );
+  const merged = summaries.join('\n\n');
+
+  // 二次压缩：合并后仍超限
+  if (merged.length > MAX_TEXT_LENGTH) {
+    const compressed = await summarizeChunk(merged, 1, 1, provider);
+    return compressed + '\n\n[原文过长，经分片摘要+二次压缩，细节可能有丢失]';
+  }
+
+  return merged + '\n\n[原文过长，经分片摘要处理，细节可能有丢失]';
+}
+
+/// 按段落边界分片，尽量不截断段落。
+function splitIntoChunks(text: string, maxChunkSize: number): string[] {
+  const paragraphs = text.split(/\n{2,}/);
+  const chunks: string[] = [];
+  let current = '';
+
+  for (const para of paragraphs) {
+    if (current.length + para.length + 2 > maxChunkSize && current.length > 0) {
+      chunks.push(current.trim());
+      current = para;
+    } else {
+      current = current ? `${current}\n\n${para}` : para;
+    }
+  }
+  if (current.trim()) chunks.push(current.trim());
+
+  return chunks;
+}
+
+/// 对单个分片做 AI 摘要，保留设备相关信息。
+async function summarizeChunk(chunk: string, index: number, total: number, provider: AiProviderView): Promise<string> {
+  const model = await createLanguageModel({ provider });
+  const result = await generateText({
+    model,
+    prompt: `以下是一份工业设备说明书文本的第 ${index}/${total} 部分。请提取并保留所有与设备型号、通信协议、寄存器地址、信号定义、参数范围、告警条件相关的信息。去除重复内容、通用说明和不相关的法律/版权声明。\n\n---\n${chunk}\n---`,
+    temperature: 0.1,
+    maxOutputTokens: 8192,
+  });
+  return result.text;
+}
+
+/// 简单设备（≤3 信号）快速构建：从大纲的 signalSummaries 直接构建 SignalDetail。
+/// source 字段填低置信度占位（type: register + register: 0）。
+function buildSimpleSignalDetail(outline: DeviceOutline): SignalDetail {
+  const signals = outline.signalSummaries.map((summary) => ({
+    id: summary.id,
+    signalType: summary.signalType,
+    source: { type: 'register' as const, register: 0, access: 'read' as const, data_type: 'u16' as const },
+    confidence: 'low' as const,
+    ...(!['digital_input', 'digital_output'].includes(summary.signalType) ? { unit: '-', range: [0, 100] as [number, number] } : {}),
+  }));
+  return { signals, alarms: [] };
 }
 
 /// 将大纲 + 信号细节组装为 DeviceSpec YAML 文本。

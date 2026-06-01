@@ -2,6 +2,7 @@ import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'r
 
 import { SpotlightCard } from '../animations/SpotlightCard';
 import { hasTauriRuntime } from '../../lib/tauri';
+import { sendToCopilot } from '../../lib/copilot-send';
 import { formatRelativeTimestamp } from '../../lib/projects';
 import { useDeviceAssets } from '../../hooks/use-device-assets';
 import type { DeviceAssetDetail, DeviceAssetSummary } from '../../hooks/use-device-assets';
@@ -259,6 +260,17 @@ export function DeviceModelingPanel({
                 <span className="asset-card__meta">{formatRelativeTimestamp(asset.updated_at)}</span>
                 <button
                   type="button"
+                  className="asset-card__copilot"
+                  title="在 Copilot 中建模"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    sendToCopilot(`请帮我完善设备 ${asset.id}（${asset.device_type}）的建模。使用 read_asset_yaml 读取当前状态，检查并补充信号定义、寄存器地址等缺失信息。`);
+                  }}
+                >
+                  <SparklesIcon width={14} height={14} />
+                </button>
+                <button
+                  type="button"
                   className="asset-card__delete"
                   aria-label={`删除设备 ${asset.name}`}
                   title={`删除设备 ${asset.name}`}
@@ -406,6 +418,19 @@ const DetailPanel = forwardRef(function DetailPanel({
             </div>
           </div>
         </div>
+        <button
+          type="button"
+          className="dm-btn dm-btn--copilot"
+          title="在 Copilot 中修复"
+          onClick={() => {
+            const deviceId = spec?.id ?? detail.id;
+            const sigCount = Array.isArray(spec?.signals) ? (spec?.signals as unknown[]).length : 0;
+            sendToCopilot(`请检查并修复设备 ${deviceId} 的建模问题。先使用 read_asset_yaml 读取当前状态，检查信号的寄存器地址/数据源是否完整、量程是否合理、是否有缺失的告警定义。当前信号数：${sigCount}。`);
+          }}
+        >
+          <SparklesIcon width={14} height={14} />
+          <span>修复</span>
+        </button>
         <button
           type="button"
           className="dm-btn dm-btn--danger"
