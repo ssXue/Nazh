@@ -12,6 +12,7 @@ export type {
   NodeDefinition,
   FlowgramPaletteItem,
   FlowgramPaletteSection,
+  FlowgramPaletteGroup,
   FlowgramConnectionDefaults,
 } from './nodes/shared';
 
@@ -29,8 +30,8 @@ export {
   DEFAULT_BARK_BODY_TEMPLATE,
 } from './nodes/shared';
 
-export { NODE_CATEGORIES } from './nodes/catalog';
-export type { NodeCategory } from './nodes/catalog';
+export { NODE_CATEGORIES, NODE_PANEL_GROUPS } from './nodes/catalog';
+export type { NodeCategory, NodePanelGroup } from './nodes/catalog';
 
 import type {
   FlowgramLogicBranch,
@@ -40,6 +41,7 @@ import type {
   FlowgramConnectionDefaults,
   FlowgramPaletteItem,
   FlowgramPaletteSection,
+  FlowgramPaletteGroup,
 } from './nodes/shared';
 import {
   isRecord,
@@ -49,7 +51,7 @@ import {
   DEFAULT_BARK_TITLE_TEMPLATE,
   DEFAULT_BARK_BODY_TEMPLATE,
 } from './nodes/shared';
-import { NODE_CATEGORIES } from './nodes/catalog';
+import { NODE_CATEGORIES, NODE_PANEL_GROUPS } from './nodes/catalog';
 
 import { definition as nativeDef } from './nodes/native';
 import { definition as codeDef } from './nodes/code';
@@ -521,6 +523,59 @@ export function getFlowgramPaletteSections(): FlowgramPaletteSection[] {
       items: NODE_TEMPLATES,
     },
   ];
+}
+
+/**
+ * 按 `NODE_PANEL_GROUPS` 定义的两层分组结构返回面板数据。
+ * 顶层为可折叠分组，内层为原有 category section。
+ * 「预设模板」追加到最后一个分组之后作为独立 section。
+ */
+export function getFlowgramPaletteGroups(): FlowgramPaletteGroup[] {
+  const categoryItemMap = new Map<string, FlowgramPaletteItem[]>();
+
+  for (const def of NODE_DEFS) {
+    if (def.palette?.visible === false) {
+      continue;
+    }
+    const cat = def.catalog.category;
+    if (!categoryItemMap.has(cat)) {
+      categoryItemMap.set(cat, []);
+    }
+    categoryItemMap.get(cat)!.push({
+      key: `blank-${def.kind}`,
+      title: def.palette?.title ?? def.fallbackLabel,
+      description: def.catalog.description,
+      badge: def.palette?.badge ?? def.fallbackLabel,
+      seed: def.buildDefaultSeed(),
+    });
+  }
+
+  const groups: FlowgramPaletteGroup[] = NODE_PANEL_GROUPS.map((group) => ({
+    key: group.key,
+    title: group.title,
+    collapsed: group.collapsed,
+    sections: group.categories
+      .filter((cat) => categoryItemMap.has(cat))
+      .map((cat) => ({
+        key: cat,
+        title: cat,
+        items: categoryItemMap.get(cat)!,
+      })),
+  })).filter((group) => group.sections.length > 0);
+
+  if (NODE_TEMPLATES.length > 0) {
+    groups.push({
+      key: 'templates',
+      title: '预设模板',
+      sections: [{
+        key: 'templates',
+        title: '预设模板',
+        items: NODE_TEMPLATES,
+      }],
+    });
+  }
+
+  return groups;
 }
 
 const NODE_TEMPLATES: import('./nodes/shared').FlowgramPaletteItem[] = [

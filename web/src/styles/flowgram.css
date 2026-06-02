@@ -807,10 +807,76 @@ html[data-theme='dark'] .flowgram-host {
   display: grid;
   gap: 10px;
 }
+.flowgram-node-panel__search {
+  display: grid;
+}
+
+.flowgram-node-panel__search-input {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--text);
+  font-size: var(--font-caption);
+  outline: none;
+}
+
+.flowgram-node-panel__search-input::placeholder {
+  color: var(--muted);
+}
+
+.flowgram-node-panel__search-input:focus {
+  border-color: var(--accent);
+}
+
+.flowgram-node-panel__group {
+  display: grid;
+  gap: 6px;
+}
+
+.flowgram-node-panel__group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 4px;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-size: var(--font-body);
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+
+.flowgram-node-panel__group-header:hover {
+  background: var(--surface-muted);
+}
+
+.flowgram-node-panel__group-arrow {
+  display: inline-block;
+  width: 1em;
+  text-align: center;
+  font-size: 0.8em;
+  transition: transform 0.15s ease;
+}
+
+.flowgram-node-panel__group--expanded .flowgram-node-panel__group-arrow {
+  transform: rotate(90deg);
+}
+
+.flowgram-node-panel__group-count {
+  margin-left: auto;
+  font-size: var(--font-caption);
+  font-weight: 400;
+  color: var(--muted);
+}
 
 .flowgram-node-panel__section {
   display: grid;
   gap: 8px;
+  padding-left: 4px;
 }
 
 .flowgram-node-panel__title {

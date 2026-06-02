@@ -77,6 +77,13 @@ export interface FlowgramPaletteSection {
   items: FlowgramPaletteItem[];
 }
 
+export interface FlowgramPaletteGroup {
+  key: string;
+  title: string;
+  collapsed?: boolean;
+  sections: FlowgramPaletteSection[];
+}
+
 export interface FlowgramConnectionDefaults {
   any: string | null;
   modbus: string | null;
