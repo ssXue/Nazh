@@ -486,6 +486,49 @@
 .conn-table__phase-label--error { color: var(--danger-ink); }
 .conn-table__phase-label--off { color: var(--muted); }
 
+.conn-table__timeline {
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.conn-table__timeline-label {
+  font-size: var(--font-caption);
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.conn-table__timeline-list {
+  display: grid;
+  gap: 3px;
+}
+
+.conn-table__timeline-entry {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.conn-table__timeline-dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.conn-table__timeline-text {
+  font-size: var(--font-caption);
+  color: var(--text);
+}
+
+.conn-table__timeline-text strong {
+  font-weight: 500;
+  margin-right: 4px;
+}
 .runtime-dock__empty {
   margin: auto;
   color: var(--muted);

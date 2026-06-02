@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { ConnectionRecord, RuntimeLogEntry, WorkflowWindowStatus } from '../../types';
 import { BlurText } from '../animations/BlurText';
@@ -149,15 +149,48 @@ export function DashboardPanel({
   const statusLabel = getStatusLabel(workflowStatus);
   const statusTone = getStatusTone(workflowStatus);
 
-  // 波形条高度由 eventCount + resultCount 映射
-  const waveformBase = Math.min(eventCount + resultCount, 50);
-  const waveformBars = useMemo(() => {
-    return Array.from({ length: 24 }, (_, i) => {
-      const seed = ((i * 37 + waveformBase * 13) % 17) / 17;
-      const height = 20 + Math.round(seed * 80);
-      return { height, delay: i * 0.08 };
-    });
-  }, [waveformBase]);
+  // 最近 60 秒事件吞吐量 sparkline（30 桶 × 2 秒），数据来自 eventFeed 时间戳
+  const SPARKLINE_BUCKETS = 30;
+  const SPARKLINE_WINDOW_MS = 60_000;
+  const SPARKLINE_BUCKET_MS = SPARKLINE_WINDOW_MS / SPARKLINE_BUCKETS;
+
+  const sparkline = useMemo(() => {
+    const now = Date.now();
+    const windowStart = now - SPARKLINE_WINDOW_MS;
+    const eventBuckets = new Uint16Array(SPARKLINE_BUCKETS);
+    const errorBuckets = new Uint16Array(SPARKLINE_BUCKETS);
+
+    for (const entry of eventFeed) {
+      if (entry.timestamp < windowStart) continue;
+      const idx = Math.min(
+        Math.floor((entry.timestamp - windowStart) / SPARKLINE_BUCKET_MS),
+        SPARKLINE_BUCKETS - 1,
+      );
+      eventBuckets[idx]++;
+      if (entry.level === 'error' || entry.level === 'warn') {
+        errorBuckets[idx]++;
+      }
+    }
+
+    let maxEvents = 0;
+    for (let i = 0; i < SPARKLINE_BUCKETS; i++) {
+      if (eventBuckets[i] > maxEvents) maxEvents = eventBuckets[i];
+    }
+
+    return {
+      eventBuckets,
+      errorBuckets,
+      maxEvents,
+    };
+  }, [eventFeed]);
+
+  // 每秒刷新 sparkline（滚动时间窗口）
+  const [, setSparklineTick] = useState(0);
+  useEffect(() => {
+    if (workflowStatus !== 'running') return;
+    const id = setInterval(() => setSparklineTick((t) => t + 1), 2000);
+    return () => clearInterval(id);
+  }, [workflowStatus]);
 
   return (
     <div className="dashboard-panel">
@@ -314,25 +347,32 @@ export function DashboardPanel({
         </article>
       </div>
 
-      {/* Waveform */}
+      {/* 吞吐量 Sparkline */}
       <article className="dashboard-waveform-card">
         <div className="dashboard-waveform-card__header">
           <strong>实时流量</strong>
-          <span>事件 {eventCount} · 输出 {resultCount}</span>
+          <span>
+            事件 {eventCount} · 输出 {resultCount}
+            {sparkline.maxEvents > 0 && ` · 峰值 ${sparkline.maxEvents}/2s`}
+          </span>
         </div>
-        <div className="dashboard-waveform" aria-hidden="true">
-          {waveformBars.map((bar, i) => (
-            <span
-              key={i}
-              className="dashboard-waveform__bar"
-              style={
-                {
-                  height: `${bar.height}%`,
-                  animationDelay: `${bar.delay}s`,
-                } as React.CSSProperties
-              }
-            />
-          ))}
+        <div className="dashboard-waveform">
+          {Array.from({ length: SPARKLINE_BUCKETS }, (_, i) => {
+            const count = sparkline.eventBuckets[i];
+            const errors = sparkline.errorBuckets[i];
+            const pct = sparkline.maxEvents > 0
+              ? Math.max(8, Math.round((count / sparkline.maxEvents) * 100))
+              : 8;
+            const hasError = errors > 0;
+            return (
+              <span
+                key={i}
+                className={`dashboard-waveform__bar${hasError ? ' has-error' : ''}${count === 0 ? ' is-empty' : ''}`}
+                style={{ height: `${pct}%` } as React.CSSProperties}
+                title={`${count} 事件${errors > 0 ? ` (${errors} 异常)` : ''}`}
+              />
+            );
+          })}
         </div>
       </article>
     </div>

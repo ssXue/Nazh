@@ -47,11 +47,26 @@ function formatRelativeTime(value: string | undefined | null): string {
   return `${Math.floor(hours / 24)}d`;
 }
 
-function formatLatency(ms: number | null | undefined): string {
+function formatLatency(ms: number | bigint | null | undefined): string {
   if (ms == null) return '-';
-  if (ms < 1) return '<1ms';
-  if (ms < 1000) return `${Math.round(ms)}ms`;
-  return `${(ms / 1000).toFixed(1)}s`;
+  const num = typeof ms === 'bigint' ? Number(ms) : ms;
+  if (!Number.isFinite(num) || num < 0) return '-';
+  if (num < 1000) return `${Math.round(num)}ms`;
+  return `${(num / 1000).toFixed(1)}s`;
+}
+
+/** 时间线条目：仅在有值时渲染。 */
+function TimelineEntry({ ts, label }: { ts: string | undefined | null; label: string }) {
+  if (!ts) return null;
+  const relative = formatRelativeTime(ts);
+  return (
+    <div className="conn-table__timeline-entry">
+      <span className="conn-table__timeline-dot" />
+      <span className="conn-table__timeline-text">
+        <strong>{relative}</strong> {label}
+      </span>
+    </div>
+  );
 }
 
 interface ConnectionTableProps {
@@ -161,6 +176,12 @@ export function ConnectionTable({ connections }: ConnectionTableProps) {
                           <span>{health.diagnosis}</span>
                         </div>
                       )}
+                      {health.recommendedAction && (
+                        <div className="conn-table__detail-field">
+                          <label>建议</label>
+                          <span>{health.recommendedAction}</span>
+                        </div>
+                      )}
                       {health.lastLatencyMs != null && (
                         <div className="conn-table__detail-field">
                           <label>延迟</label>
@@ -189,18 +210,25 @@ export function ConnectionTable({ connections }: ConnectionTableProps) {
                           <span>{health.lastFailureReason}</span>
                         </div>
                       )}
-                      {health.lastConnectedAt && (
-                        <div className="conn-table__detail-field">
-                          <label>上次连接</label>
-                          <span>{formatRelativeTime(health.lastConnectedAt)}</span>
-                        </div>
-                      )}
                       {health.circuitOpenUntil && (
                         <div className="conn-table__detail-field">
                           <label>熔断至</label>
                           <span>{formatRelativeTime(health.circuitOpenUntil)}</span>
                         </div>
                       )}
+                    </div>
+
+                    {/* 状态时间线 */}
+                    <div className="conn-table__timeline">
+                      <label className="conn-table__timeline-label">状态变更</label>
+                      <div className="conn-table__timeline-list">
+                        <TimelineEntry ts={health.lastStateChangedAt} label="状态变更" />
+                        <TimelineEntry ts={health.lastConnectedAt} label="最近连接" />
+                        <TimelineEntry ts={health.lastHeartbeatAt} label="心跳" />
+                        <TimelineEntry ts={health.lastFailureAt} label="最近失败" />
+                        <TimelineEntry ts={health.nextRetryAt} label="下次重试" />
+                        <TimelineEntry ts={health.lastReleasedAt} label="最近释放" />
+                      </div>
                     </div>
                   </div>
                 )}

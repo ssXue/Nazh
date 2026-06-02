@@ -597,6 +597,16 @@ export function LogsPanel({
                       <div className="logs-panel__detail-kv">
                         <span>Trace</span>
                         <strong>{selectedEntry.traceId ?? '--'}</strong>
+                        {selectedEntry.traceId ? (
+                          <button
+                            type="button"
+                            className="ghost logs-panel__copy-button"
+                            onClick={() => void copyText(selectedEntry.traceId!)}
+                            title="复制 Trace ID"
+                          >
+                            <CopyIcon width={12} height={12} />
+                          </button>
+                        ) : null}
                       </div>
                       <div className="logs-panel__detail-kv">
                         <span>节点</span>
