@@ -379,6 +379,45 @@ fn tool_infer_capabilities(call: &AiToolCall) -> Result<String, String> {
     serde_json::to_string_pretty(&result).map_err(|e| format!("序列化失败: {e}"))
 }
 
+fn tool_validate_capability_yaml(call: &AiToolCall) -> Result<String, String> {
+    use nazh_dsl_core::parse_capability_yaml;
+
+    let args = parse_args(call)?;
+    let yaml = args["yaml"].as_str().ok_or("缺少 yaml 参数")?;
+
+    let spec = match parse_capability_yaml(yaml) {
+        Ok(s) => s,
+        Err(e) => {
+            let result = json!({
+                "valid": false,
+                "parsed": null,
+                "errors": [{ "path": "yaml", "message": e.to_string() }],
+                "warnings": []
+            });
+            return serde_json::to_string_pretty(&result).map_err(|e| format!("序列化失败: {e}"));
+        }
+    };
+
+    let validation = spec.validate();
+    let errors: Vec<_> = match validation {
+        Ok(()) => vec![],
+        Err(e) => vec![json!({ "path": "capability", "message": e.to_string() })],
+    };
+
+    let result = json!({
+        "valid": errors.is_empty(),
+        "parsed": {
+            "id": spec.id,
+            "device_id": spec.device_id,
+            "inputs": spec.inputs.len(),
+            "outputs": spec.outputs.len(),
+        },
+        "errors": errors,
+        "warnings": [],
+    });
+    serde_json::to_string_pretty(&result).map_err(|e| format!("序列化失败: {e}"))
+}
+
 // ── 资产操作工具（RFC-0006 Phase 3） ──
 
 async fn tool_save_device_asset(call: &AiToolCall, ctx: &CopilotToolCtx) -> Result<String, String> {
@@ -586,7 +625,6 @@ async fn tool_patch_device_field(
 }
 
 /// 前端 copilot 工具调度入口。
-///
 /// 处理只读查询工具和资产操作工具（RFC-0006 Phase 3），画布操作由前端直接执行。
 /// 返回工具执行结果的 JSON 字符串。
 pub async fn dispatch_query_tool(
@@ -626,6 +664,7 @@ pub async fn dispatch_query_tool(
         "validate_device_yaml" => tool_validate_device_yaml(&call),
         "get_signal_schema_template" => tool_get_signal_schema_template(&call),
         "infer_capabilities_from_signals" => tool_infer_capabilities(&call),
+        "validate_capability_yaml" => tool_validate_capability_yaml(&call),
         "save_device_asset" => tool_save_device_asset(&call, &ctx).await,
         "delete_device_asset" => tool_delete_device_asset(&call, &ctx).await,
         "save_capability_asset" => tool_save_capability_asset(&call, &ctx).await,

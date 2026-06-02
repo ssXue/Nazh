@@ -80,7 +80,49 @@ const TOOL_BEHAVIORAL_PROMPT = `
 6. 校验通过后，调用 \`copilot_save_device_asset\` 保存
 7. 调用 \`infer_capabilities_from_signals\` 生成能力建议
 8. 自动生成的能力直接调用 \`copilot_save_capability_asset\` 保存
-9. 无法自动生成的信号，生成手动 CapabilitySpec proposal，用户确认后保存
+9. 无法自动生成的信号（返回 \`unsupported\` 列表），按下方"手动能力建模"流程处理
+
+### 手动能力建模（从 Unsupported 信号接手）
+
+当 \`infer_capabilities_from_signals\` 返回 \`unsupported\` 列表时，每个条目包含：
+- \`signal_id\`：来源信号 ID
+- \`reason\`：无法自动生成的原因
+- \`suggestion.encoding_info\`：编码上下文（source_type、寄存器地址、can_id 等）
+
+处理步骤：
+1. 从 \`encoding_info\` 提取已有的编码参数（寄存器地址、CAN ID、数据类型等）
+2. 根据信号的数据源类型选择对应的 \`CapabilityImpl\`：
+   - \`modbus\` → \`modbus-write\`（需要 register、data_type、value 模板）
+   - \`can\` / \`can-fd\` → \`can-write\`（需要 can_id、data_type、data 模板）
+   - \`mqtt\` → \`mqtt-publish\`（需要 topic、payload 模板）
+   - \`serial\` → \`serial-command\`（需要 command 模板）
+   - \`ethercat\` → \`ethercat-pdo-write\`（需要 pdo_index、entry_index、bit_len、value）
+3. 为能力定义 \`inputs\`（用户可传入的参数，在模板值中用 \${"${"}变量id\${"}"} 引用）和 \`outputs\`
+4. 构造完整 CapabilitySpec YAML，调用 \`validate_capability_yaml\` 校验
+5. 校验通过后，向用户展示能力摘要并确认
+6. 确认后调用 \`copilot_save_capability_asset\` 保存
+
+CapabilitySpec YAML 结构参考：
+\`\`\`yaml
+id: <capability_id>
+device_id: <device_id>
+inputs:
+  - id: <input_id>
+    type: <number|boolean|string>
+    required: true
+    range: { min: 0, max: 100 }  # number 类型建议加 range
+outputs:
+  - id: <output_id>
+    type: <number|boolean|string>
+implementation:
+  type: <modbus-write|can-write|mqtt-publish|serial-command|ethercat-pdo-write|script>
+  # 以下字段因 type 而异，模板值中用 \${"${"}变量id\${"}"} 引用输入参数
+  # modbus-write: register, data_type, value
+  # can-write: can_id, is_extended, data_type, data
+  # mqtt-publish: topic, payload
+  # serial-command: command
+  # ethercat-pdo-write: pdo_index, entry_index, sub_index, bit_len, value
+\`\`\`
 
 ### 修改已有设备
 
@@ -95,7 +137,7 @@ const TOOL_BEHAVIORAL_PROMPT = `
 - 协议字段必须与 connection.type 一致
 - 模拟信号必须声明量程和单位
 - 写信号建议配套 alarm
-- 保存前必须调用 validate_device_yaml 校验
+- 保存前必须调用 validate_device_yaml 或 validate_capability_yaml 校验
 
 ### 输出格式
 

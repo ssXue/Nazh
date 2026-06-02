@@ -123,6 +123,13 @@ export function buildCopilotTools(
       }),
       execute: async ({ device_yaml, signal_ids }): Promise<string> => dispatchQueryTool('infer_capabilities_from_signals', { device_yaml, signal_ids }, workspacePath),
     }),
+    validate_capability_yaml: tool({
+      description: '校验 CapabilitySpec YAML 文本的语法和语义合法性。返回校验结果（通过/错误列表）和解析摘要。手动构造能力时，保存前应先调用此工具校验。',
+      inputSchema: z.object({
+        yaml: z.string().describe('待校验的能力 DSL YAML 文本'),
+      }),
+      execute: async ({ yaml }): Promise<string> => dispatchQueryTool('validate_capability_yaml', { yaml }, workspacePath),
+    }),
     // ── 资产操作工具（RFC-0006 Phase 3） ──
     copilot_save_device_asset: tool({
       description: '保存或更新设备资产。内部会先校验 YAML 合法性（validate_device_yaml），校验通过后才写入磁盘。此操作会立即持久化到磁盘，调用前应向用户确认。',
