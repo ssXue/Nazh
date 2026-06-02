@@ -80,6 +80,7 @@ crates/graph/src/
 | 改部署生命周期或 shutdown 顺序 | `WorkflowDeployment::shutdown` 相关测试与壳层 runtime 持有逻辑 |
 | 改 `connection_collector` 或高级设备节点类型列表 | `connection_collector` 单元测试、壳层 `workflow_deploy` 集成 |
 | 新增公共 IPC/TS 类型 | 迁到 `crates/tauri-bindings`，不要把 shell-only 类型塞回本 crate |
+| 改背压策略语义或 `EdgeWindow` / `DownstreamTarget` | `runner_tests.rs` 策略测试、前端 `BackpressurePolicy` 类型、`edge_window.rs` drop 计数 |
 
 ## 测试清单
 
@@ -102,6 +103,6 @@ npm --prefix web run build
 - ADR-0012 工作流变量
 - ADR-0014 Data 引脚与 pull path
 - ADR-0015 Reactive 引脚
-- ADR-0016 边级可观测性
+- ADR-0016 边级可观测性（含背压策略执行：`BackpressurePolicy` 在 Runner 发送路径消费，`EdgeWindow` 维护 drop 计数器）
 - ADR-0020 graph 编排层长期归属
 - ADR-0026 资产连接绑定收口（Phase 1 部署期引用收集）

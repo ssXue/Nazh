@@ -64,6 +64,7 @@ mod tests {
             to: to.to_owned(),
             source_port_id: sport.map(ToOwned::to_owned),
             target_port_id: tport.map(ToOwned::to_owned),
+            backpressure_policy: None,
         }
     }
 

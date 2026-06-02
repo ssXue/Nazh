@@ -97,6 +97,7 @@ fn edge(from: &str, to: &str, source: Option<&str>, target: Option<&str>) -> Wor
         to: to.to_owned(),
         source_port_id: source.map(str::to_owned),
         target_port_id: target.map(str::to_owned),
+        backpressure_policy: None,
     }
 }
 

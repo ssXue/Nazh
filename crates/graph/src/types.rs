@@ -54,6 +54,10 @@ pub struct WorkflowEdge {
     #[serde(default)]
     #[cfg_attr(feature = "ts-export", ts(optional))]
     pub target_port_id: Option<String>,
+    /// ADR-0016：该边的背压处理策略。默认 `Block`。
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub backpressure_policy: Option<nazh_core::BackpressurePolicy>,
 }
 
 impl<'de> Deserialize<'de> for WorkflowEdge {
@@ -71,6 +75,8 @@ impl<'de> Deserialize<'de> for WorkflowEdge {
             source_port_id: Option<String>,
             #[serde(default, alias = "targetPortID")]
             target_port_id: Option<String>,
+            #[serde(default)]
+            backpressure_policy: Option<nazh_core::BackpressurePolicy>,
         }
 
         let input = WorkflowEdgeInput::deserialize(deserializer)?;
@@ -79,6 +85,7 @@ impl<'de> Deserialize<'de> for WorkflowEdge {
             to: input.to,
             source_port_id: input.source_port_id,
             target_port_id: input.target_port_id,
+            backpressure_policy: input.backpressure_policy,
         })
     }
 }
@@ -166,6 +173,8 @@ pub(crate) struct DownstreamTarget {
     pub(crate) target_port_id: Option<String>,
     /// ADR-0016：边类型（= 上游 source pin 的 `PinKind`）。
     pub(crate) edge_kind: PinKind,
+    /// ADR-0016：该边的背压处理策略。
+    pub(crate) backpressure_policy: nazh_core::BackpressurePolicy,
 }
 
 impl WorkflowIngress {

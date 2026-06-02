@@ -435,6 +435,9 @@ pub async fn deploy_workflow_and_restore_variables<S: BuildHasher>(
                         target_node_id: edge.to.clone(),
                         target_port_id: edge.target_port_id.clone(),
                         edge_kind,
+                        backpressure_policy: edge
+                            .backpressure_policy
+                            .unwrap_or(nazh_core::BackpressurePolicy::Block),
                     }
                 })
             })

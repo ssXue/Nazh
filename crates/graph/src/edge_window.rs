@@ -32,6 +32,10 @@ pub(crate) struct EdgeWindow {
     window_start: Instant,
     /// 本窗口周期内是否已发射过背压告警（限频）。
     backpressure_reported: bool,
+    /// ADR-0016：该边的背压处理策略。
+    policy: BackpressurePolicy,
+    /// ADR-0016：本窗口周期内因策略丢弃的消息数。
+    dropped_in_window: u64,
 }
 
 impl EdgeWindow {
@@ -41,6 +45,7 @@ impl EdgeWindow {
         to_pin: String,
         edge_kind: PinKind,
         channel_capacity: usize,
+        policy: BackpressurePolicy,
     ) -> Self {
         Self {
             from_pin,
@@ -48,12 +53,14 @@ impl EdgeWindow {
             to_pin,
             edge_kind,
             channel_capacity,
+            policy,
             transmit_count: 0,
             max_queue_depth: 0,
             queue_depth_sum: 0,
             total_payload_bytes: 0,
             window_start: Instant::now(),
             backpressure_reported: false,
+            dropped_in_window: 0,
         }
     }
 
@@ -85,8 +92,8 @@ impl EdgeWindow {
                     incoming_pin: self.to_pin.clone(),
                     channel_capacity: self.channel_capacity,
                     channel_depth: queue_depth,
-                    policy: BackpressurePolicy::Block,
-                    dropped_since_last_report: 0,
+                    policy: self.policy,
+                    dropped_since_last_report: self.dropped_in_window,
                     detected_at: format_instant(Instant::now()),
                 }),
             );
@@ -98,9 +105,23 @@ impl EdgeWindow {
                 to_pin = %self.to_pin,
                 queue_depth,
                 capacity = self.channel_capacity,
+                policy = ?self.policy,
                 "ADR-0016：检测到背压，队列深度达到容量 80% 以上",
             );
         }
+    }
+
+    /// 记录一次因策略而丢弃的消息（不写入 payload 字节数，因为消息未到达下游）。
+    pub(crate) fn record_drop(&mut self, payload_bytes: u64) {
+        self.dropped_in_window += 1;
+        // 丢弃的消息仍计入窗口统计（transmit_count 不含 drop，单独追踪）。
+        let _ = payload_bytes;
+    }
+
+    /// 返回本窗口周期内因策略丢弃的消息数（仅测试用）。
+    #[cfg(test)]
+    pub(crate) fn dropped_count(&self) -> u64 {
+        self.dropped_in_window
     }
 
     /// 若窗口已满（≥100ms）且有数据，构造并发出 [`EdgeTransmitSummary`]，
@@ -153,6 +174,7 @@ impl EdgeWindow {
         self.queue_depth_sum = 0;
         self.total_payload_bytes = 0;
         self.backpressure_reported = false;
+        self.dropped_in_window = 0;
         self.window_start = now;
     }
 }

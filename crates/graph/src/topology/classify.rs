@@ -215,6 +215,7 @@ mod tests {
             to: to.to_owned(),
             source_port_id: source_port.map(str::to_owned),
             target_port_id: None,
+            backpressure_policy: None,
         }
     }
 

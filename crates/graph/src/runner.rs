@@ -80,6 +80,7 @@ pub(crate) async fn run_node(
                 to_pin,
                 target.edge_kind,
                 target.sender.max_capacity(),
+                target.backpressure_policy,
             );
             (key, window)
         })
@@ -269,16 +270,6 @@ pub(crate) async fn run_node(
                         let mut downstream_error = None;
                         let consumer_count = matching_targets.len();
                         for (sent_count, target) in matching_targets.iter().enumerate() {
-                            if target.sender.send(new_ref.clone()).await.is_err() {
-                                downstream_error = Some(EngineError::ChannelClosed {
-                                    stage: node_id.clone(),
-                                });
-                                for _ in sent_count..consumer_count {
-                                    store.release(&data_id);
-                                }
-                                break;
-                            }
-                            // ADR-0016：记录边传输统计（含精确 payload 字节数）。
                             let from_pin = target.source_port_id.as_deref().unwrap_or("out");
                             let to_pin = target.target_port_id.as_deref().unwrap_or("in");
                             let key = (
@@ -286,6 +277,73 @@ pub(crate) async fn run_node(
                                 target.target_node_id.clone(),
                                 to_pin.to_owned(),
                             );
+
+                            // ADR-0016：按边的背压策略分发。
+                            let send_ok = match target.backpressure_policy {
+                                nazh_core::BackpressurePolicy::Block => {
+                                    target.sender.send(new_ref.clone()).await.is_ok()
+                                }
+                                nazh_core::BackpressurePolicy::DropNewest
+                                | nazh_core::BackpressurePolicy::DropOldest
+                                | nazh_core::BackpressurePolicy::Sample
+                                | nazh_core::BackpressurePolicy::Overflow => {
+                                    match target.sender.try_send(new_ref.clone()) {
+                                        Ok(()) => true,
+                                        Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                                            // DropOldest：从 channel 尾端取走一条最老消息再重试。
+                                            if matches!(
+                                                target.backpressure_policy,
+                                                nazh_core::BackpressurePolicy::DropOldest
+                                            ) {
+                                                // 尝试接收一条最老消息并释放其引用。
+                                                // sender 是克隆的，我们需要通过
+                                                // receiver drain——但 receiver 不在此处。
+                                                // 退化为 DropNewest：丢弃当前消息。
+                                                // 完整 DropOldest 需要 receiver 端配合，
+                                                // 当前 channel 语义下不可安全实现。
+                                            }
+                                            if let Some(window) = edge_windows.get_mut(&key) {
+                                                window.record_drop(payload_bytes);
+                                            }
+                                            tracing::debug!(
+                                                from_node = %node_id,
+                                                from_pin,
+                                                to_node = %target.target_node_id,
+                                                to_pin,
+                                                policy = ?target.backpressure_policy,
+                                                "ADR-0016：channel 满载，按策略丢弃消息",
+                                            );
+                                            // 丢弃当前消息时需要释放对应的引用。
+                                            store.release(&data_id);
+                                            false
+                                        }
+                                        Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+                                            false
+                                        }
+                                    }
+                                }
+                            };
+
+                            if !send_ok {
+                                // 区分 channel closed 和策略 drop：仅 closed 记为错误。
+                                // 策略 drop 已在上面处理了引用释放。
+                                let is_closed = target.sender.is_closed();
+                                if is_closed {
+                                    downstream_error = Some(EngineError::ChannelClosed {
+                                        stage: node_id.clone(),
+                                    });
+                                    for _ in sent_count..consumer_count {
+                                        store.release(&data_id);
+                                    }
+                                    break;
+                                }
+                                // 策略 drop 不计为发送成功，也不计为错误。
+                                // 但 consumer_count 预期所有目标都会接收——
+                                // 策略 drop 已在上面 release 了这一份引用。
+                                continue;
+                            }
+
+                            // ADR-0016：记录边传输统计（含精确 payload 字节数）。
                             if let Some(window) = edge_windows.get_mut(&key) {
                                 let queue_depth = target
                                     .sender

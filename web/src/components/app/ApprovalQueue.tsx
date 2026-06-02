@@ -56,19 +56,19 @@ function parsePendingList(raw: unknown[]): PendingItem[] {
     .filter((x): x is PendingItem => x !== null && x.approvalId !== '');
 }
 
-/** 检查 workflow://node-status 事件是否为 HITL 审批 pending/resolved。 */
-function isHitlStartedEvent(event: unknown): { nodeId: string; approvalId: string; formSchema: unknown } | null {
-  if (typeof event !== 'object' || event === null) return null;
+/** 检查 workflow://node-status 事件是否可能影响 HITL 审批列表。 */
+function isHitlRelevantEvent(event: unknown): boolean {
+  if (typeof event !== 'object' || event === null) return false;
   const obj = event as Record<string, unknown>;
-  // ExecutionEvent::Started { stage, trace_id }
-  const stage = obj.stage ?? obj.Started;
-  // 不够——Started 事件不含 approval_id。
-  // 用 Completed 事件的 metadata.human_loop 判断更可靠。
-  // 但审批 pending 时节点还在 await，不会发 Completed。
-  //
-  // 最简方案：ApprovalQueue 依赖 listPendingApprovals 轮询/初始化加载，
-  // onWorkflowEvent 仅用于感知"有变更发生"时触发重新加载。
-  return null;
+  // EdgeTransmitSummary 和 BackpressureDetected 高频发射，不影响审批列表。
+  // 只在 Started / Completed / Failed / Output / Finished 时重新加载。
+  return (
+    'Started' in obj ||
+    'Completed' in obj ||
+    'Failed' in obj ||
+    'Output' in obj ||
+    'Finished' in obj
+  );
 }
 
 export function ApprovalQueue() {
@@ -93,12 +93,11 @@ export function ApprovalQueue() {
   // 监听 workflow://node-status 事件，当有 HITL 节点活动时重新加载列表
   useEffect(() => {
     if (!hasTauriRuntime()) return;
-
     let disposed = false;
-    const cleanup = onWorkflowEvent((_payload: ScopedWorkflowEvent) => {
-      // 任何节点状态变化都触发重新加载——简单但可靠
-      // TODO(@nazh-owner): 可优化为仅 humanLoop 节点事件触发——当前监听全部 workflow://node-status 事件
-      if (!disposed) {
+
+    const cleanup = onWorkflowEvent((payload: ScopedWorkflowEvent) => {
+      // 过滤高频可观测性事件，仅在节点状态变更时重新加载审批列表
+      if (!disposed && isHitlRelevantEvent(payload.event)) {
         void reloadPending();
       }
     });
