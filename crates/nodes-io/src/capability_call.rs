@@ -88,6 +88,8 @@ pub enum CapabilityImplSnapshot {
         sub_index: u8,
         bit_len: u16,
         #[serde(default)]
+        byte_offset: u16,
+        #[serde(default)]
         #[serde(skip_serializing_if = "Option::is_none")]
         data_type: Option<String>,
         #[serde(default)]
@@ -235,6 +237,7 @@ fn value_to_string(val: &Value) -> String {
 }
 
 #[async_trait]
+#[allow(clippy::too_many_lines)]
 impl NodeTrait for CapabilityCallNode {
     fn id(&self) -> &str {
         &self.id
@@ -329,10 +332,35 @@ impl NodeTrait for CapabilityCallNode {
                 )
                 .await
             }
-            CapabilityImplSnapshot::EthercatPdoWrite { .. } => Err(EngineError::node_config(
-                self.id.clone(),
-                "capabilityCall 的 EtherCAT PDO 写入尚未接入 ethercrab 执行器",
-            )),
+            CapabilityImplSnapshot::EthercatPdoWrite {
+                slave_address,
+                pdo_index,
+                entry_index,
+                sub_index,
+                bit_len,
+                byte_offset,
+                data_type,
+                byte_order,
+                scale,
+                value_template,
+            } => {
+                let resolved_value = self.resolve_template(value_template, &payload);
+                self.execute_ethercat_pdo_write(
+                    _trace_id,
+                    slave_address.as_ref(),
+                    *pdo_index,
+                    *entry_index,
+                    *sub_index,
+                    *bit_len,
+                    *byte_offset,
+                    data_type.as_deref(),
+                    byte_order,
+                    scale.as_deref(),
+                    resolved_value,
+                    resolved_args,
+                )
+                .await
+            }
             CapabilityImplSnapshot::Script { content } => {
                 let _ = (content, resolved_args);
                 Err(EngineError::node_config(

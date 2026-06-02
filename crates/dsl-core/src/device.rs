@@ -160,6 +160,9 @@ pub enum SignalSource {
         bit_len: u16,
         #[serde(default)]
         #[serde(skip_serializing_if = "Option::is_none")]
+        byte_offset: Option<u16>,
+        #[serde(default)]
+        #[serde(skip_serializing_if = "Option::is_none")]
         data_type: Option<String>,
         #[serde(default)]
         #[serde(skip_serializing_if = "Option::is_none")]

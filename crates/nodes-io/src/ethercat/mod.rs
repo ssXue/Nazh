@@ -64,6 +64,9 @@ pub trait EthercatBus: Send + Sync {
     /// 保证调用方不需关心刷新时机。
     async fn write_outputs(&self, slave_address: u16, data: &[u8]) -> Result<(), EthercatError>;
 
+    /// 读取指定从站的输出 PDO 数据（用于 read-modify-write 模式）。
+    async fn read_outputs(&self, slave_address: u16) -> Result<Vec<u8>, EthercatError>;
+
     /// 查询所有从站状态。
     fn get_slave_states(&self) -> Vec<SlaveState>;
 

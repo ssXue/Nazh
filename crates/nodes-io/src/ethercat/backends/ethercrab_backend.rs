@@ -365,6 +365,27 @@ impl EthercatBus for EthercrabBackend {
         Ok(())
     }
 
+    async fn read_outputs(&self, slave_address: u16) -> Result<Vec<u8>, EthercatError> {
+        let guard = self.group.lock().await;
+        let group = guard.as_ref().ok_or(EthercatError::Closed)?;
+        let target_index = resolve_slave_index(&self.slaves, slave_address).ok_or(
+            EthercatError::SlaveNotFound {
+                address: slave_address,
+            },
+        )?;
+
+        for (index, subdevice) in group.iter(&self.maindevice).enumerate() {
+            if index == target_index {
+                let io = subdevice.io_raw();
+                return Ok(io.outputs().to_vec());
+            }
+        }
+
+        Err(EthercatError::SlaveNotFound {
+            address: slave_address,
+        })
+    }
+
     fn get_slave_states(&self) -> Vec<SlaveState> {
         self.slaves
             .iter()

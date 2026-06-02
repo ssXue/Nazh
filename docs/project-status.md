@@ -32,6 +32,7 @@
 - ADR-0026（资产连接绑定收口）— **Phase 1+2+3 已实施**（2026-05-25）。Phase 1：引用收集 + 按需解析。Phase 2：高级设备节点设置面板 + 连接继承展示 + copilot prompt 收紧。Phase 3：`test_connection_asset` 一次性诊断 IPC（serialport + tokio TCP 连通性探测，87 命令）。
 - ADR-0028 (CapabilityImpl 编码元数据扩展) — **已实施**（2026-06-02，ModbusWrite/CanWrite 补编码字段 + 新增 EthercatPdoWrite + 执行器按 data_type/byte_order 编码 + try_generate 不再失败）
 - ADR-0029（Copilot 资产操作两阶段确认门控）— **已实施**（2026-06-02，写入工具两阶段确认 + pending_confirmation + confirm_action/cancel_action IPC + 前端确认卡片）
+- ADR-0030（EthercatPdoWrite 执行器接入）— **已实施**（2026-06-02，byte_offset 累加计算 + EthercatBus read_outputs + read-modify-write 执行器）
 - RFC-0004 Phase 3 (Workflow DSL 编译器) — **已实施**（2026-05-03，`crates/dsl-compiler/` 编译器 + `stateMachine` + `capabilityCall` 节点类型 + 一致性测试 + 集成测试；2026-05-09 `capabilityCall` 已接入 `connection_id` 继承与 Modbus/MQTT/Serial/CAN 执行入口，`script` implementation 未接入执行器时 fail-fast）
 - RFC-0004 资产落盘与 AI 编辑挂接 — **已实施**（2026-05-05，Device / Capability 仅以工程工作路径 `dsl/devices` / `dsl/capabilities` YAML 文件持久化；SQLite 资产表逻辑已移除；新增 `load_ai_asset_context` IPC；画布内 AI 编辑读取已审查资产并可生成 `capabilityCall`）
 
@@ -126,6 +127,7 @@
 > 9d. ✅ EtherCAT 后端切回 ethercrab（2026-05-27，ADR-0027）。移除 SOEM vendor 依赖，全链路 safe Rust。
 > 9e. ✅ **ADR-0026** 资产连接绑定收口 Phase 1+2+3 — **已实施**（2026-05-25）。Phase 1：引用收集 + 按需解析。Phase 2：`deviceSignalRead` / `deviceEventTrigger` 新增设置面板，`capabilityCall` 连接选择改为只读继承展示，低层协议节点加调试标签，copilot prompt 禁止为高级设备节点生成 `connection_id`。Phase 3：`test_connection_asset` 一次性诊断 IPC，serial/TCP/HTTP/CAN 协议级探测。
 > 9f. ✅ **ADR-0028** CapabilityImpl 编码元数据扩展 — **已实施**（2026-06-02）。ModbusWrite/CanWrite 补编码字段 + 新增 EthercatPdoWrite + 执行器按 data_type/byte_order 编码 + try_generate 不再失败 + 旧 YAML serde(default) 兼容。
+> 9g. ✅ **ADR-0030** EthercatPdoWrite 执行器接入 — **已实施**（2026-06-02）
 > 10. 真实协议驱动扩展（OPC-UA、Kafka 消费者等）
 > 11. AI 能力扩展（embeddings、vision，未来 ADR）
 

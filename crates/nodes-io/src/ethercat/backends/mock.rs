@@ -80,6 +80,26 @@ impl EthercatBus for MockBackend {
         Ok(data)
     }
 
+    async fn read_outputs(&self, slave_address: u16) -> Result<Vec<u8>, EthercatError> {
+        let slaves = self
+            .slaves
+            .read()
+            .map_err(|_| EthercatError::LockContended)?;
+        let slave = slaves
+            .get(&slave_address)
+            .ok_or(EthercatError::SlaveNotFound {
+                address: slave_address,
+            })?;
+
+        if !slave.online {
+            return Err(EthercatError::PdoReadFailed(format!(
+                "从站 {slave_address} 离线"
+            )));
+        }
+
+        Ok(slave.output_bytes.clone())
+    }
+
     async fn write_outputs(&self, slave_address: u16, data: &[u8]) -> Result<(), EthercatError> {
         let mut slaves = self
             .slaves

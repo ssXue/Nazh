@@ -123,6 +123,8 @@ pub enum CapabilityImpl {
         sub_index: u8,
         bit_len: u16,
         #[serde(default)]
+        byte_offset: u16,
+        #[serde(default)]
         #[serde(skip_serializing_if = "Option::is_none")]
         data_type: Option<String>,
         #[serde(default)]
@@ -320,6 +322,7 @@ fn build_capability_from_signal(
             entry_index,
             sub_index,
             bit_len,
+            byte_offset,
             data_type,
             pdo_name: _,
             entry_name: _,
@@ -329,6 +332,7 @@ fn build_capability_from_signal(
             entry_index: *entry_index,
             sub_index: *sub_index,
             bit_len: *bit_len,
+            byte_offset: byte_offset.unwrap_or(0),
             data_type: data_type.clone(),
             byte_order: ByteOrder::LittleEndian,
             scale: signal.scale.clone(),

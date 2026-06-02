@@ -495,6 +495,130 @@ impl CapabilityCallNode {
             ))
         }
     }
+
+    /// ADR-0030：EtherCAT PDO 写入执行器（read-modify-write 模式）。
+    #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+    pub(super) async fn execute_ethercat_pdo_write(
+        &self,
+        trace_id: Uuid,
+        slave_address: Option<&u16>,
+        pdo_index: u16,
+        entry_index: u16,
+        sub_index: u8,
+        bit_len: u16,
+        byte_offset: u16,
+        data_type: Option<&str>,
+        byte_order: &str,
+        scale: Option<&str>,
+        resolved_value: String,
+        resolved_args: HashMap<String, Value>,
+    ) -> Result<NodeExecution, EngineError> {
+        #[cfg(feature = "io-ethercat")]
+        {
+            use crate::ethercat::session::EthercatRuntime;
+
+            let connection_id = self.connection_id()?.to_owned();
+            let runtime =
+                EthercatRuntime::new(self.connection_manager.clone(), connection_id.clone());
+            let session = runtime.ensure_session(&self.id).await.map_err(|error| {
+                EngineError::stage_execution(self.id.clone(), trace_id, error.to_string())
+            })?;
+
+            let target_slave = slave_address.copied().unwrap_or(1);
+            let effective_data_type = data_type.unwrap_or("u16");
+            let _ = scale;
+            let encoded =
+                encode_value_to_bytes(&resolved_value, effective_data_type, byte_order, &self.id)?;
+
+            let guard = session.bus(&self.id).await?;
+            let bus = guard.as_ref().ok_or(EngineError::node_config(
+                self.id.clone(),
+                "EtherCAT 总线会话已释放".to_owned(),
+            ))?;
+
+            let mut current_outputs = bus.read_outputs(target_slave).await.map_err(|e| {
+                let reason = format!("EtherCAT 读取输出 PDO 失败: {e}");
+                EngineError::stage_execution(self.id.clone(), trace_id, reason)
+            })?;
+
+            let byte_len = (bit_len as usize).div_ceil(8);
+            let start = byte_offset as usize;
+            if start + byte_len > current_outputs.len() {
+                return Err(EngineError::node_config(
+                    self.id.clone(),
+                    format!(
+                        "EtherCAT PDO 写入偏移越界：byte_offset={byte_offset} + byte_len={byte_len} > output_len={}",
+                        current_outputs.len()
+                    ),
+                ));
+            }
+
+            let write_bytes = &encoded[..byte_len.min(encoded.len())];
+            current_outputs[start..start + write_bytes.len()].copy_from_slice(write_bytes);
+
+            bus.write_outputs(target_slave, &current_outputs)
+                .await
+                .map_err(|e| {
+                    let reason = format!("EtherCAT PDO 写入失败: {e}");
+                    EngineError::stage_execution(self.id.clone(), trace_id, reason)
+                })?;
+
+            drop(guard);
+
+            let mut ec_meta = Map::new();
+            ec_meta.insert("operation".to_owned(), json!("pdo-write"));
+            ec_meta.insert("slave".to_owned(), json!(target_slave));
+            ec_meta.insert("pdo_index".to_owned(), json!(pdo_index));
+            ec_meta.insert("entry_index".to_owned(), json!(entry_index));
+            ec_meta.insert("sub_index".to_owned(), json!(sub_index));
+            ec_meta.insert("byte_offset".to_owned(), json!(byte_offset));
+            ec_meta.insert("bit_len".to_owned(), json!(bit_len));
+            ec_meta.insert(
+                "written_at".to_owned(),
+                json!(chrono::Utc::now().to_rfc3339()),
+            );
+            if let Some(lease) = session.lease() {
+                let (key, value) = connection_metadata(&self.id, lease)?;
+                ec_meta.insert(key, value);
+            }
+
+            let payload = json!({
+                "capability_id": self.config.capability_id,
+                "device_id": self.config.device_id,
+                "operation": "ethercat-pdo-write",
+                "slave": target_slave,
+                "pdo_index": pdo_index,
+                "entry_index": entry_index,
+                "sub_index": sub_index,
+                "byte_offset": byte_offset,
+                "bit_len": bit_len,
+                "args": resolved_args,
+            });
+            Ok(self.output(payload, Some(("ethercat", Value::Object(ec_meta)))))
+        }
+
+        #[cfg(not(feature = "io-ethercat"))]
+        {
+            let _ = (
+                trace_id,
+                slave_address,
+                pdo_index,
+                entry_index,
+                sub_index,
+                bit_len,
+                byte_offset,
+                data_type,
+                byte_order,
+                scale,
+                resolved_value,
+                resolved_args,
+            );
+            Err(EngineError::node_config(
+                self.id.clone(),
+                "当前构建未启用 io-ethercat，不能执行 EtherCAT PDO 写入 capabilityCall",
+            ))
+        }
+    }
 }
 
 /// 将字符串值按 `data_type` 编码为 Modbus 寄存器字（大端序 u16 数组）。

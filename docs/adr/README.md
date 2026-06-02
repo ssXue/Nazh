@@ -42,6 +42,7 @@ ADR（Architecture Decision Record）是一种轻量级文档格式，用于记�
 | [0027](0027-ethercat后端从SOEM切回ethercrab.md) | EtherCAT 后端从 SOEM 切回 ethercrab | 已实施 | 2026-05-27 |
 | [0028](0028-capability-impl-编码元数据扩展.md) | CapabilityImpl 编码元数据扩展 | 已接受 | 2026-06-02 |
 | [0029](0029-copilot-资产操作两阶段确认门控.md) | Copilot 资产操作两阶段确认门控 | 已接受 | 2026-06-02 |
+| [0030](0030-ethercat-pdo-write-执行器接入.md) | EthercatPdoWrite 执行器接入 | 已实施 | 2026-06-02 |
 
 ## 如何新增 ADR
 

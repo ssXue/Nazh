@@ -42,6 +42,7 @@ pub(super) fn capability_impl_to_json(impl_: &CapabilityImpl) -> Value {
             entry_index,
             sub_index,
             bit_len,
+            byte_offset,
             data_type,
             byte_order,
             scale,
@@ -61,6 +62,7 @@ pub(super) fn capability_impl_to_json(impl_: &CapabilityImpl) -> Value {
                 obj["data_type"] = serde_json::json!(dt);
             }
             obj["byte_order"] = serde_json::json!(byte_order);
+            obj["byte_offset"] = serde_json::json!(byte_offset);
             if let Some(s) = scale {
                 obj["scale"] = serde_json::json!(s);
             }

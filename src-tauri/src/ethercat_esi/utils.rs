@@ -114,6 +114,7 @@ pub(super) fn build_signals(device: &EsiDevice, warnings: &mut Vec<String>) -> V
             ));
             continue;
         };
+        let mut bit_offset: u16 = 0;
         for (entry_idx, entry) in pdo.entries.iter().enumerate() {
             if entry.index == Some(0) {
                 continue;
@@ -137,6 +138,7 @@ pub(super) fn build_signals(device: &EsiDevice, warnings: &mut Vec<String>) -> V
                 ));
                 1
             });
+            let byte_offset = bit_offset / 8;
             let signal_type = signal_type_for(pdo.direction, bit_len, entry.data_type.as_deref());
             let id = unique_signal_id(&signals, pdo, entry, entry_index, sub_index);
             signals.push(SignalSpec {
@@ -150,12 +152,14 @@ pub(super) fn build_signals(device: &EsiDevice, warnings: &mut Vec<String>) -> V
                     entry_index,
                     sub_index,
                     bit_len,
+                    byte_offset: Some(byte_offset),
                     data_type: entry.data_type.clone(),
                     pdo_name: pdo.name.clone(),
                     entry_name: entry.name.clone(),
                 },
                 scale: None,
             });
+            bit_offset += bit_len;
         }
     }
     signals
