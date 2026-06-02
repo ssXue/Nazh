@@ -317,6 +317,8 @@ pub fn run() {
             commands::copilot::copilot_rename_conversation,
             commands::copilot::copilot_load_conversation,
             commands::copilot::copilot_dispatch_tool,
+            commands::copilot::copilot_confirm_action,
+            commands::copilot::copilot_cancel_action,
             commands::copilot::copilot_save_message,
             commands::human_loop::respond_human_loop,
             commands::human_loop::list_pending_approvals,

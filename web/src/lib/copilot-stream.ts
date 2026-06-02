@@ -17,6 +17,11 @@ export interface ToolCallInfo {
 export interface ToolResultInfo {
   name: string;
   isError: boolean;
+  /** ADR-0029：写入工具返回的确认门控信息 */
+  pendingConfirmation?: {
+    summary: string;
+    token: string;
+  };
 }
 
 export interface CopilotStreamResult {

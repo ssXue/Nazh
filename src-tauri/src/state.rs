@@ -1,12 +1,21 @@
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use ai::AiConfigFile;
+use dashmap::DashMap;
 use nazh_engine::shared_connection_manager;
 use store::{Store, StoreHandle};
 use tauri::AppHandle;
 use tokio::sync::{Mutex, RwLock};
 
 use crate::{runtime::DesktopWorkflow, workspace::resolve_project_workspace_dir};
+
+/// Copilot 写入工具的两阶段确认 pending action（ADR-0029）。
+pub(crate) struct PendingCopilotAction {
+    pub(crate) tool_name: String,
+    pub(crate) arguments_json: String,
+    pub(crate) summary: String,
+    pub(crate) created_at: chrono::DateTime<chrono::Utc>,
+}
 
 /// Tauri 托管的应用状态，持有连接池和当前活跃的工作流。
 pub(crate) struct DesktopState {
@@ -19,6 +28,9 @@ pub(crate) struct DesktopState {
     pub(crate) store: std::sync::RwLock<Option<StoreHandle>>,
     /// 日志异步写入守护。持有到进程退出以保证刷盘。
     pub(crate) tracing_guard: std::sync::Mutex<Option<tracing_appender::non_blocking::WorkerGuard>>,
+    /// Copilot 写入工具的两阶段确认 pending actions（ADR-0029）。
+    /// key = 确认令牌（UUID），value = 待执行的写入操作。
+    pub(crate) pending_copilot_actions: DashMap<String, PendingCopilotAction>,
 }
 
 impl Default for DesktopState {
@@ -38,6 +50,7 @@ impl Default for DesktopState {
                     None
                 }
             }),
+            pending_copilot_actions: DashMap::new(),
         }
     }
 }

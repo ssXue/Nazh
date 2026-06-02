@@ -636,3 +636,74 @@ pub async fn dispatch_query_tool(
         _ => Err(format!("未知工具: {tool_name}")),
     }
 }
+
+/// ADR-0029：生成写入工具的操作摘要（用于两阶段确认）。
+///
+/// 只做参数校验和摘要生成，不执行实际写入。
+/// 返回人类可读的变更描述。
+pub(crate) fn generate_write_summary(
+    tool_name: &str,
+    args: &serde_json::Value,
+) -> Result<String, String> {
+    match tool_name {
+        "save_device_asset" => {
+            let id = args["id"].as_str().ok_or("缺少 id 参数")?;
+            let spec_yaml = args["spec_yaml"].as_str().ok_or("缺少 spec_yaml 参数")?;
+            // 校验 YAML 解析
+            let spec = nazh_dsl_core::parse_device_yaml(spec_yaml)
+                .map_err(|e| format!("设备 YAML 解析失败: {e}"))?;
+            let signal_count = spec.signals.len();
+            let alarm_count = spec.alarms.len();
+            let name = spec.model.clone().unwrap_or_else(|| id.to_owned());
+            Ok(format!(
+                "保存设备 `{id}`（{name}，{signal_count} 个信号，{alarm_count} 个告警）"
+            ))
+        }
+        "delete_device_asset" => {
+            let asset_id = args["asset_id"].as_str().ok_or("缺少 asset_id 参数")?;
+            Ok(format!("删除设备 `{asset_id}`（此操作不可撤销）"))
+        }
+        "save_capability_asset" => {
+            let id = args["id"].as_str().ok_or("缺少 id 参数")?;
+            let spec_yaml = args["spec_yaml"].as_str().ok_or("缺少 spec_yaml 参数")?;
+            let spec = nazh_dsl_core::parse_capability_yaml(spec_yaml)
+                .map_err(|e| format!("能力 YAML 解析失败: {e}"))?;
+            Ok(format!(
+                "保存能力 `{id}`（设备: {}，{} 个输入，{} 个输出）",
+                spec.device_id,
+                spec.inputs.len(),
+                spec.outputs.len()
+            ))
+        }
+        "add_device_signal" => {
+            let asset_id = args["asset_id"].as_str().ok_or("缺少 asset_id 参数")?;
+            Ok(format!("为设备 `{asset_id}` 添加信号"))
+        }
+        "remove_device_signal" => {
+            let asset_id = args["asset_id"].as_str().ok_or("缺少 asset_id 参数")?;
+            let signal_index = args["signal_index"]
+                .as_u64()
+                .ok_or("缺少 signal_index 参数")?;
+            Ok(format!("从设备 `{asset_id}` 删除信号索引 {signal_index}"))
+        }
+        "bind_device_connection" => {
+            let asset_id = args["asset_id"].as_str().ok_or("缺少 asset_id 参数")?;
+            let connection_id = args
+                .get("connection_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("无");
+            Ok(format!(
+                "更新设备 `{asset_id}` 的连接绑定（连接: {connection_id}）"
+            ))
+        }
+        "patch_device_field" => {
+            let asset_id = args["asset_id"].as_str().ok_or("缺少 asset_id 参数")?;
+            let path = args["path"].as_str().ok_or("缺少 path 参数")?;
+            let value = args["value"].as_str().ok_or("缺少 value 参数")?;
+            Ok(format!(
+                "修改设备 `{asset_id}` 的字段 `{path}` 为 `{value}`"
+            ))
+        }
+        _ => Err(format!("未知写入工具: {tool_name}")),
+    }
+}

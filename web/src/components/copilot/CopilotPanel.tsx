@@ -35,6 +35,11 @@ export interface LocalMessage {
   toolCalls?: ToolCallInfo[];
   toolResults?: ToolResultInfo[];
   canvasOps?: CanvasOpEvent[];
+  /** ADR-0029：待确认的写入操作 */
+  pendingConfirmation?: {
+    summary: string;
+    token: string;
+  };
 }
 
 function localConversationId(): string {
@@ -55,6 +60,7 @@ interface PendingUpdate {
   toolCalls?: ToolCallInfo[];
   toolResults?: ToolResultInfo[];
   canvasOps?: CanvasOpEvent[];
+  pendingConfirmation?: { summary: string; token: string };
 }
 
 const COPILOT_MIN_WIDTH = 320;
@@ -112,6 +118,7 @@ export const CopilotPanel = forwardRef<CopilotPanelHandle, CopilotPanelProps>(
         canvasOps: update.canvasOps ?? m.canvasOps,
         toolCalls: update.toolCalls ?? m.toolCalls,
         toolResults: update.toolResults ?? m.toolResults,
+        pendingConfirmation: update.pendingConfirmation ?? m.pendingConfirmation,
       } : m)),
     );
   }, []);
@@ -376,12 +383,14 @@ export const CopilotPanel = forwardRef<CopilotPanelHandle, CopilotPanelProps>(
             scheduleFlush();
           },
           onToolResult: (toolResultInfo) => {
-            panelLog('toolResult 回调', { name: toolResultInfo.name, isError: toolResultInfo.isError });
+            panelLog('toolResult 回调', { name: toolResultInfo.name, isError: toolResultInfo.isError, pending: !!toolResultInfo.pendingConfirmation });
             const current = pendingUpdateRef.current;
             pendingUpdateRef.current = {
               ...current,
               content: current?.content ?? '',
               toolResults: [...(current?.toolResults ?? []), toolResultInfo],
+              // ADR-0029：记录最后一个 pending confirmation
+              pendingConfirmation: toolResultInfo.pendingConfirmation ?? current?.pendingConfirmation,
             };
             scheduleFlush();
           },

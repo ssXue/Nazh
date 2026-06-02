@@ -79,12 +79,22 @@ pub(crate) async fn copilot_load_conversation(
         .map(|msgs| msgs.iter().map(map_message).collect())
         .map_err(|e| e.to_string())
 }
+/// ADR-0029：需要两阶段确认的写入工具。
+const WRITE_TOOLS: &[&str] = &[
+    "save_device_asset",
+    "delete_device_asset",
+    "save_capability_asset",
+    "add_device_signal",
+    "remove_device_signal",
+    "bind_device_connection",
+    "patch_device_field",
+];
 
 /// 调度单个 Copilot 查询工具。
 ///
-/// 仅处理只读查询工具（如 `query_node_catalog`、`search_devices` 等），
-/// 画布操作工具（`create_workflow`、`add_workflow_node` 等）由前端直接执行。
-/// 返回工具执行结果的 JSON 字符串。
+/// 只读工具直接执行。写入工具（`WRITE_TOOLS`）需要两阶段确认（ADR-0029）：
+/// 1. 首次调用：校验参数、生成操作摘要、存储 pending action、返回 `pending_confirmation`
+/// 2. 用户在前端点击确认后，前端调用 `copilot_confirm_action(token)` 完成写入
 #[tauri::command]
 pub(crate) async fn copilot_dispatch_tool(
     tool_name: String,
@@ -114,6 +124,52 @@ pub(crate) async fn copilot_dispatch_tool(
         (active_id, summaries)
     };
 
+    // 写入工具的两阶段确认门控（ADR-0029）
+    if WRITE_TOOLS.contains(&tool_name.as_str()) {
+        let args: serde_json::Value =
+            serde_json::from_str(&arguments_json).map_err(|e| format!("参数解析失败: {e}"))?;
+        let confirmed = args
+            .get("confirmed")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false);
+
+        if !confirmed {
+            // 阶段 1：校验参数 → 生成摘要 → 存储 pending → 返回 pending_confirmation
+            let summary = copilot_tools::generate_write_summary(&tool_name, &args)?;
+            let token = Uuid::new_v4().to_string();
+
+            state.pending_copilot_actions.insert(
+                token.clone(),
+                crate::state::PendingCopilotAction {
+                    tool_name: tool_name.clone(),
+                    arguments_json: arguments_json.clone(),
+                    summary: summary.clone(),
+                    created_at: Utc::now(),
+                },
+            );
+
+            return Ok(serde_json::json!({
+                "status": "pending_confirmation",
+                "summary": summary,
+                "token": token,
+            })
+            .to_string());
+        }
+
+        // confirmed == true：执行写入
+        return copilot_tools::dispatch_query_tool(
+            &tool_name,
+            &arguments_json,
+            &state.connection_manager,
+            active_workflow_id.as_ref(),
+            &workflow_summaries,
+            workspace_path.as_ref(),
+            &app,
+        )
+        .await;
+    }
+
+    // 只读工具直接执行
     copilot_tools::dispatch_query_tool(
         &tool_name,
         &arguments_json,
@@ -124,6 +180,85 @@ pub(crate) async fn copilot_dispatch_tool(
         &app,
     )
     .await
+}
+
+/// 确认并执行一个 pending 的 copilot 写入操作（ADR-0029）。
+#[tauri::command]
+pub(crate) async fn copilot_confirm_action(
+    token: String,
+    app: tauri::AppHandle,
+    state: State<'_, DesktopState>,
+) -> Result<String, String> {
+    let (_key, action) = state
+        .pending_copilot_actions
+        .remove(&token)
+        .ok_or_else(|| "确认令牌无效或已过期".to_owned())?;
+
+    // TTL 检查：5 分钟
+    let elapsed = Utc::now()
+        .signed_duration_since(action.created_at)
+        .num_seconds();
+    if elapsed > 300 {
+        return Err("确认令牌已过期（超过 5 分钟），请重新发起操作".to_owned());
+    }
+
+    // 执行写入
+    let (active_workflow_id, workflow_summaries) = {
+        let active_id = state.active_workflow_id.lock().await.clone();
+        let workflows = state.workflows.lock().await;
+        let summaries: Vec<serde_json::Value> = workflows
+            .values()
+            .map(|w| {
+                let is_active = active_id.as_ref().is_some_and(|id| w.workflow_id == *id);
+                let s = w.summary(is_active);
+                json!({
+                    "workflow_id": s.workflow_id,
+                    "node_count": s.node_count,
+                    "edge_count": s.edge_count,
+                    "active": s.active,
+                    "deployed_at": s.deployed_at,
+                })
+            })
+            .collect();
+        (active_id, summaries)
+    };
+
+    // 在参数中注入 confirmed: true 以跳过门控
+    let mut args: serde_json::Value = serde_json::from_str(&action.arguments_json)
+        .map_err(|e| format!("pending action 参数解析失败: {e}"))?;
+    args.as_object_mut()
+        .map(|obj| obj.insert("confirmed".to_owned(), serde_json::json!(true)));
+
+    let result = copilot_tools::dispatch_query_tool(
+        &action.tool_name,
+        &serde_json::to_string(&args).map_err(|e| format!("参数序列化失败: {e}"))?,
+        &state.connection_manager,
+        active_workflow_id.as_ref(),
+        &workflow_summaries,
+        None,
+        &app,
+    )
+    .await?;
+
+    Ok(serde_json::json!({
+        "status": "confirmed",
+        "summary": action.summary,
+        "result": result,
+    })
+    .to_string())
+}
+
+/// 取消一个 pending 的 copilot 写入操作（ADR-0029）。
+#[tauri::command]
+pub(crate) async fn copilot_cancel_action(
+    token: String,
+    state: State<'_, DesktopState>,
+) -> Result<String, String> {
+    let (_key, action) = state
+        .pending_copilot_actions
+        .remove(&token)
+        .ok_or_else(|| "令牌无效或已过期".to_owned())?;
+    Ok(format!("操作已取消：{}", action.summary))
 }
 
 /// 重命名 copilot 对话标题。

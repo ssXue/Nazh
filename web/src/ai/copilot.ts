@@ -116,7 +116,7 @@ export interface CopilotCallbacks {
   onDelta?: (accumulated: string) => void;
   onThinking?: (accumulated: string) => void;
   onToolCalls?: (info: { names: string[] }) => void;
-  onToolResult?: (info: { name: string; isError: boolean }) => void;
+  onToolResult?: (info: { name: string; isError: boolean; pendingConfirmation?: { summary: string; token: string } }) => void;
   onCanvasOp?: (op: CanvasOpEvent) => void;
   getNodeConfig?: (nodeId: string) => { node_type: string; label?: string; config: Record<string, unknown> } | null;
 }
@@ -206,8 +206,18 @@ export async function copilotStream(options: CopilotStreamOptions): Promise<Copi
         for (const tr of toolResults) {
           const output = tr.output;
           const isError = typeof output === 'string' && output.startsWith('错误:');
-          copilotLog('tool result', { name: tr.toolName, isError });
-          callbacks?.onToolResult?.({ name: tr.toolName, isError });
+          // ADR-0029：检测 pending_confirmation
+          let pendingConfirmation: { summary: string; token: string } | undefined;
+          if (typeof output === 'string') {
+            try {
+              const parsed = JSON.parse(output);
+              if (parsed?.status === 'pending_confirmation' && parsed.summary && parsed.token) {
+                pendingConfirmation = { summary: parsed.summary, token: parsed.token };
+              }
+            } catch { /* 非 JSON 输出，忽略 */ }
+          }
+          copilotLog('tool result', { name: tr.toolName, isError, pending: !!pendingConfirmation });
+          callbacks?.onToolResult?.({ name: tr.toolName, isError, pendingConfirmation });
         }
       }
     },

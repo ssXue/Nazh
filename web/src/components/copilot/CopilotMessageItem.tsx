@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 
 import type { CanvasOpEvent } from '../../lib/copilot-stream';
 import { MarkdownContent } from './MarkdownContent';
-
 interface Props {
   role: 'user' | 'assistant';
   content: string;
@@ -10,6 +10,8 @@ interface Props {
   toolCalls?: import('../../lib/copilot-stream').ToolCallInfo[];
   toolResults?: import('../../lib/copilot-stream').ToolResultInfo[];
   canvasOps?: CanvasOpEvent[];
+  /** ADR-0029：待确认的写入操作 */
+  pendingConfirmation?: { summary: string; token: string };
 }
 
 function CanvasOpsCard({ ops }: { ops: CanvasOpEvent[] }) {
@@ -50,10 +52,38 @@ export function CopilotMessageItem({
   toolCalls,
   toolResults,
   canvasOps,
+  pendingConfirmation,
 }: Props) {
   const isUser = role === 'user';
   const hasCanvasOps = canvasOps && canvasOps.length > 0;
+  const [confirmState, setConfirmState] = useState<'pending' | 'confirmed' | 'cancelled' | 'error'>(
+    pendingConfirmation ? 'pending' : 'pending',
+  );
 
+  const handleConfirm = useCallback(async () => {
+    if (!pendingConfirmation) return;
+    try {
+      const result = await invoke<string>('copilot_confirm_action', { token: pendingConfirmation.token });
+      const parsed = JSON.parse(result);
+      if (parsed.status === 'confirmed') {
+        setConfirmState('confirmed');
+      } else {
+        setConfirmState('error');
+      }
+    } catch {
+      setConfirmState('error');
+    }
+  }, [pendingConfirmation]);
+
+  const handleCancel = useCallback(async () => {
+    if (!pendingConfirmation) return;
+    try {
+      await invoke<string>('copilot_cancel_action', { token: pendingConfirmation.token });
+      setConfirmState('cancelled');
+    } catch {
+      setConfirmState('error');
+    }
+  }, [pendingConfirmation]);
   return (
     <div className={`copilot-msg${isUser ? ' copilot-msg--user' : ' copilot-msg--assistant'}`} data-testid="copilot-message">
       <div className="copilot-msg__bubble">
@@ -83,6 +113,28 @@ export function CopilotMessageItem({
           <CollapsibleUserContent content={content} placeholder={streaming ? '...' : ''} />
         ) : (
           <MarkdownContent content={content} streaming={streaming} />
+        )}
+        {pendingConfirmation && confirmState === 'pending' && (
+          <div className="copilot-confirm-card">
+            <div className="copilot-confirm-card__summary">{pendingConfirmation.summary}</div>
+            <div className="copilot-confirm-card__actions">
+              <button type="button" className="copilot-confirm-card__btn copilot-confirm-card__btn--confirm" onClick={handleConfirm}>
+                确认执行
+              </button>
+              <button type="button" className="copilot-confirm-card__btn copilot-confirm-card__btn--cancel" onClick={handleCancel}>
+                取消
+              </button>
+            </div>
+          </div>
+        )}
+        {pendingConfirmation && confirmState === 'confirmed' && (
+          <div className="copilot-confirm-card copilot-confirm-card--done">✓ 操作已执行</div>
+        )}
+        {pendingConfirmation && confirmState === 'cancelled' && (
+          <div className="copilot-confirm-card copilot-confirm-card--cancelled">已取消</div>
+        )}
+        {pendingConfirmation && confirmState === 'error' && (
+          <div className="copilot-confirm-card copilot-confirm-card--error">执行失败</div>
         )}
         {streaming && <span className="copilot-msg__cursor" />}
       </div>

@@ -31,6 +31,7 @@
 - RFC-0003 — **已实施**（Phase 1–4 全部落地，2026-05-17）：`observability_records` SQLite 索引表接入 `observability/` 模块，事件/审计/告警直接写 Store（JSONL 双写已移除）；`deployment_audit` 表写入 deploy / undeploy 生命周期动作；变量变更 / 删除写入审计记录；部署 ast_hash 版本变更检测；新增 `query_deployment_audit` IPC（86 命令）。批量 writer 已实施（`crates/store/src/batch.rs`，`BatchWriter<O>` 异步入队 + 定时/定量 flush + Drop graceful shutdown）。Phase 4 连接私密配置已由 ADR-0025 实施（`connection_private.rs`）。
 - ADR-0026（资产连接绑定收口）— **Phase 1+2+3 已实施**（2026-05-25）。Phase 1：引用收集 + 按需解析。Phase 2：高级设备节点设置面板 + 连接继承展示 + copilot prompt 收紧。Phase 3：`test_connection_asset` 一次性诊断 IPC（serialport + tokio TCP 连通性探测，87 命令）。
 - ADR-0028 (CapabilityImpl 编码元数据扩展) — **已实施**（2026-06-02，ModbusWrite/CanWrite 补编码字段 + 新增 EthercatPdoWrite + 执行器按 data_type/byte_order 编码 + try_generate 不再失败）
+- ADR-0029（Copilot 资产操作两阶段确认门控）— **已实施**（2026-06-02，写入工具两阶段确认 + pending_confirmation + confirm_action/cancel_action IPC + 前端确认卡片）
 - RFC-0004 Phase 3 (Workflow DSL 编译器) — **已实施**（2026-05-03，`crates/dsl-compiler/` 编译器 + `stateMachine` + `capabilityCall` 节点类型 + 一致性测试 + 集成测试；2026-05-09 `capabilityCall` 已接入 `connection_id` 继承与 Modbus/MQTT/Serial/CAN 执行入口，`script` implementation 未接入执行器时 fail-fast）
 - RFC-0004 资产落盘与 AI 编辑挂接 — **已实施**（2026-05-05，Device / Capability 仅以工程工作路径 `dsl/devices` / `dsl/capabilities` YAML 文件持久化；SQLite 资产表逻辑已移除；新增 `load_ai_asset_context` IPC；画布内 AI 编辑读取已审查资产并可生成 `capabilityCall`）
 

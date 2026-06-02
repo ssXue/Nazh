@@ -63,6 +63,7 @@ export function CopilotChatView({
             toolCalls={msg.toolCalls}
             toolResults={msg.toolResults}
             canvasOps={msg.canvasOps}
+            pendingConfirmation={msg.pendingConfirmation}
           />
         ))}
       </div>
