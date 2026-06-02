@@ -5,9 +5,8 @@
 use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 
-use crate::device::{AccessMode, DeviceSpec, SignalSource, SignalType};
+use crate::device::{AccessMode, ByteOrder, DataType, DeviceSpec, SignalSource, SignalType};
 use crate::error::DslError;
 use crate::workflow::{HumanDuration, Range};
 
@@ -80,6 +79,16 @@ pub struct CapabilityOutput {
 pub enum CapabilityImpl {
     ModbusWrite {
         register: u16,
+        #[serde(default)]
+        data_type: DataType,
+        #[serde(default)]
+        #[serde(skip_serializing_if = "Option::is_none")]
+        bit: Option<u8>,
+        #[serde(default)]
+        byte_order: ByteOrder,
+        #[serde(default)]
+        #[serde(skip_serializing_if = "Option::is_none")]
+        scale: Option<String>,
         value: String,
     },
     MqttPublish {
@@ -91,8 +100,37 @@ pub enum CapabilityImpl {
     },
     CanWrite {
         can_id: u32,
-        data: String,
         is_extended: bool,
+        #[serde(default)]
+        byte_offset: u8,
+        #[serde(default)]
+        byte_length: u8,
+        #[serde(default)]
+        data_type: DataType,
+        #[serde(default)]
+        byte_order: ByteOrder,
+        #[serde(default)]
+        #[serde(skip_serializing_if = "Option::is_none")]
+        scale: Option<String>,
+        data: String,
+    },
+    EthercatPdoWrite {
+        #[serde(default)]
+        #[serde(skip_serializing_if = "Option::is_none")]
+        slave_address: Option<u16>,
+        pdo_index: u16,
+        entry_index: u16,
+        sub_index: u8,
+        bit_len: u16,
+        #[serde(default)]
+        #[serde(skip_serializing_if = "Option::is_none")]
+        data_type: Option<String>,
+        #[serde(default)]
+        byte_order: ByteOrder,
+        #[serde(default)]
+        #[serde(skip_serializing_if = "Option::is_none")]
+        scale: Option<String>,
+        value: String,
     },
     Script {
         content: String,
@@ -146,6 +184,9 @@ impl CapabilitySpec {
             CapabilityImpl::Script { content } => {
                 validate_template_expr(self, "implementation.content", content, &input_ids)?;
             }
+            CapabilityImpl::EthercatPdoWrite { .. } => {
+                // EthercatPdoWrite does not use template expressions
+            }
         }
 
         // preconditions 基本语法检查
@@ -176,16 +217,11 @@ impl CapabilitySpec {
 /// 每个写信号（`AnalogOutput` / `DigitalOutput`，或 `AccessMode::Write` / `ReadWrite`）
 /// 映射为一个能力，信号元数据（量程、单位、寄存器地址）映射到能力输入和实现。
 pub fn generate_capabilities_from_device(device: &DeviceSpec) -> Vec<CapabilitySpec> {
-    try_generate_capabilities_from_device(device).unwrap_or_default()
+    try_generate_capabilities_from_device(device)
 }
 
-/// 从设备写信号生成能力，遇到当前 `CapabilityImpl` 无法无损表达的编码语义时拒绝。
-///
-/// CAN / Modbus / `EtherCAT` 写入需要保留位宽、数据类型、字节序、缩放或 PDO 等编码语义；
-/// 当前 `CapabilityImpl` 只能表达模板字符串，不能证明运行时会按设备信号正确编码。
-pub fn try_generate_capabilities_from_device(
-    device: &DeviceSpec,
-) -> Result<Vec<CapabilitySpec>, DslError> {
+/// ADR-0028 后所有 `SignalSource` 都可自动生成能力，此函数不再失败。
+pub fn try_generate_capabilities_from_device(device: &DeviceSpec) -> Vec<CapabilitySpec> {
     device
         .signals
         .iter()
@@ -218,94 +254,18 @@ fn infer_single_capability(
     device: &DeviceSpec,
     signal: &crate::device::SignalSpec,
 ) -> CapabilityInference {
-    if let Ok(capability) = build_capability_from_signal(device, signal) {
-        CapabilityInference::Generated {
-            capability: Box::new(capability),
-            source_signal_id: signal.id.clone(),
-        }
-    } else {
-        // 无法自动生成，构建编码上下文
-        let (source_type, encoding_info) = match &signal.source {
-            SignalSource::Register {
-                register,
-                access,
-                data_type,
-                bit,
-            } => (
-                "register",
-                json!({
-                    "source_type": "register",
-                    "register": register,
-                    "access": format!("{access:?}").to_lowercase(),
-                    "data_type": format!("{data_type:?}"),
-                    "bit": bit,
-                    "scale": signal.scale,
-                }),
-            ),
-            SignalSource::CanFrame {
-                can_id,
-                is_extended,
-                byte_offset,
-                byte_length,
-                data_type,
-                byte_order,
-            } => (
-                "can_frame",
-                json!({
-                    "source_type": "can_frame",
-                    "can_id": can_id,
-                    "is_extended": is_extended,
-                    "byte_offset": byte_offset,
-                    "byte_length": byte_length,
-                    "data_type": format!("{data_type:?}"),
-                    "byte_order": format!("{byte_order:?}"),
-                    "scale": signal.scale,
-                }),
-            ),
-            SignalSource::EthercatPdo {
-                slave_address,
-                pdo_index,
-                entry_index,
-                sub_index,
-                bit_len,
-                data_type,
-                pdo_name,
-                entry_name,
-            } => (
-                "ethercat_pdo",
-                json!({
-                    "source_type": "ethercat_pdo",
-                    "slave_address": slave_address,
-                    "pdo_index": pdo_index,
-                    "entry_index": entry_index,
-                    "sub_index": sub_index,
-                    "bit_len": bit_len,
-                    "data_type": data_type,
-                    "pdo_name": pdo_name,
-                    "entry_name": entry_name,
-                    "scale": signal.scale,
-                }),
-            ),
-            // Topic / SerialCommand 不会到这里（build_capability_from_signal 对它们总是成功）
-            SignalSource::Topic { .. } | SignalSource::SerialCommand { .. } => {
-                ("unknown", json!({ "source_type": "unknown" }))
-            }
-        };
-        CapabilityInference::Unsupported {
-            signal_id: signal.id.clone(),
-            reason: format!(
-                "信号 `{}` (source: {source_type}) 的 CapabilityImpl 无法自动生成",
-                signal.id
-            ),
-            encoding_info,
-        }
+    // ADR-0028: build_capability_from_signal 对所有 SignalSource 均成功
+    let capability = build_capability_from_signal(device, signal);
+    CapabilityInference::Generated {
+        capability: Box::new(capability),
+        source_signal_id: signal.id.clone(),
     }
 }
 
 fn build_capability_from_signal(
     device: &DeviceSpec,
     signal: &crate::device::SignalSpec,
-) -> Result<CapabilitySpec, DslError> {
+) -> CapabilitySpec {
     let cap_id = format!("{}.write_{}", device.id, signal.id);
     let cap_name = format!("写入 {}", signal.id);
 
@@ -322,15 +282,14 @@ fn build_capability_from_signal(
             bit,
             access: _,
             register,
-        } => {
-            return Err(DslError::Validation {
-                context: format!("device `{}` signal `{}`", device.id, signal.id),
-                detail: format!(
-                    "当前 CapabilityImpl::ModbusWrite 不能无损表达 Modbus 编码语义：register={register}, data_type={data_type:?}, bit={bit:?}, scale={:?}",
-                    signal.scale
-                ),
-            });
-        }
+        } => CapabilityImpl::ModbusWrite {
+            register: *register,
+            data_type: *data_type,
+            bit: *bit,
+            byte_order: ByteOrder::BigEndian,
+            scale: signal.scale.clone(),
+            value: "${value}".to_owned(),
+        },
         SignalSource::Topic { topic } => CapabilityImpl::MqttPublish {
             topic: topic.clone(),
             payload: "${value}".to_owned(),
@@ -345,15 +304,16 @@ fn build_capability_from_signal(
             byte_length,
             data_type,
             byte_order,
-        } => {
-            return Err(DslError::Validation {
-                context: format!("device `{}` signal `{}`", device.id, signal.id),
-                detail: format!(
-                    "当前 CapabilityImpl::CanWrite 不能无损表达 CAN 编码语义：can_id={can_id}, is_extended={is_extended}, byte_offset={byte_offset}, byte_length={byte_length}, data_type={data_type:?}, byte_order={byte_order:?}, scale={:?}",
-                    signal.scale
-                ),
-            });
-        }
+        } => CapabilityImpl::CanWrite {
+            can_id: *can_id,
+            is_extended: *is_extended,
+            byte_offset: *byte_offset,
+            byte_length: *byte_length,
+            data_type: *data_type,
+            byte_order: *byte_order,
+            scale: signal.scale.clone(),
+            data: "${value}".to_owned(),
+        },
         SignalSource::EthercatPdo {
             slave_address,
             pdo_index,
@@ -361,20 +321,22 @@ fn build_capability_from_signal(
             sub_index,
             bit_len,
             data_type,
-            pdo_name,
-            entry_name,
-        } => {
-            return Err(DslError::Validation {
-                context: format!("device `{}` signal `{}`", device.id, signal.id),
-                detail: format!(
-                    "当前 CapabilityImpl::Script 不能无损表达 EtherCAT PDO 写入语义：slave_address={slave_address:?}, pdo_index={pdo_index}, entry_index={entry_index}, sub_index={sub_index}, bit_len={bit_len}, data_type={data_type:?}, pdo_name={pdo_name:?}, entry_name={entry_name:?}, scale={:?}",
-                    signal.scale
-                ),
-            });
-        }
+            pdo_name: _,
+            entry_name: _,
+        } => CapabilityImpl::EthercatPdoWrite {
+            slave_address: *slave_address,
+            pdo_index: *pdo_index,
+            entry_index: *entry_index,
+            sub_index: *sub_index,
+            bit_len: *bit_len,
+            data_type: data_type.clone(),
+            byte_order: ByteOrder::LittleEndian,
+            scale: signal.scale.clone(),
+            value: "${value}".to_owned(),
+        },
     };
 
-    Ok(CapabilitySpec {
+    CapabilitySpec {
         id: cap_id,
         device_id: device.id.clone(),
         description: format!("自动生成：{cap_name}"),
@@ -389,7 +351,7 @@ fn build_capability_from_signal(
             requires_approval: false,
             max_execution_time: None,
         },
-    })
+    }
 }
 
 /// 判断信号是否为写信号。

@@ -19,7 +19,7 @@ crates/dsl-core/src/
 ├── error.rs        # DslError (YamlParse / Validation / JsonSerialization)
 ├── connection.rs   # ConnectionSpec / ConnectionProtocol / ConnectionGovernanceSpec / ConnectionSecretRefs（ADR-0025）
 ├── device.rs       # DeviceSpec / SignalSpec / AlarmSpec / ConnectionRef / SignalSource（含 CanFrame / EthercatPdo）/ SignalType / AccessMode / DataType / ByteOrder / AlarmSeverity + DeviceSpec::validate() + ValidationLevel / ValidationDiagnostic / ValidationResult（RFC-0006 Phase 1）
-├── capability.rs   # CapabilitySpec / CapabilityParam / CapabilityOutput / CapabilityImpl（含 CanWrite）/ SafetyConstraints / SafetyLevel + validate() + generate_capabilities_from_device() / try_generate_capabilities_from_device()（Phase 2）
+├── capability.rs   # CapabilitySpec / CapabilityParam / CapabilityOutput / CapabilityImpl（含 ModbusWrite/CanWrite 编码元数据 + EthercatPdoWrite）/ SafetyConstraints / SafetyLevel + validate() + generate_capabilities_from_device() / try_generate_capabilities_from_device()（Phase 2）
 ├── workflow.rs     # WorkflowSpec / StateSpec / TransitionSpec / ActionSpec / ActionTarget / Range / HumanDuration
 ├── parser.rs       # parse_*_yaml / parse_*_yaml_validated
 └── pin_mapping.rs  # signal_to_pin_type / signal_to_direction / signal_id_to_label / signals_to_pin_definitions（Phase 1）
@@ -52,7 +52,7 @@ crates/dsl-core/src/
   | 告警 condition 非空且括号匹配 | error | `alarms[N].condition` |
 - `CapabilitySpec::validate()` 必须覆盖 required input range、模板变量是否存在于 inputs、重复 input/output id、fallback 非空/非重复/非自引用等可在单资产内验证的约束。
 - `ConnectionSpec::validate()` 必须覆盖连接 ID 非空、协议字段非空、治理阈值显式有效、密钥引用格式、HTTP 敏感 Header 不允许明文 literal。连接资产不得保存明文 password/token/device_key/Authorization 等敏感值。
-- 从 Device signal 生成 Capability 时，`try_generate_capabilities_from_device()` 是带诊断的入口；`generate_capabilities_from_device()` 仅保留兼容用途。当前结构无法无损表达 CAN / Modbus / EtherCAT 编码语义时必须拒绝生成，而不是用 `${value}` 伪装成功。
+- 从 Device signal 生成 Capability 时，`try_generate_capabilities_from_device()` 是带诊断的入口；`generate_capabilities_from_device()` 仅保留兼容用途。ADR-0028 后所有 SignalSource 都可自动生成能力；CapabilityImpl 携带完整编码元数据（data_type/byte_order/byte_offset/byte_length/scale/bit），执行器按编码字段做值→帧编码。旧 YAML 通过 serde(default) 补全默认值（U16/BigEndian/零偏移）。
 
 ## 修改本 crate 时
 

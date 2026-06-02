@@ -129,15 +129,6 @@ pub(super) fn metadata_u8_or(
     }
 }
 
-pub(super) fn parse_u16_value(value: &str, node_id: &str, label: &str) -> Result<u16, EngineError> {
-    value.trim().parse::<u16>().map_err(|error| {
-        EngineError::node_config(
-            node_id.to_owned(),
-            format!("{label} `{value}` 不是有效 u16: {error}"),
-        )
-    })
-}
-
 pub(super) fn parse_hex_bytes(value: &str) -> Result<Vec<u8>, String> {
     let without_prefix = value.replace("0x", "").replace("0X", "");
     let mut cleaned = String::with_capacity(without_prefix.len());

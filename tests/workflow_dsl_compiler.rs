@@ -46,6 +46,10 @@ fn sample_modbus_cap(id: &str, device_id: &str, register: u16, value: &str) -> C
         effects: vec![],
         implementation: CapabilityImpl::ModbusWrite {
             register,
+            data_type: nazh_dsl_core::device::DataType::U16,
+            bit: None,
+            byte_order: nazh_dsl_core::device::ByteOrder::BigEndian,
+            scale: None,
             value: value.to_owned(),
         },
         fallback: vec![],

@@ -5,7 +5,9 @@ use serde_json::{Map, Value};
 /// 将 `CapabilityImpl` 映射为编译器输出的 JSON 片段。
 pub(super) fn capability_impl_to_json(impl_: &CapabilityImpl) -> Value {
     match impl_ {
-        CapabilityImpl::ModbusWrite { register, value } => serde_json::json!({
+        CapabilityImpl::ModbusWrite {
+            register, value, ..
+        } => serde_json::json!({
             "type": "modbus-write",
             "register": register,
             "value_template": value,
@@ -23,6 +25,7 @@ pub(super) fn capability_impl_to_json(impl_: &CapabilityImpl) -> Value {
             can_id,
             data,
             is_extended,
+            ..
         } => serde_json::json!({
             "type": "can-write",
             "can_id": can_id,
@@ -33,6 +36,36 @@ pub(super) fn capability_impl_to_json(impl_: &CapabilityImpl) -> Value {
             "type": "script",
             "content": content,
         }),
+        CapabilityImpl::EthercatPdoWrite {
+            slave_address,
+            pdo_index,
+            entry_index,
+            sub_index,
+            bit_len,
+            data_type,
+            byte_order,
+            scale,
+            ..
+        } => {
+            let mut obj = serde_json::json!({
+                "type": "ethercat-pdo-write",
+                "pdo_index": pdo_index,
+                "entry_index": entry_index,
+                "sub_index": sub_index,
+                "bit_len": bit_len,
+            });
+            if let Some(addr) = slave_address {
+                obj["slave_address"] = serde_json::json!(addr);
+            }
+            if let Some(dt) = data_type {
+                obj["data_type"] = serde_json::json!(dt);
+            }
+            obj["byte_order"] = serde_json::json!(byte_order);
+            if let Some(s) = scale {
+                obj["scale"] = serde_json::json!(s);
+            }
+            obj
+        }
     }
 }
 

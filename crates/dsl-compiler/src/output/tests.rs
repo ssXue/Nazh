@@ -1,6 +1,6 @@
 use super::*;
 use nazh_dsl_core::capability::{CapabilityImpl, CapabilitySpec, SafetyConstraints, SafetyLevel};
-use nazh_dsl_core::device::{ConnectionRef, DeviceSpec};
+use nazh_dsl_core::device::{ByteOrder, ConnectionRef, DataType, DeviceSpec};
 use nazh_dsl_core::workflow::WorkflowSpec;
 
 fn sample_device(id: &str, conn_id: &str) -> DeviceSpec {
@@ -33,6 +33,10 @@ fn sample_capability_modbus(id: &str, device_id: &str, register: u16) -> Capabil
         implementation: CapabilityImpl::ModbusWrite {
             register,
             value: "${value}".to_owned(),
+            data_type: DataType::U16,
+            bit: None,
+            byte_order: ByteOrder::BigEndian,
+            scale: None,
         },
         fallback: vec![],
         safety: SafetyConstraints {

@@ -44,6 +44,16 @@ pub struct CapabilityCallConfig {
 pub enum CapabilityImplSnapshot {
     ModbusWrite {
         register: u16,
+        #[serde(default)]
+        data_type: String,
+        #[serde(default)]
+        #[serde(skip_serializing_if = "Option::is_none")]
+        bit: Option<u8>,
+        #[serde(default)]
+        byte_order: String,
+        #[serde(default)]
+        #[serde(skip_serializing_if = "Option::is_none")]
+        scale: Option<String>,
         value_template: String,
     },
     MqttPublish {
@@ -55,8 +65,37 @@ pub enum CapabilityImplSnapshot {
     },
     CanWrite {
         can_id: u32,
-        data_template: String,
         is_extended: bool,
+        #[serde(default)]
+        byte_offset: u8,
+        #[serde(default)]
+        byte_length: u8,
+        #[serde(default)]
+        data_type: String,
+        #[serde(default)]
+        byte_order: String,
+        #[serde(default)]
+        #[serde(skip_serializing_if = "Option::is_none")]
+        scale: Option<String>,
+        data_template: String,
+    },
+    EthercatPdoWrite {
+        #[serde(default)]
+        #[serde(skip_serializing_if = "Option::is_none")]
+        slave_address: Option<u16>,
+        pdo_index: u16,
+        entry_index: u16,
+        sub_index: u8,
+        bit_len: u16,
+        #[serde(default)]
+        #[serde(skip_serializing_if = "Option::is_none")]
+        data_type: Option<String>,
+        #[serde(default)]
+        byte_order: String,
+        #[serde(default)]
+        #[serde(skip_serializing_if = "Option::is_none")]
+        scale: Option<String>,
+        value_template: String,
     },
     Script {
         content: String,
@@ -227,11 +266,24 @@ impl NodeTrait for CapabilityCallNode {
         match &self.config.implementation {
             CapabilityImplSnapshot::ModbusWrite {
                 register,
+                data_type,
+                bit,
+                byte_order,
+                scale,
                 value_template,
             } => {
                 let resolved_value = self.resolve_template(value_template, &payload);
-                self.execute_modbus_write(_trace_id, *register, resolved_value, resolved_args)
-                    .await
+                self.execute_modbus_write(
+                    _trace_id,
+                    *register,
+                    resolved_value,
+                    data_type,
+                    *bit,
+                    byte_order,
+                    scale.as_deref(),
+                    resolved_args,
+                )
+                .await
             }
             CapabilityImplSnapshot::MqttPublish {
                 topic,
@@ -254,8 +306,13 @@ impl NodeTrait for CapabilityCallNode {
             }
             CapabilityImplSnapshot::CanWrite {
                 can_id,
-                data_template,
                 is_extended,
+                byte_offset,
+                byte_length,
+                data_type,
+                byte_order,
+                scale,
+                data_template,
             } => {
                 let resolved_data = self.resolve_template(data_template, &payload);
                 self.execute_can_write(
@@ -263,10 +320,19 @@ impl NodeTrait for CapabilityCallNode {
                     *can_id,
                     resolved_data,
                     *is_extended,
+                    *byte_offset,
+                    *byte_length,
+                    data_type,
+                    byte_order,
+                    scale.as_deref(),
                     resolved_args,
                 )
                 .await
             }
+            CapabilityImplSnapshot::EthercatPdoWrite { .. } => Err(EngineError::node_config(
+                self.id.clone(),
+                "capabilityCall 的 EtherCAT PDO 写入尚未接入 ethercrab 执行器",
+            )),
             CapabilityImplSnapshot::Script { content } => {
                 let _ = (content, resolved_args);
                 Err(EngineError::node_config(
@@ -290,6 +356,10 @@ mod tests {
             device_id: "press_1".to_owned(),
             implementation: CapabilityImplSnapshot::ModbusWrite {
                 register: 40010,
+                data_type: "u16".to_owned(),
+                bit: None,
+                byte_order: "big_endian".to_owned(),
+                scale: None,
                 value_template: "${position}".to_owned(),
             },
             args: {
@@ -443,6 +513,10 @@ mod tests {
         let variants = vec![
             CapabilityImplSnapshot::ModbusWrite {
                 register: 1,
+                data_type: "u16".to_owned(),
+                bit: None,
+                byte_order: "big_endian".to_owned(),
+                scale: None,
                 value_template: "v".to_owned(),
             },
             CapabilityImplSnapshot::MqttPublish {
@@ -454,8 +528,13 @@ mod tests {
             },
             CapabilityImplSnapshot::CanWrite {
                 can_id: 0x123,
-                data_template: "0102".to_owned(),
                 is_extended: false,
+                byte_offset: 0,
+                byte_length: 2,
+                data_type: "u16".to_owned(),
+                byte_order: "big_endian".to_owned(),
+                scale: None,
+                data_template: "0102".to_owned(),
             },
             CapabilityImplSnapshot::Script {
                 content: "s".to_owned(),

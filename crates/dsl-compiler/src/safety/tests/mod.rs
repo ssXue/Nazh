@@ -1,7 +1,9 @@
 use nazh_dsl_core::capability::{
     CapabilityImpl, CapabilityParam, CapabilitySpec, SafetyConstraints, SafetyLevel,
 };
-use nazh_dsl_core::device::{ConnectionRef, DeviceSpec, SignalSource, SignalSpec, SignalType};
+use nazh_dsl_core::device::{
+    ByteOrder, ConnectionRef, DataType, DeviceSpec, SignalSource, SignalSpec, SignalType,
+};
 use nazh_dsl_core::workflow::{Range, WorkflowSpec};
 
 use super::*;
@@ -93,6 +95,10 @@ fn cap_with_input(
         implementation: CapabilityImpl::ModbusWrite {
             register,
             value: format!("${{{input_id}}}"),
+            data_type: DataType::U16,
+            bit: None,
+            byte_order: ByteOrder::BigEndian,
+            scale: None,
         },
         fallback: vec![],
         safety: SafetyConstraints {

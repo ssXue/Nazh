@@ -52,19 +52,31 @@ safety:
 
 #[test]
 fn capability_impl_modbus_write() {
+    // 旧 YAML（只有 register + value）通过 serde(default) 补全编码字段
     let yaml = r#"
 type: modbus-write
 register: 40010
 value: "${position}"
 "#;
     let imp: CapabilityImpl = serde_yaml::from_str(yaml).unwrap();
-    assert_eq!(
-        imp,
+    match &imp {
         CapabilityImpl::ModbusWrite {
-            register: 40010,
-            value: "${position}".to_owned(),
+            register,
+            data_type,
+            bit,
+            byte_order,
+            scale,
+            value,
+        } => {
+            assert_eq!(*register, 40010);
+            assert_eq!(*data_type, DataType::U16); // 默认值
+            assert!(bit.is_none());
+            assert_eq!(*byte_order, ByteOrder::BigEndian); // 默认值
+            assert!(scale.is_none());
+            assert_eq!(value, "${position}");
         }
-    );
+        other => panic!("期望 ModbusWrite，得到 {other:?}"),
+    }
 }
 
 #[test]
@@ -90,6 +102,7 @@ command: "MOVE_TO"
 
 #[test]
 fn capability_impl_can_write() {
+    // 旧 YAML（只有 can_id + data + is_extended）通过 serde(default) 补全编码字段
     let yaml = r#"
 type: can-write
 can_id: 291
@@ -97,14 +110,28 @@ data: "${value}"
 is_extended: false
 "#;
     let imp: CapabilityImpl = serde_yaml::from_str(yaml).unwrap();
-    assert_eq!(
-        imp,
+    match &imp {
         CapabilityImpl::CanWrite {
-            can_id: 291,
-            data: "${value}".to_owned(),
-            is_extended: false,
+            can_id,
+            is_extended,
+            byte_offset,
+            byte_length,
+            data_type,
+            byte_order,
+            scale,
+            data,
+        } => {
+            assert_eq!(*can_id, 291);
+            assert!(!is_extended);
+            assert_eq!(*byte_offset, 0); // 默认值
+            assert_eq!(*byte_length, 0); // 默认值
+            assert_eq!(*data_type, DataType::U16); // 默认值
+            assert_eq!(*byte_order, ByteOrder::BigEndian); // 默认值
+            assert!(scale.is_none());
+            assert_eq!(data, "${value}");
         }
-    );
+        other => panic!("期望 CanWrite，得到 {other:?}"),
+    }
 }
 
 #[test]
@@ -198,6 +225,10 @@ fn validate_合法的_capability_spec() {
         implementation: CapabilityImpl::ModbusWrite {
             register: 40010,
             value: "${pos}".to_owned(),
+            data_type: DataType::U16,
+            bit: None,
+            byte_order: ByteOrder::BigEndian,
+            scale: None,
         },
         fallback: vec![],
         safety: SafetyConstraints {
@@ -273,6 +304,10 @@ fn validate_required_input_必须声明量程() {
         implementation: CapabilityImpl::ModbusWrite {
             register: 40010,
             value: "${position}".to_owned(),
+            data_type: DataType::U16,
+            bit: None,
+            byte_order: ByteOrder::BigEndian,
+            scale: None,
         },
         fallback: vec![],
         safety: SafetyConstraints {
@@ -321,6 +356,10 @@ fn validate_拒绝重复_input_output_id() {
         implementation: CapabilityImpl::ModbusWrite {
             register: 40010,
             value: "${value}".to_owned(),
+            data_type: DataType::U16,
+            bit: None,
+            byte_order: ByteOrder::BigEndian,
+            scale: None,
         },
         fallback: vec![],
         safety: SafetyConstraints {
@@ -355,6 +394,10 @@ fn validate_拒绝未声明模板变量() {
         implementation: CapabilityImpl::ModbusWrite {
             register: 40010,
             value: "${target_position}".to_owned(),
+            data_type: DataType::U16,
+            bit: None,
+            byte_order: ByteOrder::BigEndian,
+            scale: None,
         },
         fallback: vec![],
         safety: SafetyConstraints {
@@ -457,7 +500,7 @@ fn 从设备生成能力_无写信号返回空() {
 }
 
 #[test]
-fn 从_can_output_信号生成写能力_因编码语义无法无损表达而失败() {
+fn 从_can_output_信号生成写能力_编码元数据保留() {
     use crate::device::{ByteOrder, DataType, SignalSpec};
     let device = DeviceSpec {
         id: "drive_1".to_owned(),
@@ -475,7 +518,7 @@ fn 从_can_output_信号生成写能力_因编码语义无法无损表达而失�
             source: SignalSource::CanFrame {
                 can_id: 0x123,
                 is_extended: false,
-                byte_offset: 0,
+                byte_offset: 2,
                 byte_length: 2,
                 data_type: DataType::U16,
                 byte_order: ByteOrder::BigEndian,
@@ -485,11 +528,31 @@ fn 从_can_output_信号生成写能力_因编码语义无法无损表达而失�
         alarms: vec![],
     };
 
-    let err = try_generate_capabilities_from_device(&device).unwrap_err();
-    let msg = err.to_string();
-    assert!(msg.contains("target_speed"));
-    assert!(msg.contains("CAN"));
-    assert!(msg.contains("byte_offset"));
+    let caps = try_generate_capabilities_from_device(&device);
+    assert_eq!(caps.len(), 1);
+    assert_eq!(caps[0].id, "drive_1.write_target_speed");
+    match &caps[0].implementation {
+        CapabilityImpl::CanWrite {
+            can_id,
+            is_extended,
+            byte_offset,
+            byte_length,
+            data_type,
+            byte_order,
+            scale,
+            data,
+        } => {
+            assert_eq!(*can_id, 0x123);
+            assert!(!is_extended);
+            assert_eq!(*byte_offset, 2);
+            assert_eq!(*byte_length, 2);
+            assert_eq!(*data_type, DataType::U16);
+            assert_eq!(*byte_order, ByteOrder::BigEndian);
+            assert!(scale.is_none());
+            assert_eq!(data, "${value}");
+        }
+        other => panic!("期望 CanWrite，得到 {other:?}"),
+    }
 }
 
 // ---- infer_capabilities_from_signals() 测试 ----
@@ -536,7 +599,7 @@ fn infer_mqtt写信号_自动生成() {
 }
 
 #[test]
-fn infer_modbus写信号_返回不支持的() {
+fn infer_modbus写信号_自动生成() {
     use crate::device::{DataType, SignalSpec};
     let device = DeviceSpec {
         id: "sensor".to_owned(),
@@ -568,16 +631,32 @@ fn infer_modbus写信号_返回不支持的() {
     let results = super::infer_capabilities_from_signals(&device, None);
     assert_eq!(results.len(), 1);
     match &results[0] {
-        super::CapabilityInference::Unsupported {
-            signal_id,
-            encoding_info,
-            ..
+        super::CapabilityInference::Generated {
+            source_signal_id,
+            capability,
         } => {
-            assert_eq!(signal_id, "setpoint");
-            assert_eq!(encoding_info["source_type"], "register");
+            assert_eq!(source_signal_id, "setpoint");
+            match &capability.implementation {
+                CapabilityImpl::ModbusWrite {
+                    register,
+                    data_type,
+                    bit,
+                    byte_order,
+                    scale,
+                    value,
+                } => {
+                    assert_eq!(*register, 40010);
+                    assert_eq!(*data_type, DataType::Float32);
+                    assert!(bit.is_none());
+                    assert_eq!(*byte_order, crate::device::ByteOrder::BigEndian);
+                    assert!(scale.is_none());
+                    assert_eq!(value, "${value}");
+                }
+                other => panic!("期望 ModbusWrite，得到 {other:?}"),
+            }
         }
-        other @ super::CapabilityInference::Generated { .. } => {
-            panic!("期望 Unsupported，得到 {other:?}")
+        other @ super::CapabilityInference::Unsupported { .. } => {
+            panic!("期望 Generated，得到 {other:?}")
         }
     }
 }

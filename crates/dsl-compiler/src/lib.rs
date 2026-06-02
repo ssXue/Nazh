@@ -59,6 +59,10 @@ mod conformance_tests {
             implementation: CapabilityImpl::ModbusWrite {
                 register,
                 value: value.to_owned(),
+                data_type: nazh_dsl_core::device::DataType::U16,
+                bit: None,
+                byte_order: nazh_dsl_core::device::ByteOrder::BigEndian,
+                scale: None,
             },
             fallback: vec![],
             safety: SafetyConstraints {

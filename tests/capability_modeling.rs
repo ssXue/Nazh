@@ -156,17 +156,38 @@ fn 从设备信号自动生成能力() {
 }
 
 #[test]
-fn 从寄存器信号自动生成能力_拒绝丢失编码语义() {
+fn 从寄存器信号自动生成能力_编码字段保留() {
     let device = parse_device_yaml(MODBUS_OUTPUT_DEVICE_YAML).expect("Device YAML 解析应成功");
-    let err =
-        try_generate_capabilities_from_device(&device).expect_err("Modbus 编码语义不能被静默丢弃");
-    let msg = err.to_string();
+    let caps = try_generate_capabilities_from_device(&device);
+    assert_eq!(caps.len(), 1, "应有 1 个写信号能力");
+    let cap = &caps[0];
     assert!(
-        msg.contains("target_position"),
-        "错误应定位信号，实际: {msg}"
+        cap.id.contains("target_position"),
+        "能力 ID 应包含信号名，实际: {}",
+        cap.id
     );
-    assert!(msg.contains("Modbus"), "错误应说明协议语义，实际: {msg}");
-    assert!(msg.contains("data_type"), "错误应保留编码线索，实际: {msg}");
+    match &cap.implementation {
+        CapabilityImpl::ModbusWrite {
+            register,
+            data_type,
+            bit,
+            byte_order,
+            scale,
+            value,
+        } => {
+            assert_eq!(*register, 40010);
+            assert_eq!(
+                *data_type,
+                nazh_dsl_core::device::DataType::Float32,
+                "data_type 应从信号源保留"
+            );
+            assert!(bit.is_none());
+            assert_eq!(*byte_order, nazh_dsl_core::device::ByteOrder::BigEndian);
+            assert!(scale.is_none());
+            assert_eq!(value, "${value}");
+        }
+        other => panic!("期望 ModbusWrite，得到 {other:?}"),
+    }
 }
 
 #[test]

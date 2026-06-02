@@ -39,6 +39,9 @@ ADR（Architecture Decision Record）是一种轻量级文档格式，用于记�
 | [0024](0024-device-signal-read-and-event-trigger.md) | 设备信号读取与事件触发节点（`deviceSignalRead` / `deviceEventTrigger`） | 已实施 | 2026-05-15 |
 | [0025](0025-连接资产模型替代-connections-json.md) | 连接资产模型替代 `connections.json` | 已实施 | 2026-05-17 |
 | [0026](0026-资产连接绑定收口.md) | 资产连接绑定收口 | 已接受 | 2026-05-23 |
+| [0027](0027-ethercat后端从SOEM切回ethercrab.md) | EtherCAT 后端从 SOEM 切回 ethercrab | 已实施 | 2026-05-27 |
+| [0028](0028-capability-impl-编码元数据扩展.md) | CapabilityImpl 编码元数据扩展 | 已接受 | 2026-06-02 |
+| [0029](0029-copilot-资产操作两阶段确认门控.md) | Copilot 资产操作两阶段确认门控 | 已接受 | 2026-06-02 |
 
 ## 如何新增 ADR
 

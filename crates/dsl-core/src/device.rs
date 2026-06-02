@@ -190,10 +190,11 @@ pub enum ByteOrder {
 }
 
 /// Modbus 寄存器数据类型。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum DataType {
     Bool,
+    #[default]
     U16,
     I16,
     U32,
