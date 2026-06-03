@@ -120,6 +120,8 @@ export function AiConfigPanel({
       name: preset.name,
       baseUrl: preset.baseUrl,
       defaultModel: preset.defaultModel,
+      noApiKey: preset.noApiKey ?? false,
+      apiKey: preset.noApiKey ? '' : prev.apiKey,
     }));
   }
 

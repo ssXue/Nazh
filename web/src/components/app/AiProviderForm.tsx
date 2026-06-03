@@ -6,7 +6,7 @@
  */
 
 import type { AiConfigPanelProps } from './types';
-import type { AiProviderDraft, AiProviderUpsert } from '../../types';
+import type { AiProviderDraft, AiProviderUpsert, AiSecretInput } from '../../types';
 import {
   EMPTY_PROVIDER_FORM,
   hasPendingProviderChanges,
@@ -80,10 +80,11 @@ export function AiProviderForm({
     clearSavedApiKey,
   );
 
+  const noApiKey = form.noApiKey ?? false;
   const isFormValid =
     form.name.trim().length > 0 &&
     form.baseUrl.trim().length > 0 &&
-    (isEditingProvider || form.apiKey.trim().length > 0) &&
+    (noApiKey || isEditingProvider || form.apiKey.trim().length > 0) &&
     form.defaultModel.trim().length > 0;
   const canTestFormProvider =
     isFormValid && (!isEditingProvider || providerApiKeyMode !== 'clear');
@@ -95,7 +96,7 @@ export function AiProviderForm({
   );
 
   function handleSubmitTest() {
-    const trimmedApiKey = form.apiKey.trim();
+    const trimmedApiKey = noApiKey ? '' : form.apiKey.trim();
     const draft: AiProviderDraft = {
       id:
         isEditingProvider && providerApiKeyMode === 'keep'
@@ -125,7 +126,7 @@ export function AiProviderForm({
       defaultModel: form.defaultModel.trim(),
       extraHeaders: editingProvider?.extraHeaders ?? {},
       enabled: nextProviderId === nextActiveProviderId,
-      apiKey: resolveProviderApiKeyInput(form.apiKey, editingProviderId, clearSavedApiKey),
+      apiKey: noApiKey ? { kind: 'clear' } as AiSecretInput : resolveProviderApiKeyInput(form.apiKey, editingProviderId, clearSavedApiKey),
     };
     const nextProviders = isEditingProvider
       ? existingUpserts.map((provider) =>
@@ -236,65 +237,73 @@ export function AiProviderForm({
               onChange={(e) => onFormChange('defaultModel', e.target.value)}
             />
           </article>
-
-          <article className="settings-row settings-row--stacked ai-config-panel__field--wide">
-            <label className="settings-row__label" htmlFor="ai-provider-key">
-              API Key
-            </label>
-            {isEditingProvider ? (
-              <>
-                <div className="settings-accent-inline" role="group" aria-label="API Key 处理方式">
-                  <button
-                    type="button"
-                    className={
-                      providerApiKeyMode === 'keep'
-                        ? 'settings-accent-chip is-active'
-                        : 'settings-accent-chip'
-                    }
-                    onClick={() => {
-                      onSetClearSavedApiKey(false);
-                      onSetForm((prev) => ({ ...prev, apiKey: '' }));
-                    }}
-                  >
-                    <span>保持现有 Key</span>
-                  </button>
-                  <button
-                    type="button"
-                    className={
-                      providerApiKeyMode === 'clear'
-                        ? 'settings-accent-chip is-active'
-                        : 'settings-accent-chip'
-                    }
-                    onClick={() => {
-                      onSetClearSavedApiKey(true);
-                      onSetForm((prev) => ({ ...prev, apiKey: '' }));
-                    }}
-                  >
-                    <span>清空已保存 Key</span>
-                  </button>
-                </div>
-                <span className="settings-row__value" style={{ color: 'var(--text-tertiary)' }}>
-                  {providerApiKeyMode === 'set'
-                    ? '检测到新的 API Key，保存后会覆盖当前密钥。'
-                    : providerApiKeyMode === 'clear'
-                      ? '当前将清空已保存 API Key。若要替换成新密钥，直接在下方输入即可。'
-                      : editingProvider?.hasApiKey
-                        ? '当前已保存 API Key。留空会保持不变，输入新值会覆盖。'
-                        : '当前未保存 API Key。可直接输入新的密钥。'}
-                </span>
-              </>
-            ) : null}
-            <input
-              id="ai-provider-key"
-              className="settings-path-input"
-              type="password"
-              placeholder={
-                isEditingProvider ? '留空保持当前值，输入新值则覆盖' : 'sk-...'
-              }
-              value={form.apiKey}
-              onChange={(e) => onFormChange('apiKey', e.target.value)}
-            />
-          </article>
+          {!noApiKey ? (
+            <article className="settings-row settings-row--stacked ai-config-panel__field--wide">
+              <label className="settings-row__label" htmlFor="ai-provider-key">
+                API Key
+              </label>
+              {isEditingProvider ? (
+                <>
+                  <div className="settings-accent-inline" role="group" aria-label="API Key 处理方式">
+                    <button
+                      type="button"
+                      className={
+                        providerApiKeyMode === 'keep'
+                          ? 'settings-accent-chip is-active'
+                          : 'settings-accent-chip'
+                      }
+                      onClick={() => {
+                        onSetClearSavedApiKey(false);
+                        onSetForm((prev) => ({ ...prev, apiKey: '' }));
+                      }}
+                    >
+                      <span>保持现有 Key</span>
+                    </button>
+                    <button
+                      type="button"
+                      className={
+                        providerApiKeyMode === 'clear'
+                          ? 'settings-accent-chip is-active'
+                          : 'settings-accent-chip'
+                      }
+                      onClick={() => {
+                        onSetClearSavedApiKey(true);
+                        onSetForm((prev) => ({ ...prev, apiKey: '' }));
+                      }}
+                    >
+                      <span>清空已保存 Key</span>
+                    </button>
+                  </div>
+                  <span className="settings-row__value" style={{ color: 'var(--text-tertiary)' }}>
+                    {providerApiKeyMode === 'set'
+                      ? '检测到新的 API Key，保存后会覆盖当前密钥。'
+                      : providerApiKeyMode === 'clear'
+                        ? '当前将清空已保存 API Key。若要替换成新密钥，直接在下方输入即可。'
+                        : editingProvider?.hasApiKey
+                          ? '当前已保存 API Key。留空会保持不变，输入新值会覆盖。'
+                          : '当前未保存 API Key。可直接输入新的密钥。'}
+                  </span>
+                </>
+              ) : null}
+              <input
+                id="ai-provider-key"
+                className="settings-path-input"
+                type="password"
+                placeholder={
+                  isEditingProvider ? '留空保持当前值，输入新值则覆盖' : 'sk-...'
+                }
+                value={form.apiKey}
+                onChange={(e) => onFormChange('apiKey', e.target.value)}
+              />
+            </article>
+          ) : (
+            <article className="settings-row settings-row--stacked">
+              <label className="settings-row__label">API Key</label>
+              <span className="settings-row__value" style={{ color: 'var(--success-ink)' }}>
+                本地部署无需 API Key
+              </span>
+            </article>
+          )}
         </div>
 
         <p className="ai-config-panel__hint">

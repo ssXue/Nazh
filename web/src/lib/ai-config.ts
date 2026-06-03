@@ -5,6 +5,8 @@ export interface ProviderFormState {
   baseUrl: string;
   apiKey: string;
   defaultModel: string;
+  /** 不需要 API key（如 Ollama 本地部署）。 */
+  noApiKey?: boolean;
 }
 
 export const EMPTY_PROVIDER_FORM: ProviderFormState = {

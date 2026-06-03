@@ -43,6 +43,8 @@ export interface ProviderPreset {
   name: string;
   baseUrl: string;
   defaultModel: string;
+  /** 不需要 API key（如 Ollama 本地部署）。 */
+  noApiKey?: boolean;
 }
 
 export const PROVIDER_PRESETS: ProviderPreset[] = [
@@ -55,7 +57,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   { label: '通义千问', name: 'Qwen', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', defaultModel: 'qwen-turbo' },
   { label: '硅基流动', name: 'SiliconFlow', baseUrl: 'https://api.siliconflow.cn/v1', defaultModel: 'Qwen/Qwen2.5-7B-Instruct' },
   { label: '阶跃星辰', name: 'StepFun', baseUrl: 'https://api.stepfun.com/v1', defaultModel: 'step-2-16k' },
-  { label: 'Ollama 本地', name: 'Ollama', baseUrl: 'http://localhost:11434/v1', defaultModel: 'qwen2.5:7b' },
+  { label: 'Ollama 本地', name: 'Ollama', baseUrl: 'http://localhost:11434/v1', defaultModel: 'qwen2.5:7b', noApiKey: true },
 ];
 
 // ── 纯工具函数 ─────────────────────────────────────────────────────

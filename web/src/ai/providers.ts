@@ -29,24 +29,37 @@ export async function createLanguageModel(
 ): Promise<LanguageModel> {
   const { provider, modelOverride } = options;
 
-  const apiKey = await loadApiKey(provider.id);
-  if (!apiKey.trim()) {
-    throw new Error(`AI 提供商「${provider.name}」未配置 API key，请在设置中配置`);
-  }
-
   const modelId = (modelOverride ?? provider.defaultModel).trim();
   if (!modelId) {
     throw new Error(`AI 提供商「${provider.name}」未配置默认模型，请在设置中配置`);
   }
 
+  const apiKey = await loadApiKey(provider.id);
+  const localProvider = isLocalProvider(provider.baseUrl);
+
+  // 本地 provider（如 Ollama）不需要 API key
+  if (!localProvider && !apiKey.trim()) {
+    throw new Error(`AI 提供商「${provider.name}」未配置 API key，请在设置中配置`);
+  }
+
   const compatible = createOpenAICompatible({
     name: provider.id,
     baseURL: normalizeBaseUrl(provider.baseUrl),
-    apiKey,
+    apiKey: localProvider ? 'no-key' : apiKey,
     headers: buildHeaders(provider),
   });
 
   return compatible(modelId);
+}
+
+/** 判断是否为本地部署 provider（如 Ollama），不需要 API key。 */
+export function isLocalProvider(baseUrl: string): boolean {
+  try {
+    const url = new URL(baseUrl);
+    return url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '::1';
+  } catch {
+    return false;
+  }
 }
 
 /// 将用户输入的 base URL 规范化为 SDK 期望的格式。
