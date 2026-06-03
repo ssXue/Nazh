@@ -136,7 +136,7 @@
 }
 
 .copilot-history-item__delete:hover {
-  color: #dc3545 !important;
+  color: var(--danger-ink);
 }
 
 .copilot-history-item__title {
@@ -316,7 +316,7 @@
 }
 
 .copilot-msg__expand-btn:hover {
-  color: #fff;
+  color: var(--panel-strong);
 }
 
 /* --- Markdown 渲染 --- */

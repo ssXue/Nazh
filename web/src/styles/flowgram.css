@@ -1,3 +1,12 @@
+:root {
+  --port-json: #3b82f6;
+  --port-string: #a855f7;
+  --port-bool: #eab308;
+  --port-integer: #22c55e;
+  --port-float: #16a34a;
+  --port-binary: #f97316;
+}
+
 .canvas-shell {
   display: flex;
   flex-direction: column;
@@ -1139,7 +1148,7 @@ html[data-theme='dark'] .flowgram-floating-panel--node {
 }
 
 .flowgram-form__info-value--warn {
-  color: var(--warning, #e6a23c);
+  color: var(--warning);
 }
 
 .flowgram-form__info-value--muted {
@@ -1490,7 +1499,7 @@ html[data-theme='dark'] .flowgram-card--subgraph .sub-canvas-border,
 html[data-theme='dark'] .flowgram-card--subgraph .sub-canvas-border::before,
 html[data-theme='dark'] .flowgram-card--loop .sub-canvas-border,
 html[data-theme='dark'] .flowgram-card--loop .sub-canvas-border::before {
-  border-color: #161A23 !important;
+  border-color: var(--panel-border) !important;
 }
 
 .flowgram-card--if,
@@ -1762,22 +1771,22 @@ html[data-theme='dark'] .flowgram-card--loop .sub-canvas-border::before {
   background: var(--surface-elevated);
 }
 .flowgram-card__branch-port[data-port-pin-type='json'] {
-  background: #3b82f6;
+  background: var(--port-json);
 }
 .flowgram-card__branch-port[data-port-pin-type='string'] {
-  background: #a855f7;
+  background: var(--port-string);
 }
 .flowgram-card__branch-port[data-port-pin-type='bool'] {
-  background: #eab308;
+  background: var(--port-bool);
 }
 .flowgram-card__branch-port[data-port-pin-type='integer'] {
-  background: #22c55e;
+  background: var(--port-integer);
 }
 .flowgram-card__branch-port[data-port-pin-type='float'] {
-  background: #16a34a;
+  background: var(--port-float);
 }
 .flowgram-card__branch-port[data-port-pin-type='binary'] {
-  background: #f97316;
+  background: var(--port-binary);
 }
 .flowgram-card__branch-port[data-port-pin-type='array'] {
   background: var(--surface-elevated);
@@ -1820,7 +1829,7 @@ html[data-theme='dark'] .flowgram-card--loop .sub-canvas-border::before {
 }
 
 .flowgram-card__port {
-  box-shadow: 0 0 0 4px rgba(247, 248, 250, 0.96);
+  box-shadow: 0 0 0 4px var(--panel-strong);
 }
 
 .flowgram-card--running {
@@ -1909,7 +1918,7 @@ html[data-theme='dark'] .flowgram-card--loop .sub-canvas-border::before {
 
 .flowgram-line--heat-3 path,
 .flowgram-line--heat-3 svg path {
-  stroke: #f97316 !important;
+  stroke: var(--port-binary) !important;
   stroke-width: 3.5px !important;
   opacity: 1 !important;
   filter: drop-shadow(0 0 8px rgba(249, 115, 22, 0.55));
@@ -1917,7 +1926,7 @@ html[data-theme='dark'] .flowgram-card--loop .sub-canvas-border::before {
 
 .flowgram-line--heat-4 path,
 .flowgram-line--heat-4 svg path {
-  stroke: #f43f5e !important;
+  stroke: var(--danger) !important;
   stroke-width: 4px !important;
   opacity: 1 !important;
   filter: drop-shadow(0 0 10px rgba(244, 63, 94, 0.65));
