@@ -1034,3 +1034,44 @@
 .dm-add-row__select:focus {
   border-color: var(--accent-border);
 }
+
+/* ── YAML 源码编辑 ── */
+
+.yaml-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 100%;
+}
+
+.yaml-tab__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.yaml-tab__hint {
+  font-size: var(--font-caption);
+  color: var(--muted);
+}
+
+.yaml-tab__editor {
+  flex: 1;
+  min-height: 300px;
+  padding: 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  background: var(--panel);
+  color: var(--text);
+  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+  font-size: var(--font-callout);
+  line-height: 1.5;
+  resize: vertical;
+  outline: none;
+  tab-size: 2;
+}
+
+.yaml-tab__editor:focus {
+  border-color: var(--accent-border);
+}

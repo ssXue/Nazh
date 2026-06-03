@@ -19,6 +19,7 @@ import { ExpandTransition } from './ExpandTransition';
 import { DeviceTypeBadge, DeviceConnectionBar, EditableField, buildDeviceConnectionBinding } from './device-modeling-helpers';
 import { SignalsTab } from './DeviceSignalsTab';
 import { CapabilitiesTab } from './DeviceCapabilitiesTab';
+import { YamlTab } from './DeviceYamlTab';
 import { SnapshotsTab } from './DeviceSnapshotsTab';
 
 interface DeviceModelingPanelProps {
@@ -339,7 +340,7 @@ const DetailPanel = forwardRef(function DetailPanel({
   onStatusMessage: (msg: string) => void;
   onAddCapabilityToCanvas?: (nodeOp: import('../FlowgramCanvas').CanvasNodeOp) => void;
 }, ref: React.Ref<HTMLDivElement>) {
-  const [tab, setTab] = useState<'signals' | 'capabilities' | 'snapshots'>('signals');
+  const [tab, setTab] = useState<'signals' | 'capabilities' | 'snapshots' | 'yaml'>('signals');
   const [patching, setPatching] = useState(false);
   const { patchField } = useDeviceAssets(workspacePath);
 
@@ -472,6 +473,13 @@ const DetailPanel = forwardRef(function DetailPanel({
         >
           快照
         </button>
+        <button
+          type="button"
+          className={`dm-tabs__item${tab === 'yaml' ? ' is-active' : ''}`}
+          onClick={() => setTab('yaml')}
+        >
+          YAML
+        </button>
       </div>
 
       <div className="dm-detail-dialog__body">
@@ -479,8 +487,10 @@ const DetailPanel = forwardRef(function DetailPanel({
           <SignalsTab detail={detail} workspacePath={workspacePath} onReload={onReload} onStatusMessage={onStatusMessage} />
         ) : tab === 'capabilities' ? (
           <CapabilitiesTab deviceId={detail.id} workspacePath={workspacePath} onAddToCanvas={onAddCapabilityToCanvas} />
-        ) : (
+        ) : tab === 'snapshots' ? (
           <SnapshotsTab deviceId={detail.id} workspacePath={workspacePath} onReload={onReload} onStatusMessage={onStatusMessage} />
+        ) : (
+          <YamlTab detail={detail} workspacePath={workspacePath} onReload={onReload} onStatusMessage={onStatusMessage} />
         )}
       </div>
     </div>
