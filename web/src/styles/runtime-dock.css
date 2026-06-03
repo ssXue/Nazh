@@ -1275,3 +1275,129 @@
   font-size: var(--font-caption, 11px);
   padding: 4px 0;
 }
+
+/* ── HITL 审批队列 ─────────────────────────── */
+
+.approval-queue__empty {
+  padding: 12px;
+  color: var(--muted);
+  font-size: var(--font-caption);
+  text-align: center;
+}
+
+.approval-queue__list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.approval-queue__item {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.approval-queue__header {
+  width: 100%;
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  font-size: var(--font-caption);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.approval-queue__node-label {
+  color: var(--warning-ink);
+  font-weight: 600;
+}
+
+.approval-queue__time {
+  color: var(--muted);
+  margin-left: 8px;
+}
+
+.approval-queue__toggle {
+  color: var(--muted);
+}
+
+.approval-queue__body {
+  padding: 0 12px 12px;
+}
+
+/* ── HITL 审批表单 ─────────────────────────── */
+
+.approval-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.approval-form__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.approval-form__label {
+  min-width: 80px;
+  font-size: var(--font-caption);
+  color: var(--muted);
+}
+
+.approval-form__input {
+  flex: 1;
+  background: var(--surface-muted);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-xs);
+  padding: 2px 6px;
+  color: var(--text);
+  font-size: var(--font-caption);
+}
+
+.approval-form__unit {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.approval-form__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  justify-content: flex-end;
+}
+
+.approval-form__btn--reject {
+  padding: 4px 12px;
+  background: var(--danger-soft);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-xs);
+  color: var(--danger-ink);
+  cursor: pointer;
+  font-size: var(--font-caption);
+}
+
+.approval-form__btn--reject:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.approval-form__btn--approve {
+  padding: 4px 12px;
+  background: var(--success-soft);
+  border: 1px solid var(--success-border);
+  border-radius: var(--radius-xs);
+  color: var(--success-ink);
+  cursor: pointer;
+  font-size: var(--font-caption);
+}
+
+.approval-form__btn--approve:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}

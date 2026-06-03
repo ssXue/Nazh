@@ -34,10 +34,10 @@ export function ApprovalForm({ formSchema, onSubmit, onReject, disabled }: Appro
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+    <div className="approval-form">
       {formSchema.map((field) => (
-        <div key={field.name} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <label style={{ minWidth: 80, fontSize: 12, color: '#aaa' }}>{field.label}</label>
+        <div key={field.name} className="approval-form__row">
+          <label className="approval-form__label">{field.label}</label>
           {field.type === 'boolean' ? (
             <input
               type="checkbox"
@@ -53,14 +53,14 @@ export function ApprovalForm({ formSchema, onSubmit, onReject, disabled }: Appro
               max={field.max}
               onChange={(e) => updateField(field.name, e.target.value === '' ? null : Number(e.target.value))}
               disabled={disabled}
-              style={{ flex: 1, background: '#1a1a1a', border: '1px solid #333', borderRadius: 'var(--radius-xs)', padding: '2px 6px', color: '#eee', fontSize: 12 }}
+              className="approval-form__input"
             />
           ) : field.type === 'select' ? (
             <select
               value={String(formData[field.name] ?? '')}
               onChange={(e) => updateField(field.name, e.target.value)}
               disabled={disabled}
-              style={{ flex: 1, background: '#1a1a1a', border: '1px solid #333', borderRadius: 'var(--radius-xs)', padding: '2px 6px', color: '#eee', fontSize: 12 }}
+              className="approval-form__input"
             >
               <option value="">--</option>
               {field.options?.map((opt) => (
@@ -73,35 +73,35 @@ export function ApprovalForm({ formSchema, onSubmit, onReject, disabled }: Appro
               value={String(formData[field.name] ?? '')}
               onChange={(e) => updateField(field.name, e.target.value)}
               disabled={disabled}
-              style={{ flex: 1, background: '#1a1a1a', border: '1px solid #333', borderRadius: 'var(--radius-xs)', padding: '2px 6px', color: '#eee', fontSize: 12 }}
+              className="approval-form__input"
             />
           )}
-          {field.unit && <span style={{ fontSize: 11, color: '#888' }}>{field.unit}</span>}
+          {field.unit && <span className="approval-form__unit">{field.unit}</span>}
         </div>
       ))}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
-        <label style={{ minWidth: 80, fontSize: 12, color: '#aaa' }}>备注</label>
+      <div className="approval-form__row" style={{ marginTop: 4 }}>
+        <label className="approval-form__label">备注</label>
         <input
           type="text"
           value={comment}
           onChange={(e) => setComment(e.target.value)}
           placeholder="审批意见（可选）"
           disabled={disabled}
-          style={{ flex: 1, background: '#1a1a1a', border: '1px solid #333', borderRadius: 'var(--radius-xs)', padding: '2px 6px', color: '#eee', fontSize: 12 }}
+          className="approval-form__input"
         />
       </div>
-      <div style={{ display: 'flex', gap: 8, marginTop: 8, justifyContent: 'flex-end' }}>
+      <div className="approval-form__actions">
         <button
           onClick={() => onReject(comment)}
           disabled={disabled}
-          style={{ padding: '4px 12px', background: '#5c2020', border: '1px solid #833', borderRadius: 'var(--radius-xs)', color: '#f88', cursor: disabled ? 'not-allowed' : 'pointer', fontSize: 12 }}
+          className="approval-form__btn--reject"
         >
           拒绝
         </button>
         <button
           onClick={() => onSubmit(formData, comment)}
           disabled={disabled}
-          style={{ padding: '4px 12px', background: '#1a5c1a', border: '1px solid #383', borderRadius: 'var(--radius-xs)', color: '#8f8', cursor: disabled ? 'not-allowed' : 'pointer', fontSize: 12 }}
+          className="approval-form__btn--approve"
         >
           通过
         </button>

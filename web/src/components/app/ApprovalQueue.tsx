@@ -152,50 +152,33 @@ export function ApprovalQueue() {
 
   if (pendingItems.length === 0) {
     return (
-      <div style={{ padding: 12, color: '#666', fontSize: 12, textAlign: 'center' }}>
+      <div className="approval-queue__empty">
         暂无待处理审批
       </div>
     );
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+    <div className="approval-queue__list">
       {pendingItems.map((item) => (
         <div
           key={item.approvalId}
-          style={{
-            background: '#1a1a2e',
-            border: '1px solid #333',
-            borderRadius: 'var(--radius-sm)',
-            overflow: 'hidden',
-          }}
+          className="approval-queue__item"
         >
           <button
             onClick={() => toggleExpand(item.approvalId)}
-            style={{
-              width: '100%',
-              padding: '8px 12px',
-              background: 'transparent',
-              border: 'none',
-              color: '#ddd',
-              cursor: 'pointer',
-              textAlign: 'left',
-              fontSize: 12,
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-            }}
+            className="approval-queue__header"
           >
             <span>
-              <span style={{ color: '#f0ad4e', fontWeight: 600 }}>{item.nodeLabel}</span>
-              <span style={{ color: '#666', marginLeft: 8 }}>
+              <span className="approval-queue__node-label">{item.nodeLabel}</span>
+              <span className="approval-queue__time">
                 {new Date(item.pendingSince).toLocaleTimeString()}
               </span>
             </span>
-            <span style={{ color: '#666' }}>{item.expanded ? '▼' : '▶'}</span>
+            <span className="approval-queue__toggle">{item.expanded ? '▼' : '▶'}</span>
           </button>
           {item.expanded && (
-            <div style={{ padding: '0 12px 12px' }}>
+            <div className="approval-queue__body">
               <ApprovalForm
                 formSchema={item.formSchema}
                 onSubmit={(fd, c) => handleSubmit(item.approvalId, fd, c)}
