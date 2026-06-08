@@ -3,4 +3,4 @@
 /**
  * 背压处理策略（ADR-0016）。
  */
-export type BackpressurePolicy = "block" | "dropNewest" | "dropOldest" | "sample" | "overflow";
+export type BackpressurePolicy = "block" | "dropNewest" | "sample" | "overflow";

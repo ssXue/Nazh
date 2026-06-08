@@ -284,24 +284,11 @@ pub(crate) async fn run_node(
                                     target.sender.send(new_ref.clone()).await.is_ok()
                                 }
                                 nazh_core::BackpressurePolicy::DropNewest
-                                | nazh_core::BackpressurePolicy::DropOldest
                                 | nazh_core::BackpressurePolicy::Sample
                                 | nazh_core::BackpressurePolicy::Overflow => {
                                     match target.sender.try_send(new_ref.clone()) {
                                         Ok(()) => true,
                                         Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
-                                            // DropOldest：从 channel 尾端取走一条最老消息再重试。
-                                            if matches!(
-                                                target.backpressure_policy,
-                                                nazh_core::BackpressurePolicy::DropOldest
-                                            ) {
-                                                // 尝试接收一条最老消息并释放其引用。
-                                                // sender 是克隆的，我们需要通过
-                                                // receiver drain——但 receiver 不在此处。
-                                                // 退化为 DropNewest：丢弃当前消息。
-                                                // 完整 DropOldest 需要 receiver 端配合，
-                                                // 当前 channel 语义下不可安全实现。
-                                            }
                                             if let Some(window) = edge_windows.get_mut(&key) {
                                                 window.record_drop(payload_bytes);
                                             }

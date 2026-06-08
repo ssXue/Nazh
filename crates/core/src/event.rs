@@ -109,7 +109,6 @@ pub struct BackpressureDetected {
 pub enum BackpressurePolicy {
     Block,
     DropNewest,
-    DropOldest,
     Sample,
     Overflow,
 }
@@ -430,8 +429,8 @@ mod edge_event_tests {
             "\"dropNewest\""
         );
         assert_eq!(
-            serde_json::to_string(&BackpressurePolicy::DropOldest).unwrap(),
-            "\"dropOldest\""
+            serde_json::to_string(&BackpressurePolicy::Overflow).unwrap(),
+            "\"overflow\""
         );
     }
 }
