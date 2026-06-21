@@ -37,7 +37,6 @@ nazh-dsl-core = { path = "crates/dsl-core" }
 dsl-compiler = { path = "crates/dsl-compiler" }
 store = { path = "crates/store" }
 tauri-bindings = { path = "crates/tauri-bindings" }
-arc-swap = "1"
 async-trait = "0.1"
 bitflags = { version = "2", features = ["serde"] }
 chrono = { version = "0.4", features = ["clock", "serde"] }

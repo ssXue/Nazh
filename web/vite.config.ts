@@ -18,22 +18,6 @@ function vendorChunk(id: string): string | undefined {
     return 'vendor-data';
   }
 
-  if (id.includes('/modern-screenshot/')) {
-    return 'vendor-export';
-  }
-
-  if (id.includes('/gsap/') || id.includes('/@gsap/')) {
-    return 'vendor-gsap';
-  }
-
-  if (id.includes('/motion/')) {
-    return 'vendor-motion';
-  }
-
-  if (id.includes('/ogl/')) {
-    return 'vendor-ogl';
-  }
-
   return undefined;
 }
 

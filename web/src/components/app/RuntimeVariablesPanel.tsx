@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from 'react';
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 
 import { formatPinType } from '../../lib/pin-schema-cache';
 import {
@@ -361,14 +360,7 @@ function VariableRow({ workflowId, entry, onSubmit, onDelete, onReset }: Variabl
           ) : historyEntries.length === 0 ? (
             <span>暂无历史记录</span>
           ) : isNumeric && chartData.length > 1 ? (
-            <ResponsiveContainer width="100%" height={120}>
-              <LineChart data={chartData}>
-                <XAxis dataKey="time" tick={{ fontSize: 10 }} />
-                <YAxis tick={{ fontSize: 10 }} width={40} />
-                <Tooltip />
-                <Line type="monotone" dataKey="value" stroke="#6366f1" dot={false} strokeWidth={1.5} />
-              </LineChart>
-            </ResponsiveContainer>
+            <HistorySparkline data={chartData} />
           ) : (
             <ul className="runtime-variables-panel__history-list">
               {historyEntries.map((h, i) => (
@@ -385,6 +377,26 @@ function VariableRow({ workflowId, entry, onSubmit, onDelete, onReset }: Variabl
         </div>
       )}
     </li>
+  );
+}
+
+function HistorySparkline({ data }: { data: Array<{ time: string; value: number }> }) {
+  const values = data.map((point) => point.value);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const span = max - min || 1;
+  const points = data
+    .map((point, index) => {
+      const x = data.length === 1 ? 0 : (index / (data.length - 1)) * 100;
+      const y = 36 - ((point.value - min) / span) * 32;
+      return `${x.toFixed(2)},${y.toFixed(2)}`;
+    })
+    .join(' ');
+
+  return (
+    <svg className="runtime-variables-panel__history-chart" viewBox="0 0 100 40" role="img" aria-label="变量历史折线">
+      <polyline points={points} fill="none" stroke="currentColor" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+    </svg>
   );
 }
 

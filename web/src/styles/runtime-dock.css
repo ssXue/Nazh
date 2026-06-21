@@ -1101,6 +1101,13 @@
   padding: 4px 0;
 }
 
+.runtime-variables-panel__history-chart {
+  display: block;
+  width: 100%;
+  height: 120px;
+  color: var(--accent);
+}
+
 .runtime-variables-panel__history-list {
   list-style: none;
   margin: 0;
