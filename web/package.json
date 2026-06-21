@@ -14,7 +14,7 @@
     "test:e2e": "playwright test --config e2e/playwright.config.ts"
   },
   "dependencies": {
-    "@ai-sdk/openai": "^3.0.66",
+    "@ai-sdk/openai": "^3.0.67",
     "@ai-sdk/openai-compatible": "^2.0.47",
     "@codemirror/lang-javascript": "^6.2.5",
     "@codemirror/lang-json": "^6.0.2",
