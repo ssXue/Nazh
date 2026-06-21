@@ -103,14 +103,29 @@ pub struct BackpressureDetected {
 }
 
 /// 背压处理策略（ADR-0016）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[cfg_attr(feature = "ts-export", derive(TS), ts(export))]
-#[serde(rename_all = "camelCase")]
 pub enum BackpressurePolicy {
+    #[serde(rename = "block")]
     Block,
+    #[serde(rename = "dropNewest")]
     DropNewest,
-    Sample,
-    Overflow,
+}
+
+impl<'de> Deserialize<'de> for BackpressurePolicy {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        match String::deserialize(deserializer)?.as_str() {
+            "block" => Ok(Self::Block),
+            "dropNewest" | "sample" | "overflow" => Ok(Self::DropNewest),
+            other => Err(serde::de::Error::unknown_variant(
+                other,
+                &["block", "dropNewest"],
+            )),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -429,8 +444,16 @@ mod edge_event_tests {
             "\"dropNewest\""
         );
         assert_eq!(
-            serde_json::to_string(&BackpressurePolicy::Overflow).unwrap(),
-            "\"overflow\""
+            serde_json::to_string(&BackpressurePolicy::Block).unwrap(),
+            "\"block\""
+        );
+        assert_eq!(
+            serde_json::from_str::<BackpressurePolicy>("\"sample\"").unwrap(),
+            BackpressurePolicy::DropNewest
+        );
+        assert_eq!(
+            serde_json::from_str::<BackpressurePolicy>("\"overflow\"").unwrap(),
+            BackpressurePolicy::DropNewest
         );
     }
 }

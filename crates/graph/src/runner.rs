@@ -283,9 +283,7 @@ pub(crate) async fn run_node(
                                 nazh_core::BackpressurePolicy::Block => {
                                     target.sender.send(new_ref.clone()).await.is_ok()
                                 }
-                                nazh_core::BackpressurePolicy::DropNewest
-                                | nazh_core::BackpressurePolicy::Sample
-                                | nazh_core::BackpressurePolicy::Overflow => {
+                                nazh_core::BackpressurePolicy::DropNewest => {
                                     match target.sender.try_send(new_ref.clone()) {
                                         Ok(()) => true,
                                         Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
