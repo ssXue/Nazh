@@ -10,7 +10,6 @@
 //! | 层级 | Crate | 职责 |
 //! |------|-------|------|
 //! | Ring 0 | `nazh-core` | 内核原语：`NodeTrait`、`DataStore`、`Plugin` 等 |
-//! | Ring 1 | `pipeline` | 线性流水线抽象 |
 //! | Ring 1 | `connections` | 全局连接资源池 |
 //! | Ring 1 | `scripting` | Rhai 脚本引擎基座 |
 //! | Ring 1 | `nodes-flow` | 流程控制节点（if/switch/loop/tryCatch/code） |
@@ -40,8 +39,6 @@ pub use connections::{
     ConnectionDefinition, ConnectionGuard, ConnectionLease, ConnectionManager, ConnectionRecord,
     SharedConnectionManager, shared_connection_manager,
 };
-
-pub use pipeline::{PipelineHandle, PipelineStage, StageFuture, build_linear_pipeline};
 
 pub use nodes_flow::{
     CodeNode, CodeNodeConfig, FlowPlugin, IfNode, IfNodeConfig, LoopNode, LoopNodeConfig,

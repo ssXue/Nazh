@@ -6,13 +6,11 @@
 
 | 示例 | 说明 |
 |------|------|
-| `phase1_demo.rs` | Phase 1 线性流水线演示：温度归一化（C→F）+ 元数据标记 + 阶段超时 |
 | `graph_demo.rs` | DAG 图执行演示 |
 
 ## 运行
 
 ```bash
 # 运行指定示例
-cargo run --example phase1_demo
 cargo run --example graph_demo
 ```

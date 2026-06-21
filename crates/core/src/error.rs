@@ -14,9 +14,6 @@ use crate::pin::{PinDirection, PinKind};
 /// 无需在调用点额外打日志即可完成问题诊断。
 #[derive(Debug, Error)]
 pub enum EngineError {
-    #[error("流水线配置无效: {0}")]
-    InvalidPipeline(String),
-
     #[error("工作流图无效: {0}")]
     InvalidGraph(String),
 
@@ -185,10 +182,6 @@ pub enum EngineError {
 }
 
 impl EngineError {
-    pub fn invalid_pipeline(message: impl Into<String>) -> Self {
-        Self::InvalidPipeline(message.into())
-    }
-
     pub fn invalid_graph(message: impl Into<String>) -> Self {
         Self::InvalidGraph(message.into())
     }

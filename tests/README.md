@@ -6,7 +6,6 @@
 
 | 文件 | 覆盖范围 |
 |------|----------|
-| `pipeline.rs` | 线性流水线：payload 变换、错误恢复、panic 隔离、超时保护 |
 | `workflow.rs` | DAG 工作流：端到端执行、Rhai 脚本集成、连接池借还、环检测 |
 
 ## 运行
@@ -19,7 +18,7 @@ cargo test
 cargo test workflow_graph_executes_end_to_end
 
 # 运行某个测试文件的所有测试
-cargo test --test pipeline
+cargo test --test workflow
 
 # 显示 println 输出
 cargo test -- --nocapture

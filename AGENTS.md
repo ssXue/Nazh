@@ -8,7 +8,7 @@ It is read by both humans and AI agents (Claude Code, OpenCode, Cursor, etc.). `
 
 Nazh is an industrial-edge workflow orchestration engine with AI as a first-class capability. It connects device ingestion, data transformation, scripted logic, AI-assisted authoring, and a desktop operations UI into a single local runtime.
 
-Stack: **Rust engine (Cargo workspace, 16 packages) + Tauri v2 desktop shell + React 19 / FlowGram.AI canvas**.
+Stack: **Rust engine (Cargo workspace, 14 packages) + Tauri v2 desktop shell + React 19 / FlowGram.AI canvas**.
 
 Everything runs in one process — no HTTP/gRPC server, no external broker. AI features (copilot chat, script generation, device extraction, thinking-mode completions) are called directly from the frontend via Vercel AI SDK (`ai` v6) against user-configured OpenAI-compatible providers; API keys are read on-demand via `load_ai_api_key` IPC from local config storage（RFC-0005；当前策略是本机明文配置 + 最小传播面，不接入 OS keychain / 自建加密 vault）. Rust side only retains AI configuration management and copilot tool dispatch.
 
@@ -45,9 +45,6 @@ cargo clippy --workspace --all-targets -- -D warnings
 # Single test by name
 cargo test <test_name>
 
-# Example
-cargo run --example phase1_demo
-
 # Dependency audit (requires cargo-deny)
 cargo deny check
 ```
@@ -56,7 +53,7 @@ cargo deny check
 
 ### Three-Layer Stack
 
-1. **Rust Engine** — Cargo workspace rooted at `/` with 16 packages (see below). Public facade is the `nazh-engine` library crate at `src/lib.rs`.
+1. **Rust Engine** — Cargo workspace rooted at `/` with 14 packages (see below). Public facade is the `nazh-engine` library crate at `src/lib.rs`.
 2. **Tauri Shell** (`src-tauri/`) — Desktop app binary `nazh-desktop`. Exposes IPC commands to the frontend, bridges engine events to the UI, manages shell-side concerns (observability store, project library files, DSL asset YAML mirrors, AI config, runtime dispatch queues, deployment session files).
 3. **React Frontend** (`web/`) — Vite + React 19 + TypeScript + FlowGram.AI. Communicates **exclusively** via Tauri `invoke` / `Window::emit` — no HTTP or gRPC.
 
@@ -66,7 +63,6 @@ cargo deny check
 crates/
   core/              # Ring 0 — NodeTrait, Plugin, DataStore, ResourceGuard, EngineError, ExecutionEvent
                      #   Zero protocol dependencies. The engine kernel.
-  pipeline/          # Ring 1 — linear pipeline abstraction
   connections/       # Ring 1 — ConnectionManager, ConnectionGuard RAII, health/circuit-breaker
   scripting/         # Ring 1 — Rhai engine base（variables 注入 + helper 包）
   nodes-flow/        # Ring 1 — if / switch / loop / tryCatch / code (Rhai script) / stateMachine
@@ -370,7 +366,6 @@ Hand-written source files should stay reviewable and single-purpose. 100-200 lin
 
 - **Rust unit tests (`#[cfg(test)]` modules):** per-crate, ran via `cargo test --workspace --lib`. Scripting, plugin system, event emission, template engine, etc.
 - **Rust integration tests (`tests/`):**
-  - `tests/pipeline.rs` — linear pipeline timing/error/panic/timeout.
   - `tests/workflow.rs` — DAG end-to-end with connection pool, Rhai integration.
 - **Frontend unit tests (`web/src/lib/__tests__/`):** Vitest. Event parsing, state reduction, workflow status, settings, graph parsing, layout, FlowGram conversion, workflow orchestrator, AI config state.
 - **Frontend E2E (`web/e2e/`):** Playwright against compiled Tauri app. Deploy / dispatch / undeploy lifecycle.
